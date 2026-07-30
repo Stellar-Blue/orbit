@@ -1,0 +1,393 @@
+import { 
+  Team, Profile, PaymentType, SalaryRecord, PaymentRecord, 
+  LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract 
+} from './types';
+
+export const MOCK_TEAMS: Team[] = [
+  { id: 'team-etrm', name: 'Atlas ETRM Engineering', lead_profile_id: 'prof-nikos' },
+  { id: 'team-ems', name: 'EMS & Bidding Optimizer', lead_profile_id: 'prof-maria' },
+  { id: 'team-cons', name: 'Energy Consulting', lead_profile_id: 'prof-eleni' },
+  { id: 'team-ops', name: 'Operations & Leadership', lead_profile_id: 'prof-eleni' }
+];
+
+export const MOCK_PROFILES: Profile[] = [
+  {
+    id: 'prof-eleni',
+    first_name: 'Eleni',
+    last_name: 'Founta',
+    name_el: 'Ελένη Φούντα',
+    work_email: 'eleni.founta@stellarblue.gr',
+    title: 'Co-Founder & Chief Operations Officer',
+    team_id: 'team-ops',
+    employment_type: 'full_time',
+    start_date: '2023-01-10',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'admin',
+    sensitive: {
+      profile_id: 'prof-eleni',
+      afm: '108938291',
+      amka: '12048501928',
+      ama_efka: '49201920',
+      iban: 'GR1201100000000012345678901',
+      address: 'Tsimiski 45, Thessaloniki 54623',
+      birth_date: '1985-04-12'
+    }
+  },
+  {
+    id: 'prof-nikos',
+    first_name: 'Nikos',
+    last_name: 'Vassiliou',
+    name_el: 'Νίκος Βασιλείου',
+    work_email: 'nikos.vassiliou@stellarblue.gr',
+    title: 'Co-Founder & Chief Technology Officer',
+    team_id: 'team-etrm',
+    employment_type: 'full_time',
+    start_date: '2023-01-10',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'admin',
+    sensitive: {
+      profile_id: 'prof-nikos',
+      afm: '098231920',
+      amka: '08098202931',
+      ama_efka: '39201981',
+      iban: 'GR8801400000000023456789012',
+      address: 'Mitropoleos 12, Thessaloniki 54624',
+      birth_date: '1982-09-08'
+    }
+  },
+  {
+    id: 'prof-dimitris',
+    first_name: 'Dimitris',
+    last_name: 'Papadopoulos',
+    name_el: 'Δημήτρης Παπαδόπουλος',
+    work_email: 'dimitris.papadopoulos@stellarblue.gr',
+    title: 'Principal ETRM Architect',
+    team_id: 'team-etrm',
+    manager_id: 'prof-nikos',
+    employment_type: 'full_time',
+    start_date: '2023-03-01',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee',
+    sensitive: {
+      profile_id: 'prof-dimitris',
+      afm: '138940291',
+      amka: '11028803921',
+      ama_efka: '29819203',
+      iban: 'GR4401700000000034567890123',
+      address: 'Vasilissis Olgas 120, Thessaloniki 54645',
+      birth_date: '1988-02-11'
+    }
+  },
+  {
+    id: 'prof-maria',
+    first_name: 'Maria',
+    last_name: 'Konstantinidou',
+    name_el: 'Μαρία Κωνσταντινίδου',
+    work_email: 'maria.konstantinidou@stellarblue.gr',
+    title: 'EMS Lead Product Manager',
+    team_id: 'team-ems',
+    manager_id: 'prof-eleni',
+    employment_type: 'full_time',
+    start_date: '2023-06-15',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  },
+  {
+    id: 'prof-yannis',
+    first_name: 'Yannis',
+    last_name: 'Anagnostou',
+    name_el: 'Γιάννης Αναγνώστου',
+    work_email: 'yannis.anagnostou@stellarblue.gr',
+    title: 'Senior Optimization Engineer',
+    team_id: 'team-ems',
+    manager_id: 'prof-maria',
+    employment_type: 'full_time',
+    start_date: '2023-09-01',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  },
+  {
+    id: 'prof-katerina',
+    first_name: 'Katerina',
+    last_name: 'Lymperis',
+    name_el: 'Κατερίνα Λυμπέρη',
+    work_email: 'katerina.lymperis@stellarblue.gr',
+    title: 'Senior Energy Markets Analyst',
+    team_id: 'team-cons',
+    manager_id: 'prof-eleni',
+    employment_type: 'part_time',
+    start_date: '2024-01-08',
+    status: 'active',
+    work_schedule: ['Mon', 'Wed', 'Fri'], // Part time schedule
+    role: 'employee'
+  },
+  {
+    id: 'prof-giorgis',
+    first_name: 'Giorgis',
+    last_name: 'Makris',
+    name_el: 'Γιώργος Μακρής',
+    work_email: 'giorgis.makris@stellarblue.gr',
+    title: 'Backend Software Engineer',
+    team_id: 'team-etrm',
+    manager_id: 'prof-dimitris',
+    employment_type: 'full_time',
+    start_date: '2024-02-12',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  },
+  {
+    id: 'prof-sofia',
+    first_name: 'Sofia',
+    last_name: 'Stamatiadou',
+    name_el: 'Σοφία Σταματιάδου',
+    work_email: 'sofia.stamatiadou@stellarblue.gr',
+    title: 'Product UI/UX Lead (Contractor)',
+    team_id: 'team-ops',
+    manager_id: 'prof-eleni',
+    employment_type: 'contractor',
+    start_date: '2024-03-01',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  },
+  {
+    id: 'prof-kostas',
+    first_name: 'Kostas',
+    last_name: 'Panagiotou',
+    name_el: 'Κώστας Παναγιώτου',
+    work_email: 'kostas.panagiotou@stellarblue.gr',
+    title: 'Data Systems Architect (Contractor)',
+    team_id: 'team-etrm',
+    manager_id: 'prof-nikos',
+    employment_type: 'contractor',
+    start_date: '2024-04-15',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  },
+  {
+    id: 'prof-alexandra',
+    first_name: 'Alexandra',
+    last_name: 'Vlachou',
+    name_el: 'Αλεξάνδρα Βλάχου',
+    work_email: 'alexandra.vlachou@stellarblue.gr',
+    title: 'Frontend Systems Engineer',
+    team_id: 'team-ems',
+    manager_id: 'prof-maria',
+    employment_type: 'full_time',
+    start_date: '2024-05-20',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  },
+  {
+    id: 'prof-petros',
+    first_name: 'Petros',
+    last_name: 'Samanidis',
+    name_el: 'Πέτρος Σαμανίδης',
+    work_email: 'petros.samanidis@stellarblue.gr',
+    title: 'Quantitative Algorithms Intern',
+    team_id: 'team-ems',
+    manager_id: 'prof-yannis',
+    employment_type: 'intern',
+    start_date: '2025-01-15',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    role: 'employee'
+  }
+];
+
+export const MOCK_PAYMENT_TYPES: PaymentType[] = [
+  { id: 'pt-salary', code: 'salary', name_en: 'Monthly Salary', name_el: 'Μηνιαίος Μισθός', is_statutory: true, is_recurring_monthly: true, default_multiplier: 1.0, applies_to: ['full_time', 'part_time'], active: true, sort_order: 1 },
+  { id: 'pt-pasxa', code: 'dwro_pasxa', name_en: 'Easter Bonus (13th Salary)', name_el: 'Δώρο Πάσχα', is_statutory: true, is_recurring_monthly: false, default_period_month: 4, default_multiplier: 0.5, applies_to: ['full_time', 'part_time'], active: true, sort_order: 2 },
+  { id: 'pt-adeias', code: 'epidoma_adeias', name_en: 'Holiday Allowance', name_el: 'Επίδομα Αδείας', is_statutory: true, is_recurring_monthly: false, default_period_month: 7, default_multiplier: 0.5, applies_to: ['full_time', 'part_time'], active: true, sort_order: 3 },
+  { id: 'pt-xristougennwn', code: 'dwro_xristougennwn', name_en: 'Christmas Bonus (14th Salary)', name_el: 'Δώρο Χριστουγέννων', is_statutory: true, is_recurring_monthly: false, default_period_month: 12, default_multiplier: 1.0, applies_to: ['full_time', 'part_time'], active: true, sort_order: 4 },
+  { id: 'pt-bonus', code: 'bonus', name_en: 'Performance / Spot Bonus', name_el: 'Μπόνους', is_statutory: false, is_recurring_monthly: false, applies_to: ['full_time', 'part_time', 'intern'], active: true, sort_order: 5 },
+  { id: 'pt-contractor', code: 'contractor_invoice', name_en: 'Contractor Fee (Invoice)', name_el: 'Τιμολόγιο Συνεργάτη', is_statutory: true, is_recurring_monthly: true, default_multiplier: 1.0, applies_to: ['contractor'], active: true, sort_order: 6 }
+];
+
+export const MOCK_SALARIES: SalaryRecord[] = [
+  { id: 'sal-1', profile_id: 'prof-eleni', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 5200, currency: 'EUR', employer_cost_pct: 22.29, note: '2026 Founder review' },
+  { id: 'sal-2', profile_id: 'prof-nikos', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 5200, currency: 'EUR', employer_cost_pct: 22.29, note: '2026 Founder review' },
+  { id: 'sal-3', profile_id: 'prof-dimitris', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 4100, currency: 'EUR', employer_cost_pct: 22.29, note: 'Senior Architect scale' },
+  { id: 'sal-4', profile_id: 'prof-maria', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 3900, currency: 'EUR', employer_cost_pct: 22.29, note: 'EMS PM scale' },
+  { id: 'sal-5', profile_id: 'prof-yannis', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 3600, currency: 'EUR', employer_cost_pct: 22.29, note: 'Optimization Eng scale' },
+  { id: 'sal-6', profile_id: 'prof-katerina', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2200, currency: 'EUR', employer_cost_pct: 22.29, note: 'Part time Analyst' },
+  { id: 'sal-7', profile_id: 'prof-giorgis', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2800, currency: 'EUR', employer_cost_pct: 22.29 },
+  { id: 'sal-8', profile_id: 'prof-sofia', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 3500, currency: 'EUR', note: 'UI/UX Retainer excl VAT' },
+  { id: 'sal-9', profile_id: 'prof-kostas', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 4200, currency: 'EUR', note: 'Data Arch Retainer excl VAT' },
+  { id: 'sal-10', profile_id: 'prof-alexandra', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2700, currency: 'EUR', employer_cost_pct: 22.29 },
+  { id: 'sal-11', profile_id: 'prof-petros', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 1100, currency: 'EUR', employer_cost_pct: 22.29, note: 'Internship' }
+];
+
+export const MOCK_PAYMENTS: PaymentRecord[] = [
+  { id: 'pay-1', profile_id: 'prof-eleni', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid' },
+  { id: 'pay-2', profile_id: 'prof-nikos', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid' },
+  { id: 'pay-3', profile_id: 'prof-dimitris', period: '2026-07', payment_type_id: 'pt-salary', gross: 4100, net: 2880, employer_contributions: 913.89, total_cost: 5013.89, payment_date: '2026-07-28', status: 'paid' },
+  { id: 'pay-4', profile_id: 'prof-sofia', period: '2026-07', payment_type_id: 'pt-contractor', gross: 3500, net: 3500, employer_contributions: 0, total_cost: 3500, payment_date: '2026-07-28', status: 'paid' }
+];
+
+export const MOCK_LEAVE_TYPES: LeaveType[] = [
+  { id: 'lt-annual', code: 'annual', name_en: 'Annual Leave', name_el: 'Κανονική άδεια', counts_against_balance: true, requires_document: false, requires_approval: true, colour: '#3b82f6' },
+  { id: 'lt-sick', code: 'sick', name_en: 'Sick Leave', name_el: 'Αναρρωτική', counts_against_balance: false, requires_document: true, requires_approval: true, colour: '#f59e0b' },
+  { id: 'lt-unpaid', code: 'unpaid', name_en: 'Unpaid Leave', name_el: 'Άνευ αποδοχών', counts_against_balance: false, requires_document: false, requires_approval: true, colour: '#64748b' }
+];
+
+export const MOCK_ENTITLEMENTS: LeaveEntitlement[] = [
+  { id: 'ent-1', profile_id: 'prof-eleni', year: 2026, entitlement_days: 22, carried_over_days: 2 },
+  { id: 'ent-2', profile_id: 'prof-nikos', year: 2026, entitlement_days: 22, carried_over_days: 0 },
+  { id: 'ent-3', profile_id: 'prof-dimitris', year: 2026, entitlement_days: 22, carried_over_days: 3 },
+  { id: 'ent-4', profile_id: 'prof-maria', year: 2026, entitlement_days: 20, carried_over_days: 1 },
+  { id: 'ent-5', profile_id: 'prof-yannis', year: 2026, entitlement_days: 20, carried_over_days: 0 },
+  { id: 'ent-6', profile_id: 'prof-katerina', year: 2026, entitlement_days: 12, carried_over_days: 0 },
+  { id: 'ent-7', profile_id: 'prof-giorgis', year: 2026, entitlement_days: 20, carried_over_days: 2 },
+  { id: 'ent-8', profile_id: 'prof-alexandra', year: 2026, entitlement_days: 20, carried_over_days: 0 }
+];
+
+export const MOCK_MANDATORY_LEAVES: MandatoryLeave[] = [
+  { id: 'ml-xmas-2026', name: 'Christmas & New Year Closure 2026', leave_type_id: 'lt-annual', start_date: '2026-12-28', end_date: '2026-12-31', status: 'published', created_by: 'prof-eleni', note: 'Company-wide closure for winter break.' }
+];
+
+export const MOCK_LEAVE_REQUESTS: LeaveRequest[] = [
+  { id: 'lr-1', profile_id: 'prof-dimitris', leave_type_id: 'lt-annual', start_date: '2026-08-03', end_date: '2026-08-14', half_day_start: false, half_day_end: false, working_days: 10, status: 'approved', origin: 'employee_request', note: 'Summer break in Halkidiki', ergani_status: 'submitted' },
+  { id: 'lr-2', profile_id: 'prof-maria', leave_type_id: 'lt-annual', start_date: '2026-08-10', end_date: '2026-08-21', half_day_start: false, half_day_end: false, working_days: 9, status: 'approved', origin: 'employee_request', note: 'August holidays', ergani_status: 'pending' },
+  { id: 'lr-3', profile_id: 'prof-giorgis', leave_type_id: 'lt-annual', start_date: '2026-09-07', end_date: '2026-09-11', half_day_start: false, half_day_end: false, working_days: 5, status: 'pending', origin: 'employee_request', note: 'Early Sept trip', ergani_status: 'not_required' },
+  { id: 'lr-4', profile_id: 'prof-dimitris', leave_type_id: 'lt-annual', start_date: '2026-12-28', end_date: '2026-12-31', half_day_start: false, half_day_end: false, working_days: 4, status: 'approved', origin: 'mandatory', mandatory_leave_id: 'ml-xmas-2026', note: 'Company-wide closure', ergani_status: 'not_required' },
+  { id: 'lr-5', profile_id: 'prof-yannis', leave_type_id: 'lt-annual', start_date: '2026-12-28', end_date: '2026-12-31', half_day_start: false, half_day_end: false, working_days: 4, status: 'approved', origin: 'mandatory', mandatory_leave_id: 'ml-xmas-2026', note: 'Company-wide closure', ergani_status: 'not_required' }
+];
+
+export const MOCK_PUBLIC_HOLIDAYS: PublicHoliday[] = [
+  { id: 'hol-1', date: '2026-01-01', name_el: 'Πρωτοχρονιά', name_en: "New Year's Day", scope: 'national', year: 2026 },
+  { id: 'hol-2', date: '2026-01-06', name_el: 'Θεοφάνεια', name_en: 'Epiphany', scope: 'national', year: 2026 },
+  { id: 'hol-3', date: '2026-02-23', name_el: 'Καθαρά Δευτέρα', name_en: 'Clean Monday', scope: 'national', year: 2026 },
+  { id: 'hol-4', date: '2026-03-25', name_el: '25η Μαρτίου', name_en: 'Independence Day', scope: 'national', year: 2026 },
+  { id: 'hol-5', date: '2026-04-10', name_el: 'Μεγάλη Παρασκευή', name_en: 'Good Friday', scope: 'national', year: 2026 },
+  { id: 'hol-6', date: '2026-04-12', name_el: 'Κυριακή του Πάσχα', name_en: 'Orthodox Easter Sunday', scope: 'national', year: 2026 },
+  { id: 'hol-7', date: '2026-04-13', name_el: 'Δευτέρα του Πάσχα', name_en: 'Orthodox Easter Monday', scope: 'national', year: 2026 },
+  { id: 'hol-8', date: '2026-05-01', name_el: 'Εργατική Πρωτομαγιά', name_en: 'Labour Day', scope: 'national', year: 2026 },
+  { id: 'hol-9', date: '2026-06-01', name_el: 'Αγίου Πνεύματος', name_en: 'Whit Monday / Holy Spirit', scope: 'national', year: 2026 },
+  { id: 'hol-10', date: '2026-08-15', name_el: 'Κοίμηση της Θεοτόκου', name_en: 'Assumption of the Virgin Mary', scope: 'national', year: 2026 },
+  { id: 'hol-11', date: '2026-10-26', name_el: 'Αγίου Δημητρίου', name_en: 'Saint Demetrius Day', scope: 'thessaloniki', year: 2026 },
+  { id: 'hol-12', date: '2026-10-28', name_el: '28η Οκτωβρίου', name_en: 'Ohi Day', scope: 'national', year: 2026 },
+  { id: 'hol-13', date: '2026-12-25', name_el: 'Χριστούγεννα', name_en: 'Christmas Day', scope: 'national', year: 2026 },
+  { id: 'hol-14', date: '2026-12-26', name_el: 'Σύναξη Θεοτόκου', name_en: 'Boxing Day', scope: 'national', year: 2026 }
+];
+
+export const MOCK_REMOTE_PATTERNS: RemotePattern[] = [
+  { id: 'rp-1', profile_id: 'prof-dimitris', weekday: 'Tue', mode: 'remote_gr', valid_from: '2026-01-01' },
+  { id: 'rp-2', profile_id: 'prof-dimitris', weekday: 'Thu', mode: 'remote_gr', valid_from: '2026-01-01' },
+  { id: 'rp-3', profile_id: 'prof-yannis', weekday: 'Wed', mode: 'remote_gr', valid_from: '2026-01-01' }
+];
+
+export const MOCK_REMOTE_DAYS: RemoteDay[] = [
+  { id: 'rd-1', profile_id: 'prof-dimitris', date: '2026-07-30', mode: 'remote_gr', note: 'Working from home today', ergani_status: 'submitted' },
+  { id: 'rd-2', profile_id: 'prof-maria', date: '2026-07-30', mode: 'office', ergani_status: 'not_required' },
+  { id: 'rd-3', profile_id: 'prof-yannis', date: '2026-07-31', mode: 'remote_abroad', location: 'London, UK', note: 'Attending energy summit', ergani_status: 'pending' }
+];
+
+export const MOCK_COUNTERPARTIES: Counterparty[] = [
+  { id: 'cp-depa', legal_name: 'DEPA Commercial S.A.', afm: '090123891', doy: 'FATE Athens', country: 'Greece', address: 'Marinadou 92, Athens' },
+  { id: 'cp-heron', legal_name: 'Heron Energy S.A.', afm: '099881726', doy: 'FATE Athens', country: 'Greece', address: 'Kifissias 120, Athens' },
+  { id: 'cp-aws', legal_name: 'Amazon Web Services EMEA SARL', afm: 'LU26330132', country: 'Luxembourg', address: '38 Avenue John F. Kennedy' },
+  { id: 'cp-pbot', legal_name: 'PowerBot GmbH', afm: 'DE318920182', country: 'Germany', address: 'Karlstrasse 45, Munich' }
+];
+
+export const MOCK_CONTRACTS: Contract[] = [
+  {
+    id: 'cnt-1',
+    counterparty_id: 'cp-depa',
+    counterparty: MOCK_COUNTERPARTIES[0],
+    direction: 'revenue',
+    reference: 'SB-ATLAS-2025-01',
+    type: 'saas_subscription',
+    status: 'active',
+    signed_on: '2025-01-01',
+    starts_on: '2025-01-01',
+    ends_on: '2026-12-31',
+    auto_renews: true,
+    renewal_term_months: 12,
+    notice_period_days: 60,
+    notice_deadline: '2026-11-01',
+    value: 180000,
+    currency: 'EUR',
+    billing_cadence: 'annual',
+    vat_treatment: 'domestic_24',
+    owner_profile_id: 'prof-nikos',
+    product: 'Atlas ETRM',
+    notes: 'Key anchor client for Atlas ETRM platform.'
+  },
+  {
+    id: 'cnt-2',
+    counterparty_id: 'cp-heron',
+    counterparty: MOCK_COUNTERPARTIES[1],
+    direction: 'revenue',
+    reference: 'SB-EMS-2025-04',
+    type: 'saas_subscription',
+    status: 'active',
+    signed_on: '2025-04-01',
+    starts_on: '2025-04-01',
+    ends_on: '2026-09-30',
+    auto_renews: true,
+    renewal_term_months: 12,
+    notice_period_days: 60,
+    notice_deadline: '2026-08-01', // Urgent Notice Window approaching!
+    value: 120000,
+    currency: 'EUR',
+    billing_cadence: 'quarterly',
+    vat_treatment: 'domestic_24',
+    owner_profile_id: 'prof-maria',
+    product: 'EMS & Bidding Optimizer',
+    notes: 'Includes hourly day-ahead algorithm bidding integration.'
+  },
+  {
+    id: 'cnt-3',
+    counterparty_id: 'cp-aws',
+    counterparty: MOCK_COUNTERPARTIES[2],
+    direction: 'cost',
+    reference: 'SUP-AWS-2026',
+    type: 'supplier',
+    status: 'active',
+    signed_on: '2026-01-01',
+    starts_on: '2026-01-01',
+    ends_on: '2026-12-31',
+    auto_renews: true,
+    notice_period_days: 30,
+    notice_deadline: '2026-12-01',
+    value: 24000,
+    currency: 'EUR',
+    billing_cadence: 'monthly',
+    vat_treatment: 'intra_eu_reverse_charge',
+    owner_profile_id: 'prof-nikos',
+    product: 'Cloud Infrastructure'
+  },
+  {
+    id: 'cnt-4',
+    counterparty_id: 'cp-pbot',
+    counterparty: MOCK_COUNTERPARTIES[3],
+    direction: 'cost',
+    reference: 'SUP-PBOT-2025',
+    type: 'supplier',
+    status: 'expiring',
+    signed_on: '2025-09-01',
+    starts_on: '2025-09-01',
+    ends_on: '2026-08-31',
+    auto_renews: true,
+    renewal_term_months: 12,
+    notice_period_days: 45,
+    notice_deadline: '2026-07-17', // NOTICE WINDOW PASSED OR CLOSING!
+    value: 18000,
+    currency: 'EUR',
+    billing_cadence: 'annual',
+    vat_treatment: 'intra_eu_reverse_charge',
+    owner_profile_id: 'prof-maria',
+    product: 'Algorithm Partner Feed',
+    notes: 'Critical feed for short term intraday trading algorithms.'
+  }
+];

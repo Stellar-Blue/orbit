@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/alerts",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/rollover",
+      "schedule": "5 0 1 1 *"
+    },
+    {
+      "path": "/api/cron/mandatory-leave-fanout",
+      "schedule": "0 4 * * *"
+    }
+  ]
+}
