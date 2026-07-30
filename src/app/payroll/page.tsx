@@ -25,10 +25,10 @@ export default function PayrollPage() {
 
   if (!isAdmin) {
     return (
-      <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl max-w-xl mx-auto my-12 space-y-3">
-        <ShieldAlert className="w-12 h-12 mx-auto text-rose-500" />
-        <h2 className="text-xl font-bold text-slate-100">403 Forbidden &mdash; Strictly Admin Restricted</h2>
-        <p className="text-xs text-slate-400">
+      <div className="p-10 text-center bg-rose-50 border border-rose-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
+        <ShieldAlert className="w-12 h-12 mx-auto text-rose-600" />
+        <h2 className="text-xl font-bold text-slate-800">403 Forbidden &mdash; Strictly Admin Restricted</h2>
+        <p className="text-xs text-slate-600">
           Compensation ledgers, contractor invoice rates, and salary history are confidential under Supabase Row-Level Security and accessible solely to Founders.
         </p>
       </div>
@@ -81,12 +81,12 @@ export default function PayrollPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center">
-            <DollarSign className="w-6 h-6 mr-3 text-purple-400" /> Compensation & Payroll Ledger
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+            <DollarSign className="w-6 h-6 mr-3 text-[#3D87D3]" /> Compensation & Payroll Ledger
           </h1>
-          <p className="text-slate-400 text-xs mt-1">
+          <p className="text-slate-500 text-xs mt-1">
             Greek 14-salary statutory items support, contractor invoicing, effective-dated salary histories, and accountant export bundles.
           </p>
         </div>
@@ -95,12 +95,12 @@ export default function PayrollPage() {
             type="month" 
             value={selectedPeriod} 
             onChange={e => setSelectedPeriod(e.target.value)} 
-            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono"
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-mono shadow-2xs"
           />
-          <Button variant="secondary" size="sm" onClick={handleGenerateDraft}>
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-purple-400" /> Generate Draft Month (&lt;5 min)
+          <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer">
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft Month (&lt;5 min)
           </Button>
-          <Button variant="primary" size="sm" onClick={handleAccountantExport} className="bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20">
+          <Button variant="primary" size="sm" onClick={handleAccountantExport} className="bg-emerald-600 hover:bg-emerald-700 shadow-xs cursor-pointer font-semibold">
             <Download className="w-4 h-4 mr-1.5" /> One-Click Accountant Bundle
           </Button>
         </div>
@@ -112,50 +112,50 @@ export default function PayrollPage() {
           title={`Total Company Cost (${selectedPeriod})`}
           value={`€${totalCost.toLocaleString()}`}
           subtitle="Gross salaries, employer EFKA & contractor retainers"
-          icon={<DollarSign className="w-5 h-5 text-purple-400" />}
+          icon={<DollarSign className="w-5 h-5 text-[#3D87D3]" />}
         />
         <StatCard 
           title="Net Payable to Employees & Contractors"
           value={`€${totalNet.toLocaleString()}`}
           subtitle={`Across ${periodPayments.length} ledger rows`}
-          icon={<CheckCircle className="w-5 h-5 text-emerald-400" />}
+          icon={<CheckCircle className="w-5 h-5 text-emerald-600" />}
         />
         <StatCard 
           title="12-Month Forward Projected Burn"
           value={`€${Math.round(annualProjectedBurn).toLocaleString()}`}
           subtitle="Includes 13th & 14th statutory Greek salaries"
-          icon={<TrendingUp className="w-5 h-5 text-blue-400" />}
+          icon={<TrendingUp className="w-5 h-5 text-blue-600" />}
         />
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-800 space-x-6 text-sm">
+      <div className="flex border-b border-slate-200 space-x-6 text-sm">
         <button 
           onClick={() => setTab('ledger')}
-          className={`pb-3 font-semibold transition-all cursor-pointer ${tab === 'ledger' ? 'border-b-2 border-purple-500 text-purple-300 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          className={`pb-3 font-semibold transition-all cursor-pointer ${tab === 'ledger' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
           Payment Ledger ({selectedPeriod})
         </button>
         <button 
           onClick={() => setTab('forecast')}
-          className={`pb-3 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-purple-500 text-purple-300 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          className={`pb-3 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
           Effective-Dated Salary History & Forecast
         </button>
         <button 
           onClick={() => setTab('payment_types')}
-          className={`pb-3 font-semibold transition-all flex items-center cursor-pointer ${tab === 'payment_types' ? 'border-b-2 border-purple-500 text-purple-300 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+          className={`pb-3 font-semibold transition-all flex items-center cursor-pointer ${tab === 'payment_types' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          <Sliders className="w-3.5 h-3.5 mr-1.5 text-purple-400" /> Dynamic Payment Types Settings
+          <Sliders className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Dynamic Payment Types Settings
         </button>
       </div>
 
       {/* TAB 1: LEDGER TABLE */}
       {tab === 'ledger' && (
-        <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-800 bg-slate-900/90 text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+              <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
                 <th className="p-3.5 pl-5">Employee / Partner</th>
                 <th className="p-3.5">Payment Type (GR / EN)</th>
                 <th className="p-3.5">Gross Amount</th>
@@ -165,7 +165,7 @@ export default function PayrollPage() {
                 <th className="p-3.5">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-900">
+            <tbody className="divide-y divide-slate-200">
               {periodPayments.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-slate-500 italic">
@@ -177,18 +177,18 @@ export default function PayrollPage() {
                   const prof = profiles.find(p => p.id === pay.profile_id);
                   const pt = paymentTypes.find(type => type.id === pay.payment_type_id);
                   return (
-                    <tr key={pay.id} className="hover:bg-slate-900/60 transition-colors">
-                      <td className="p-3.5 pl-5 font-bold text-slate-200">
+                    <tr key={pay.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3.5 pl-5 font-bold text-slate-800">
                         {prof?.first_name} {prof?.last_name}
                         <span className="text-xs text-slate-500 font-normal block">{prof?.title} ({prof?.employment_type})</span>
                       </td>
-                      <td className="p-3.5 text-xs text-purple-300 font-medium">
+                      <td className="p-3.5 text-xs text-[#3D87D3] font-medium">
                         {pt?.name_el} ({pt?.name_en})
                       </td>
-                      <td className="p-3.5 font-mono text-slate-300">€{pay.gross.toLocaleString()}</td>
-                      <td className="p-3.5 font-mono font-bold text-emerald-400">€{pay.net.toLocaleString()}</td>
-                      <td className="p-3.5 font-mono text-slate-400">€{pay.employer_contributions.toLocaleString()}</td>
-                      <td className="p-3.5 font-mono font-extrabold text-slate-100 bg-slate-900/50">€{pay.total_cost.toLocaleString()}</td>
+                      <td className="p-3.5 font-mono text-slate-700">€{pay.gross.toLocaleString()}</td>
+                      <td className="p-3.5 font-mono font-bold text-emerald-700">€{pay.net.toLocaleString()}</td>
+                      <td className="p-3.5 font-mono text-slate-600">€{pay.employer_contributions.toLocaleString()}</td>
+                      <td className="p-3.5 font-mono font-extrabold text-slate-900 bg-slate-50/80">€{pay.total_cost.toLocaleString()}</td>
                       <td className="p-3.5">
                         <Badge variant={pay.status === 'paid' ? 'success' : 'warning'}>{pay.status.toUpperCase()}</Badge>
                       </td>
@@ -208,13 +208,13 @@ export default function PayrollPage() {
             {salaries.map(sal => {
               const prof = profiles.find(p => p.id === sal.profile_id);
               return (
-                <div key={sal.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+                <div key={sal.id} className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between text-xs">
                   <div>
-                    <span className="font-bold text-slate-200 text-sm">{prof?.first_name} {prof?.last_name}</span>
-                    <span className="text-slate-400 block mt-0.5">Effective Date: <strong className="font-mono text-slate-300">{sal.valid_from}</strong> &rarr; {sal.valid_to || 'Present (Active)'} &bull; Note: {sal.note || 'Regular scale'}</span>
+                    <span className="font-bold text-slate-800 text-sm">{prof?.first_name} {prof?.last_name}</span>
+                    <span className="text-slate-500 block mt-0.5">Effective Date: <strong className="font-mono text-slate-700">{sal.valid_from}</strong> &rarr; {sal.valid_to || 'Present (Active)'} &bull; Note: {sal.note || 'Regular scale'}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-lg font-mono font-bold text-emerald-400 block">€{sal.gross_amount.toLocaleString()} <span className="text-xs text-slate-400 font-sans font-normal">/ month ({sal.basis})</span></span>
+                    <span className="text-lg font-mono font-bold text-emerald-700 block">€{sal.gross_amount.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-normal">/ month ({sal.basis})</span></span>
                     <span className="text-[10px] text-slate-500">Employer cost: {sal.employer_cost_pct ? `${sal.employer_cost_pct}% EFKA` : '0% (Excl VAT invoice)'}</span>
                   </div>
                 </div>
@@ -227,30 +227,30 @@ export default function PayrollPage() {
       {/* TAB 3: PAYMENT TYPES SETTINGS */}
       {tab === 'payment_types' && (
         <Card title="Dynamic Payment Types Administration" subtitle="Preventing hardcoded Greek statutory items (Easter/Christmas bonus, vacation allowance) in code" action={
-          <Button size="sm" variant="secondary" onClick={() => setIsTypeOpen(true)}>
+          <Button size="sm" variant="secondary" onClick={() => setIsTypeOpen(true)} className="cursor-pointer">
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Payment Category
           </Button>
         }>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
             {paymentTypes.map(pt => (
-              <div key={pt.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-3">
+              <div key={pt.id} className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Badge variant={pt.is_statutory ? 'info' : 'neutral'}>{pt.is_statutory ? 'Statutory (Εργ. Νόμος)' : 'Custom Bonus'}</Badge>
-                    <span className="font-mono text-xs text-slate-500">Code: {pt.code}</span>
+                    <span className="font-mono text-xs text-slate-400">Code: {pt.code}</span>
                   </div>
-                  <h4 className="font-bold text-slate-100 text-base mt-2">{pt.name_el}</h4>
-                  <p className="text-xs text-slate-400">{pt.name_en}</p>
+                  <h4 className="font-bold text-slate-800 text-base mt-2">{pt.name_el}</h4>
+                  <p className="text-xs text-slate-500">{pt.name_en}</p>
                 </div>
 
-                <div className="pt-3 border-t border-slate-800/80 text-xs text-slate-400 space-y-1">
+                <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
                   <div className="flex justify-between">
                     <span>Default Multiplier:</span>
-                    <strong className="font-mono text-purple-300">{pt.default_multiplier ? `${pt.default_multiplier}x monthly salary` : 'Variable / Spot'}</strong>
+                    <strong className="font-mono text-[#3D87D3] font-bold">{pt.default_multiplier ? `${pt.default_multiplier}x monthly salary` : 'Variable / Spot'}</strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Applies to:</span>
-                    <span className="text-slate-300 font-medium">{pt.applies_to.join(', ')}</span>
+                    <span className="text-slate-700 font-medium">{pt.applies_to.join(', ')}</span>
                   </div>
                 </div>
               </div>
@@ -263,26 +263,26 @@ export default function PayrollPage() {
       <Modal isOpen={isTypeOpen} onClose={() => setIsTypeOpen(false)} title="Register Dynamic Payment Type">
         <div className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold uppercase text-slate-400 mb-1">System Code (Slug)</label>
-            <input type="text" value={ptCode} onChange={e => setPtCode(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 font-mono" />
+            <label className="block font-semibold uppercase text-slate-500 mb-1">System Code (Slug)</label>
+            <input type="text" value={ptCode} onChange={e => setPtCode(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold uppercase text-slate-400 mb-1">Name (Greek)</label>
-              <input type="text" value={ptNameEl} onChange={e => setPtNameEl(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 font-bold" />
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Name (Greek)</label>
+              <input type="text" value={ptNameEl} onChange={e => setPtNameEl(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-bold" />
             </div>
             <div>
-              <label className="block font-semibold uppercase text-slate-400 mb-1">Name (English)</label>
-              <input type="text" value={ptNameEn} onChange={e => setPtNameEn(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200" />
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Name (English)</label>
+              <input type="text" value={ptNameEn} onChange={e => setPtNameEn(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800" />
             </div>
           </div>
           <div>
-            <label className="block font-semibold uppercase text-slate-400 mb-1">Default Salary Multiplier</label>
-            <input type="number" step="0.1" value={ptMult} onChange={e => setPtMult(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 font-mono" />
+            <label className="block font-semibold uppercase text-slate-500 mb-1">Default Salary Multiplier</label>
+            <input type="number" step="0.1" value={ptMult} onChange={e => setPtMult(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono" />
           </div>
           <div className="pt-2 flex justify-end space-x-2">
             <Button variant="outline" size="sm" onClick={() => setIsTypeOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={() => { setIsTypeOpen(false); alert('Payment Type registered!'); }} className="bg-purple-600 hover:bg-purple-500">Save Category &rarr;</Button>
+            <Button variant="primary" size="sm" onClick={() => { setIsTypeOpen(false); alert('Payment Type registered!'); }} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90">Save Category &rarr;</Button>
           </div>
         </div>
       </Modal>

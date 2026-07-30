@@ -19,10 +19,10 @@ export default function ReconciliationPage() {
 
   if (!isAdmin) {
     return (
-      <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl max-w-xl mx-auto my-12 space-y-3">
-        <AlertTriangle className="w-10 h-10 mx-auto text-rose-500" />
-        <h2 className="text-xl font-bold text-slate-100">403 Forbidden &mdash; Strictly Admin Restricted</h2>
-        <p className="text-xs text-slate-400">
+      <div className="p-10 text-center bg-rose-50 border border-rose-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
+        <AlertTriangle className="w-10 h-10 mx-auto text-rose-600" />
+        <h2 className="text-xl font-bold text-slate-800">403 Forbidden &mdash; Strictly Admin Restricted</h2>
+        <p className="text-xs text-slate-600">
           ΕΡΓΑΝΗ II portal compliance reconciliation and E11/telework matching is accessible exclusively to Founders and Operations.
         </p>
       </div>
@@ -46,17 +46,17 @@ export default function ReconciliationPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center">
-            <ShieldCheck className="w-6 h-6 mr-3 text-rose-400" /> ΕΡΓΑΝΗ II Portal Compliance & Reconciliation
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+            <ShieldCheck className="w-6 h-6 mr-3 text-rose-600" /> ΕΡΓΑΝΗ II Portal Compliance & Reconciliation
           </h1>
-          <p className="text-slate-400 text-xs mt-1">
+          <p className="text-slate-500 text-xs mt-1">
             Prevent legal exposure by automated matching between internal Orbit leaves/tele-work records and official ministry portal exports (E11 / Τηλεργασία).
           </p>
         </div>
         <div>
-          <label className="inline-flex items-center justify-center font-medium rounded-lg transition-all px-4 py-2 text-sm bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 cursor-pointer">
+          <label className="inline-flex items-center justify-center font-medium rounded-lg transition-all px-4 py-2 text-sm bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white shadow-sm cursor-pointer">
             <Upload className="w-4 h-4 mr-2" /> Upload Ministry Excel/CSV Export
             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
           </label>
@@ -69,33 +69,33 @@ export default function ReconciliationPage() {
           title="Filing Drift & Discrepancies" 
           value={driftCount === 0 ? "0 Drift Detected" : `${driftCount} Unmatched Items`}
           subtitle="Internal vs External Portal Reconciliation"
-          icon={<ShieldCheck className="w-5 h-5 text-emerald-400" />}
+          icon={<ShieldCheck className="w-5 h-5 text-emerald-600" />}
         />
         <StatCard 
           title="Pending Internal Submissions" 
           value={unsubmittedLeaves}
           subtitle="Approved items needing portal reference"
-          icon={<AlertTriangle className="w-5 h-5 text-amber-400" />}
+          icon={<AlertTriangle className="w-5 h-5 text-amber-600" />}
         />
         <StatCard 
           title="Reconciliation Engine Status" 
           value="Synchronized"
           subtitle="Last run: Today at 11:30 AM"
-          icon={<CheckCircle className="w-5 h-5 text-blue-400" />}
+          icon={<CheckCircle className="w-5 h-5 text-[#3D87D3]" />}
         />
       </div>
 
       {/* RECONCILIATION SUMMARY BOX */}
       <Card title="Drift-Visibility & Audit Reconciliation Log" subtitle="Matches internal leave approvals (Annual, Sick) against portal filings">
-        <div className="p-6 text-center bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-xl space-y-3 my-2">
-          <CheckCircle className="w-12 h-12 mx-auto text-emerald-500 animate-pulse" />
-          <h3 className="text-lg font-bold text-slate-100">All Systems Compliant with ΕΡΓΑΝΗ II</h3>
-          <p className="text-xs text-slate-400 max-w-lg mx-auto">
+        <div className="p-8 text-center bg-white border border-slate-200 rounded-xl space-y-3 my-2 shadow-xs">
+          <CheckCircle className="w-12 h-12 mx-auto text-emerald-600 animate-pulse" />
+          <h3 className="text-lg font-bold text-slate-800">All Systems Compliant with ΕΡΓΑΝΗ II</h3>
+          <p className="text-xs text-slate-500 max-w-lg mx-auto">
             100% of approved leaves for July & August 2026 correspond directly to logged declarations. No orphan entries found in uploaded ministry reports.
           </p>
           <div className="pt-2 flex justify-center space-x-3">
-            <Button size="sm" variant="secondary" onClick={() => alert('Simulated deep re-index against local state.')}>
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-blue-400" /> Re-run Reconciliation Check
+            <Button size="sm" variant="secondary" onClick={() => alert('Simulated deep re-index against local state.')} className="cursor-pointer">
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Re-run Reconciliation Check
             </Button>
           </div>
         </div>

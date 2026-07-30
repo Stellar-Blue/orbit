@@ -14,13 +14,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export const Button: React.FC<ButtonProps> = ({ children, className, variant = 'primary', size = 'md', ...props }) => {
-  const base = "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm";
+  const base = "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs";
   const variants = {
-    primary: "bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/20 shadow-blue-500/25",
-    secondary: "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700",
-    outline: "bg-transparent hover:bg-slate-800/60 text-slate-300 border border-slate-700",
-    danger: "bg-rose-600/90 hover:bg-rose-600 text-white border border-rose-500",
-    ghost: "bg-transparent hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 shadow-none"
+    primary: "bg-[#3D87D3] hover:bg-[#3272B4] text-white border border-[#3272B4]/20 shadow-sm hover:shadow",
+    secondary: "bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs hover:text-slate-900",
+    outline: "bg-transparent hover:bg-slate-100/70 text-slate-700 border border-slate-200",
+    danger: "bg-rose-600 hover:bg-rose-700 text-white border border-rose-600 shadow-sm",
+    ghost: "bg-transparent hover:bg-slate-100 text-slate-600 hover:text-slate-900 shadow-none"
   };
   const sizes = {
     sm: "px-3 py-1.5 text-xs",
@@ -36,12 +36,12 @@ export const Button: React.FC<ButtonProps> = ({ children, className, variant = '
 };
 
 export const Card: React.FC<{ children: React.ReactNode; className?: string; title?: string; subtitle?: string; action?: React.ReactNode }> = ({ children, className, title, subtitle, action }) => (
-  <div className={cn("bg-slate-900/90 border border-slate-800/80 rounded-xl p-5 shadow-xl backdrop-blur-md transition-all", className)}>
+  <div className={cn("bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm transition-all duration-200 hover:shadow-md", className)}>
     {(title || action) && (
-      <div className="flex items-center justify-between mb-4 border-b border-slate-800/60 pb-3">
+      <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
         <div>
-          {title && <h3 className="text-base font-semibold text-slate-100 tracking-tight">{title}</h3>}
-          {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+          {title && <h3 className="text-base font-semibold text-slate-800 tracking-tight">{title}</h3>}
+          {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
         {action && <div>{action}</div>}
       </div>
@@ -52,11 +52,11 @@ export const Card: React.FC<{ children: React.ReactNode; className?: string; tit
 
 export const Badge: React.FC<{ children: React.ReactNode; variant?: 'success' | 'warning' | 'error' | 'info' | 'neutral'; className?: string; style?: React.CSSProperties }> = ({ children, variant = 'neutral', className, style }) => {
   const styles = {
-    success: "bg-emerald-950/80 text-emerald-400 border-emerald-800/60",
-    warning: "bg-amber-950/80 text-amber-400 border-amber-800/60",
-    error: "bg-rose-950/80 text-rose-400 border-rose-800/60",
-    info: "bg-blue-950/80 text-blue-400 border-blue-800/60",
-    neutral: "bg-slate-800 text-slate-300 border-slate-700"
+    success: "bg-emerald-50 text-emerald-700 border-emerald-200/60",
+    warning: "bg-amber-50 text-amber-700 border-amber-200/60",
+    error: "bg-rose-50 text-rose-700 border-rose-200/60",
+    info: "bg-blue-50 text-[#3D87D3] border-blue-200/60",
+    neutral: "bg-slate-100 text-slate-700 border-slate-200/80"
   };
   return (
     <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border", styles[variant], className)} style={style}>
@@ -66,21 +66,21 @@ export const Badge: React.FC<{ children: React.ReactNode; variant?: 'success' | 
 };
 
 export const StatCard: React.FC<{ title: string; value: string | number; subtitle?: string; icon?: React.ReactNode; trend?: string; trendUp?: boolean }> = ({ title, value, subtitle, icon, trend, trendUp }) => (
-  <Card className="hover:border-slate-700/80 transition-colors relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950">
+  <Card className="hover:border-slate-300/80 transition-all relative overflow-hidden bg-white">
     <div className="flex justify-between items-start">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wider text-slate-400">{title}</p>
-        <h4 className="text-2xl font-bold text-slate-100 mt-2 tracking-tight">{value}</h4>
-        {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+        <h4 className="text-2xl font-bold text-slate-800 mt-2 tracking-tight">{value}</h4>
+        {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
       </div>
-      {icon && <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">{icon}</div>}
+      {icon && <div className="p-2.5 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/15 text-[#3D87D3]">{icon}</div>}
     </div>
     {trend && (
       <div className="mt-4 flex items-center text-xs">
-        <span className={cn("font-semibold mr-1.5", trendUp ? "text-emerald-400" : "text-amber-400")}>
+        <span className={cn("font-semibold mr-1.5", trendUp ? "text-emerald-600" : "text-amber-600")}>
           {trendUp ? "▲" : "▼"} {trend}
         </span>
-        <span className="text-slate-400">vs last period</span>
+        <span className="text-slate-500">vs last period</span>
       </div>
     )}
   </Card>
@@ -89,13 +89,13 @@ export const StatCard: React.FC<{ title: string; value: string | number; subtitl
 export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-150">
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
-          <h3 className="font-semibold text-slate-100 text-base">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 text-lg">&times;</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white border border-slate-200 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-150">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <h3 className="font-semibold text-slate-800 text-base">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg cursor-pointer">&times;</button>
         </div>
-        <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-300">
+        <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-700">
           {children}
         </div>
       </div>

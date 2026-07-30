@@ -73,21 +73,21 @@ function LoginContent() {
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
-      className="relative z-10 w-full max-w-md rounded-2xl border border-slate-800/80 bg-slate-900/60 p-8 shadow-2xl backdrop-blur-xl md:p-10"
+      className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-8 shadow-xl md:p-10"
     >
       {/* Branding & Header */}
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-lg shadow-blue-500/25 ring-1 ring-white/20">
-          <Sparkles className="h-7 w-7 text-white" />
+        <div className="mb-4 flex items-center justify-center">
+          <img src="/logo.png" alt="StellarBlue" className="h-10 object-contain drop-shadow-2xs" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
-          StellarBlue Orbit
+        <h1 className="text-2xl font-bold tracking-tight text-slate-800 md:text-3xl">
+          Orbit Workspace
         </h1>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-slate-500">
           Internal Enterprise Operating Platform
         </p>
-        <div className="mt-3 flex items-center space-x-1.5 rounded-full border border-slate-800 bg-slate-950/80 px-3 py-1 text-[11px] font-medium text-slate-400">
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+        <div className="mt-3 flex items-center space-x-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
           <span>Single-Tenant SSO Protected</span>
         </div>
       </div>
@@ -97,12 +97,12 @@ function LoginContent() {
         <motion.div 
           initial={{ opacity: 0, height: 0 }} 
           animate={{ opacity: 1, height: "auto" }}
-          className="mb-6 flex items-start space-x-3 rounded-xl border border-red-500/30 bg-red-950/40 p-4 text-sm text-red-200 backdrop-blur-md"
+          className="mb-6 flex items-start space-x-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
         >
-          <AlertCircle className="h-5 w-5 shrink-0 text-red-400 mt-0.5" />
+          <AlertCircle className="h-5 w-5 shrink-0 text-rose-600 mt-0.5" />
           <div className="flex-1">
-            <p className="font-semibold text-red-100">Authentication Rejected</p>
-            <p className="text-xs text-red-300 mt-1 leading-relaxed">{getErrorMessage(errorCode)}</p>
+            <p className="font-semibold text-rose-900">Authentication Rejected</p>
+            <p className="text-xs text-rose-700 mt-1 leading-relaxed">{getErrorMessage(errorCode)}</p>
           </div>
         </motion.div>
       )}
@@ -112,7 +112,7 @@ function LoginContent() {
         <button
           onClick={handleMicrosoftLogin}
           disabled={isLoading}
-          className="group relative flex w-full items-center justify-center space-x-3 rounded-xl border border-slate-700/80 bg-gradient-to-b from-slate-800 to-slate-900 px-5 py-3.5 text-sm font-medium text-white shadow-lg transition-all duration-200 hover:border-slate-600 hover:from-slate-750 hover:to-slate-850 hover:shadow-xl hover:shadow-blue-900/10 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
+          className="group relative flex w-full items-center justify-center space-x-3 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 shadow-xs transition-all duration-200 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
         >
           {isLoading ? (
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
@@ -125,25 +125,25 @@ function LoginContent() {
                 <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
                 <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
               </svg>
-              <span className="font-semibold tracking-wide">Sign in with Microsoft Entra ID</span>
+              <span className="tracking-wide">Sign in with Microsoft Entra ID</span>
             </>
           )}
         </button>
 
         {/* Local Dev Mode Bypass (Only displayed during local development) */}
         {isDevMode && (
-          <div className="mt-6 pt-6 border-t border-slate-800/80">
+          <div className="mt-6 pt-6 border-t border-slate-150">
             <div className="mb-3 flex items-center justify-between text-xs">
-              <span className="flex items-center text-amber-400 font-medium">
-                <Zap className="h-3.5 w-3.5 mr-1 text-amber-400 fill-amber-400/20" />
+              <span className="flex items-center text-[#3D87D3] font-semibold">
+                <Zap className="h-3.5 w-3.5 mr-1 text-[#3D87D3] fill-[#3D87D3]/20" />
                 Dev Auth Mode Active
               </span>
-              <span className="text-[10px] text-slate-500 font-mono">Bypasses OIDC</span>
+              <span className="text-[10px] text-slate-400 font-sans">Bypasses OIDC</span>
             </div>
             <button
               onClick={handleDevModeEnter}
               disabled={isLoading}
-              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-amber-500/20 bg-amber-950/20 px-4 py-2.5 text-xs font-semibold text-amber-300 hover:bg-amber-950/40 hover:border-amber-500/40 transition duration-200 active:scale-[0.99]"
+              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[#3D87D3]/20 bg-[#3D87D3]/10 px-4 py-2.5 text-xs font-semibold text-[#3D87D3] hover:bg-[#3D87D3]/20 transition duration-200 active:scale-[0.99] cursor-pointer"
             >
               <span>Enter Workspace (Mock User Switcher)</span>
             </button>
@@ -152,8 +152,8 @@ function LoginContent() {
       </div>
 
       {/* Security Footer Notice */}
-      <div className="mt-8 flex items-center justify-center space-x-1.5 text-center text-xs text-slate-500">
-        <Lock className="h-3.5 w-3.5 text-slate-600" />
+      <div className="mt-8 flex items-center justify-center space-x-1.5 text-center text-xs text-slate-400">
+        <Lock className="h-3.5 w-3.5 text-slate-400" />
         <span>Authorized personnel only. Sessions are cryptographically audited.</span>
       </div>
     </motion.div>
@@ -162,24 +162,10 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-slate-950 p-6">
-      {/* Dynamic Ambient Background Glows */}
-      <div className="pointer-events-none absolute -top-40 -left-40 h-96 w-96 rounded-full bg-blue-600/15 blur-3xl" />
-      <div className="pointer-events-none absolute top-1/3 -right-40 h-[28rem] w-[28rem] rounded-full bg-indigo-500/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-40 left-1/3 h-96 w-96 rounded-full bg-cyan-500/10 blur-3xl" />
-
-      {/* Grid Pattern Layer */}
-      <div 
-        className="pointer-events-none absolute inset-0 opacity-[0.03]" 
-        style={{ 
-          backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
-          backgroundSize: '32px 32px' 
-        }} 
-      />
-
+    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-slate-50 p-6">
       <Suspense fallback={
-        <div className="relative z-10 flex h-64 w-full max-w-md items-center justify-center rounded-2xl border border-slate-800/80 bg-slate-900/60 shadow-2xl backdrop-blur-xl">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        <div className="relative z-10 flex h-64 w-full max-w-md items-center justify-center rounded-2xl border border-slate-200/80 bg-white shadow-xl">
+          <Loader2 className="h-8 w-8 animate-spin text-[#3D87D3]" />
         </div>
       }>
         <LoginContent />

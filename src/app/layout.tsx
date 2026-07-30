@@ -22,9 +22,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
-        className={`${outfit.variable} antialiased bg-slate-950 text-slate-200 font-sans min-h-screen flex selection:bg-blue-600 selection:text-white`}
+        className={`${outfit.variable} antialiased bg-slate-50 text-slate-800 font-sans min-h-screen flex selection:bg-[#3D87D3] selection:text-white`}
       >
         <AuthProvider>
           <AppLayoutWrapper>
