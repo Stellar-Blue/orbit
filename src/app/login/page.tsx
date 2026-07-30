@@ -26,7 +26,7 @@ function LoginContent() {
 
     switch (code) {
       case "InvalidDomain":
-        return "Access Denied: Only authorized @stellarblue.gr accounts are permitted.";
+        return "Access Denied: Only authorized @stellarblue.eu or @stellarblue.gr accounts are permitted.";
       case "InvalidTenant":
         return "Security Alert: Microsoft Entra Tenant (tid) mismatch. Cross-tenant sign-in rejected.";
       case "UnprovisionedUser":

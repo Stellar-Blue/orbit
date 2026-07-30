@@ -37,8 +37,8 @@ export async function GET(request: Request) {
 
   const email = user.email.toLowerCase();
 
-  // 1. Domain Enforcement: Must be an official @stellarblue.gr account
-  if (!email.endsWith('@stellarblue.gr')) {
+  // 1. Domain Enforcement: Must be an official @stellarblue.eu or @stellarblue.gr account
+  if (!email.endsWith('@stellarblue.eu') && !email.endsWith('@stellarblue.gr')) {
     await supabase.auth.signOut();
     return NextResponse.redirect(`${origin}/login?error=InvalidDomain`);
   }
