@@ -59,17 +59,63 @@ export async function GET(request: Request) {
     }
   }
 
-  // 3. Directory Verification: Only pre-provisioned active employee profiles are permitted access
-  const { data: profile, error: profileError } = await supabase
+  // 3. Directory Verification & Just-In-Time (JIT) Provisioning
+  const { data: existingProfile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, status, work_email')
+    .select('id, status, work_email, auth_user_id')
     .ilike('work_email', email)
     .single();
 
+  let profile = existingProfile;
+
+  // If user passed official domain verification but is not in profiles yet, automatically provision their profile
   if (profileError || !profile) {
-    console.error(`Unprovisioned sign-in attempted by: ${email}`);
-    await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=UnprovisionedUser`);
+    const fullName = (user.user_metadata?.name || user.user_metadata?.full_name || '').trim();
+    let firstName = 'Team';
+    let lastName = 'Member';
+
+    if (fullName.includes(' ')) {
+      const parts = fullName.split(' ');
+      firstName = parts[0];
+      lastName = parts.slice(1).join(' ');
+    } else {
+      const emailPrefix = email.split('@')[0];
+      if (emailPrefix.includes('.')) {
+        const parts = emailPrefix.split('.');
+        firstName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+        lastName = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+      } else {
+        firstName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+      }
+    }
+
+    const { data: createdProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        auth_user_id: user.id,
+        first_name: firstName,
+        last_name: lastName,
+        name_el: `${firstName} ${lastName}`,
+        work_email: email,
+        title: 'Team Member',
+        employment_type: 'full_time',
+        start_date: new Date().toISOString().split('T')[0],
+        status: 'active',
+        work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+      })
+      .select('id, status, work_email, auth_user_id')
+      .single();
+
+    if (createError || !createdProfile) {
+      console.error(`JIT employee profile provisioning failed for ${email}:`, createError);
+      await supabase.auth.signOut();
+      return NextResponse.redirect(`${origin}/login?error=UnprovisionedUser`);
+    }
+
+    profile = createdProfile;
+  } else if (!profile.auth_user_id) {
+    // Link Supabase auth user ID to the existing directory profile
+    await supabase.from('profiles').update({ auth_user_id: user.id }).eq('id', profile.id);
   }
 
   if (profile.status !== 'active' && profile.status !== 'onboarding') {
