@@ -65,6 +65,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [contracts, setContracts] = useState<Contract[]>(InitialData.MOCK_CONTRACTS);
 
   useEffect(() => {
+    // Intercept OAuth authorization code if Supabase redirects to site root instead of /auth/callback
+    if (typeof window !== 'undefined' && window.location.search.includes('code=') && !window.location.pathname.startsWith('/auth/callback')) {
+      window.location.href = `/auth/callback${window.location.search}`;
+      return;
+    }
+
     // Detect environment: local dev mode vs production / Vercel cloud
     const isLocal = typeof window !== 'undefined' && 
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
