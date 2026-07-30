@@ -7,13 +7,13 @@ import { useAuth } from '@/lib/auth-context';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ShieldCheck, LayoutDashboard, Search, ChevronDown, 
-  Sparkles, CheckCircle2, AlertTriangle, Building2, Sliders 
+  Sparkles, CheckCircle2, AlertTriangle, Building2, Sliders, LogOut 
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
@@ -108,25 +108,37 @@ export const Sidebar: React.FC = () => {
             <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
           </button>
 
-          {/* Dev Role Switcher Dropdown */}
+          {/* Dev Role Switcher & Sign Out Dropdown */}
           {dropdownOpen && (
-            <div className="absolute bottom-14 left-0 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 max-h-64 overflow-y-auto space-y-1">
-              <div className="px-2 py-1 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800 mb-1">
-                Switch Test Identity (Dev Only)
-              </div>
-              {profiles.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => { switchUser(p.id); setDropdownOpen(false); }}
-                  className={`w-full text-left p-2 rounded text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${p.id === currentUser.id ? 'bg-blue-950 text-blue-300 border border-blue-800/60 font-semibold' : 'text-slate-300'}`}
-                >
-                  <div className="truncate pr-2">
-                    <div className="font-medium truncate">{p.first_name} {p.last_name}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{p.title} ({p.employment_type})</div>
+            <div className="absolute bottom-14 left-0 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 max-h-80 overflow-y-auto space-y-1">
+              {isDevMode && (
+                <>
+                  <div className="px-2 py-1 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800 mb-1">
+                    Switch Test Identity (Dev Only)
                   </div>
-                  <Badge variant={p.role === 'admin' ? 'info' : 'neutral'} className="text-[10px] px-1 py-0">{p.role}</Badge>
-                </button>
-              ))}
+                  {profiles.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => { switchUser(p.id); setDropdownOpen(false); }}
+                      className={`w-full text-left p-2 rounded text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${p.id === currentUser.id ? 'bg-blue-950 text-blue-300 border border-blue-800/60 font-semibold' : 'text-slate-300'}`}
+                    >
+                      <div className="truncate pr-2">
+                        <div className="font-medium truncate">{p.first_name} {p.last_name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{p.title} ({p.employment_type})</div>
+                      </div>
+                      <Badge variant={p.role === 'admin' ? 'info' : 'neutral'} className="text-[10px] px-1 py-0">{p.role}</Badge>
+                    </button>
+                  ))}
+                  <div className="border-t border-slate-800 my-1"></div>
+                </>
+              )}
+              <button
+                onClick={() => { signOut(); setDropdownOpen(false); }}
+                className="w-full text-left p-2 rounded text-xs flex items-center space-x-2 text-red-400 hover:bg-red-950/40 hover:text-red-300 transition-colors font-semibold cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                <span>Sign Out of Orbit</span>
+              </button>
             </div>
           )}
         </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
@@ -25,6 +27,7 @@ interface AppState {
   counterparties: Counterparty[];
   contracts: Contract[];
   isDevMode: boolean;
+  signOut: () => Promise<void> | void;
   
   // Actions for immediate optimistic mutation in UI
   switchUser: (profileId: string) => void;
@@ -43,8 +46,10 @@ interface AppState {
 const AuthContext = createContext<AppState | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const router = useRouter();
   const [profiles, setProfiles] = useState<Profile[]>(InitialData.MOCK_PROFILES);
   const [currentUserId, setCurrentUserId] = useState<string>('prof-eleni'); // Default to Founder Eleni
+  const [isDevMode, setIsDevMode] = useState<boolean>(true);
   const [teams] = useState<Team[]>(InitialData.MOCK_TEAMS);
   const [paymentTypes] = useState<PaymentType[]>(InitialData.MOCK_PAYMENT_TYPES);
   const [salaries] = useState<SalaryRecord[]>(InitialData.MOCK_SALARIES);
@@ -59,8 +64,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [counterparties] = useState<Counterparty[]>(InitialData.MOCK_COUNTERPARTIES);
   const [contracts, setContracts] = useState<Contract[]>(InitialData.MOCK_CONTRACTS);
 
+  useEffect(() => {
+    // Detect environment: local dev mode vs production / Vercel cloud
+    const isLocal = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    
+    setIsDevMode(isLocal && process.env.NODE_ENV !== 'production');
+
+    // Attempt to read live Supabase session to bind currentUser to authenticated employee profile
+    const fetchRealAuthSession = async () => {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user && session.user.email) {
+          const email = session.user.email.toLowerCase();
+          const match = profiles.find(p => p.work_email.toLowerCase() === email);
+          if (match) {
+            setCurrentUserId(match.id);
+          }
+        }
+      } catch (err) {
+        console.error("Session evaluation notice:", err);
+      }
+    };
+
+    fetchRealAuthSession();
+  }, [profiles]);
+
   // Derive active user
   const currentUser = profiles.find(p => p.id === currentUserId) || profiles[0];
+
+  const signOut = async () => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Sign out exception:", e);
+    } finally {
+      router.push("/login");
+    }
+  };
 
   const switchUser = (profileId: string) => {
     setCurrentUserId(profileId);
@@ -197,7 +240,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       remotePatterns,
       counterparties,
       contracts,
-      isDevMode: true,
+      isDevMode,
+      signOut,
       switchUser,
       updateProfile,
       addProfile,
