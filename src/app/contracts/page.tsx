@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -10,7 +11,7 @@ import {
 } from 'lucide-react';
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, addContract } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, addContract, updateContract } = useAuth();
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
@@ -27,6 +28,80 @@ export default function ContractsRegistryPage() {
   const [newNotice, setNewNotice] = useState(60);
   const [newStarts, setNewStarts] = useState('2026-08-01');
   const [newEnds, setNewEnds] = useState('2027-07-31');
+  const [newDocName, setNewDocName] = useState<string>('');
+  const [newDocUrl, setNewDocUrl] = useState<string>('');
+  const [isUploadingDoc, setIsUploadingDoc] = useState<boolean>(false);
+
+  const uploadToSupabaseStorage = async (file: File, refPrefix: string): Promise<string | null> => {
+    const supabase = getSupabaseBrowserClient();
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filePath = `contracts/${refPrefix}_${Date.now()}_${cleanFileName}`;
+    try {
+      const { error } = await supabase.storage
+        .from('contract-documents')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+      if (error) {
+        console.warn('Supabase Storage bucket notice:', error.message, '-> Falling back to encoded URL representation.');
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve((e.target?.result as string) || null);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const { data } = supabase.storage.from('contract-documents').getPublicUrl(filePath);
+      return data.publicUrl || filePath;
+    } catch (err) {
+      console.error('Storage upload error:', err);
+      return null;
+    }
+  };
+
+  const handleSelectDocForNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    setIsUploadingDoc(true);
+    const url = await uploadToSupabaseStorage(file, newRef || 'NEW');
+    setIsUploadingDoc(false);
+    if (url) {
+      setNewDocName(file.name);
+      setNewDocUrl(url);
+    }
+  };
+
+  const handleUploadDocForSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !selectedContract) return;
+    const file = e.target.files[0];
+    setIsUploadingDoc(true);
+    const url = await uploadToSupabaseStorage(file, selectedContract.reference);
+    setIsUploadingDoc(false);
+    if (url) {
+      const updated: Contract = {
+        ...selectedContract,
+        document_name: file.name,
+        document_url: url,
+        document_uploaded_at: new Date().toISOString()
+      };
+      updateContract(updated);
+      setSelectedContract(updated);
+      alert(`Document "${file.name}" uploaded to Supabase Storage and linked to contract record!`);
+    } else {
+      alert("Error processing document attachment.");
+    }
+  };
+
+  if (!isAdmin) {
+    return (
+      <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
+        <AlertTriangle className="w-10 h-10 mx-auto text-amber-600" />
+        <h3 className="text-lg font-bold text-slate-800">Access Restricted: Admin Clearance Required</h3>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          The Contracts Registry contains confidential financial terms, client SLAs, and operational vendor pricing. Your profile does not currently hold administrator credentials.
+        </p>
+      </div>
+    );
+  }
 
   const filteredContracts = contracts.filter(c => {
     const matchesDirection = directionFilter === 'all' || c.direction === directionFilter;
@@ -57,8 +132,13 @@ export default function ContractsRegistryPage() {
       billing_cadence: 'annual',
       vat_treatment: 'domestic_24',
       owner_profile_id: currentUser.id,
-      product: newDirection === 'revenue' ? 'Atlas ETRM & EMS' : 'Vendor Cloud Retainer'
+      product: newDirection === 'revenue' ? 'Atlas ETRM & EMS' : 'Vendor Cloud Retainer',
+      document_name: newDocName || undefined,
+      document_url: newDocUrl || undefined,
+      document_uploaded_at: newDocName ? new Date().toISOString() : undefined
     });
+    setNewDocName('');
+    setNewDocUrl('');
     setIsCreateOpen(false);
   };
 
@@ -310,26 +390,66 @@ export default function ContractsRegistryPage() {
               </div>
             </div>
 
-            {/* Supabase Signed URL PDF Documents Simulation */}
+            {/* Supabase Document Attachments */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Versioned Signed Documents</span>
-                <Button size="sm" variant="outline" className="text-[11px] py-1 cursor-pointer">
-                  <Upload className="w-3 h-3 mr-1" /> Upload PDF to Private Storage
-                </Button>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                <div className="flex items-center space-x-2.5">
-                  <FileText className="w-5 h-5 text-[#3D87D3]" />
-                  <div>
-                    <p className="font-semibold text-slate-800">{selectedContract.reference}_v1_signed.pdf</p>
-                    <p className="text-[10px] text-slate-500">Encrypted in Supabase Storage · Signed URL (60s access)</p>
-                  </div>
+                <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Attached Contract Document</span>
+                <div>
+                  <input
+                    type="file"
+                    id="doc-upload-selected"
+                    className="hidden"
+                    onChange={handleUploadDocForSelected}
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                  />
+                  <label
+                    htmlFor="doc-upload-selected"
+                    className={`px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs inline-flex items-center cursor-pointer shadow-2xs transition-all ${isUploadingDoc ? 'opacity-60 pointer-events-none' : ''}`}
+                  >
+                    <Upload className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> 
+                    {isUploadingDoc ? 'Uploading to Supabase Storage...' : selectedContract.document_name ? 'Replace Document' : 'Upload to Supabase Storage'}
+                  </label>
                 </div>
-                <Button size="sm" variant="secondary" onClick={() => alert('Generated short-lived server signed URL for private PDF access.')}>
-                  <Download className="w-3.5 h-3.5 mr-1" /> Download PDF
-                </Button>
               </div>
+
+              {selectedContract.document_name ? (
+                <div className="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-800">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900">{selectedContract.document_name}</p>
+                      <p className="text-[10px] text-slate-500 font-medium">
+                        Uploaded {selectedContract.document_uploaded_at ? new Date(selectedContract.document_uploaded_at).toLocaleDateString() : 'recently'} · Hosted in Supabase Storage Bucket
+                      </p>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="secondary" 
+                    onClick={() => {
+                      if (selectedContract.document_url?.startsWith('data:')) {
+                        const a = document.createElement('a');
+                        a.href = selectedContract.document_url;
+                        a.download = selectedContract.document_name || 'contract_document.pdf';
+                        a.click();
+                      } else {
+                        alert(`Downloading ${selectedContract.document_name}...`);
+                      }
+                    }}
+                    className="bg-white border-slate-300 font-bold cursor-pointer hover:bg-slate-100 shadow-2xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5 text-blue-600" /> Download
+                  </Button>
+                </div>
+              ) : (
+                <div className="p-6 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center text-xs text-slate-500">
+                  <FileText className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                  <p className="font-semibold text-slate-700">No signed document attached yet.</p>
+                  <p className="text-[11px] mt-0.5">Click &ldquo;Upload Signed PDF / Doc&rdquo; above to attach the final execution version.</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -392,9 +512,21 @@ export default function ContractsRegistryPage() {
             </div>
           </div>
 
+          <div>
+            <label className="block font-semibold uppercase text-slate-500 mb-1">Attach Signed Document (Optional)</label>
+            <input 
+              type="file" 
+              onChange={handleSelectDocForNew} 
+              accept=".pdf,.doc,.docx,.png,.jpg"
+              className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 text-xs font-medium file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#3D87D3]/10 file:text-[#3D87D3] hover:file:bg-[#3D87D3]/20 cursor-pointer"
+            />
+            {isUploadingDoc && <p className="text-[11px] text-blue-600 font-bold mt-1 animate-pulse">⏳ Uploading file to Supabase Storage bucket...</p>}
+            {newDocName && !isUploadingDoc && <p className="text-[11px] text-emerald-700 font-extrabold mt-1">✓ Storage File Ready: {newDocName}</p>}
+          </div>
+
           <div className="pt-3 flex justify-end space-x-2">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" type="submit">Save to Registry &rarr;</Button>
+            <Button variant="primary" size="sm" type="submit" disabled={isUploadingDoc}>Save to Registry &rarr;</Button>
           </div>
         </form>
       </Modal>

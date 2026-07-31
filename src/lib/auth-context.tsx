@@ -48,6 +48,9 @@ interface AppState {
   requestLeaveCancellation: (id: string) => void;
   decideLeaveCancellation: (id: string, approve: boolean) => void;
   splitAndAddLeaveRequest: (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => void;
+  addTeam: (name: string, leadProfileId?: string) => Promise<boolean>;
+  updateTeam: (id: string, name: string, leadProfileId?: string) => Promise<boolean>;
+  deleteTeam: (id: string) => Promise<boolean>;
   getEmployeeLeaveBalance: (profileId: string, year: number) => {
     entitlement: number;
     carryOver: number;
@@ -699,6 +702,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const addTeam = async (name: string, leadProfileId?: string): Promise<boolean> => {
+    const newId = generateUUID();
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const payload = { id: newId, name, lead_profile_id: leadProfileId || null };
+      const { error, data } = await supabase.from('teams').insert(payload).select().single();
+      if (error) {
+        console.error("Error creating team:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      const created = (data as Team) || payload;
+      setTeams(prev => [...prev, created]);
+      return true;
+    } catch (e: any) {
+      console.error("Exception adding team:", e);
+      alert(`Exception: ${e.message}`);
+      return false;
+    }
+  };
+
+  const updateTeam = async (id: string, name: string, leadProfileId?: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const payload = { name, lead_profile_id: leadProfileId || null };
+      const { error } = await supabase.from('teams').update(payload).eq('id', id);
+      if (error) {
+        console.error("Error updating team:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setTeams(prev => prev.map(t => t.id === id ? { ...t, name, lead_profile_id: leadProfileId } : t));
+      return true;
+    } catch (e: any) {
+      console.error("Exception updating team:", e);
+      alert(`Exception: ${e.message}`);
+      return false;
+    }
+  };
+
+  const deleteTeam = async (id: string): Promise<boolean> => {
+    const members = profiles.filter(p => p.team_id === id || p.team?.id === id);
+    if (members.length > 0) {
+      alert(`DELETION BLOCKED: There are currently ${members.length} employee(s) assigned to this team (${members.map(m => `${m.first_name} ${m.last_name}`).join(', ')}). Please reassign them in the People Directory before deleting the team.`);
+      return false;
+    }
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('teams').delete().eq('id', id);
+      if (error) {
+        console.error("Error deleting team:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setTeams(prev => prev.filter(t => t.id !== id));
+      return true;
+    } catch (e: any) {
+      console.error("Exception deleting team:", e);
+      alert(`Exception: ${e.message}`);
+      return false;
+    }
+  };
+
   const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]): Promise<boolean> => {
     // Enforce Company Remote Quota
     const companyPolicy = remotePolicies.find(p => p.scope_type === 'company');
@@ -835,6 +901,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       requestLeaveCancellation,
       decideLeaveCancellation,
       splitAndAddLeaveRequest,
+      addTeam,
+      updateTeam,
+      deleteTeam,
       getEmployeeLeaveBalance
     }}>
       {children}

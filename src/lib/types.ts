@@ -218,4 +218,7 @@ export interface Contract {
   product?: string;
   parent_contract_id?: string;
   notes?: string;
+  document_name?: string;
+  document_url?: string;
+  document_uploaded_at?: string;
 }

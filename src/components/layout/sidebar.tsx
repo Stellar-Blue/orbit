@@ -23,7 +23,7 @@ export const Sidebar: React.FC = () => {
     { label: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-4 h-4 mr-3 text-blue-400" />, show: true },
     { label: 'Company Calendar', path: '/calendar', icon: <CalendarDays className="w-4 h-4 mr-3 text-indigo-500" />, show: true },
     { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-emerald-400" />, show: true },
-    { label: 'Contracts Registry', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: true },
+    { label: 'Contracts Registry', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: isAdmin },
     { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-400" />, show: !isContractor },
     { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-3 text-cyan-400" />, show: !isContractor },
     { label: 'Compensation & Payroll', path: '/payroll', icon: <DollarSign className="w-4 h-4 mr-3 text-purple-400" />, show: isAdmin },
