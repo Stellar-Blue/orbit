@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays, remotePatterns } = useAuth();
+  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays, remotePatterns, remotePolicies } = useAuth();
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
@@ -45,8 +45,18 @@ export default function DashboardPage() {
     const m = getPatternMode(day);
     return m === 'remote_gr' || m === 'remote_abroad';
   }).length;
-  const monthlyPlannedDays = weeklyRemoteDaysCount * 4;
-  const isPatternCompliant = monthlyPlannedDays <= 8;
+  const companyPolicy = (remotePolicies || []).find(p => p.scope_type === 'company');
+  const quotaMaxDays = companyPolicy ? (companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8) : 8;
+  const quotaPeriod = companyPolicy ? (companyPolicy.period_type || 'month') : 'month';
+
+  let plannedDaysForPeriod = weeklyRemoteDaysCount * 4;
+  if (quotaPeriod === 'week') plannedDaysForPeriod = weeklyRemoteDaysCount;
+  else if (quotaPeriod === 'quarter') plannedDaysForPeriod = weeklyRemoteDaysCount * 13;
+  else if (quotaPeriod === 'year') plannedDaysForPeriod = weeklyRemoteDaysCount * 52;
+
+  const isPatternCompliant = plannedDaysForPeriod <= quotaMaxDays;
+  const periodLabel = quotaPeriod === 'week' ? 'wk' : quotaPeriod === 'quarter' ? 'qtr' : quotaPeriod === 'year' ? 'yr' : 'mo';
+  const periodFullLabel = quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month';
 
   // Setup checklist state for guided initial manual setup (requirements decision)
   const [checklist, setChecklist] = useState({
@@ -293,8 +303,8 @@ export default function DashboardPage() {
               })}
             </div>
             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span>Policy quota: Max 8 remote days / month</span>
-              <span>Status: <span className={isPatternCompliant ? "text-emerald-700 font-semibold" : "text-amber-600 font-semibold"}>{isPatternCompliant ? "In Compliance" : "Over Quota"} ({monthlyPlannedDays} days planned/mo)</span></span>
+              <span>Policy quota: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
+              <span>Status: <span className={isPatternCompliant ? "text-emerald-700 font-semibold" : "text-amber-600 font-semibold"}>{isPatternCompliant ? "In Compliance" : "Over Quota"} ({plannedDaysForPeriod} days planned/{periodLabel})</span></span>
             </div>
           </Card>
         </div>

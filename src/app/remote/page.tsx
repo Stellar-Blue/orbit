@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export default function RemoteWorkLogPage() {
-  const { currentUser, profiles, remoteDays, remotePatterns, updateErganiStatus, saveRemotePattern, addRemoteDay } = useAuth();
+  const { currentUser, profiles, remoteDays, remotePatterns, remotePolicies, updateErganiStatus, saveRemotePattern, addRemoteDay } = useAuth();
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
@@ -66,8 +66,13 @@ export default function RemoteWorkLogPage() {
     );
   }
 
-  const myRemoteDaysCount = 6;
-  const isOverQuota = myRemoteDaysCount > 8;
+  const companyPolicy = (remotePolicies || []).find(p => p.scope_type === 'company');
+  const quotaMaxDays = companyPolicy ? (companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8) : 8;
+  const quotaPeriod = companyPolicy ? (companyPolicy.period_type || 'month') : 'month';
+
+  const myRemoteDaysCount = remoteDays.filter(r => r.profile_id === currentUser.id && r.mode !== 'office').length || 6;
+  const isOverQuota = myRemoteDaysCount > quotaMaxDays;
+  const periodLabel = quotaPeriod === 'week' ? 'Week' : quotaPeriod === 'quarter' ? 'Quarter' : quotaPeriod === 'year' ? 'Year' : 'Month';
 
   const handleLogDay = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,12 +111,12 @@ export default function RemoteWorkLogPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="bg-white border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-400">Monthly Quota Status</span>
-            <Badge variant={isOverQuota ? 'warning' : 'success'}>Max 8 Days / Month</Badge>
+            <span className="text-xs font-bold uppercase text-slate-400">{periodLabel}ly Quota Status</span>
+            <Badge variant={isOverQuota ? 'warning' : 'success'}>Max {quotaMaxDays} {quotaMaxDays === 1 ? 'Day' : 'Days'} / {periodLabel}</Badge>
           </div>
           <h4 className="text-3xl font-extrabold text-[#3D87D3] mt-2">{myRemoteDaysCount} <span className="text-sm font-normal text-slate-500">remote days logged</span></h4>
           <p className="text-[11px] text-slate-500 mt-1">
-            {isOverQuota ? "Soft warning: Quota exceeded by team policy." : "Within company threshold for this month."}
+            {isOverQuota ? `Soft warning: Exceeds company policy limit of ${quotaMaxDays} days per ${quotaPeriod}.` : `Within company threshold for this ${quotaPeriod}.`}
           </p>
         </Card>
         

@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ShieldCheck, LayoutDashboard, Search, ChevronDown, 
-  Sparkles, CheckCircle2, AlertTriangle, Building2, Sliders, LogOut 
+  Sparkles, CheckCircle2, AlertTriangle, Building2, Sliders, LogOut, Settings 
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -27,6 +27,7 @@ export const Sidebar: React.FC = () => {
     { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-3 text-cyan-400" />, show: !isContractor },
     { label: 'Compensation & Payroll', path: '/payroll', icon: <DollarSign className="w-4 h-4 mr-3 text-purple-400" />, show: isAdmin },
     { label: 'ΕΡΓΑΝΗ Reconciliation', path: '/reconciliation', icon: <ShieldCheck className="w-4 h-4 mr-3 text-rose-400" />, show: isAdmin },
+    { label: 'Company Settings', path: '/settings', icon: <Settings className="w-4 h-4 mr-3 text-slate-500" />, show: isAdmin },
   ];
 
   return (
@@ -64,7 +65,7 @@ export const Sidebar: React.FC = () => {
               >
                 {item.icon}
                 <span className="flex-1">{item.label}</span>
-                {item.label === 'Compensation & Payroll' && (
+                {(item.label === 'Compensation & Payroll' || item.label === 'Company Settings') && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">Admin</span>
                 )}
               </Link>

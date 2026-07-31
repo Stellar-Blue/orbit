@@ -4,6 +4,7 @@ export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'c
 export type LeaveOrigin = 'employee_request' | 'mandatory' | 'admin_entry';
 export type ErganiStatus = 'not_required' | 'pending' | 'submitted' | 'needs_amendment';
 export type RemoteMode = 'office' | 'remote_gr' | 'remote_abroad';
+export type PolicyPeriod = 'week' | 'month' | 'quarter' | 'year';
 export type ContractDirection = 'revenue' | 'cost';
 export type ContractStatus = 'draft' | 'in_negotiation' | 'active' | 'expiring' | 'expired' | 'terminated';
 
@@ -171,6 +172,16 @@ export interface RemotePattern {
   mode: RemoteMode;
   valid_from: string;
   valid_to?: string;
+}
+
+export interface RemotePolicy {
+  id: string;
+  scope_type: 'company' | 'team' | 'employee';
+  scope_id?: string;
+  max_days_per_month?: number;
+  max_days: number;
+  period_type: PolicyPeriod;
+  created_at?: string;
 }
 
 export interface Counterparty {

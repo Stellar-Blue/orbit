@@ -6,7 +6,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy 
 } from './types';
 
 interface AppState {
@@ -23,6 +23,7 @@ interface AppState {
   publicHolidays: PublicHoliday[];
   remoteDays: RemoteDay[];
   remotePatterns: RemotePattern[];
+  remotePolicies: RemotePolicy[];
   counterparties: Counterparty[];
   contracts: Contract[];
   isDevMode: boolean;
@@ -41,6 +42,7 @@ interface AppState {
   updateContract: (cnt: Contract) => void;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
   saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<void>;
+  updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
   requestLeaveCancellation: (id: string) => void;
@@ -85,6 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [remoteDays, setRemoteDays] = useState<RemoteDay[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
+  const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
 
@@ -106,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const [
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
-          holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes
+          holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -123,7 +126,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('remote_days').select('*'),
           supabase.from('remote_patterns').select('*'),
           supabase.from('counterparties').select('*'),
-          supabase.from('contracts').select('*')
+          supabase.from('contracts').select('*'),
+          supabase.from('remote_policies').select('*')
         ]);
 
         const loadedTeams: Team[] = teamsRes.data || [];
@@ -188,6 +192,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { ...cnt, counterparty, owner_profile };
         });
         setContracts(enrichedContracts);
+
+        const loadedPolicies: RemotePolicy[] = (remotePoliciesRes.data || []).map((p: any) => ({
+          ...p,
+          max_days: p.max_days ?? p.max_days_per_month ?? 8,
+          period_type: p.period_type || 'month'
+        }));
+        setRemotePolicies(loadedPolicies);
 
         let matchedId = '';
         const { data: { session } } = await supabase.auth.getSession();
@@ -744,6 +755,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateRemotePolicy = async (id: string, updated: Partial<RemotePolicy>) => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const payload: any = { ...updated };
+      if (updated.max_days !== undefined && !updated.max_days_per_month) {
+        payload.max_days_per_month = updated.max_days;
+      }
+      const { error } = await supabase.from('remote_policies').update(payload).eq('id', id);
+      if (error) {
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setRemotePolicies(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+    } catch (e: any) {
+      console.error("Exception updating remote policy:", e);
+      alert("Unexpected error occurred while saving policy.");
+    }
+  };
+
 
   return (
     <AuthContext.Provider value={{
@@ -760,6 +790,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       publicHolidays,
       remoteDays,
       remotePatterns,
+      remotePolicies,
       counterparties,
       contracts,
       isDevMode,
@@ -776,6 +807,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateContract,
       updateErganiStatus,
       saveRemotePattern,
+      updateRemotePolicy,
       addRemoteDay,
       editLeaveRequest,
       requestLeaveCancellation,
