@@ -41,7 +41,7 @@ interface AppState {
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
-  saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<void>;
+  saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<boolean>;
   updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
@@ -699,7 +699,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => {
+  const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]): Promise<boolean> => {
+    // Enforce Company Remote Quota
+    const companyPolicy = remotePolicies.find(p => p.scope_type === 'company');
+    if (companyPolicy) {
+      const quotaMaxDays = companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8;
+      const quotaPeriod = companyPolicy.period_type || 'month';
+
+      let maxAllowedWeekly = quotaMaxDays;
+      if (quotaPeriod === 'month') maxAllowedWeekly = Math.floor(quotaMaxDays / 4);
+      else if (quotaPeriod === 'quarter') maxAllowedWeekly = Math.floor(quotaMaxDays / 13);
+      else if (quotaPeriod === 'year') maxAllowedWeekly = Math.floor(quotaMaxDays / 52);
+
+      const weeklyRemoteCount = patternEntries.filter(pe => pe.mode === 'remote_gr' || pe.mode === 'remote_abroad').length;
+      if (weeklyRemoteCount > maxAllowedWeekly) {
+        alert(`POLICY VIOLATION: You attempted to configure ${weeklyRemoteCount} remote days per week, but the company policy allows a maximum of ${maxAllowedWeekly} remote day(s) per week (configured as ${quotaMaxDays} days per ${quotaPeriod}). Saving is blocked.`);
+        return false;
+      }
+    }
+
     const validFrom = new Date().toISOString().split('T')[0];
     const supabase = getSupabaseBrowserClient();
     try {
@@ -713,16 +731,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         console.error("Failed to persist remote pattern in Supabase:", error);
         alert(`Database Error: ${error.message}`);
+        return false;
       } else if (data && data.length > 0) {
         setRemotePatterns(prev => {
           const filtered = prev.filter(p => p.profile_id !== profileId || !patternEntries.some(pe => pe.weekday === p.weekday));
           return [...filtered, ...(data as RemotePattern[])];
         });
+        return true;
       }
     } catch (e: any) {
       console.error("Exception saving remote patterns:", e);
       alert(`Database exception: ${e.message}`);
+      return false;
     }
+    return true;
   };
 
   const addRemoteDay = async (day: Omit<RemoteDay, 'id'> & { id?: string }) => {

@@ -77,6 +77,10 @@ export default function RemoteWorkLogPage() {
 
   const handleLogDay = (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedMode !== 'office' && myRemoteDaysCount >= quotaMaxDays) {
+      alert(`QUOTA EXCEEDED: Logging another remote day exceeds your company policy quota of ${quotaMaxDays} remote days per ${quotaPeriod}. Submission blocked.`);
+      return;
+    }
     if (selectedMode === 'remote_abroad' && !abroadLocation.trim()) {
       alert('VALIDATION ERROR: Location is mandatory when working remotely from abroad due to real tax and social-security implications!');
       return;
@@ -122,7 +126,7 @@ export default function RemoteWorkLogPage() {
           </div>
           <h4 className="text-3xl font-extrabold text-[#3D87D3] mt-2">{myRemoteDaysCount} <span className="text-sm font-normal text-slate-500">remote days logged</span></h4>
           <p className="text-[11px] text-slate-500 mt-1">
-            {isOverQuota ? `Soft warning: Exceeds company policy limit of ${quotaMaxDays} days per ${quotaPeriod}.` : `Within company threshold for this ${quotaPeriod}.`}
+            {isOverQuota ? `Limit reached: Company policy max quota of ${quotaMaxDays} days per ${quotaPeriod} is strictly enforced.` : `Within company threshold for this ${quotaPeriod}.`}
           </p>
         </Card>
         
@@ -192,8 +196,10 @@ export default function RemoteWorkLogPage() {
               ))}
               <Button variant="secondary" className="w-full mt-2 text-xs cursor-pointer" onClick={async () => {
                 const patternEntries = Object.entries(pattern).map(([weekday, mode]) => ({ weekday, mode }));
-                await saveRemotePattern(currentUser.id, patternEntries);
-                alert('Recurring remote pattern successfully saved to Postgres!');
+                const success = await saveRemotePattern(currentUser.id, patternEntries);
+                if (success) {
+                  alert('Recurring remote pattern successfully saved to Postgres!');
+                }
               }}>
                 Update Recurring Pattern &rarr;
               </Button>
