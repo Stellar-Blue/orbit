@@ -12,11 +12,72 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
 export default function PeopleDirectoryPage() {
-  const { currentUser, profiles, teams, salaries, entitlements, updateProfile } = useAuth();
+  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile } = useAuth();
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'sensitive' | 'compensation'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'sensitive' | 'compensation' | 'edit'>('overview');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   
+  // Admin Add Person & Edit Person state
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editData, setEditData] = useState<any>(null);
+
+  // New Person Form Fields
+  const [newFirstName, setNewFirstName] = useState('');
+  const [newLastName, setNewLastName] = useState('');
+  const [newGreekName, setNewGreekName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newTitle, setNewTitle] = useState('Team Member');
+  const [newTeamId, setNewTeamId] = useState(teams[0]?.id || 'tm-ops');
+  const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('full_time');
+  const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newRole, setNewRole] = useState<'employee' | 'admin'>('employee');
+  const [newAfm, setNewAfm] = useState('');
+  const [newAmka, setNewAmka] = useState('');
+  const [newIban, setNewIban] = useState('');
+  const [newAddress, setNewAddress] = useState('');
+
+  const handleCreatePerson = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newProf: Profile = {
+      id: '', // Will generate UUID in auth-context
+      first_name: newFirstName,
+      last_name: newLastName,
+      name_el: newGreekName || `${newFirstName} ${newLastName}`,
+      work_email: newEmail,
+      title: newTitle,
+      team_id: newTeamId,
+      employment_type: newEmploymentType,
+      start_date: newStartDate,
+      status: 'active',
+      work_schedule: newEmploymentType === 'part_time' ? ['Mon', 'Wed', 'Fri'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+      role: newRole,
+      sensitive: {
+        profile_id: '',
+        afm: newAfm || 'Not specified',
+        amka: newAmka || 'Not specified',
+        ama_efka: 'Not specified',
+        iban: newIban || 'GR0000000000000000000000000',
+        address: newAddress || 'Athens, Greece',
+        birth_date: '1990-01-01'
+      },
+      team: teams.find(t => t.id === newTeamId)
+    };
+
+    addProfile(newProf);
+    setIsAddOpen(false);
+    // Reset fields
+    setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail('');
+    setNewTitle('Team Member'); setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress('');
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editData) return;
+    updateProfile(editData);
+    setSelectedProfile(editData);
+    setActiveTab('overview');
+  };
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [teamFilter, setTeamFilter] = useState<string>('all');
@@ -109,6 +170,11 @@ export default function PeopleDirectoryPage() {
           <Button variant="outline" size="sm" onClick={exportToCsv} title="Export to CSV">
             CSV
           </Button>
+          {isAdmin && (
+            <Button variant="primary" size="sm" onClick={() => setIsAddOpen(true)} className="ml-2">
+              <Plus className="w-4 h-4 mr-1.5" /> Add Person
+            </Button>
+          )}
         </div>
       </div>
 
@@ -277,6 +343,17 @@ export default function PeopleDirectoryPage() {
               >
                 <Lock className="w-3.5 h-3.5 mr-1 text-purple-600" /> Compensation (Admin)
               </button>
+              {isAdmin && (
+                <button 
+                  onClick={() => {
+                    setActiveTab('edit');
+                    setEditData(JSON.parse(JSON.stringify(selectedProfile)));
+                  }} 
+                  className={`pb-3 font-semibold flex items-center transition-colors cursor-pointer ${activeTab === 'edit' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <Edit2 className="w-3.5 h-3.5 mr-1 text-[#3D87D3]" /> Edit Profile
+                </button>
+              )}
             </div>
 
             {/* TAB 1: OVERVIEW */}
@@ -396,8 +473,160 @@ export default function PeopleDirectoryPage() {
                 </div>
               )
             )}
+
+            {/* TAB 5: EDIT PROFILE (ADMIN ONLY) */}
+            {activeTab === 'edit' && isAdmin && editData && (
+              <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">First Name (EN)</label>
+                    <input type="text" value={editData.first_name || ''} onChange={e => setEditData({...editData, first_name: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Last Name (EN)</label>
+                    <input type="text" value={editData.last_name || ''} onChange={e => setEditData({...editData, last_name: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Full Name (EL - Greek)</label>
+                    <input type="text" value={editData.name_el || ''} onChange={e => setEditData({...editData, name_el: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Work Email</label>
+                    <input type="email" value={editData.work_email || ''} onChange={e => setEditData({...editData, work_email: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Job Title</label>
+                    <input type="text" value={editData.title || ''} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Assigned Team</label>
+                    <select value={editData.team_id || ''} onChange={e => setEditData({...editData, team_id: e.target.value, team: teams.find(t => t.id === e.target.value)})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
+                      {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Employment Type</label>
+                    <select value={editData.employment_type || 'full_time'} onChange={e => setEditData({...editData, employment_type: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
+                      <option value="full_time">Full Time</option>
+                      <option value="part_time">Part Time</option>
+                      <option value="contractor">Contractor</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Role Permission</label>
+                    <select value={editData.role || 'employee'} onChange={e => setEditData({...editData, role: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
+                      <option value="employee">Employee</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2 pt-2 border-t border-slate-200">
+                    <span className="text-slate-700 font-bold block mb-2">Sensitive Personal Information (PII)</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-slate-500 block mb-1">ΑΦΜ (Tax ID)</label>
+                        <input type="text" value={editData.sensitive?.afm || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), afm: e.target.value}})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                      </div>
+                      <div>
+                        <label className="text-slate-500 block mb-1">ΑΜΚΑ (Social Security)</label>
+                        <input type="text" value={editData.sensitive?.amka || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), amka: e.target.value}})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-slate-500 block mb-1">Bank Account IBAN</label>
+                        <input type="text" value={editData.sensitive?.iban || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), iban: e.target.value}})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-slate-500 block mb-1">Residential Address</label>
+                        <input type="text" value={editData.sensitive?.address || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), address: e.target.value}})} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 pt-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('overview')}>Cancel</Button>
+                  <Button type="submit" variant="primary" size="sm"><Check className="w-4 h-4 mr-1.5" /> Save Profile Changes</Button>
+                </div>
+              </form>
+            )}
           </div>
         )}
+      </Modal>
+
+      {/* ADD PERSON MODAL (ADMIN ONLY) */}
+      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Onboard New Team Member (Admin)">
+        <form onSubmit={handleCreatePerson} className="space-y-4 text-xs">
+          <div className="p-3 bg-[#3D87D3]/10 text-[#3D87D3] rounded-lg font-medium text-sm flex items-center justify-between">
+            <span>Creating new directory profile with database sync.</span>
+            <Badge variant="info">Admin Priviledge</Badge>
+          </div>
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">First Name (EN) *</label>
+              <input type="text" placeholder="e.g. Maria" value={newFirstName} onChange={e => setNewFirstName(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Last Name (EN) *</label>
+              <input type="text" placeholder="e.g. Papadopoulou" value={newLastName} onChange={e => setNewLastName(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Full Name (EL - Greek) *</label>
+              <input type="text" placeholder="e.g. Μαρία Παπαδοπούλου" value={newGreekName} onChange={e => setNewGreekName(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Work Email *</label>
+              <input type="email" placeholder="e.g. mpapadopoulou@stellarblue.eu" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Job Title *</label>
+              <input type="text" placeholder="e.g. Senior Software Engineer" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Assigned Team *</label>
+              <select value={newTeamId} onChange={e => setNewTeamId(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Employment Type *</label>
+              <select value={newEmploymentType} onChange={e => setNewEmploymentType(e.target.value as EmploymentType)} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                <option value="full_time">Full Time</option>
+                <option value="part_time">Part Time</option>
+                <option value="contractor">Contractor</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Role Permission *</label>
+              <select value={newRole} onChange={e => setNewRole(e.target.value as any)} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                <option value="employee">Employee</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div className="col-span-2 pt-2 border-t border-slate-200">
+              <span className="text-slate-700 font-bold block mb-2">Sensitive Personal Information (PII)</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-500 block mb-1">ΑΦΜ (Tax ID)</label>
+                  <input type="text" placeholder="9 digits" value={newAfm} onChange={e => setNewAfm(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-1">ΑΜΚΑ (Social Security)</label>
+                  <input type="text" placeholder="11 digits" value={newAmka} onChange={e => setNewAmka(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-500 block mb-1">Bank Account IBAN</label>
+                  <input type="text" placeholder="GR..." value={newIban} onChange={e => setNewIban(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-500 block mb-1">Residential Address</label>
+                  <input type="text" placeholder="Street, City, Postal Code" value={newAddress} onChange={e => setNewAddress(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddOpen(false)}>Cancel</Button>
+            <Button type="submit" variant="primary" size="sm"><Plus className="w-4 h-4 mr-1.5" /> Create Person</Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );
