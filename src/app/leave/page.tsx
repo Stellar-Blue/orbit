@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -216,7 +217,10 @@ export default function LeaveManagementPage() {
             Greek public holiday aware leave calculation, explicit state-machine lifecycle, and company-wide mandatory closure fan-out engine.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/calendar" className="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 transition-all flex items-center shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> View Unified Calendar
+          </Link>
           {isAdmin && (
             <Button variant="secondary" size="sm" onClick={() => { setIsMandatoryOpen(true); setPreviewMode(false); }} className="cursor-pointer">
               <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-600" /> Declare Mandatory Leave
@@ -424,6 +428,15 @@ export default function LeaveManagementPage() {
       {/* TAB 2: TEAM CALENDAR WITH PRIVACY LENSES (§4) */}
       {tab === 'calendar' && (
         <Card title="Team Out-of-Office Calendar" subtitle={isAdmin ? "Admin view: Full leave types, medical reasons, and attachment notes visible." : "Colleague view: Strict operational privacy lens applied (Names and dates only; medical and personal reasons hidden)."}>
+          <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-900 to-blue-800 text-white flex items-center justify-between mb-6 shadow-xs">
+            <div>
+              <h4 className="font-bold text-sm flex items-center">✨ Try our Interactive Unified Calendar!</h4>
+              <p className="text-xs text-slate-200 mt-0.5">View leaves, public holidays, and remote teleworking schedules on an interactive monthly date grid.</p>
+            </div>
+            <Link href="/calendar" className="px-4 py-2 bg-white text-indigo-950 hover:bg-slate-100 font-extrabold text-xs rounded-xl transition-all shadow-sm shrink-0">
+              Open Company Calendar &rarr;
+            </Link>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
             {leaveRequests.filter(r => r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken').map(req => {
               const prof = profiles.find(p => p.id === req.profile_id);

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -98,13 +99,18 @@ export default function RemoteWorkLogPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="border-b border-slate-200/80 pb-5">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-          <Globe className="w-6 h-6 mr-3 text-[#3D87D3]" /> Remote Work Log & Telework Policy
-        </h1>
-        <p className="text-slate-500 text-xs mt-1">
-          Lightweight attendance tracking, recurring weekly default patterns, and mandatory location capture for abroad work.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+            <Globe className="w-6 h-6 mr-3 text-[#3D87D3]" /> Remote Work Log & Telework Policy
+          </h1>
+          <p className="text-slate-500 text-xs mt-1">
+            Lightweight attendance tracking, recurring weekly default patterns, and mandatory location capture for abroad work.
+          </p>
+        </div>
+        <Link href="/calendar" className="px-3.5 py-2 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs border border-cyan-200/80 transition-all flex items-center shadow-2xs shrink-0">
+          <Calendar className="w-3.5 h-3.5 mr-1.5 text-cyan-600" /> View Team Schedule on Calendar
+        </Link>
       </div>
 
       {/* Quota KPI */}

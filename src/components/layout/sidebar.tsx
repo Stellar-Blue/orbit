@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ShieldCheck, LayoutDashboard, Search, ChevronDown, 
-  Sparkles, CheckCircle2, AlertTriangle, Building2, Sliders, LogOut, Settings 
+  Sparkles, CheckCircle2, AlertTriangle, Building2, Sliders, LogOut, Settings, CalendarDays 
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -21,6 +21,7 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-4 h-4 mr-3 text-blue-400" />, show: true },
+    { label: 'Company Calendar', path: '/calendar', icon: <CalendarDays className="w-4 h-4 mr-3 text-indigo-500" />, show: true },
     { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-emerald-400" />, show: true },
     { label: 'Contracts Registry', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: true },
     { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-400" />, show: !isContractor },
