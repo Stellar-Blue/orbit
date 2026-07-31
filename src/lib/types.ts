@@ -184,6 +184,20 @@ export interface RemotePolicy {
   created_at?: string;
 }
 
+export interface RemoteAmendmentRequest {
+  id: string;
+  profile_id: string;
+  date: string;
+  requested_mode: 'office' | 'remote_gr' | 'remote_abroad';
+  current_mode?: 'office' | 'remote_gr' | 'remote_abroad';
+  location?: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at?: string;
+  decided_at?: string;
+  decided_by?: string;
+}
+
 export interface Counterparty {
   id: string;
   legal_name: string;

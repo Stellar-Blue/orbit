@@ -6,7 +6,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest 
 } from './types';
 
 interface AppState {
@@ -24,6 +24,7 @@ interface AppState {
   remoteDays: RemoteDay[];
   remotePatterns: RemotePattern[];
   remotePolicies: RemotePolicy[];
+  remoteAmendmentRequests: RemoteAmendmentRequest[];
   counterparties: Counterparty[];
   contracts: Contract[];
   isDevMode: boolean;
@@ -44,6 +45,9 @@ interface AppState {
   saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<boolean>;
   updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
+  bulkAddRemoteDays: (profileId: string, declarations: { date: string; mode: RemoteMode | 'office'; location?: string; note?: string }[]) => Promise<boolean>;
+  requestRemoteAmendment: (payload: { date: string; requested_mode: RemoteMode | 'office'; reason: string; location?: string }) => Promise<boolean>;
+  decideRemoteAmendment: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
   requestLeaveCancellation: (id: string) => void;
   decideLeaveCancellation: (id: string, approve: boolean) => void;
@@ -94,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [remoteDays, setRemoteDays] = useState<RemoteDay[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
+  const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
 
@@ -205,6 +210,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           period_type: p.period_type || 'month'
         }));
         setRemotePolicies(loadedPolicies);
+
+        try {
+          const amendmentsRes = await supabase.from('remote_amendments').select('*');
+          if (amendmentsRes.data) {
+            setRemoteAmendmentRequests(amendmentsRes.data as RemoteAmendmentRequest[]);
+          }
+        } catch {
+          // Graceful fallback if remote_amendments table is not created yet
+        }
 
         let matchedId = '';
         const { data: { session } } = await supabase.auth.getSession();
@@ -959,6 +973,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const bulkAddRemoteDays = async (profileId: string, declarations: { date: string; mode: RemoteMode | 'office'; location?: string; note?: string }[]): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const toDeleteDates = declarations.filter(d => d.mode === 'office').map(d => d.date);
+      const toUpsert = declarations.filter(d => d.mode !== 'office').map(d => ({
+        id: remoteDays.find(r => r.profile_id === profileId && r.date === d.date)?.id || generateUUID(),
+        profile_id: profileId,
+        date: d.date,
+        mode: d.mode as RemoteMode,
+        location: d.location || null,
+        note: d.note || null,
+        ergani_status: 'pending' as const
+      }));
+
+      if (toDeleteDates.length > 0) {
+        await supabase.from('remote_days').delete().eq('profile_id', profileId).in('date', toDeleteDates);
+      }
+      if (toUpsert.length > 0) {
+        await supabase.from('remote_days').upsert(toUpsert, { onConflict: 'profile_id,date' });
+      }
+
+      setRemoteDays(prev => {
+        const affectedDates = new Set(declarations.map(d => d.date));
+        const filtered = prev.filter(r => !(r.profile_id === profileId && affectedDates.has(r.date)));
+        return [...(toUpsert as RemoteDay[]), ...filtered];
+      });
+      return true;
+    } catch (e: any) {
+      console.error("Bulk add remote days error:", e);
+      return false;
+    }
+  };
+
+  const requestRemoteAmendment = async (payload: { date: string; requested_mode: RemoteMode | 'office'; reason: string; location?: string }): Promise<boolean> => {
+    const current = remoteDays.find(r => r.profile_id === currentUser.id && r.date === payload.date);
+    const req: RemoteAmendmentRequest = {
+      id: generateUUID(),
+      profile_id: currentUser.id,
+      date: payload.date,
+      requested_mode: payload.requested_mode,
+      current_mode: current ? (current.mode as any) : 'office',
+      location: payload.location,
+      reason: payload.reason,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    setRemoteAmendmentRequests(prev => [req, ...prev]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('remote_amendments').insert([req]);
+    } catch (e) {
+      console.log("Locally logged amendment request");
+    }
+    return true;
+  };
+
+  const decideRemoteAmendment = async (id: string, status: 'approved' | 'rejected'): Promise<boolean> => {
+    const req = remoteAmendmentRequests.find(r => r.id === id);
+    if (!req) return false;
+
+    setRemoteAmendmentRequests(prev => prev.map(r => r.id === id ? { ...r, status, decided_at: new Date().toISOString(), decided_by: currentUser.id } : r));
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('remote_amendments').update({ status, decided_at: new Date().toISOString(), decided_by: currentUser.id }).eq('id', id);
+    } catch (e) {
+      console.log("Locally updated amendment request");
+    }
+
+    if (status === 'approved') {
+      await bulkAddRemoteDays(req.profile_id, [{
+        date: req.date,
+        mode: req.requested_mode,
+        location: req.location,
+        note: `Approved Past Amendment: ${req.reason}`
+      }]);
+    }
+    return true;
+  };
 
   return (
     <AuthContext.Provider value={{
@@ -976,6 +1069,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       remoteDays,
       remotePatterns,
       remotePolicies,
+      remoteAmendmentRequests,
       counterparties,
       contracts,
       isDevMode,
@@ -994,6 +1088,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveRemotePattern,
       updateRemotePolicy,
       addRemoteDay,
+      bulkAddRemoteDays,
+      requestRemoteAmendment,
+      decideRemoteAmendment,
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,
