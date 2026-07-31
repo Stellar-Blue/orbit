@@ -235,9 +235,11 @@ export const MOCK_PAYMENTS: PaymentRecord[] = [
 ];
 
 export const MOCK_LEAVE_TYPES: LeaveType[] = [
-  { id: 'lt-annual', code: 'annual', name_en: 'Annual Leave', name_el: 'Κανονική άδεια', counts_against_balance: true, requires_document: false, requires_approval: true, colour: '#3b82f6' },
-  { id: 'lt-sick', code: 'sick', name_en: 'Sick Leave', name_el: 'Αναρρωτική', counts_against_balance: false, requires_document: true, requires_approval: true, colour: '#f59e0b' },
-  { id: 'lt-unpaid', code: 'unpaid', name_en: 'Unpaid Leave', name_el: 'Άνευ αποδοχών', counts_against_balance: false, requires_document: false, requires_approval: true, colour: '#64748b' }
+  { id: 'lt-annual', code: 'annual', name_en: 'Annual Leave', name_el: 'Κανονική άδεια', counts_against_balance: true, requires_document: false, requires_approval: true, colour: '#3b82f6', min_notice_days: 7, allow_retroactive: false },
+  { id: 'lt-sick', code: 'sick', name_en: 'Sick Leave', name_el: 'Αναρρωτική', counts_against_balance: false, requires_document: true, requires_approval: true, colour: '#f59e0b', min_notice_days: 0, allow_retroactive: true },
+  { id: 'lt-unpaid', code: 'unpaid', name_en: 'Unpaid Leave', name_el: 'Άνευ αποδοχών', counts_against_balance: false, requires_document: false, requires_approval: true, colour: '#64748b', min_notice_days: 7, allow_retroactive: false },
+  { id: 'lt-bereavement', code: 'bereavement', name_en: 'Bereavement', name_el: 'Άδεια Πένθους', counts_against_balance: false, requires_document: false, requires_approval: true, colour: '#8b5cf6', min_notice_days: 0, allow_retroactive: true },
+  { id: 'lt-blood', code: 'blood_donation', name_en: 'Blood Donation', name_el: 'Άδεια Αιμοδοσίας', counts_against_balance: false, requires_document: true, requires_approval: true, colour: '#ec4899', min_notice_days: 0, allow_retroactive: true }
 ];
 
 export const MOCK_ENTITLEMENTS: LeaveEntitlement[] = [

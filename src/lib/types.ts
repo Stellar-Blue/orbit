@@ -1,8 +1,8 @@
 export type EmploymentType = 'full_time' | 'part_time' | 'contractor' | 'intern';
 export type UserRole = 'employee' | 'admin';
-export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'cancellation_requested' | 'in_progress' | 'taken' | 'expired';
 export type LeaveOrigin = 'employee_request' | 'mandatory' | 'admin_entry';
-export type ErganiStatus = 'not_required' | 'pending' | 'submitted';
+export type ErganiStatus = 'not_required' | 'pending' | 'submitted' | 'needs_amendment';
 export type RemoteMode = 'office' | 'remote_gr' | 'remote_abroad';
 export type ContractDirection = 'revenue' | 'cost';
 export type ContractStatus = 'draft' | 'in_negotiation' | 'active' | 'expiring' | 'expired' | 'terminated';
@@ -95,6 +95,8 @@ export interface LeaveType {
   requires_document: boolean;
   requires_approval: boolean;
   colour: string;
+  min_notice_days?: number;
+  allow_retroactive?: boolean;
 }
 
 export interface LeaveEntitlement {
@@ -136,6 +138,10 @@ export interface LeaveRequest {
   decided_at?: string;
   ergani_status: ErganiStatus;
   ergani_submitted_at?: string;
+  rejection_reason?: string;
+  admin_edit_reason?: string;
+  detached?: boolean;
+  linked_request_id?: string;
 }
 
 export interface PublicHoliday {

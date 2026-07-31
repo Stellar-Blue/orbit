@@ -34,15 +34,28 @@ interface AppState {
   updateProfile: (profile: Profile) => void;
   addProfile: (profile: Profile) => void;
   addLeaveRequest: (req: Omit<LeaveRequest, 'id'>) => void;
-  updateLeaveRequestStatus: (id: string, status: LeaveRequest['status']) => void;
+  updateLeaveRequestStatus: (id: string, status: LeaveRequest['status'], rejectionReason?: string) => void;
   addMandatoryLeave: (ml: Omit<MandatoryLeave, 'id'>) => void;
   addPaymentRecord: (pay: Omit<PaymentRecord, 'id'>) => void;
   generateDraftMonth: (period: string) => void;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
-  updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted') => void;
+  updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
   saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => void;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
+  editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
+  requestLeaveCancellation: (id: string) => void;
+  decideLeaveCancellation: (id: string, approve: boolean) => void;
+  splitAndAddLeaveRequest: (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => void;
+  getEmployeeLeaveBalance: (profileId: string, year: number) => {
+    entitlement: number;
+    carryOver: number;
+    carryOverExpires: string;
+    taken: number;
+    reserved: number;
+    mandatory: number;
+    available: number;
+  };
 }
 
 const AuthContext = createContext<AppState | undefined>(undefined);
@@ -264,18 +277,172 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateLeaveRequestStatus = async (id: string, status: LeaveRequest['status']) => {
+  const updateLeaveRequestStatus = async (id: string, status: LeaveRequest['status'], rejectionReason?: string) => {
     const decided_by = currentUser.id;
     const decided_at = new Date().toISOString().split('T')[0];
-    setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status, decided_by, decided_at } : r));
+    setLeaveRequests(prev => prev.map(r => r.id === id ? { 
+      ...r, 
+      status, 
+      decided_by, 
+      decided_at, 
+      rejection_reason: rejectionReason || r.rejection_reason 
+    } : r));
 
     const supabase = getSupabaseBrowserClient();
     try {
-      await supabase.from('leave_requests').update({ status, decided_by, decided_at }).eq('id', id);
+      const updateData: any = { status, decided_by, decided_at };
+      if (rejectionReason) updateData.rejection_reason = rejectionReason;
+      await supabase.from('leave_requests').update(updateData).eq('id', id);
     } catch (e) {
       console.error('Failed to update leave request status:', e);
     }
   };
+
+  const editLeaveRequest = async (id: string, updated: Partial<LeaveRequest>, editReason?: string) => {
+    setLeaveRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const newErganiStatus = (r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
+      return {
+        ...r,
+        ...updated,
+        admin_edit_reason: editReason || updated.admin_edit_reason || r.admin_edit_reason,
+        ergani_status: newErganiStatus
+      };
+    }));
+
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const target = leaveRequests.find(r => r.id === id);
+      const newErganiStatus = (target?.ergani_status === 'submitted') ? 'needs_amendment' : target?.ergani_status;
+      const { leave_type, ...cleanUpdate } = updated as any;
+      const updateData = {
+        ...cleanUpdate,
+        admin_edit_reason: editReason || cleanUpdate.admin_edit_reason,
+        ...(newErganiStatus !== target?.ergani_status ? { ergani_status: newErganiStatus } : {})
+      };
+      await supabase.from('leave_requests').update(updateData).eq('id', id);
+    } catch (e) {
+      console.error('Failed to edit leave request in database:', e);
+    }
+  };
+
+  const requestLeaveCancellation = async (id: string) => {
+    setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancellation_requested' } : r));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('leave_requests').update({ status: 'cancellation_requested' }).eq('id', id);
+    } catch (e) {
+      console.error('Failed to request leave cancellation:', e);
+    }
+  };
+
+  const decideLeaveCancellation = async (id: string, approve: boolean) => {
+    const newStatus: LeaveRequest['status'] = approve ? 'cancelled' : 'approved';
+    setLeaveRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const ergani = (approve && r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
+      return { ...r, status: newStatus, ergani_status: ergani, decided_by: currentUser.id, decided_at: new Date().toISOString().split('T')[0] };
+    }));
+
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const target = leaveRequests.find(r => r.id === id);
+      const ergani = (approve && target?.ergani_status === 'submitted') ? 'needs_amendment' : target?.ergani_status;
+      const payload: any = { status: newStatus, decided_by: currentUser.id, decided_at: new Date().toISOString().split('T')[0] };
+      if (ergani !== target?.ergani_status) payload.ergani_status = ergani;
+      await supabase.from('leave_requests').update(payload).eq('id', id);
+    } catch (e) {
+      console.error('Failed to decide leave cancellation:', e);
+    }
+  };
+
+  const splitAndAddLeaveRequest = async (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => {
+    const startYear = new Date(req.start_date).getFullYear();
+    const endYear = new Date(req.end_date).getFullYear();
+
+    if (startYear === endYear || isNaN(startYear) || isNaN(endYear)) {
+      await addLeaveRequest(req);
+      return;
+    }
+
+    const endOfFirstYear = `${startYear}-12-31`;
+    const startOfSecondYear = `${endYear}-01-01`;
+    
+    const calcDays = (s: string, e: string) => {
+      let d = new Date(s);
+      const endD = new Date(e);
+      let count = 0;
+      while (d <= endD) {
+        const dStr = d.toISOString().split('T')[0];
+        const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+        const isHol = holidays.some(h => h.date === dStr);
+        if (!isHol && workSchedule.includes(dayOfWeek)) count++;
+        d.setDate(d.getDate() + 1);
+      }
+      return count;
+    };
+
+    const firstId = generateUUID();
+    const secondId = generateUUID();
+
+    const req1: LeaveRequest = {
+      ...req,
+      id: firstId,
+      end_date: endOfFirstYear,
+      working_days: calcDays(req.start_date, endOfFirstYear),
+      linked_request_id: secondId
+    };
+
+    const req2: LeaveRequest = {
+      ...req,
+      id: secondId,
+      start_date: startOfSecondYear,
+      working_days: calcDays(startOfSecondYear, req.end_date),
+      linked_request_id: firstId
+    };
+
+    setLeaveRequests(prev => [req2, req1, ...prev]);
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { leave_type: lt1, ...clean1 } = req1 as any;
+      const { leave_type: lt2, ...clean2 } = req2 as any;
+      await supabase.from('leave_requests').insert([clean1, clean2]);
+    } catch (e) {
+      console.error('Failed to save year-boundary split leave requests:', e);
+    }
+  };
+
+  const getEmployeeLeaveBalance = (profileId: string, year: number) => {
+    const ent = entitlements.find(e => e.profile_id === profileId && e.year === year);
+    const entitlement = ent?.entitlement_days ?? 22;
+    const carryOver = ent?.carried_over_days ?? 0;
+    const carryOverExpires = ent?.carryover_expires_on ?? `March 31, ${year}`;
+
+    const userReqs = leaveRequests.filter(r => {
+      if (r.profile_id !== profileId) return false;
+      const rYear = new Date(r.start_date).getFullYear();
+      if (rYear !== year && !isNaN(rYear)) return false;
+      const lt = leaveTypes.find(t => t.id === r.leave_type_id) || r.leave_type;
+      return lt ? lt.counts_against_balance !== false : true;
+    });
+
+    const taken = userReqs
+      .filter(r => (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken' || r.status === 'cancellation_requested') && r.origin !== 'mandatory')
+      .reduce((sum, r) => sum + Number(r.working_days || 0), 0);
+
+    const reserved = userReqs
+      .filter(r => r.status === 'pending')
+      .reduce((sum, r) => sum + Number(r.working_days || 0), 0);
+
+    const mandatory = userReqs
+      .filter(r => r.origin === 'mandatory' && !r.detached && (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken'))
+      .reduce((sum, r) => sum + Number(r.working_days || 0), 0);
+
+    const available = entitlement + carryOver - taken - reserved - mandatory;
+
+    return { entitlement, carryOver, carryOverExpires, taken, reserved, mandatory, available };
+  };
+
 
   const addMandatoryLeave = async (ml: Omit<MandatoryLeave, 'id'>) => {
     const newMl: MandatoryLeave = { ...ml, id: generateUUID() };
@@ -415,7 +582,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateErganiStatus = async (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted') => {
+  const updateErganiStatus = async (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => {
     const submittedAt = status === 'submitted' ? new Date().toISOString().split('T')[0] : undefined;
     const supabase = getSupabaseBrowserClient();
 
@@ -526,7 +693,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateContract,
       updateErganiStatus,
       saveRemotePattern,
-      addRemoteDay
+      addRemoteDay,
+      editLeaveRequest,
+      requestLeaveCancellation,
+      decideLeaveCancellation,
+      splitAndAddLeaveRequest,
+      getEmployeeLeaveBalance
     }}>
       {children}
     </AuthContext.Provider>
