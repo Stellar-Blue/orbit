@@ -306,100 +306,75 @@ export default function LeaveManagementPage() {
 
       {/* TAB 0: MY LEAVES (THE BIG PICTURE) */}
       {tab === 'my_leaves' && (
-        <div className="space-y-8 animate-in fade-in duration-200">
-          {/* BALANCE EQUATION CLARITY CARD */}
-          <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-[#255e96] text-white shadow-md border border-slate-700">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-4 border-b border-white/10">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 bg-sky-500/20 rounded-xl border border-sky-400/30">
-                  <BarChart3 className="w-6 h-6 text-sky-400" />
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* ULTRA-COMPACT TOP RIBBON: BALANCE & NEXT SCHEDULED HOLIDAY */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            {/* COMPACT BALANCE EQUATION BAR (7 COLS) */}
+            <div className="lg:col-span-7 p-4 rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-sm border border-slate-700 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <BarChart3 className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span className="text-xs font-extrabold tracking-wider uppercase text-slate-200">2026 Leave Pool Balance</span>
                 </div>
-                <div>
-                  <h3 className="text-base font-extrabold tracking-wide uppercase text-white">Your 2026 Leave Balance & Big Picture</h3>
-                  <p className="text-xs text-slate-300 mt-0.5">Complete transparency on how your available vacation pool is calculated in real time</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3 text-right">
-                <span className="text-xs uppercase text-slate-300 font-extrabold tracking-wider">Net Available Pool:</span>
-                <span className="px-4 py-1.5 rounded-full bg-emerald-500 text-white font-black text-xl font-mono shadow-xs">
-                  {myBalance.available} Days
+                <span className="px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-xs font-mono shadow-xs shrink-0">
+                  {myBalance.available} Days Available
                 </span>
               </div>
+              <div className="flex flex-wrap items-center gap-2 pt-2.5 mt-2.5 border-t border-white/10 text-[11px]">
+                <span className="px-2 py-0.5 rounded bg-white/10 text-white font-mono font-bold">Annual: {myBalance.entitlement}d</span>
+                <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono font-bold border border-sky-500/30">+{myBalance.carryOver}d Carryover</span>
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold border border-amber-500/30">−{myBalance.taken}d Taken</span>
+                <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono font-bold border border-purple-500/30">−{myBalance.reserved}d Pending</span>
+                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-bold border border-indigo-500/30">−{myBalance.mandatory}d Mandatory</span>
+              </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
-              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
-                <p className="text-[10px] uppercase text-slate-300 font-extrabold">Annual Entitlement</p>
-                <p className="text-xl font-extrabold font-mono text-white mt-1">{myBalance.entitlement} days</p>
-                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Greek statutory base</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
-                <p className="text-[10px] uppercase text-sky-300 font-extrabold">+ Carry-Over</p>
-                <p className="text-xl font-extrabold font-mono text-sky-300 mt-1">{myBalance.carryOver} days</p>
-                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Expires {myBalance.carryOverExpires}</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
-                <p className="text-[10px] uppercase text-amber-300 font-extrabold">− Taken / Approved</p>
-                <p className="text-xl font-extrabold font-mono text-amber-300 mt-1">−{myBalance.taken} days</p>
-                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Confirmed holidays</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
-                <p className="text-[10px] uppercase text-purple-300 font-extrabold">− Reserved (Pending)</p>
-                <p className="text-xl font-extrabold font-mono text-purple-300 mt-1">−{myBalance.reserved} days</p>
-                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Awaiting sign-off</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
-                <p className="text-[10px] uppercase text-indigo-300 font-extrabold">− Mandatory Closures</p>
-                <p className="text-xl font-extrabold font-mono text-indigo-300 mt-1">−{myBalance.mandatory} days</p>
-                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Company bridge days</p>
-              </div>
+
+            {/* COMPACT UPCOMING HOLIDAY BAR (5 COLS) */}
+            <div className="lg:col-span-5 flex">
+              {(() => {
+                const myApprovedFuture = leaveRequests
+                  .filter(r => r.profile_id === currentUser.id && (r.status === 'approved' || r.status === 'in_progress') && isAfter(parseISO(r.end_date), parseISO('2026-07-30')))
+                  .sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+                if (myApprovedFuture.length > 0) {
+                  const nextLeave = myApprovedFuture[0];
+                  const lt = leaveTypes.find(t => t.id === nextLeave.leave_type_id);
+                  return (
+                    <div className="w-full p-4 rounded-xl bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-sm border border-emerald-700/80 flex flex-col justify-between">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-300 flex items-center">
+                          <CalendarDays className="w-3.5 h-3.5 mr-1.5 shrink-0" /> Next Holiday
+                        </span>
+                        <Badge variant="success" className="bg-emerald-500/40 text-white border-emerald-300/60 text-[10px] py-0.5 px-2 font-black shadow-2xs shrink-0">
+                          Confirmed
+                        </Badge>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-white/10">
+                        <h4 className="text-xs font-black text-white truncate">{lt?.name_en || 'Scheduled Leave'} &bull; <span className="font-mono text-emerald-200">{nextLeave.start_date} → {nextLeave.end_date}</span></h4>
+                        <p className="text-[11px] text-emerald-100/90 mt-0.5 font-medium truncate">{nextLeave.working_days}d deduction {nextLeave.note ? `— "${nextLeave.note}"` : ''}</p>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs flex flex-col justify-between">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-extrabold text-slate-800 flex items-center">
+                          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3] shrink-0" /> No upcoming holiday
+                        </span>
+                        <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-[11px] font-extrabold py-1 px-2.5 rounded-lg shadow-2xs cursor-pointer shrink-0">
+                          <Plus className="w-3 h-3 mr-1" /> Plan Now
+                        </Button>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-slate-200/80">
+                        <p className="text-[11px] text-slate-500 font-medium">You have <strong className="text-slate-800 font-extrabold">{myBalance.available} available vacation days</strong> remaining. Select dates on the grid below!</p>
+                      </div>
+                    </div>
+                  );
+                }
+              })()}
             </div>
           </div>
-
-          {/* Upcoming scheduled time-off banner */}
-          {(() => {
-            const myApprovedFuture = leaveRequests
-              .filter(r => r.profile_id === currentUser.id && (r.status === 'approved' || r.status === 'in_progress') && isAfter(parseISO(r.end_date), parseISO('2026-07-30')))
-              .sort((a, b) => a.start_date.localeCompare(b.start_date));
-
-            if (myApprovedFuture.length > 0) {
-              const nextLeave = myApprovedFuture[0];
-              const lt = leaveTypes.find(t => t.id === nextLeave.leave_type_id);
-              return (
-                <div className="p-5 rounded-xl bg-gradient-to-r from-emerald-900 to-teal-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm border border-emerald-700/80">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-3 bg-white/10 rounded-xl text-emerald-300">
-                      <CalendarDays className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase tracking-widest font-extrabold text-emerald-300 block">Next Scheduled Time Off</span>
-                      <h4 className="text-base font-black text-white mt-0.5">{lt?.name_en || 'Scheduled Leave'} &bull; {nextLeave.start_date} to {nextLeave.end_date}</h4>
-                      <p className="text-xs text-emerald-100 mt-0.5 font-medium">{nextLeave.working_days} working days deduction {nextLeave.note ? `— "${nextLeave.note}"` : ''}</p>
-                    </div>
-                  </div>
-                  <Badge variant="success" className="bg-emerald-500/40 text-white border-emerald-300/60 text-xs py-1.5 px-4 font-black shadow-2xs shrink-0">
-                    Confirmed & Ready
-                  </Badge>
-                </div>
-              );
-            } else {
-              return (
-                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-3 bg-[#3D87D3]/10 text-[#3D87D3] rounded-xl font-bold">
-                      <Sparkles className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-slate-900">No upcoming time-off planned yet!</h4>
-                      <p className="text-xs text-slate-500 mt-0.5 font-medium">You have <strong className="text-slate-800 font-extrabold">{myBalance.available} available vacation days</strong> remaining to spend in 2026. Plan ahead to maximize your rest!</p>
-                    </div>
-                  </div>
-                  <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-extrabold cursor-pointer shrink-0 py-2.5 px-5 rounded-xl shadow-xs">
-                    <Plus className="w-4 h-4 mr-1.5" /> Plan Holiday Now
-                  </Button>
-                </div>
-              );
-            }
-          })()}
 
           {/* TWO-COLUMN LAYOUT: CALENDAR ON LEFT, QUOTAS & HISTORY ON RIGHT */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -581,13 +556,17 @@ export default function LeaveManagementPage() {
               </div>
 
               {/* MY PERSONAL LEAVE HISTORY & REQUESTS LOG */}
-              <Card title="My Personal Leave History" subtitle="Audit trail of all applications submitted by you in 2026" className="border-slate-200 shadow-xs">
-                <div className="space-y-3 mt-2 max-h-[550px] overflow-y-auto pr-1">
+              <Card 
+                title="My Personal Leave History" 
+                subtitle="Audit trail of all your applications (scroll to view full history)" 
+                className="border-slate-200 shadow-xs"
+              >
+                <div className="space-y-2.5 mt-2.5 max-h-[320px] overflow-y-auto overflow-x-hidden pr-1.5 p-1 bg-slate-50/60 border border-slate-200/80 rounded-xl shadow-inner scrollbar-thin scrollbar-thumb-slate-300">
                   {(() => {
                     const myHistory = leaveRequests.filter(r => r.profile_id === currentUser.id);
                     if (myHistory.length === 0) {
                       return (
-                        <div className="p-8 text-center text-slate-500 text-xs border border-dashed rounded-xl">
+                        <div className="p-8 text-center text-slate-500 text-xs border border-dashed border-slate-200 rounded-xl bg-white">
                           You have not filed any leave requests yet. Click &amp; drag on the calendar to file your first holiday!
                         </div>
                       );
