@@ -64,10 +64,11 @@ export interface SalaryRecord {
   profile_id: string;
   valid_from: string;
   valid_to?: string;
-  basis: 'monthly_gross' | 'daily_rate' | 'fixed_fee';
+  basis: 'monthly_gross' | 'daily_rate' | 'fixed_fee' | 'fee';
   gross_amount: number;
   currency: string;
   employer_cost_pct?: number;
+  employer_cost_multiplier?: number;
   note?: string;
 }
 

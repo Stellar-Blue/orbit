@@ -210,45 +210,53 @@ export const MOCK_PAYMENT_TYPES: PaymentType[] = [
   { id: 'pt-adeias', code: 'epidoma_adeias', name_en: 'Holiday Allowance', name_el: 'Επίδομα Αδείας', is_statutory: true, is_recurring_monthly: false, default_period_month: 7, default_multiplier: 0.5, applies_to: ['full_time', 'part_time'], active: true, sort_order: 3 },
   { id: 'pt-xristougennwn', code: 'dwro_xristougennwn', name_en: 'Christmas Bonus (14th Salary)', name_el: 'Δώρο Χριστουγέννων', is_statutory: true, is_recurring_monthly: false, default_period_month: 12, default_multiplier: 1.0, applies_to: ['full_time', 'part_time'], active: true, sort_order: 4 },
   { id: 'pt-bonus', code: 'bonus', name_en: 'Performance / Spot Bonus', name_el: 'Μπόνους', is_statutory: false, is_recurring_monthly: false, applies_to: ['full_time', 'part_time', 'intern'], active: true, sort_order: 5 },
-  { id: 'pt-contractor', code: 'contractor_invoice', name_en: 'Contractor Fee (Invoice)', name_el: 'Τιμολόγιο Συνεργάτη', is_statutory: true, is_recurring_monthly: true, default_multiplier: 1.0, applies_to: ['contractor'], active: true, sort_order: 6 }
+  { id: 'pt-overtime', code: 'overtime', name_en: 'Overtime Pay', name_el: 'Αμοιβή Υπερωριών', is_statutory: false, is_recurring_monthly: false, applies_to: ['full_time', 'part_time'], active: true, sort_order: 6 },
+  { id: 'pt-contractor', code: 'contractor_invoice', name_en: 'Contractor Fee (Invoice)', name_el: 'Τιμολόγιο Συνεργάτη', is_statutory: true, is_recurring_monthly: true, default_multiplier: 1.0, applies_to: ['contractor'], active: true, sort_order: 7 },
+  { id: 'pt-other', code: 'other', name_en: 'Other / Reimbursements', name_el: 'Λοιπά / Αποζημιώσεις', is_statutory: false, is_recurring_monthly: false, applies_to: ['full_time', 'part_time', 'contractor', 'intern'], active: true, sort_order: 8 }
 ];
 
 export const MOCK_SALARIES: SalaryRecord[] = [
-  { id: 'sal-1', profile_id: 'prof-eleni', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 5200, currency: 'EUR', employer_cost_pct: 22.29, note: '2026 Founder review' },
-  { id: 'sal-2', profile_id: 'prof-nikos', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 5200, currency: 'EUR', employer_cost_pct: 22.29, note: '2026 Founder review' },
-  { id: 'sal-3', profile_id: 'prof-dimitris', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 4100, currency: 'EUR', employer_cost_pct: 22.29, note: 'Senior Architect scale' },
-  { id: 'sal-4', profile_id: 'prof-maria', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 3900, currency: 'EUR', employer_cost_pct: 22.29, note: 'EMS PM scale' },
-  { id: 'sal-5', profile_id: 'prof-yannis', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 3600, currency: 'EUR', employer_cost_pct: 22.29, note: 'Optimization Eng scale' },
-  { id: 'sal-6', profile_id: 'prof-katerina', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2200, currency: 'EUR', employer_cost_pct: 22.29, note: 'Part time Analyst' },
-  { id: 'sal-7', profile_id: 'prof-giorgis', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2800, currency: 'EUR', employer_cost_pct: 22.29 },
-  { id: 'sal-8', profile_id: 'prof-sofia', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 3500, currency: 'EUR', note: 'UI/UX Retainer excl VAT' },
-  { id: 'sal-9', profile_id: 'prof-kostas', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 4200, currency: 'EUR', note: 'Data Arch Retainer excl VAT' },
-  { id: 'sal-10', profile_id: 'prof-alexandra', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2700, currency: 'EUR', employer_cost_pct: 22.29 },
-  { id: 'sal-11', profile_id: 'prof-petros', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 1100, currency: 'EUR', employer_cost_pct: 22.29, note: 'Internship' }
+  // Past historical salary records (closed with valid_to to show salary history)
+  { id: 'sal-old-1', profile_id: 'prof-eleni', valid_from: '2024-06-01', valid_to: '2025-12-31', basis: 'monthly_gross', gross_amount: 4600, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: '2024-2025 Initial rate' },
+  { id: 'sal-old-2', profile_id: 'prof-nikos', valid_from: '2024-06-01', valid_to: '2025-12-31', basis: 'monthly_gross', gross_amount: 4600, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: '2024-2025 Initial rate' },
+  // Current active salary records
+  { id: 'sal-1', profile_id: 'prof-eleni', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 5200, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: '2026 Founder review' },
+  { id: 'sal-2', profile_id: 'prof-nikos', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 5200, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: '2026 Founder review' },
+  { id: 'sal-3', profile_id: 'prof-dimitris', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 4100, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'Senior Architect scale' },
+  { id: 'sal-4', profile_id: 'prof-maria', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 3900, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'EMS PM scale' },
+  { id: 'sal-5', profile_id: 'prof-yannis', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 3600, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'Optimization Eng scale' },
+  { id: 'sal-6', profile_id: 'prof-katerina', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2200, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'Part time Analyst' },
+  { id: 'sal-7', profile_id: 'prof-giorgis', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2800, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24 },
+  { id: 'sal-8', profile_id: 'prof-sofia', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 3500, currency: 'EUR', employer_cost_multiplier: 1.0, note: 'UI/UX Retainer excl VAT' },
+  { id: 'sal-9', profile_id: 'prof-kostas', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 4200, currency: 'EUR', employer_cost_multiplier: 1.0, note: 'Data Arch Retainer excl VAT' },
+  { id: 'sal-10', profile_id: 'prof-alexandra', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2700, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24 },
+  { id: 'sal-11', profile_id: 'prof-petros', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 1100, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'Internship' }
 ];
 
 export const MOCK_PAYMENTS: PaymentRecord[] = [
   { 
-    id: 'pay-1', profile_id: 'prof-eleni', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid',
+    id: 'pay-1', profile_id: 'prof-eleni', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid', bank_reference: 'WIRE-GR8910-ELENI',
     documents: [
       { id: 'doc-1', name: 'Payslip_July2026_Eleni.pdf', type: 'payslip', size: '245 KB', uploaded_at: '2026-07-28' },
       { id: 'doc-2', name: 'Bank_Remittance_Receipt_0726.pdf', type: 'receipt', size: '112 KB', uploaded_at: '2026-07-28' }
     ]
   },
   { 
-    id: 'pay-2', profile_id: 'prof-nikos', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid',
+    id: 'pay-2', profile_id: 'prof-nikos', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid', bank_reference: 'WIRE-GR8911-NIKOS',
     documents: [
       { id: 'doc-3', name: 'Payslip_July2026_Nikos.pdf', type: 'payslip', size: '240 KB', uploaded_at: '2026-07-28' }
     ]
   },
-  { id: 'pay-3', profile_id: 'prof-dimitris', period: '2026-07', payment_type_id: 'pt-salary', gross: 4100, net: 2880, employer_contributions: 913.89, total_cost: 5013.89, payment_date: '2026-07-28', status: 'paid', documents: [] },
+  { id: 'pay-3', profile_id: 'prof-dimitris', period: '2026-07', payment_type_id: 'pt-salary', gross: 4100, net: 2880, employer_contributions: 913.89, total_cost: 5013.89, payment_date: '2026-07-28', status: 'paid', bank_reference: 'WIRE-GR8912-DIMITRIS', documents: [] },
   { 
-    id: 'pay-4', profile_id: 'prof-sofia', period: '2026-07', payment_type_id: 'pt-contractor', gross: 3500, net: 3500, employer_contributions: 0, total_cost: 3500, payment_date: '2026-07-28', status: 'paid',
+    id: 'pay-4', profile_id: 'prof-sofia', period: '2026-07', payment_type_id: 'pt-contractor', gross: 3500, net: 3500, employer_contributions: 0, total_cost: 3500, payment_date: '2026-07-28', status: 'paid', bank_reference: 'INV-891-WIRE',
     documents: [
       { id: 'doc-4', name: 'Invoice_INV-891_Sofia.pdf', type: 'invoice', size: '512 KB', uploaded_at: '2026-07-25' },
       { id: 'doc-5', name: 'Wire_Transfer_Confirmation.pdf', type: 'receipt', size: '130 KB', uploaded_at: '2026-07-28' }
     ]
-  }
+  },
+  // Sample planned draft row for next month to test that employees cannot see unapproved planned rows
+  { id: 'pay-5', profile_id: 'prof-eleni', period: '2026-08', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1248, total_cost: 6448, payment_date: '2026-08-28', status: 'planned', documents: [] }
 ];
 
 export const MOCK_LEAVE_TYPES: LeaveType[] = [

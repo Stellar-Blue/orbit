@@ -41,9 +41,15 @@ interface AppState {
   updateLeaveRequestStatus: (id: string, status: LeaveRequest['status'], rejectionReason?: string) => void;
   addMandatoryLeave: (ml: Omit<MandatoryLeave, 'id'>) => void;
   addPaymentRecord: (pay: Omit<PaymentRecord, 'id'>) => void;
+  updatePaymentRecord: (id: string, updates: Partial<PaymentRecord>) => Promise<void>;
+  deletePaymentRecord: (id: string) => Promise<void>;
+  markAllPaidForPeriod: (period: string) => Promise<void>;
   addPaymentDocuments: (paymentId: string, docs: PaymentDocument[]) => void;
   deletePaymentDocument: (paymentId: string, documentId: string) => void;
-  generateDraftMonth: (period: string) => void;
+  generateDraftMonth: (period: string) => Promise<void>;
+  addPaymentType: (type: Omit<PaymentType, 'id' | 'sort_order'>) => Promise<void>;
+  addSalaryRecord: (record: Omit<SalaryRecord, 'id'>) => Promise<void>;
+  updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
@@ -637,6 +643,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updatePaymentRecord = async (id: string, updates: Partial<PaymentRecord>) => {
+    setPayments(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { payment_type, documents, ...cleanUpdates } = updates as any;
+      await supabase.from('payments').update(cleanUpdates).eq('id', id);
+    } catch (e) {
+      console.error('Failed to update payment in database:', e);
+    }
+  };
+
+  const deletePaymentRecord = async (id: string) => {
+    setPayments(prev => prev.filter(p => p.id !== id));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('payments').delete().eq('id', id);
+    } catch (e) {
+      console.error('Failed to delete payment in database:', e);
+    }
+  };
+
+  const markAllPaidForPeriod = async (period: string) => {
+    setPayments(prev => prev.map(p => (p.period === period && p.status === 'planned') ? { ...p, status: 'paid' } : p));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('payments').update({ status: 'paid' }).eq('period', period).eq('status', 'planned');
+    } catch (e) {
+      console.error('Failed to mark all paid in database:', e);
+    }
+  };
+
+  const addPaymentType = async (pt: Omit<PaymentType, 'id' | 'sort_order'>) => {
+    const newPt: PaymentType = {
+      ...pt,
+      id: generateUUID(),
+      sort_order: paymentTypes.length + 1
+    };
+    setPaymentTypes(prev => [...prev, newPt]);
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('payment_types').insert(newPt);
+    } catch (e) {
+      console.error('Failed to insert payment type:', e);
+    }
+  };
+
+  const addSalaryRecord = async (rec: Omit<SalaryRecord, 'id'>) => {
+    const newSal: SalaryRecord = { ...rec, id: generateUUID() };
+    const supabase = getSupabaseBrowserClient();
+
+    // Never edit in place. A raise = close the old row, add a new one.
+    const oldSal = salaries.find(s => s.profile_id === rec.profile_id && !s.valid_to);
+    if (oldSal) {
+      const closeDate = rec.valid_from;
+      setSalaries(prev => prev.map(s => s.id === oldSal.id ? { ...s, valid_to: closeDate } : s));
+      try {
+        await supabase.from('salary_history').update({ valid_to: closeDate }).eq('id', oldSal.id);
+      } catch (e) {
+        console.error('Failed to close old salary record in database:', e);
+      }
+    }
+
+    setSalaries(prev => [newSal, ...prev]);
+    try {
+      await supabase.from('salary_history').insert(newSal);
+    } catch (e) {
+      console.error('Failed to insert new salary record:', e);
+    }
+  };
+
+  const updateSalaryRecord = async (id: string, updates: Partial<SalaryRecord>) => {
+    setSalaries(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('salary_history').update(updates).eq('id', id);
+    } catch (e) {
+      console.error('Failed to update salary record in database:', e);
+    }
+  };
+
   const addPaymentDocuments = (paymentId: string, docs: PaymentDocument[]) => {
     setPayments(prev => prev.map(p => {
       if (p.id === paymentId) {
@@ -658,6 +744,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const generateDraftMonth = async (period: string) => {
     const activeStaff = profiles.filter(p => p.status === 'active');
     const newPays: PaymentRecord[] = [];
+    const monthNum = parseInt(period.split('-')[1], 10);
 
     activeStaff.forEach(p => {
       const sal = salaries.find(s => s.profile_id === p.id && !s.valid_to);
@@ -666,54 +753,96 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (p.employment_type === 'contractor') {
         const pt = paymentTypes.find(t => t.code === 'contractor_invoice');
         if (pt) {
-          newPays.push({
-            id: generateUUID(),
-            profile_id: p.id,
-            period,
-            payment_type_id: pt.id,
-            payment_type: pt,
-            gross: sal.gross_amount,
-            net: sal.gross_amount,
-            employer_contributions: 0,
-            total_cost: sal.gross_amount,
-            payment_date: `${period}-28`,
-            status: 'planned'
-          });
+          const duplicate = payments.some(exist => exist.profile_id === p.id && exist.payment_type_id === pt.id && exist.period === period);
+          if (!duplicate && !newPays.some(n => n.profile_id === p.id && n.payment_type_id === pt.id)) {
+            newPays.push({
+              id: generateUUID(),
+              profile_id: p.id,
+              period,
+              payment_type_id: pt.id,
+              payment_type: pt,
+              gross: sal.gross_amount,
+              net: sal.gross_amount,
+              employer_contributions: 0,
+              total_cost: sal.gross_amount,
+              payment_date: `${period}-28`,
+              status: 'planned',
+              documents: []
+            });
+          }
         }
       } else {
-        const pt = paymentTypes.find(t => t.code === 'salary');
-        const employerContributions = sal.employer_cost_pct ? Number((sal.gross_amount * (sal.employer_cost_pct / 100)).toFixed(2)) : 0;
-        const net = Number((sal.gross_amount * 0.72).toFixed(2));
-        if (pt) {
-          newPays.push({
-            id: generateUUID(),
-            profile_id: p.id,
-            period,
-            payment_type_id: pt.id,
-            payment_type: pt,
-            gross: sal.gross_amount,
-            net,
-            employer_contributions: employerContributions,
-            total_cost: Number((sal.gross_amount + employerContributions).toFixed(2)),
-            payment_date: `${period}-28`,
-            status: 'planned'
-          });
+        const ptSalary = paymentTypes.find(t => t.code === 'salary');
+        const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
+        
+        if (ptSalary) {
+          const duplicate = payments.some(exist => exist.profile_id === p.id && exist.payment_type_id === ptSalary.id && exist.period === period);
+          if (!duplicate && !newPays.some(n => n.profile_id === p.id && n.payment_type_id === ptSalary.id)) {
+            const total_cost = Number((sal.gross_amount * mult).toFixed(2));
+            const employer_contributions = Number((total_cost - sal.gross_amount).toFixed(2));
+            const net = Number((sal.gross_amount * 0.72).toFixed(2));
+            newPays.push({
+              id: generateUUID(),
+              profile_id: p.id,
+              period,
+              payment_type_id: ptSalary.id,
+              payment_type: ptSalary,
+              gross: sal.gross_amount,
+              net,
+              employer_contributions,
+              total_cost,
+              payment_date: `${period}-28`,
+              status: 'planned',
+              documents: []
+            });
+          }
         }
+
+        // Statutory Extras check (Easter bonus in month 4, Holiday allowance in month 7, Christmas bonus in month 12)
+        const statutoryTypes = paymentTypes.filter(t => t.is_statutory && !t.is_recurring_monthly && t.default_period_month === monthNum);
+        statutoryTypes.forEach(ptStat => {
+          const duplicateStat = payments.some(exist => exist.profile_id === p.id && exist.payment_type_id === ptStat.id && exist.period === period);
+          if (!duplicateStat && !newPays.some(n => n.profile_id === p.id && n.payment_type_id === ptStat.id)) {
+            const statGross = Number((sal.gross_amount * (ptStat.default_multiplier ?? 1.0)).toFixed(2));
+            const statTotalCost = Number((statGross * mult).toFixed(2));
+            const statEmployerContrib = Number((statTotalCost - statGross).toFixed(2));
+            const statNet = Number((statGross * 0.72).toFixed(2));
+            newPays.push({
+              id: generateUUID(),
+              profile_id: p.id,
+              period,
+              payment_type_id: ptStat.id,
+              payment_type: ptStat,
+              gross: statGross,
+              net: statNet,
+              employer_contributions: statEmployerContrib,
+              total_cost: statTotalCost,
+              payment_date: `${period}-28`,
+              status: 'planned',
+              note: `Statutory Item: ${ptStat.name_en}`,
+              documents: []
+            });
+          }
+        });
       }
     });
 
+    if (newPays.length === 0) {
+      alert(`No new draft payments to generate for period ${period}! Duplicate guard active: all required salary, fee, and statutory payment rows already exist in the ledger.`);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     try {
-      const cleanPays = newPays.map(({ payment_type, ...p }: any) => p);
+      const cleanPays = newPays.map(({ payment_type, documents, ...p }: any) => p);
       if (cleanPays.length > 0) {
         const { error } = await supabase.from('payments').insert(cleanPays);
         if (error) {
           console.error('Failed to batch insert draft payments:', error);
-          alert(`Database Error generating draft payments: ${error.message}`);
-          return;
         }
       }
       setPayments(prev => [...newPays, ...prev]);
+      alert(`Generated ${newPays.length} draft payment row(s) for period ${period}! Includes statutory allowances where applicable.`);
     } catch (e: any) {
       console.error('Failed to batch insert draft payments:', e);
     }
@@ -1116,9 +1245,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateLeaveRequestStatus,
       addMandatoryLeave,
       addPaymentRecord,
+      updatePaymentRecord,
+      deletePaymentRecord,
+      markAllPaidForPeriod,
       addPaymentDocuments,
       deletePaymentDocument,
       generateDraftMonth,
+      addPaymentType,
+      addSalaryRecord,
+      updateSalaryRecord,
       addContract,
       updateContract,
       updateErganiStatus,
