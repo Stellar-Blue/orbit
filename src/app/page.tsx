@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { Card, StatCard, Badge, Button } from '@/components/ui/primitives';
 import { 
   Users, FileText, Calendar, DollarSign, AlertTriangle, 
@@ -55,6 +56,21 @@ export default function DashboardPage() {
   const isPatternCompliant = plannedDaysForPeriod <= quotaMaxDays;
   const periodLabel = quotaPeriod === 'week' ? 'wk' : quotaPeriod === 'quarter' ? 'qtr' : quotaPeriod === 'year' ? 'yr' : 'mo';
   const periodFullLabel = quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month';
+
+  const myLoggedRemoteInPeriod = (remoteDays || []).filter(r => {
+    if (r.profile_id !== currentUser.id || r.mode === 'office') return false;
+    const now = new Date();
+    if (quotaPeriod === 'week') {
+      const wStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      const wEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      return r.date >= wStart && r.date <= wEnd;
+    } else if (quotaPeriod === 'year') {
+      return r.date.startsWith(format(now, 'yyyy'));
+    } else {
+      return r.date.startsWith(format(now, 'yyyy-MM'));
+    }
+  }).length;
+  const remainingPeriodQuota = Math.max(0, quotaMaxDays - myLoggedRemoteInPeriod);
 
   // Setup checklist state for guided initial manual setup (requirements decision)
   const [checklist, setChecklist] = useState({
@@ -267,7 +283,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card title="My Telework Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your monthly declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Schedule Calendar</Link>} className="md:col-span-2">
+          <Card title="My Remote Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your remote declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Schedule Calendar</Link>} className="md:col-span-2">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 mt-2">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
                 const isScheduled = currentUser.work_schedule.includes(day);
@@ -302,7 +318,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
               <span>Policy limit: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
-              <span>Remaining Quota: <strong className="text-[#3D87D3] font-bold">{Math.max(0, quotaMaxDays - (remoteDays || []).filter(r => r.profile_id === currentUser.id && r.mode !== 'office' && r.date.startsWith('2026-08')).length)} days available</strong> in August</span>
+              <span>Remaining Quota: <strong className="text-[#3D87D3] font-bold">{remainingPeriodQuota} {remainingPeriodQuota === 1 ? 'day available' : 'days available'}</strong> this {periodFullLabel}</span>
             </div>
           </Card>
         </div>

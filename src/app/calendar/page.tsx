@@ -98,7 +98,7 @@ export default function CompanyCalendarPage() {
 
       // Evaluate schedule for each matched employee
       activeProfiles.forEach(prof => {
-        // Exclude contractors from leave/office tele-work calculations unless explicitly found
+        // Exclude contractors from leave/office remote work calculations unless explicitly found
         const isContractor = prof.employment_type === 'contractor';
 
         // Check if on approved/taken leave
@@ -132,7 +132,7 @@ export default function CompanyCalendarPage() {
           return;
         }
 
-        // Check declared telework in remoteDays (patterns are now only an auto-fill helper)
+        // Check declared remote work in remoteDays (patterns are now only an auto-fill helper)
         const override = remoteDays.find(rd => rd.profile_id === prof.id && rd.date === dateStr);
         if (override && (override.mode === 'remote_gr' || override.mode === 'remote_abroad')) {
           remotes.push({
@@ -178,7 +178,7 @@ export default function CompanyCalendarPage() {
               <CalendarDays className="w-8 h-8 mr-3.5 text-cyan-400" /> Company & Team Calendar
             </h1>
             <p className="text-sm text-slate-200 max-w-2xl leading-relaxed">
-              Real-time schedule synthesis integrating teleworking daily overrides, recurring weekly remote patterns, and approved leave absences with built-in §4 Privacy Lens protections.
+              Real-time schedule synthesis integrating remote working daily overrides, recurring weekly remote patterns, and approved leave absences with built-in §4 Privacy Lens protections.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center shrink-0">
@@ -274,7 +274,7 @@ export default function CompanyCalendarPage() {
                 }`}
               >
                 {type === 'all' && 'All Activity'}
-                {type === 'remote' && '🏠 Telework'}
+                {type === 'remote' && '🏠 Remote'}
                 {type === 'leave' && '🏖️ Leaves'}
                 {type === 'holiday' && '🎉 Holidays'}
               </button>
@@ -535,7 +535,7 @@ export default function CompanyCalendarPage() {
         <div className="flex items-center space-x-2">
           <div className="w-3 h-3 rounded-full bg-cyan-500 shrink-0" />
           <div>
-            <span className="font-bold text-slate-800 block">🏠 Remote Telework</span>
+            <span className="font-bold text-slate-800 block">🏠 Remote Work</span>
             <span className="text-[11px] text-slate-500">Includes daily overrides & weekly patterns</span>
           </div>
         </div>
@@ -646,7 +646,7 @@ export default function CompanyCalendarPage() {
                     <span className="mr-2 text-base">🏠</span> Working Remotely ({selectedDay.remotes.length})
                   </h4>
                   <Badge variant={selectedDay.remotes.length > 0 ? 'info' : 'neutral'}>
-                    {selectedDay.remotes.length} teleworking
+                    {selectedDay.remotes.length} remote
                   </Badge>
                 </div>
                 {selectedDay.remotes.length === 0 ? (

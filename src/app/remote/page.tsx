@@ -73,26 +73,75 @@ export default function RemoteWorkLogPage() {
         <AlertTriangle className="w-10 h-10 mx-auto text-amber-600" />
         <h2 className="text-xl font-bold text-slate-800">Module Hidden for Contractors</h2>
         <p className="text-xs text-slate-600">
-          Contractors manage their own work location and are excluded from internal employee tele-work declarations and ΕΡΓΑΝΗ τηλεργασία logs.
+          Contractors manage their own work location and are excluded from internal employee remote work declarations and ΕΡΓΑΝΗ remote logs.
         </p>
       </div>
     );
   }
 
-  // Quota computations (Monthly quota)
+  // Quota computations based on admin-configured policy
   const companyPolicy = (remotePolicies || []).find(p => p.scope_type === 'company');
   const quotaMaxDays = companyPolicy ? (companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8) : 8;
   const quotaPeriod = companyPolicy ? (companyPolicy.period_type || 'month') : 'month';
   const periodLabel = quotaPeriod === 'week' ? 'Weekly' : quotaPeriod === 'quarter' ? 'Quarterly' : quotaPeriod === 'year' ? 'Annual' : 'Monthly';
 
-  // Count my logged remote days in current active month view
-  const activeMonthStr = format(currentMonth, 'yyyy-MM');
-  const myMonthlyRemoteDays = useMemo(() => {
-    return (remoteDays || []).filter(r => r.profile_id === currentUser.id && r.mode !== 'office' && r.date.startsWith(activeMonthStr));
-  }, [remoteDays, currentUser.id, activeMonthStr]);
+  const getPolicyPeriodKey = (dateStr: string, period: string) => {
+    try {
+      const dObj = parseISO(dateStr);
+      if (period === 'week') {
+        return format(startOfWeek(dObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      } else if (period === 'quarter') {
+        const q = Math.floor(dObj.getMonth() / 3) + 1;
+        return `${dObj.getFullYear()}-Q${q}`;
+      } else if (period === 'year') {
+        return `${dObj.getFullYear()}`;
+      }
+      return format(dObj, 'yyyy-MM');
+    } catch {
+      return dateStr;
+    }
+  };
 
-  const myRemoteDaysCount = myMonthlyRemoteDays.length;
+  const getRemoteCountForDatePeriod = (targetDateStr: string, period: string) => {
+    try {
+      const dObj = parseISO(targetDateStr);
+      return (remoteDays || []).filter(r => {
+        if (r.profile_id !== currentUser.id || r.mode === 'office') return false;
+        if (period === 'week') {
+          const wStart = startOfWeek(dObj, { weekStartsOn: 1 });
+          const wEnd = endOfWeek(dObj, { weekStartsOn: 1 });
+          return r.date >= format(wStart, 'yyyy-MM-dd') && r.date <= format(wEnd, 'yyyy-MM-dd');
+        } else if (period === 'quarter') {
+          const m = dObj.getMonth();
+          const qStartMonth = Math.floor(m / 3) * 3;
+          const qStart = format(new Date(dObj.getFullYear(), qStartMonth, 1), 'yyyy-MM-dd');
+          const qEnd = format(new Date(dObj.getFullYear(), qStartMonth + 3, 0), 'yyyy-MM-dd');
+          return r.date >= qStart && r.date <= qEnd;
+        } else if (period === 'year') {
+          return r.date.startsWith(format(dObj, 'yyyy'));
+        } else {
+          return r.date.startsWith(format(dObj, 'yyyy-MM'));
+        }
+      }).length;
+    } catch {
+      return 0;
+    }
+  };
+
+  const activeMonthStr = format(currentMonth, 'yyyy-MM');
+  const referenceDateStr = isSameMonth(currentMonth, parseISO(todayStr)) ? todayStr : format(currentMonth, 'yyyy-MM-01');
+  const myRemoteDaysCount = useMemo(() => {
+    return getRemoteCountForDatePeriod(referenceDateStr, quotaPeriod);
+  }, [remoteDays, currentUser.id, referenceDateStr, quotaPeriod]);
+
   const remainingQuota = Math.max(0, quotaMaxDays - myRemoteDaysCount);
+  const periodText = quotaPeriod === 'week' 
+    ? `in week ${format(startOfWeek(parseISO(referenceDateStr), { weekStartsOn: 1 }), 'MMM d')} – ${format(endOfWeek(parseISO(referenceDateStr), { weekStartsOn: 1 }), 'MMM d')}` 
+    : quotaPeriod === 'quarter' 
+    ? `in Q${Math.floor(currentMonth.getMonth() / 3) + 1} ${format(currentMonth, 'yyyy')}`
+    : quotaPeriod === 'year'
+    ? `in ${format(currentMonth, 'yyyy')}`
+    : `in ${format(currentMonth, 'MMMM yyyy')}`;
 
   // Calendar grid calculation
   const calendarDays = useMemo(() => {
@@ -184,7 +233,18 @@ export default function RemoteWorkLogPage() {
 
     const allDays = eachDayOfInterval({ start: startDate, end: endDate });
     const declarations: { date: string; mode: 'office' | 'remote_gr' | 'remote_abroad'; note?: string }[] = [];
-    let estimatedRemoteCount = myRemoteDaysCount;
+    
+    const startStr = format(startDate, 'yyyy-MM-dd');
+    const endStr = format(endDate, 'yyyy-MM-dd');
+    const periodCounts: Record<string, number> = {};
+    (remoteDays || []).forEach(r => {
+      if (r.profile_id === currentUser.id && r.mode !== 'office') {
+        if (r.date < startStr || r.date > endStr) {
+          const key = getPolicyPeriodKey(r.date, quotaPeriod);
+          periodCounts[key] = (periodCounts[key] || 0) + 1;
+        }
+      }
+    });
 
     allDays.forEach(dObj => {
       const dStr = format(dObj, 'yyyy-MM-dd');
@@ -204,10 +264,15 @@ export default function RemoteWorkLogPage() {
       if (isHoliday || isMandatory || isOnLeave) return;
 
       const defaultMode = pattern[wStr] || 'office';
+      const pKey = getPolicyPeriodKey(dStr, quotaPeriod);
+      const curCount = periodCounts[pKey] || 0;
+
       if (defaultMode !== 'office') {
-        if (estimatedRemoteCount < quotaMaxDays || periodType !== 'month') {
+        if (curCount < quotaMaxDays || isAdmin) {
           declarations.push({ date: dStr, mode: defaultMode, note: `Auto-filled from default ${wStr} pattern` });
-          if (dStr.startsWith(activeMonthStr)) estimatedRemoteCount++;
+          periodCounts[pKey] = curCount + 1;
+        } else {
+          declarations.push({ date: dStr, mode: 'office', note: `Office (${periodLabel} Quota limit of ${quotaMaxDays} reached)` });
         }
       } else {
         declarations.push({ date: dStr, mode: 'office' });
@@ -248,12 +313,12 @@ export default function RemoteWorkLogPage() {
       });
       alert(`Submitted amendment request for ${selectedDateForAction}. Pending admin approval.`);
     } else {
-      // Direct declare
-      if (targetMode !== 'office' && myRemoteDaysCount >= quotaMaxDays && !isAdmin) {
-        // Check if day was already remote
+      // Direct declare: strictly enforce admin-configured quota (weekly/monthly/etc.)
+      if (targetMode !== 'office' && !isAdmin) {
+        const periodCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod);
         const wasRemote = (remoteDays || []).some(r => r.profile_id === currentUser.id && r.date === selectedDateForAction && r.mode !== 'office');
-        if (!wasRemote) {
-          alert(`QUOTA EXCEEDED: You only have ${remainingQuota} remote days remaining this month.`);
+        if (!wasRemote && periodCountForDate >= quotaMaxDays) {
+          alert(`QUOTA EXCEEDED: Your company policy limits remote work to a maximum of ${quotaMaxDays} day(s) per ${quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month'}. You have already reached your quota for this period.`);
           return;
         }
       }
@@ -294,7 +359,7 @@ export default function RemoteWorkLogPage() {
       // 2. Check explicit remote declaration
       const decl = (remoteDays || []).find(rd => rd.profile_id === prof.id && rd.date === rosterDate);
       if (decl && decl.mode !== 'office') {
-        return { profile: prof, mode: decl.mode, location: decl.location, source: 'Declared Telework Log' };
+        return { profile: prof, mode: decl.mode, location: decl.location, source: 'Declared Remote Log' };
       }
 
       // 3. Otherwise at Office HQ
@@ -321,10 +386,10 @@ export default function RemoteWorkLogPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center">
-            <Globe className="w-6 h-6 mr-3 text-[#3D87D3]" /> Telework Schedule & Remote Declarations
+            <Globe className="w-6 h-6 mr-3 text-[#3D87D3]" /> Remote Work Schedule & Declarations
           </h1>
           <p className="text-slate-500 text-xs mt-1">
-            Declare monthly remote schedules, utilize pattern auto-fill templates, and inspect organizational office rosters.
+            Declare remote work schedules, utilize pattern auto-fill templates, and inspect organizational office rosters.
           </p>
         </div>
         <Link href="/calendar" className="px-4 py-2.5 rounded-xl bg-cyan-50 hover:bg-cyan-100/80 text-cyan-900 font-bold text-xs border border-cyan-200 transition-all flex items-center shadow-2xs shrink-0">
@@ -341,14 +406,14 @@ export default function RemoteWorkLogPage() {
           <div>
             <div className="flex items-center space-x-2 flex-wrap gap-y-1">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                {periodLabel} Telework Quota
+                {periodLabel} Remote Quota
               </span>
               <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-white text-[#3D87D3] border border-[#3D87D3]/30 shadow-2xs">
-                Remaining Quota: {remainingQuota} {remainingQuota === 1 ? 'day available' : 'days available'} in {format(currentMonth, 'MMMM yyyy')}
+                Remaining Quota: {remainingQuota} {remainingQuota === 1 ? 'day available' : 'days available'} {periodText}
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-1 font-medium">
-              Declare your upcoming telework schedule directly on the interactive calendar below or use pattern quick-fill tools.
+              Declare your upcoming remote schedule directly on the interactive calendar below or use pattern quick-fill tools.
             </p>
           </div>
         </div>
@@ -454,7 +519,7 @@ export default function RemoteWorkLogPage() {
           </Card>
         </div>
 
-        {/* Right / Bottom: Interactive Telework Schedule Calendar */}
+        {/* Right / Bottom: Interactive Remote Schedule Calendar */}
         <div className="xl:col-span-8 space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md p-5">
             {/* Calendar Header & Month Navigation */}
@@ -591,7 +656,7 @@ export default function RemoteWorkLogPage() {
                   </>
                 ) : (
                   <>
-                    <Globe className="w-5 h-5 mr-2 text-[#3D87D3]" /> Declare Telework Schedule
+                    <Globe className="w-5 h-5 mr-2 text-[#3D87D3]" /> Declare Remote Schedule
                   </>
                 )}
               </h3>
@@ -703,7 +768,7 @@ export default function RemoteWorkLogPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* My requests */}
             {myAmendmentRequests.length > 0 && (
-              <Card title="My Submitted Amendment Requests" subtitle="Status of past telework modification submissions" className="shadow-xs border-slate-200">
+              <Card title="My Submitted Amendment Requests" subtitle="Status of past remote work modification submissions" className="shadow-xs border-slate-200">
                 <div className="divide-y divide-slate-100 mt-2">
                   {myAmendmentRequests.map(req => (
                     <div key={req.id} className="py-3 flex items-center justify-between gap-3 text-xs">
@@ -771,7 +836,7 @@ export default function RemoteWorkLogPage() {
               <Building2 className="w-5 h-5 mr-2 text-emerald-600" /> Organizational Office & Remote Roster
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Live schedule inspection across all departments based on declared telework logs.
+              Live schedule inspection across all departments based on declared remote logs.
             </p>
           </div>
           <div className="flex items-center space-x-2 text-xs">

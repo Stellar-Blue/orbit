@@ -265,7 +265,7 @@ export default function CompanySettingsPage() {
           {/* Main Configuration Card */}
           <Card 
             title="Remote Work Company Quota" 
-            subtitle="Define the legal and policy limits for teleworking across the organization"
+            subtitle="Define the legal and policy limits for remote work across the organization"
             className="lg:col-span-2 shadow-xs border-slate-200"
           >
             <div className="space-y-6 pt-2">
@@ -274,7 +274,7 @@ export default function CompanySettingsPage() {
                 <div className="space-y-1">
                   <p className="font-extrabold">Strict Quota Enforcement Enabled:</p>
                   <p className="text-blue-900/90 leading-relaxed">
-                    When employees attempt to save recurring weekly patterns or submit daily overrides, Orbit automatically verifies their telework total against this threshold. Any submission exceeding this quota is rejected to ensure regulatory labor compliance.
+                    When employees attempt to save recurring weekly patterns or submit daily overrides, Orbit automatically verifies their remote work total against this threshold. Any submission exceeding this quota is rejected to ensure regulatory labor compliance.
                   </p>
                 </div>
               </div>

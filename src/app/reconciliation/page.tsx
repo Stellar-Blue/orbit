@@ -23,7 +23,7 @@ export default function ReconciliationPage() {
         <AlertTriangle className="w-10 h-10 mx-auto text-rose-600" />
         <h2 className="text-xl font-bold text-slate-800">403 Forbidden &mdash; Strictly Admin Restricted</h2>
         <p className="text-xs text-slate-600">
-          ΕΡΓΑΝΗ II portal compliance reconciliation and E11/telework matching is accessible exclusively to Founders and Operations.
+          ΕΡΓΑΝΗ II portal compliance reconciliation and E11/remote matching is accessible exclusively to Founders and Operations.
         </p>
       </div>
     );
@@ -37,7 +37,7 @@ export default function ReconciliationPage() {
     setTimeout(() => {
       setReconcileStatus('completed');
       setDriftCount(0);
-      alert(`Successfully processed file ${file.name}. Parsed 14 records and matched against internal leaves and tele-work overrides. Zero drift detected!`);
+      alert(`Successfully processed file ${file.name}. Parsed 14 records and matched against internal leaves and remote overrides. Zero drift detected!`);
     }, 1200);
   };
 
@@ -52,7 +52,7 @@ export default function ReconciliationPage() {
             <ShieldCheck className="w-6 h-6 mr-3 text-rose-600" /> ΕΡΓΑΝΗ II Portal Compliance & Reconciliation
           </h1>
           <p className="text-slate-500 text-xs mt-1">
-            Prevent legal exposure by automated matching between internal Orbit leaves/tele-work records and official ministry portal exports (E11 / Τηλεργασία).
+            Prevent legal exposure by automated matching between internal Orbit leaves/remote records and official ministry portal exports (E11 / Remote Work).
           </p>
         </div>
         <div>
