@@ -643,15 +643,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addContract = async (cnt: Omit<Contract, 'id'>) => {
     const newCnt: Contract = { ...cnt, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, ...cleanCnt } = newCnt as any;
+    const { counterparty, owner_profile, notice_deadline, ...cleanCnt } = newCnt as any;
     try {
-      const { error } = await supabase.from('contracts').insert(cleanCnt);
+      const { error, data } = await supabase.from('contracts').insert(cleanCnt).select().single();
       if (error) {
         console.error('Failed to insert contract:', error);
         alert(`Database Error: ${error.message}`);
         return;
       }
-      setContracts(prev => [newCnt, ...prev]);
+      const savedCnt = data ? { ...newCnt, ...data, counterparty: newCnt.counterparty, owner_profile: newCnt.owner_profile } : newCnt;
+      setContracts(prev => [savedCnt, ...prev]);
     } catch (e: any) {
       console.error('Failed to insert contract:', e);
     }
@@ -659,15 +660,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateContract = async (updated: Contract) => {
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, ...cleanCnt } = updated as any;
+    const { counterparty, owner_profile, notice_deadline, ...cleanCnt } = updated as any;
     try {
-      const { error } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id);
+      const { error, data } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id).select().single();
       if (error) {
         console.error('Failed to update contract:', error);
         alert(`Database Error: ${error.message}`);
         return;
       }
-      setContracts(prev => prev.map(c => c.id === updated.id ? updated : c));
+      const savedCnt = data ? { ...updated, ...data, counterparty: updated.counterparty, owner_profile: updated.owner_profile } : updated;
+      setContracts(prev => prev.map(c => c.id === updated.id ? savedCnt : c));
     } catch (e: any) {
       console.error('Failed to update contract:', e);
     }
