@@ -9,7 +9,7 @@ import {
   Users, ShieldCheck, FileText, Sparkles, Filter, Edit3, HelpCircle, ArrowRight, ShieldAlert,
   BarChart3, CalendarDays, Briefcase, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth } from 'date-fns';
+import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import { LeaveRequest } from '@/lib/types';
 
 export default function LeaveManagementPage() {
@@ -386,22 +386,35 @@ export default function LeaveManagementPage() {
                 className="border-slate-200 shadow-sm"
               >
                 <div className="space-y-4 mt-2">
-                  {/* Calendar Navigation Header */}
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                  {/* Calendar Navigation Header - Company Calendar Style */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
                     <div className="flex items-center space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => setCalendarMonth(prev => subMonths(prev, 1))} className="p-2 cursor-pointer border-slate-200 bg-white shadow-2xs hover:bg-slate-100">
-                        <ChevronLeft className="w-4 h-4 text-slate-700" />
-                      </Button>
-                      <h4 className="font-black text-slate-800 text-base min-w-[150px] text-center font-mono">
-                        {format(calendarMonth, 'MMMM yyyy')}
-                      </h4>
-                      <Button size="sm" variant="outline" onClick={() => setCalendarMonth(prev => addMonths(prev, 1))} className="p-2 cursor-pointer border-slate-200 bg-white shadow-2xs hover:bg-slate-100">
-                        <ChevronRight className="w-4 h-4 text-slate-700" />
-                      </Button>
+                      <div className="flex items-center rounded-xl border border-slate-300 overflow-hidden bg-white shadow-2xs">
+                        <button
+                          onClick={() => setCalendarMonth(prev => subMonths(prev, 1))}
+                          className="p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950 transition-all cursor-pointer"
+                          title="Previous Month"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="px-5 py-1 text-sm font-extrabold text-slate-800 font-mono tracking-tight select-none">
+                          {format(calendarMonth, 'MMMM yyyy')}
+                        </span>
+                        <button
+                          onClick={() => setCalendarMonth(prev => addMonths(prev, 1))}
+                          className="p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950 transition-all cursor-pointer"
+                          title="Next Month"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setCalendarMonth(new Date('2026-07-01T00:00:00'))}
+                        className="px-3 py-1.5 rounded-xl border border-indigo-200 text-xs font-bold text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 transition-all cursor-pointer shadow-2xs"
+                      >
+                        Today (July 2026)
+                      </button>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setCalendarMonth(new Date('2026-07-01T00:00:00'))} className="text-xs font-extrabold cursor-pointer border-indigo-200 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 shadow-2xs">
-                      Today (July 2026)
-                    </Button>
                   </div>
 
                   {/* Quick Guide Banner */}
@@ -414,18 +427,25 @@ export default function LeaveManagementPage() {
 
                   {/* Calendar Legend */}
                   <div className="flex items-center gap-4 text-[11px] font-bold text-slate-600 px-1 flex-wrap">
-                    <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-[#3D87D3] mr-1.5 inline-block shadow-2xs" /> My Approved / Pending Leaves</span>
-                    <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-indigo-600 mr-1.5 inline-block shadow-2xs" /> Mandatory Closure</span>
-                    <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-rose-500 mr-1.5 inline-block shadow-2xs" /> Greek Public Holiday</span>
+                    <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-[#3D87D3] mr-1.5 inline-block shadow-2xs" /> My Approved / Pending Leaves</span>
+                    <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-indigo-700 mr-1.5 inline-block shadow-2xs" /> Mandatory Closure</span>
+                    <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-rose-500 mr-1.5 inline-block shadow-2xs" /> Greek Public Holiday</span>
+                    <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping mr-1.5 inline-block shadow-sm" /> Today Indicator</span>
                   </div>
 
-                  {/* Day of Week Headers */}
-                  <div className="grid grid-cols-7 gap-1 text-center font-extrabold text-[11px] text-slate-500 uppercase tracking-wider pt-2 border-t border-slate-100">
-                    <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div className="text-rose-600">Sat</div><div className="text-rose-600">Sun</div>
+                  {/* Day of Week Headers - Company Calendar Style */}
+                  <div className="grid grid-cols-7 border-t border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-3 mt-2 rounded-t-xl">
+                    <div>Monday</div>
+                    <div>Tuesday</div>
+                    <div>Wednesday</div>
+                    <div>Thursday</div>
+                    <div>Friday</div>
+                    <div className="text-rose-600 font-black">Saturday</div>
+                    <div className="text-rose-600 font-black">Sunday</div>
                   </div>
 
-                  {/* Date Grid */}
-                  <div className="grid grid-cols-7 gap-1.5 select-none">
+                  {/* Date Grid - Company Calendar Seamless Style */}
+                  <div className="grid grid-cols-7 auto-rows-[minmax(125px,_auto)] divide-x divide-y divide-slate-200/80 bg-slate-200/20 rounded-b-xl overflow-hidden border-l border-r border-b border-slate-200/80 select-none">
                     {(() => {
                       const gridStart = startOfWeek(startOfMonth(calendarMonth), { weekStartsOn: 1 });
                       const gridEnd = endOfWeek(endOfMonth(calendarMonth), { weekStartsOn: 1 });
@@ -435,6 +455,7 @@ export default function LeaveManagementPage() {
                         const dayStr = format(d, 'yyyy-MM-dd');
                         const isCurrentMonth = isSameMonth(d, calendarMonth);
                         const isSelected = isSelectedDuringDrag(dayStr);
+                        const isDayToday = dayStr === todayStr || isSameDay(d, new Date());
 
                         const pubHoliday = publicHolidays.find(h => h.date === dayStr);
                         const mandatory = mandatoryLeaves.find(m => dayStr >= m.start_date && dayStr <= m.end_date) || leaveRequests.find(r => r.origin === 'mandatory' && dayStr >= r.start_date && dayStr <= r.end_date);
@@ -446,45 +467,107 @@ export default function LeaveManagementPage() {
                             key={dayStr}
                             onMouseDown={() => handleDayMouseDown(dayStr)}
                             onMouseEnter={() => handleDayMouseEnter(dayStr)}
-                            className={`min-h-[95px] p-2 rounded-xl border transition-all flex flex-col justify-between overflow-hidden cursor-pointer ${
-                              isSelected 
-                                ? 'bg-[#3D87D3]/20 border-2 border-[#3D87D3] shadow-md scale-[0.98]' 
-                                : isCurrentMonth 
-                                  ? isWeekend ? 'bg-slate-50/70 border-slate-200 hover:border-[#3D87D3]' : 'bg-white border-slate-200/90 shadow-2xs hover:border-[#3D87D3] hover:shadow-xs' 
-                                  : 'bg-slate-100/50 border-slate-200/60 opacity-60 text-slate-400 hover:opacity-80'
+                            className={`p-2.5 transition-colors flex flex-col justify-between overflow-hidden cursor-pointer group ${
+                              isSelected
+                                ? 'bg-[#3D87D3]/20 ring-2 ring-inset ring-[#3D87D3] shadow-inner font-bold z-20'
+                                : !isCurrentMonth
+                                  ? 'bg-slate-50/70 text-slate-400 opacity-75'
+                                  : isDayToday
+                                    ? 'bg-blue-50/30 ring-2 ring-inset ring-[#3D87D3]'
+                                    : isWeekend ? 'bg-slate-50/40 hover:bg-slate-100/70' : 'bg-white hover:bg-slate-50/90'
                             }`}
                           >
-                            <div className="flex items-center justify-between">
-                              <span className={`text-xs font-extrabold font-mono ${isSelected ? 'text-[#1e4872]' : isCurrentMonth ? (isWeekend ? 'text-rose-600' : 'text-slate-800') : 'text-slate-400'}`}>
+                            {/* Cell Top Header with Pulsing Today Indicator */}
+                            <div className="flex items-center justify-between mb-1 z-10">
+                              <div className="flex items-center space-x-1">
+                                {isDayToday && (
+                                  <>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block shadow-sm" title="Today" />
+                                    <span className="text-[9px] font-black uppercase text-emerald-700 tracking-wider">Today</span>
+                                  </>
+                                )}
+                              </div>
+                              <span
+                                className={`text-xs font-mono font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
+                                  isDayToday
+                                    ? 'bg-[#3D87D3] text-white font-black shadow-sm'
+                                    : isCurrentMonth
+                                      ? (isWeekend ? 'text-rose-600 font-extrabold group-hover:bg-rose-50' : 'text-slate-800 group-hover:bg-slate-200/70')
+                                      : 'text-slate-400'
+                                }`}
+                              >
                                 {format(d, 'd')}
                               </span>
-                              {dayStr === todayStr && (
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" title="Today" />
-                              )}
                             </div>
 
-                            <div className="space-y-1 mt-1 overflow-hidden">
+                            {/* Spanning Event Stack */}
+                            <div className="space-y-1 my-1 flex-1 overflow-visible">
                               {pubHoliday && (
-                                <div className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-extrabold truncate" title={pubHoliday.name_en}>
+                                <div className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 border border-rose-200/80 text-[10px] font-extrabold truncate shadow-2xs z-10 my-0.5" title={pubHoliday.name_en}>
                                   🔴 {pubHoliday.name_en}
                                 </div>
                               )}
-                              {mandatory && !pubHoliday && (
-                                <div className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold truncate">
-                                  🟣 Company Closure
-                                </div>
-                              )}
+                              
+                              {mandatory && !pubHoliday && (() => {
+                                const isMandatoryStart = dayStr === mandatory.start_date || format(d, 'EEE') === 'Mon';
+                                const isMandatoryEnd = dayStr === mandatory.end_date || format(d, 'EEE') === 'Sun';
+                                const isActualStart = dayStr === mandatory.start_date;
+                                const isActualEnd = dayStr === mandatory.end_date;
+                                const isSingle = isActualStart && isActualEnd;
+
+                                return (
+                                  <div 
+                                    className={`py-1 text-[10px] font-extrabold text-white truncate shadow-2xs flex items-center justify-between bg-purple-700 my-0.5 ${
+                                      isSingle ? 'rounded-lg px-2' :
+                                      isActualStart ? 'rounded-l-lg rounded-r-none -mr-2.5 pl-2 pr-1 z-10' :
+                                      isActualEnd ? 'rounded-r-lg rounded-l-none -ml-2.5 pl-1 pr-2 z-10' :
+                                      'rounded-none -mx-2.5 px-1 z-10 opacity-95'
+                                    }`}
+                                    title={`Company Closure: ${mandatory.start_date} → ${mandatory.end_date}`}
+                                  >
+                                    {(isActualStart || format(d, 'EEE') === 'Mon') ? (
+                                      <span className="truncate flex items-center font-bold">
+                                        <span className="mr-1">🔒</span> 
+                                        <span className="truncate">{('name' in mandatory ? mandatory.name : 'Company Closure')}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] opacity-75 font-mono tracking-widest pl-2 select-none">&bull; &bull; &bull;</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
                               {myLeavesOnDay.map(req => {
                                 const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+                                const isActualStart = dayStr === req.start_date;
+                                const isActualEnd = dayStr === req.end_date;
+                                const isSingle = isActualStart && isActualEnd;
+
                                 return (
                                   <div 
                                     key={req.id} 
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-extrabold text-white truncate shadow-2xs flex items-center justify-between"
+                                    className={`py-1 text-[10px] font-extrabold text-white truncate shadow-2xs flex items-center justify-between my-0.5 ${
+                                      isSingle ? 'rounded-lg px-2' :
+                                      isActualStart ? 'rounded-l-lg rounded-r-none -mr-2.5 pl-2 pr-1 z-10' :
+                                      isActualEnd ? 'rounded-r-lg rounded-l-none -ml-2.5 pl-1.5 pr-2 z-10' :
+                                      'rounded-none -mx-2.5 px-1.5 z-10 opacity-95'
+                                    }`}
                                     style={{ backgroundColor: lt?.colour || '#3D87D3' }}
-                                    title={`${lt?.name_en} (${req.status})`}
+                                    title={`${lt?.name_en} (${req.start_date} → ${req.end_date})`}
                                   >
-                                    <span className="truncate">{lt?.name_el || 'Leave'}</span>
-                                    <span className="ml-1 text-[9px] uppercase font-mono opacity-90">{req.status === 'pending' ? '⏳' : '✓'}</span>
+                                    {(isActualStart || format(d, 'EEE') === 'Mon') ? (
+                                      <span className="truncate flex items-center font-bold text-white">
+                                        <span className="mr-1">🏖️</span> 
+                                        <span className="truncate">{lt?.name_el || 'Leave'}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] text-white/70 font-mono tracking-widest pl-2 select-none font-extrabold">&bull; &bull; &bull;</span>
+                                    )}
+                                    {isActualEnd && (
+                                      <span className="ml-1 text-[8px] uppercase font-mono px-1 py-0 rounded bg-black/25 text-white font-black shrink-0">
+                                        {req.status === 'pending' ? '⏳ PEND' : '✓'}
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })}
