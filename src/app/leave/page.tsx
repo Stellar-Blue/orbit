@@ -14,18 +14,14 @@ import { LeaveRequest } from '@/lib/types';
 
 export default function LeaveManagementPage() {
   const { 
-    currentUser, profiles, leaveTypes, entitlements, 
+    currentUser, profiles, leaveTypes, 
     leaveRequests, mandatoryLeaves, publicHolidays, 
-    addLeaveRequest, updateLeaveRequestStatus, addMandatoryLeave, updateErganiStatus,
-    editLeaveRequest, requestLeaveCancellation, decideLeaveCancellation, splitAndAddLeaveRequest,
-    getEmployeeLeaveBalance
+    requestLeaveCancellation, splitAndAddLeaveRequest,
+    updateLeaveRequestStatus, getEmployeeLeaveBalance
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
-
-  // Tabs
-  const [tab, setTab] = useState<'my_leaves' | 'requests' | 'calendar' | 'mandatory'>('my_leaves');
 
   // Interactive Calendar State in My Leaves tab
   const [calendarMonth, setCalendarMonth] = useState(() => new Date('2026-08-01T00:00:00'));
@@ -72,25 +68,6 @@ export default function LeaveManagementPage() {
   const [endDate, setEndDate] = useState('2026-09-18');
   const [note, setNote] = useState('');
 
-  // Rejection reason modal
-  const [rejectModalTarget, setRejectModalTarget] = useState<string | null>(null);
-  const [rejectionReasonInput, setRejectionReasonInput] = useState('');
-
-  // Admin Post-Approval Editor modal state
-  const [editingLeave, setEditingLeave] = useState<LeaveRequest | null>(null);
-  const [editStartDate, setEditStartDate] = useState('');
-  const [editEndDate, setEditEndDate] = useState('');
-  const [editNote, setEditNote] = useState('');
-  const [editReason, setEditReason] = useState('');
-
-  // Mandatory Leave Declaration (Company-Wide) State
-  const [isMandatoryOpen, setIsMandatoryOpen] = useState(false);
-  const [mName, setMName] = useState('Mandatory August Summer Bridge 2026');
-  const [mStart, setMStart] = useState('2026-08-10');
-  const [mEnd, setMEnd] = useState('2026-08-14');
-  const [mNote, setMNote] = useState('Company-wide summer vacation week.');
-  const [previewMode, setPreviewMode] = useState(false);
-
   // Calculate working days excluding Greek holidays and weekends for an individual schedule
   const calculateWorkingDays = (startStr: string, endStr: string, schedule: string[], targetProfileId: string = currentUser.id) => {
     try {
@@ -122,12 +99,6 @@ export default function LeaveManagementPage() {
   const currentWorkingDays = useMemo(() => {
     return calculateWorkingDays(startDate, endDate, currentUser.work_schedule);
   }, [startDate, endDate, currentUser, publicHolidays, mandatoryLeaves, leaveRequests]);
-
-  const editedWorkingDays = useMemo(() => {
-    if (!editingLeave) return 0;
-    const targetProfile = profiles.find(p => p.id === editingLeave.profile_id);
-    return calculateWorkingDays(editStartDate, editEndDate, targetProfile?.work_schedule || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
-  }, [editStartDate, editEndDate, editingLeave, profiles, publicHolidays]);
 
   const selectedLeaveType = useMemo(() => {
     return leaveTypes.find(t => t.id === reqType) || leaveTypes[0];
@@ -194,49 +165,7 @@ export default function LeaveManagementPage() {
     }, currentUser.work_schedule, publicHolidays);
 
     setIsRequestOpen(false);
-    alert(isAdmin ? 'Leave entered directly as approved admin entry!' : 'Leave request submitted for admin queue review!');
-  };
-
-  const handleConfirmReject = () => {
-    if (!rejectModalTarget) return;
-    updateLeaveRequestStatus(rejectModalTarget, 'rejected', rejectionReasonInput || 'No specific reason provided.');
-    setRejectModalTarget(null);
-    setRejectionReasonInput('');
-  };
-
-  const handleSaveAdminEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingLeave) return;
-    if (!editReason.trim()) {
-      alert('MANDATORY REASON: Please provide a brief reason for this post-approval correction or partial cancellation.');
-      return;
-    }
-
-    const wasSubmitted = editingLeave.ergani_status === 'submitted';
-    editLeaveRequest(editingLeave.id, {
-      start_date: editStartDate,
-      end_date: editEndDate,
-      working_days: editedWorkingDays,
-      note: editNote
-    }, editReason);
-
-    setEditingLeave(null);
-    alert(`Leave modified successfully!${wasSubmitted ? ' Since this leave was previously filed in ΕΡΓΑΝΗ, its status has automatically flipped to NEEDS_AMENDMENT in the compliance dashboard.' : ''}`);
-  };
-
-  const handlePublishMandatory = () => {
-    addMandatoryLeave({
-      name: mName,
-      leave_type_id: leaveTypes.find(t => t.code === 'annual')?.id || 'lt-annual',
-      start_date: mStart,
-      end_date: mEnd,
-      status: 'published',
-      created_by: currentUser.id,
-      note: mNote
-    });
-    setIsMandatoryOpen(false);
-    setPreviewMode(false);
-    alert('Mandatory Leave Published! Fan-out engine has automatically created approved entries for all eligible employees.');
+    alert('Leave request submitted successfully!');
   };
 
   if (isContractor) {
@@ -251,73 +180,31 @@ export default function LeaveManagementPage() {
     );
   }
 
-  const pendingCount = leaveRequests.filter(r => r.status === 'pending' || r.status === 'cancellation_requested').length;
-  const unsubmittedErgani = leaveRequests.filter(r => (r.status === 'approved' || r.status === 'cancelled' || r.status === 'in_progress') && (r.ergani_status === 'pending' || r.ergani_status === 'needs_amendment'));
-
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
+    <div className="space-y-6 animate-in fade-in duration-200 pb-16">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-            <Calendar className="w-6 h-6 mr-3 text-[#3D87D3]" /> Leave Management & Holiday Quotas
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center">
+            <Calendar className="w-6 h-6 mr-3 text-[#3D87D3]" /> Personal Leave Management &amp; Quota Balance
           </h1>
-          <p className="text-slate-500 text-xs mt-1">
-            Greek public holiday aware leave calculation, explicit state-machine lifecycle, and company-wide mandatory closure fan-out engine.
+          <p className="text-slate-500 text-xs mt-1 font-medium">
+            Review your annual leave allowance, explore holiday dates, and click-and-drag directly on the calendar to file new requests.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Link href="/calendar" className="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs border border-indigo-200 transition-all flex items-center shadow-2xs">
-            <Calendar className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> View Unified Calendar
+          <Link href="/calendar" className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-xs border border-indigo-200 transition-all flex items-center shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> View Company Unified Calendar
           </Link>
-          {isAdmin && (
-            <Button variant="secondary" size="sm" onClick={() => { setIsMandatoryOpen(true); setPreviewMode(false); }} className="cursor-pointer">
-              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-amber-600" /> Declare Mandatory Leave
-            </Button>
-          )}
-          <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer">
-            <Plus className="w-4 h-4 mr-1" /> File Leave Request (<span className="font-mono">&lt;30s</span>)
+          <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-black px-4 py-2">
+            <Plus className="w-4 h-4 mr-1" /> File Leave Request (<span className="font-mono font-bold">&lt;30s</span>)
           </Button>
         </div>
       </div>
 
-      {/* Tabs Toolbar */}
-      <div className="flex border-b border-slate-200 space-x-6 text-sm flex-wrap gap-y-2">
-        <button 
-          onClick={() => setTab('my_leaves')}
-          className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'my_leaves' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          <BarChart3 className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> My Leaves & Big Picture
-        </button>
-        <button 
-          onClick={() => setTab('calendar')}
-          className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'calendar' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          <CalendarDays className="w-4 h-4 mr-1.5 text-indigo-500" /> Team Out-of-Office Calendar
-        </button>
-        {isAdmin && (
-          <>
-            <button 
-              onClick={() => setTab('requests')}
-              className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'requests' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              <span>Shared Founder Approval Queue & Register</span>
-              {pendingCount > 0 && <span className="ml-2 px-2 py-0.5 rounded-full bg-[#3D87D3]/10 border border-[#3D87D3]/20 text-[#3D87D3] font-bold text-xs">{pendingCount}</span>}
-            </button>
-            <button 
-              onClick={() => setTab('mandatory')}
-              className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'mandatory' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              <span>Mandatory Closures ({mandatoryLeaves.length})</span>
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* TAB 0: MY LEAVES (THE BIG PICTURE) */}
-      {tab === 'my_leaves' && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          {/* ULTRA-COMPACT TOP RIBBON: BALANCE & NEXT SCHEDULED HOLIDAY */}
+      {/* MY LEAVES DASHBOARD CONTENT */}
+      <div className="space-y-6 animate-in fade-in duration-200">
+        {/* ULTRA-COMPACT TOP RIBBON: BALANCE & NEXT SCHEDULED HOLIDAY */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
             {/* COMPACT BALANCE EQUATION BAR (7 COLS) */}
             <div className="lg:col-span-7 p-4 rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-sm border border-slate-700 flex flex-col justify-between">
@@ -803,191 +690,9 @@ export default function LeaveManagementPage() {
                   })()}
                 </div>
               </Card>
-            </div>
           </div>
         </div>
-      )}
-
-      {/* TAB 1: SHARED FOUNDER APPROVAL QUEUE & REGISTER (ADMIN ONLY) */}
-      {tab === 'requests' && isAdmin && (
-        <Card title="Shared Founder Approval Queue & Team Register" subtitle="Organization-wide oversight of employee leave applications">
-          <div className="space-y-3 mt-2">
-            {leaveRequests.map(req => {
-              const prof = profiles.find(p => p.id === req.profile_id);
-              const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
-              const isMandatory = req.origin === 'mandatory';
-              const isSelf = req.profile_id === currentUser.id;
-              const isFuture = isAfter(parseISO(req.start_date), parseISO(todayStr));
-
-              return (
-                <div key={req.id} className={`p-4 rounded-xl bg-white border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs ${
-                  req.status === 'cancellation_requested' ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 hover:border-slate-300'
-                }`}>
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center space-x-2.5">
-                      <span className="font-extrabold text-sm text-slate-900">{prof?.first_name} {prof?.last_name}</span>
-                      <Badge variant="neutral" className="text-[10px] font-bold" style={{ borderColor: lType?.colour }}>{lType?.name_el} ({lType?.name_en})</Badge>
-                      {isMandatory && <Badge variant="info" className="text-[10px] bg-[#3D87D3]/10 text-[#3D87D3] border-[#3D87D3]/20 font-bold">Company-Wide Closure</Badge>}
-                      {req.origin === 'admin_entry' && <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">Admin Entry</span>}
-                    </div>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Dates: <strong className="text-slate-700 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{getEffectiveDays(req)} working days</strong>
-                    </p>
-                    <p className="text-[11px] text-slate-600 italic">&ldquo;{req.note || 'No notes attached'}&rdquo;</p>
-
-                    {req.rejection_reason && (
-                      <div className="mt-1 p-2 rounded bg-rose-50 border border-rose-200 text-[11px] text-rose-800 font-bold">
-                        <strong>Rejection Reason:</strong> {req.rejection_reason}
-                      </div>
-                    )}
-                    {req.admin_edit_reason && (
-                      <div className="mt-1 p-2 rounded bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900 flex items-center font-bold">
-                        <Edit3 className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
-                        <span><strong>Admin Modification:</strong> {req.admin_edit_reason}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
-                      req.ergani_status === 'submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                      req.ergani_status === 'needs_amendment' ? 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse' :
-                      req.ergani_status === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'
-                    }`}>
-                      ΕΡΓΑΝΗ: {req.ergani_status}
-                    </span>
-
-                    {req.status === 'pending' ? (
-                      <div className="flex items-center space-x-1.5">
-                        <Button 
-                          size="sm" variant="primary" className="bg-emerald-600 hover:bg-emerald-500 font-extrabold border-none text-xs cursor-pointer"
-                          onClick={() => updateLeaveRequestStatus(req.id, 'approved')}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
-                        </Button>
-                        <Button 
-                          size="sm" variant="danger" className="text-xs font-extrabold cursor-pointer"
-                          onClick={() => setRejectModalTarget(req.id)}
-                        >
-                          <XCircle className="w-3.5 h-3.5 mr-1" /> Reject...
-                        </Button>
-                      </div>
-                    ) : req.status === 'cancellation_requested' ? (
-                      <div className="flex items-center space-x-1.5">
-                        <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-500 text-xs font-extrabold cursor-pointer" onClick={() => decideLeaveCancellation(req.id, true)}>
-                          Accept Cancel
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-xs font-bold cursor-pointer" onClick={() => decideLeaveCancellation(req.id, false)}>
-                          Decline
-                        </Button>
-                      </div>
-                    ) : (
-                      <Badge variant={
-                        req.status === 'approved' || req.status === 'taken' ? 'success' : 
-                        req.status === 'rejected' ? 'error' : 
-                        req.status === 'cancelled' ? 'neutral' : 'warning'
-                      } className="text-xs py-1 px-2.5 uppercase font-bold">
-                        {req.status.replace('_', ' ')}
-                      </Badge>
-                    )}
-
-                    {/* Admin Post-Approval Editor button */}
-                    {(req.status === 'approved' || req.status === 'in_progress' || req.status === 'taken') && (
-                      <Button size="sm" variant="outline" className="text-xs font-bold text-indigo-700 border-indigo-200 hover:bg-indigo-50 cursor-pointer flex items-center" onClick={() => {
-                        setEditingLeave(req);
-                        setEditStartDate(req.start_date);
-                        setEditEndDate(req.end_date);
-                        setEditNote(req.note || '');
-                        setEditReason('');
-                      }}>
-                        <Edit3 className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Admin Edit
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* TAB 2: TEAM CALENDAR WITH PRIVACY LENSES (§4) */}
-      {tab === 'calendar' && (
-        <Card title="Team Out-of-Office Calendar" subtitle={isAdmin ? "Admin view: Full leave types, medical reasons, and attachment notes visible." : "Colleague view: Strict operational privacy lens applied (Names and dates only; medical and personal reasons hidden)."}>
-          <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-900 to-blue-800 text-white flex items-center justify-between mb-6 shadow-xs">
-            <div>
-              <h4 className="font-bold text-sm flex items-center">✨ Try our Interactive Unified Calendar!</h4>
-              <p className="text-xs text-slate-200 mt-0.5">View leaves, public holidays, and remote teleworking schedules on an interactive monthly date grid.</p>
-            </div>
-            <Link href="/calendar" className="px-4 py-2 bg-white text-indigo-950 hover:bg-slate-100 font-extrabold text-xs rounded-xl transition-all shadow-sm shrink-0">
-              Open Company Calendar &rarr;
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
-            {leaveRequests.filter(r => r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken').map(req => {
-              const prof = profiles.find(p => p.id === req.profile_id);
-              const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
-              const isSelf = req.profile_id === currentUser.id;
-              const showFullDetail = isAdmin || isSelf;
-
-              return (
-                <div key={req.id} className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between text-xs mb-2">
-                      <span className="font-bold text-slate-800 text-sm">{prof?.first_name} {prof?.last_name}</span>
-                      {showFullDetail ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold text-white shadow-2xs" style={{ backgroundColor: lType?.colour }}>
-                          {lType?.name_en}
-                        </span>
-                      ) : (
-                        <Badge variant="neutral" className="text-[10px] bg-slate-100 text-slate-700 font-semibold">
-                          Out-of-Office
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm font-bold text-[#3D87D3] font-mono mt-1">{req.start_date} &rarr; {req.end_date}</p>
-                    <p className="text-xs text-slate-500 mt-1">{getEffectiveDays(req)} scheduled working days</p>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                    {showFullDetail ? (
-                      <span className="text-slate-700 font-medium block italic">&ldquo;{req.note}&rdquo;</span>
-                    ) : (
-                      <span className="text-slate-400 italic flex items-center">
-                        <FileText className="w-3.5 h-3.5 mr-1 text-slate-400" /> Details restricted (Privacy Lens)
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* TAB 3: MANDATORY LEAVES */}
-      {tab === 'mandatory' && isAdmin && (
-        <Card title="Company-Wide Mandatory Leave Register" subtitle="Admin-declared mandatory breaks (Christmas, August closure) counting directly against employees' annual balances">
-          <div className="space-y-4 mt-2">
-            {mandatoryLeaves.map(ml => (
-              <div key={ml.id} className="p-5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-base text-slate-800">{ml.name}</h4>
-                  <Badge variant="info">{ml.status.toUpperCase()}</Badge>
-                </div>
-                <p className="text-xs text-slate-500">
-                  Dates: <strong className="text-[#3D87D3] font-mono">{ml.start_date} &rarr; {ml.end_date}</strong> &bull; Notes: {ml.note}
-                </p>
-                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-xs flex items-center justify-between font-medium">
-                  <span>Fan-Out Status: <strong className="text-slate-900">Active</strong> across all full-time and part-time staff (contractors excluded).</span>
-                  <span>Part-time schedules respected</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
+      </div>
 
       {/* FILE LEAVE REQUEST MODAL (WITH NOTICE PERIOD RULES) */}
       <Modal isOpen={isRequestOpen} onClose={() => setIsRequestOpen(false)} title="File Leave Request">
@@ -1060,158 +765,6 @@ export default function LeaveManagementPage() {
         </form>
       </Modal>
 
-      {/* REJECTION REASON MODAL (§1) */}
-      <Modal isOpen={!!rejectModalTarget} onClose={() => setRejectModalTarget(null)} title="Provide Leave Rejection Explanation">
-        <div className="space-y-4 text-xs">
-          <p className="text-slate-600">
-            Please provide an explanation for rejecting this leave request. This will be visible to the employee on their request card to maintain transparent communication.
-          </p>
-          <textarea
-            rows={3}
-            value={rejectionReasonInput}
-            onChange={e => setRejectionReasonInput(e.target.value)}
-            placeholder="e.g. Overlapping absences in critical team window, please propose alternative dates..."
-            className="w-full bg-white border border-slate-200 rounded p-2.5 text-slate-800 placeholder:text-slate-400"
-          />
-          <div className="flex justify-end space-x-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setRejectModalTarget(null)}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={handleConfirmReject}>Confirm Rejection &rarr;</Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ADMIN POST-APPROVAL EDITOR & PARTIAL CANCELLATION MODAL (§2) */}
-      <Modal isOpen={!!editingLeave} onClose={() => setEditingLeave(null)} title="Admin Post-Approval Modification / Partial Cancel">
-        {editingLeave && (
-          <form onSubmit={handleSaveAdminEdit} className="space-y-4 text-xs">
-            <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium flex items-center justify-between">
-              <span>Current Status: <strong>{editingLeave.status.toUpperCase()}</strong></span>
-              <span>ΕΡΓΑΝΗ: <strong>{editingLeave.ergani_status.toUpperCase()}</strong></span>
-            </div>
-            <p className="text-slate-600 text-[11px]">
-              Use this tool when reality diverges from plan (e.g., employee returned early on the 3rd day or dates shifted). Adjusting days will atomically update the employee's entitlement balance.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">New Start Date</label>
-                <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono" />
-              </div>
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">New End Date / Early Return Date</label>
-                <input type="date" value={editEndDate} onChange={e => setEditEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono" />
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between text-xs font-medium">
-              <span>Recomputed Working Days:</span>
-              <span className="text-base font-extrabold text-[#3D87D3] font-mono">{editedWorkingDays} Days (from {editingLeave.working_days})</span>
-            </div>
-
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Mandatory Modification Reason (For Audit & Employee Notification)</label>
-              <input 
-                type="text" 
-                required 
-                value={editReason} 
-                onChange={e => setEditReason(e.target.value)} 
-                placeholder="e.g. Employee returned to office early on Wednesday"
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800" 
-              />
-            </div>
-
-            {editingLeave.ergani_status === 'submitted' && (
-              <div className="p-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold flex items-center">
-                <AlertTriangle className="w-4 h-4 mr-2 text-amber-600 shrink-0" />
-                <span>Notice: Since this leave was marked as submitted to ΕΡΓΑΝΗ, this edit will automatically flip its status to NEEDS_AMENDMENT in the compliance widget.</span>
-              </div>
-            )}
-
-            <div className="pt-2 flex justify-end space-x-2">
-              <Button variant="outline" size="sm" type="button" onClick={() => setEditingLeave(null)}>Cancel</Button>
-              <Button variant="primary" size="sm" type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold">
-                Save & Apply Atomic Balance Adjustment &rarr;
-              </Button>
-            </div>
-          </form>
-        )}
-      </Modal>
-
-      {/* DECLARE MANDATORY LEAVE MODAL WITH PREVIEW-BEFORE-PUBLISH */}
-      <Modal isOpen={isMandatoryOpen} onClose={() => { setIsMandatoryOpen(false); setPreviewMode(false); }} title="Declare Company-Wide Mandatory Leave">
-        <div className="space-y-4 text-xs">
-          {!previewMode ? (
-            <>
-              <p className="text-slate-600">
-                This will create a mandatory leave event and automatically fan out approved leave requests to all eligible active employees (excluding contractors), counting directly against their regular annual balance.
-              </p>
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Closure Title</label>
-                <input type="text" value={mName} onChange={e => setMName(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-medium text-sm" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold uppercase text-slate-500 mb-1">Start Date</label>
-                  <input type="date" value={mStart} onChange={e => setMStart(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800" />
-                </div>
-                <div>
-                  <label className="block font-semibold uppercase text-slate-500 mb-1">End Date</label>
-                  <input type="date" value={mEnd} onChange={e => setMEnd(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800" />
-                </div>
-              </div>
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Announcement Note</label>
-                <textarea rows={2} value={mNote} onChange={e => setMNote(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800" />
-              </div>
-              <div className="pt-2 flex justify-end space-x-2">
-                <Button variant="outline" size="sm" onClick={() => setIsMandatoryOpen(false)}>Cancel</Button>
-                <Button variant="primary" size="sm" onClick={() => setPreviewMode(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90">Preview Fan-Out Impact &rarr;</Button>
-              </div>
-            </>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-3 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-between font-semibold">
-                <span>Previewing Fan-Out across StellarBlue Active Headcount</span>
-                <Badge variant="info">Ready to Publish</Badge>
-              </div>
-
-              <div className="max-h-56 overflow-y-auto space-y-2 border border-slate-200 rounded-lg p-2 bg-slate-50">
-                {profiles.filter(p => p.status === 'active').map(p => {
-                  const isContractor = p.employment_type === 'contractor';
-                  const isPartTime = p.employment_type === 'part_time';
-                  const deductedDays = isContractor ? 0 : isPartTime ? 3 : 5;
-                  
-                  return (
-                    <div key={p.id} className="p-2.5 rounded bg-white border border-slate-200 flex items-center justify-between text-xs shadow-2xs">
-                      <div>
-                        <span className="font-semibold text-slate-800">{p.first_name} {p.last_name}</span>
-                        <span className="text-[10px] text-slate-500 ml-1.5">({p.employment_type})</span>
-                      </div>
-                      <div>
-                        {isContractor ? (
-                          <span className="text-slate-400 font-mono">Skipped (Contractor)</span>
-                        ) : (
-                          <span className="text-[#3D87D3] font-mono font-bold">-{deductedDays} days deducted</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="p-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-medium">
-                <strong>Policy reminder:</strong> If an employee has zero remaining balance, deduction still applies and balance becomes negative (flagged in admin reports, never blocked).
-              </div>
-
-              <div className="pt-2 flex justify-end space-x-2">
-                <Button variant="outline" size="sm" onClick={() => setPreviewMode(false)}>&larr; Back to Edit</Button>
-                <Button variant="primary" size="sm" onClick={handlePublishMandatory} className="bg-emerald-600 hover:bg-emerald-500 font-bold">
-                  Confirm & Publish Mandatory Leave &rarr;
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </Modal>
     </div>
   );
 }
