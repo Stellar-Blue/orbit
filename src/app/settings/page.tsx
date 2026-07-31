@@ -7,16 +7,17 @@ import {
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X 
 } from 'lucide-react';
-import { PolicyPeriod, RemotePolicy, Team } from '@/lib/types';
+import { PolicyPeriod, RemotePolicy, Team, LeaveType } from '@/lib/types';
 
 export default function CompanySettingsPage() {
   const { 
     currentUser, remotePolicies, updateRemotePolicy, 
-    teams, profiles, addTeam, updateTeam, deleteTeam 
+    teams, profiles, addTeam, updateTeam, deleteTeam,
+    leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'general'>('remote');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -34,6 +35,24 @@ export default function CompanySettingsPage() {
   const [editTeamName, setEditTeamName] = useState('');
   const [editTeamLeadId, setEditTeamLeadId] = useState('');
   const [isSubmittingTeam, setIsSubmittingTeam] = useState(false);
+
+  // Local states for Leave Type management
+  const [newLeaveCode, setNewLeaveCode] = useState('');
+  const [newLeaveNameEn, setNewLeaveNameEn] = useState('');
+  const [newLeaveNameEl, setNewLeaveNameEl] = useState('');
+  const [newLeaveColor, setNewLeaveColor] = useState('#3b82f6');
+  const [newLeaveCountsAgainstBalance, setNewLeaveCountsAgainstBalance] = useState(false);
+  const [newLeaveRequiresDocument, setNewLeaveRequiresDocument] = useState(false);
+  const [newLeaveRequiresApproval, setNewLeaveRequiresApproval] = useState(true);
+  const [isSubmittingLeaveType, setIsSubmittingLeaveType] = useState(false);
+
+  const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
+  const [editLeaveNameEn, setEditLeaveNameEn] = useState('');
+  const [editLeaveNameEl, setEditLeaveNameEl] = useState('');
+  const [editLeaveColor, setEditLeaveColor] = useState('#3b82f6');
+  const [editLeaveCountsAgainstBalance, setEditLeaveCountsAgainstBalance] = useState(false);
+  const [editLeaveRequiresDocument, setEditLeaveRequiresDocument] = useState(false);
+  const [editLeaveRequiresApproval, setEditLeaveRequiresApproval] = useState(true);
 
   useEffect(() => {
     if (activeCompanyPolicy) {
@@ -103,6 +122,58 @@ export default function CompanySettingsPage() {
     }
   };
 
+  const handleCreateLeaveType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLeaveCode.trim() || !newLeaveNameEn.trim() || !newLeaveNameEl.trim()) {
+      alert('Code, English Name, and Greek Name are required!');
+      return;
+    }
+    if (leaveTypes.some(lt => lt.code.toLowerCase() === newLeaveCode.trim().toLowerCase())) {
+      alert('A leave category with this unique code identifier already exists!');
+      return;
+    }
+    setIsSubmittingLeaveType(true);
+    const success = await addLeaveType({
+      code: newLeaveCode.trim().toLowerCase().replace(/\s+/g, '_'),
+      name_en: newLeaveNameEn.trim(),
+      name_el: newLeaveNameEl.trim(),
+      colour: newLeaveColor,
+      counts_against_balance: newLeaveCountsAgainstBalance,
+      requires_document: newLeaveRequiresDocument,
+      requires_approval: newLeaveRequiresApproval
+    });
+    setIsSubmittingLeaveType(false);
+    if (success) {
+      alert(`Leave category "${newLeaveNameEn.trim()}" successfully registered to Supabase!`);
+      setNewLeaveCode('');
+      setNewLeaveNameEn('');
+      setNewLeaveNameEl('');
+      setNewLeaveColor('#3b82f6');
+      setNewLeaveCountsAgainstBalance(false);
+      setNewLeaveRequiresDocument(false);
+      setNewLeaveRequiresApproval(true);
+    }
+  };
+
+  const handleUpdateLeaveType = async (id: string) => {
+    if (!editLeaveNameEn.trim() || !editLeaveNameEl.trim()) {
+      alert('Names cannot be empty!');
+      return;
+    }
+    const success = await updateLeaveType(id, {
+      name_en: editLeaveNameEn.trim(),
+      name_el: editLeaveNameEl.trim(),
+      colour: editLeaveColor,
+      counts_against_balance: editLeaveCountsAgainstBalance,
+      requires_document: editLeaveRequiresDocument,
+      requires_approval: editLeaveRequiresApproval
+    });
+    if (success) {
+      setEditingLeaveId(null);
+      alert('Leave category successfully updated in database!');
+    }
+  };
+
   const getPeriodDisplay = (period: PolicyPeriod) => {
     switch (period) {
       case 'week': return 'Week';
@@ -163,6 +234,17 @@ export default function CompanySettingsPage() {
         >
           <Users className="w-4 h-4 text-emerald-500" />
           <span>Company Departments & Teams ({teams.length})</span>
+        </button>
+        <button
+          onClick={() => setSelectedTab('leaves')}
+          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
+            selectedTab === 'leaves'
+              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Calendar className="w-4 h-4 text-amber-500" />
+          <span>Leave Categories & Policies ({leaveTypes.length})</span>
         </button>
         <button
           onClick={() => setSelectedTab('general')}
@@ -498,6 +580,274 @@ export default function CompanySettingsPage() {
                   className="w-full py-3 bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center"
                 >
                   <Plus className="w-4 h-4 mr-1.5" /> Add Team to Organization
+                </Button>
+              </form>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: LEAVE CATEGORIES CONFIGURATION */}
+      {selectedTab === 'leaves' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          {/* Active Leave Types List */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center">
+                <Calendar className="w-5 h-5 mr-2 text-amber-500" /> Authorized Employee Leave Categories
+              </h2>
+              <Badge variant="info">Synced with public.leave_types</Badge>
+            </div>
+            <div className="space-y-3">
+              {leaveTypes.length === 0 ? (
+                <Card className="p-10 text-center text-slate-500 text-xs border-dashed">
+                  No leave categories configured. Add your first leave type on the right.
+                </Card>
+              ) : (
+                leaveTypes.map((t) => {
+                  const isEditing = editingLeaveId === t.id;
+
+                  if (isEditing) {
+                    return (
+                      <div key={t.id} className="p-4 rounded-xl bg-slate-50 border-2 border-[#3D87D3] shadow-xs space-y-3">
+                        <div className="flex items-center justify-between font-bold text-xs text-[#3D87D3]">
+                          <span>Editing Leave Category: {t.code}</span>
+                          <button onClick={() => setEditingLeaveId(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Name (English)</label>
+                            <input
+                              type="text"
+                              value={editLeaveNameEn}
+                              onChange={(e) => setEditLeaveNameEn(e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Name (Greek)</label>
+                            <input
+                              type="text"
+                              value={editLeaveNameEl}
+                              onChange={(e) => setEditLeaveNameEl(e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"
+                            />
+                          </div>
+                        </div>
+                        <div className="text-xs">
+                          <label className="block font-bold text-slate-700 mb-1">Ribbon Color</label>
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="color"
+                              value={editLeaveColor}
+                              onChange={(e) => setEditLeaveColor(e.target.value)}
+                              className="w-9 h-9 p-0.5 rounded-lg border border-slate-300 bg-white cursor-pointer"
+                            />
+                            <span className="font-mono font-bold uppercase text-slate-700">{editLeaveColor}</span>
+                          </div>
+                        </div>
+                        <div className="space-y-2 pt-2 border-t border-slate-200 text-xs font-bold text-slate-700">
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editLeaveCountsAgainstBalance}
+                              onChange={(e) => setEditLeaveCountsAgainstBalance(e.target.checked)}
+                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                            />
+                            <span>Deduct from Employee's Annual Entitlement Balance</span>
+                          </label>
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editLeaveRequiresDocument}
+                              onChange={(e) => setEditLeaveRequiresDocument(e.target.checked)}
+                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                            />
+                            <span>Requires Uploading Official Supporting Document (e.g., Medical Note)</span>
+                          </label>
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editLeaveRequiresApproval}
+                              onChange={(e) => setEditLeaveRequiresApproval(e.target.checked)}
+                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                            />
+                            <span>Requires Manager / Founder Approval (Not Auto-approved)</span>
+                          </label>
+                        </div>
+                        <div className="flex justify-end space-x-2 pt-1">
+                          <Button size="sm" variant="outline" onClick={() => setEditingLeaveId(null)}>Cancel</Button>
+                          <Button size="sm" variant="primary" onClick={() => handleUpdateLeaveType(t.id)} className="bg-[#3D87D3] font-bold cursor-pointer">
+                            Save Changes
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={t.id} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                          <span className="w-3.5 h-3.5 rounded-full shadow-2xs shrink-0" style={{ backgroundColor: t.colour || '#3b82f6' }} />
+                          <h3 className="font-extrabold text-slate-900 text-base">{t.name_el} ({t.name_en})</h3>
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                            {t.code}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold">
+                          <span className={`px-2 py-0.5 rounded-full border ${t.counts_against_balance ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                            {t.counts_against_balance ? '⚖️ Deducted from Balance' : '🔓 Uncapped (Not Deducted)'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full border ${t.requires_document ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                            {t.requires_document ? '📎 Doc Required' : '📄 No Doc Needed'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full border ${t.requires_approval ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-purple-50 text-purple-800 border-purple-200'}`}>
+                            {t.requires_approval ? '✓ Approval Required' : '⚡ Auto-approved'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => {
+                            setEditingLeaveId(t.id);
+                            setEditLeaveNameEn(t.name_en);
+                            setEditLeaveNameEl(t.name_el);
+                            setEditLeaveColor(t.colour || '#3b82f6');
+                            setEditLeaveCountsAgainstBalance(t.counts_against_balance);
+                            setEditLeaveRequiresDocument(t.requires_document);
+                            setEditLeaveRequiresApproval(t.requires_approval);
+                          }}
+                          className="text-xs py-1.5 font-bold border-slate-300 hover:bg-slate-50 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 mr-1 text-blue-600" /> Edit
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to completely remove leave category "${t.name_en}"?`)) {
+                              deleteLeaveType(t.id);
+                            }
+                          }}
+                          className="text-xs py-1.5 font-bold text-rose-700 border-rose-200 hover:bg-rose-50 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" /> Delete
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Add New Leave Type Form Card */}
+          <div>
+            <Card title="New Leave Category" subtitle="Add customizable absence types" className="shadow-xs border-slate-200">
+              <form onSubmit={handleCreateLeaveType} className="space-y-4 text-xs mt-3">
+                <div>
+                  <label className="block font-bold uppercase text-slate-700 mb-1">Unique Code Identifier *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., sabbatical, study_leave"
+                    value={newLeaveCode}
+                    onChange={(e) => setNewLeaveCode(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs font-mono lowercase"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Unique code used internally in database storage.</p>
+                </div>
+
+                <div>
+                  <label className="block font-bold uppercase text-slate-700 mb-1">English Title *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Study Leave"
+                    value={newLeaveNameEn}
+                    onChange={(e) => setNewLeaveNameEn(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold uppercase text-slate-700 mb-1">Greek Title (Ελληνικά) *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Φοιτητική Άδεια"
+                    value={newLeaveNameEl}
+                    onChange={(e) => setNewLeaveNameEl(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold uppercase text-slate-700 mb-1">Calendar & Ribbon Color</label>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="color"
+                      value={newLeaveColor}
+                      onChange={(e) => setNewLeaveColor(e.target.value)}
+                      className="w-10 h-10 p-0.5 rounded-xl border border-slate-300 bg-white cursor-pointer shadow-2xs"
+                    />
+                    <span className="font-mono font-bold uppercase text-slate-700">{newLeaveColor}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    {['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b'].map(c => (
+                      <button
+                        type="button"
+                        key={c}
+                        onClick={() => setNewLeaveColor(c)}
+                        className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${newLeaveColor === c ? 'scale-125 border-slate-900 shadow-sm' : 'border-white hover:scale-110'}`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 pt-2 border-t border-slate-200 font-bold text-slate-700">
+                  <label className="flex items-start space-x-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLeaveCountsAgainstBalance}
+                      onChange={(e) => setNewLeaveCountsAgainstBalance(e.target.checked)}
+                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                    />
+                    <span>Deduct from Annual Entitlement Balance (usually OFF for sick/parental)</span>
+                  </label>
+                  <label className="flex items-start space-x-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLeaveRequiresDocument}
+                      onChange={(e) => setNewLeaveRequiresDocument(e.target.checked)}
+                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                    />
+                    <span>Require Employee to Attach Medical/Legal Document</span>
+                  </label>
+                  <label className="flex items-start space-x-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLeaveRequiresApproval}
+                      onChange={(e) => setNewLeaveRequiresApproval(e.target.checked)}
+                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                    />
+                    <span>Require Founder / Manager Approval Sign-off</span>
+                  </label>
+                </div>
+
+                <Button 
+                  variant="primary" 
+                  type="submit" 
+                  disabled={isSubmittingLeaveType}
+                  className="w-full py-3 bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center mt-4"
+                >
+                  <Plus className="w-4 h-4 mr-1.5" /> Register Leave Category
                 </Button>
               </form>
             </Card>

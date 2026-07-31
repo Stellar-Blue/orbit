@@ -51,6 +51,9 @@ interface AppState {
   addTeam: (name: string, leadProfileId?: string) => Promise<boolean>;
   updateTeam: (id: string, name: string, leadProfileId?: string) => Promise<boolean>;
   deleteTeam: (id: string) => Promise<boolean>;
+  addLeaveType: (payload: Omit<LeaveType, 'id'>) => Promise<boolean>;
+  updateLeaveType: (id: string, payload: Partial<LeaveType>) => Promise<boolean>;
+  deleteLeaveType: (id: string) => Promise<boolean>;
   getEmployeeLeaveBalance: (profileId: string, year: number) => {
     entitlement: number;
     carryOver: number;
@@ -767,6 +770,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const addLeaveType = async (payload: Omit<LeaveType, 'id'>): Promise<boolean> => {
+    const newId = generateUUID();
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const fullPayload = { id: newId, ...payload };
+      const { error, data } = await supabase.from('leave_types').insert(fullPayload).select().single();
+      if (error) {
+        console.error("Error creating leave type:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      const created = (data as LeaveType) || fullPayload;
+      setLeaveTypes(prev => [...prev, created]);
+      return true;
+    } catch (e: any) {
+      console.error("Exception adding leave type:", e);
+      alert(`Exception: ${e.message}`);
+      return false;
+    }
+  };
+
+  const updateLeaveType = async (id: string, payload: Partial<LeaveType>): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('leave_types').update(payload).eq('id', id);
+      if (error) {
+        console.error("Error updating leave type:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setLeaveTypes(prev => prev.map(t => t.id === id ? { ...t, ...payload } : t));
+      return true;
+    } catch (e: any) {
+      console.error("Exception updating leave type:", e);
+      alert(`Exception: ${e.message}`);
+      return false;
+    }
+  };
+
+  const deleteLeaveType = async (id: string): Promise<boolean> => {
+    const used = leaveRequests.filter(r => r.leave_type_id === id || r.leave_type?.id === id);
+    if (used.length > 0) {
+      alert(`DELETION BLOCKED: There are currently ${used.length} logged leave request(s) utilizing this leave category. You cannot delete an actively referenced leave type.`);
+      return false;
+    }
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('leave_types').delete().eq('id', id);
+      if (error) {
+        console.error("Error deleting leave type:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setLeaveTypes(prev => prev.filter(t => t.id !== id));
+      return true;
+    } catch (e: any) {
+      console.error("Exception deleting leave type:", e);
+      alert(`Exception: ${e.message}`);
+      return false;
+    }
+  };
+
   const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]): Promise<boolean> => {
     // Enforce Company Remote Quota
     const companyPolicy = remotePolicies.find(p => p.scope_type === 'company');
@@ -906,6 +971,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addTeam,
       updateTeam,
       deleteTeam,
+      addLeaveType,
+      updateLeaveType,
+      deleteLeaveType,
       getEmployeeLeaveBalance
     }}>
       {children}
