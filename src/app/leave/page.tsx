@@ -92,15 +92,17 @@ export default function LeaveManagementPage() {
   const [previewMode, setPreviewMode] = useState(false);
 
   // Calculate working days excluding Greek holidays and weekends for an individual schedule
-  const calculateWorkingDays = (startStr: string, endStr: string, schedule: string[]) => {
+  const calculateWorkingDays = (startStr: string, endStr: string, schedule: string[], targetProfileId: string = currentUser.id) => {
     try {
       const days = eachDayOfInterval({ start: parseISO(startStr), end: parseISO(endStr) });
       let count = 0;
       days.forEach(d => {
-        const dayStr = d.toISOString().split('T')[0];
+        const dayStr = format(d, 'yyyy-MM-dd');
         const dayOfWeek = format(d, 'EEE'); // Mon, Tue, etc.
         const isHoliday = publicHolidays.some(h => h.date === dayStr);
-        if (!isHoliday && schedule.includes(dayOfWeek)) {
+        const isMandatory = mandatoryLeaves.some(m => dayStr >= m.start_date && dayStr <= m.end_date) ||
+                            leaveRequests.some(r => r.origin === 'mandatory' && r.profile_id === targetProfileId && dayStr >= r.start_date && dayStr <= r.end_date);
+        if (!isHoliday && !isMandatory && schedule.includes(dayOfWeek)) {
           count++;
         }
       });
@@ -110,9 +112,16 @@ export default function LeaveManagementPage() {
     }
   };
 
+  const getEffectiveDays = (r: LeaveRequest) => {
+    if (r.origin === 'mandatory') return Number(r.working_days || 0);
+    const targetProfile = profiles.find(p => p.id === r.profile_id);
+    const calc = calculateWorkingDays(r.start_date, r.end_date, targetProfile?.work_schedule || currentUser.work_schedule, r.profile_id);
+    return Math.min(Number(r.working_days || 0), calc);
+  };
+
   const currentWorkingDays = useMemo(() => {
     return calculateWorkingDays(startDate, endDate, currentUser.work_schedule);
-  }, [startDate, endDate, currentUser, publicHolidays]);
+  }, [startDate, endDate, currentUser, publicHolidays, mandatoryLeaves, leaveRequests]);
 
   const editedWorkingDays = useMemo(() => {
     if (!editingLeave) return 0;
@@ -148,6 +157,7 @@ export default function LeaveManagementPage() {
     // 2. Overlap prevention (§5)
     const hasOverlap = leaveRequests.some(r => {
       if (r.profile_id !== currentUser.id) return false;
+      if (r.origin === 'mandatory') return false; // Do not block regular leave when spanning over mandatory closure!
       if (['rejected', 'cancelled', 'expired'].includes(r.status)) return false;
       return !(isBefore(parseISO(endDate), parseISO(r.start_date)) || isAfter(parseISO(startDate), parseISO(r.end_date)));
     });
@@ -444,133 +454,200 @@ export default function LeaveManagementPage() {
                     <div className="text-rose-600 font-black">Sunday</div>
                   </div>
 
-                  {/* Date Grid - Company Calendar Seamless Style */}
-                  <div className="grid grid-cols-7 auto-rows-[minmax(125px,_auto)] divide-x divide-y divide-slate-200/80 bg-slate-200/20 rounded-b-xl overflow-hidden border-l border-r border-b border-slate-200/80 select-none">
+                  {/* Date Grid - Solid Multi-Day Spanning Week-Row Architecture */}
+                  <div className="flex flex-col bg-slate-200/20 rounded-b-xl overflow-hidden border-l border-r border-b border-slate-200/80 select-none">
                     {(() => {
                       const gridStart = startOfWeek(startOfMonth(calendarMonth), { weekStartsOn: 1 });
                       const gridEnd = endOfWeek(endOfMonth(calendarMonth), { weekStartsOn: 1 });
                       const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
-                      return days.map(d => {
-                        const dayStr = format(d, 'yyyy-MM-dd');
-                        const isCurrentMonth = isSameMonth(d, calendarMonth);
-                        const isSelected = isSelectedDuringDrag(dayStr);
-                        const isDayToday = dayStr === todayStr || isSameDay(d, new Date());
+                      const weeks: Date[][] = [];
+                      for (let i = 0; i < days.length; i += 7) {
+                        weeks.push(days.slice(i, i + 7));
+                      }
 
-                        const pubHoliday = publicHolidays.find(h => h.date === dayStr);
-                        const mandatory = mandatoryLeaves.find(m => dayStr >= m.start_date && dayStr <= m.end_date) || leaveRequests.find(r => r.origin === 'mandatory' && dayStr >= r.start_date && dayStr <= r.end_date);
-                        const myLeavesOnDay = leaveRequests.filter(r => r.profile_id === currentUser.id && r.origin !== 'mandatory' && r.status !== 'cancelled' && r.status !== 'rejected' && dayStr >= r.start_date && dayStr <= r.end_date);
-                        const isWeekend = format(d, 'EEE') === 'Sat' || format(d, 'EEE') === 'Sun';
+                      return weeks.map((weekDays, wIdx) => {
+                        const weekStartStr = format(weekDays[0], 'yyyy-MM-dd');
+                        const weekEndStr = format(weekDays[6], 'yyyy-MM-dd');
+
+                        // Collect unique events that overlap this week
+                        const weekHolidays = publicHolidays.filter(h => h.date >= weekStartStr && h.date <= weekEndStr);
+                        const weekMandatory = mandatoryLeaves.filter(m => !(m.end_date < weekStartStr || m.start_date > weekEndStr));
+                        const weekMyLeaves = leaveRequests.filter(r => 
+                          r.profile_id === currentUser.id && 
+                          r.origin !== 'mandatory' && 
+                          !['cancelled', 'rejected', 'expired'].includes(r.status) &&
+                          !(r.end_date < weekStartStr || r.start_date > weekEndStr)
+                        );
 
                         return (
-                          <div 
-                            key={dayStr}
-                            onMouseDown={() => handleDayMouseDown(dayStr)}
-                            onMouseEnter={() => handleDayMouseEnter(dayStr)}
-                            className={`p-2.5 transition-colors flex flex-col justify-between overflow-hidden cursor-pointer group ${
-                              isSelected
-                                ? 'bg-[#3D87D3]/20 ring-2 ring-inset ring-[#3D87D3] shadow-inner font-bold z-20'
-                                : !isCurrentMonth
-                                  ? 'bg-slate-50/70 text-slate-400 opacity-75'
-                                  : isDayToday
-                                    ? 'bg-blue-50/30 ring-2 ring-inset ring-[#3D87D3]'
-                                    : isWeekend ? 'bg-slate-50/40 hover:bg-slate-100/70' : 'bg-white hover:bg-slate-50/90'
-                            }`}
-                          >
-                            {/* Cell Top Header with Pulsing Today Indicator */}
-                            <div className="flex items-center justify-between mb-1 z-10">
-                              <div className="flex items-center space-x-1">
-                                {isDayToday && (
-                                  <>
-                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block shadow-sm" title="Today" />
-                                    <span className="text-[9px] font-black uppercase text-emerald-700 tracking-wider">Today</span>
-                                  </>
-                                )}
-                              </div>
-                              <span
-                                className={`text-xs font-mono font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
-                                  isDayToday
-                                    ? 'bg-[#3D87D3] text-white font-black shadow-sm'
-                                    : isCurrentMonth
-                                      ? (isWeekend ? 'text-rose-600 font-extrabold group-hover:bg-rose-50' : 'text-slate-800 group-hover:bg-slate-200/70')
-                                      : 'text-slate-400'
-                                }`}
-                              >
-                                {format(d, 'd')}
-                              </span>
-                            </div>
-
-                            {/* Spanning Event Stack */}
-                            <div className="space-y-1 my-1 flex-1 overflow-visible">
-                              {pubHoliday && (
-                                <div className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 border border-rose-200/80 text-[10px] font-extrabold truncate shadow-2xs z-10 my-0.5" title={pubHoliday.name_en}>
-                                  🔴 {pubHoliday.name_en}
-                                </div>
-                              )}
-                              
-                              {mandatory && !pubHoliday && (() => {
-                                const isMandatoryStart = dayStr === mandatory.start_date || format(d, 'EEE') === 'Mon';
-                                const isMandatoryEnd = dayStr === mandatory.end_date || format(d, 'EEE') === 'Sun';
-                                const isActualStart = dayStr === mandatory.start_date;
-                                const isActualEnd = dayStr === mandatory.end_date;
-                                const isSingle = isActualStart && isActualEnd;
+                          <div key={wIdx} className="relative min-h-[135px] border-b border-slate-200/80 last:border-b-0 flex flex-col">
+                            {/* Layer 1: Background Interactive Day Grid */}
+                            <div className="absolute inset-0 grid grid-cols-7 divide-x divide-slate-200/80 pointer-events-auto">
+                              {weekDays.map(d => {
+                                const dayStr = format(d, 'yyyy-MM-dd');
+                                const isCurrentMonth = isSameMonth(d, calendarMonth);
+                                const isSelected = isSelectedDuringDrag(dayStr);
+                                const isDayToday = dayStr === todayStr || isSameDay(d, new Date());
+                                const isWeekend = format(d, 'EEE') === 'Sat' || format(d, 'EEE') === 'Sun';
 
                                 return (
-                                  <div 
-                                    className={`py-1 text-[10px] font-extrabold text-white truncate shadow-2xs flex items-center justify-between bg-purple-700 my-0.5 ${
-                                      isSingle ? 'rounded-lg px-2' :
-                                      isActualStart ? 'rounded-l-lg rounded-r-none -mr-2.5 pl-2 pr-1 z-10' :
-                                      isActualEnd ? 'rounded-r-lg rounded-l-none -ml-2.5 pl-1 pr-2 z-10' :
-                                      'rounded-none -mx-2.5 px-1 z-10 opacity-95'
+                                  <div
+                                    key={dayStr}
+                                    onMouseDown={() => handleDayMouseDown(dayStr)}
+                                    onMouseEnter={() => handleDayMouseEnter(dayStr)}
+                                    className={`h-full transition-colors cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#3D87D3]/20 ring-2 ring-inset ring-[#3D87D3] shadow-inner'
+                                        : !isCurrentMonth
+                                          ? 'bg-slate-50/70 opacity-75'
+                                          : isDayToday
+                                            ? 'bg-blue-50/40 ring-2 ring-inset ring-[#3D87D3]'
+                                            : isWeekend ? 'bg-slate-50/40 hover:bg-slate-100/70' : 'bg-white hover:bg-slate-50/90'
                                     }`}
-                                    title={`Company Closure: ${mandatory.start_date} → ${mandatory.end_date}`}
-                                  >
-                                    {(isActualStart || format(d, 'EEE') === 'Mon') ? (
-                                      <span className="truncate flex items-center font-bold">
-                                        <span className="mr-1">🔒</span> 
-                                        <span className="truncate">{('name' in mandatory ? mandatory.name : 'Company Closure')}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] opacity-75 font-mono tracking-widest pl-2 select-none">&bull; &bull; &bull;</span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-
-                              {myLeavesOnDay.map(req => {
-                                const lt = leaveTypes.find(t => t.id === req.leave_type_id);
-                                const isActualStart = dayStr === req.start_date;
-                                const isActualEnd = dayStr === req.end_date;
-                                const isSingle = isActualStart && isActualEnd;
-
-                                return (
-                                  <div 
-                                    key={req.id} 
-                                    className={`py-1 text-[10px] font-extrabold text-white truncate shadow-2xs flex items-center justify-between my-0.5 ${
-                                      isSingle ? 'rounded-lg px-2' :
-                                      isActualStart ? 'rounded-l-lg rounded-r-none -mr-2.5 pl-2 pr-1 z-10' :
-                                      isActualEnd ? 'rounded-r-lg rounded-l-none -ml-2.5 pl-1.5 pr-2 z-10' :
-                                      'rounded-none -mx-2.5 px-1.5 z-10 opacity-95'
-                                    }`}
-                                    style={{ backgroundColor: lt?.colour || '#3D87D3' }}
-                                    title={`${lt?.name_en} (${req.start_date} → ${req.end_date})`}
-                                  >
-                                    {(isActualStart || format(d, 'EEE') === 'Mon') ? (
-                                      <span className="truncate flex items-center font-bold text-white">
-                                        <span className="mr-1">🏖️</span> 
-                                        <span className="truncate">{lt?.name_el || 'Leave'}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] text-white/70 font-mono tracking-widest pl-2 select-none font-extrabold">&bull; &bull; &bull;</span>
-                                    )}
-                                    {isActualEnd && (
-                                      <span className="ml-1 text-[8px] uppercase font-mono px-1 py-0 rounded bg-black/25 text-white font-black shrink-0">
-                                        {req.status === 'pending' ? '⏳ PEND' : '✓'}
-                                      </span>
-                                    )}
-                                  </div>
+                                  />
                                 );
                               })}
+                            </div>
+
+                            {/* Layer 2: Foreground Content (Dates & Solid Spanning Banners) */}
+                            <div className="relative z-10 pointer-events-none pb-2 flex flex-col justify-start">
+                              {/* Date Numeral Header */}
+                              <div className="grid grid-cols-7 pt-1 px-1 mb-1">
+                                {weekDays.map(d => {
+                                  const dayStr = format(d, 'yyyy-MM-dd');
+                                  const isCurrentMonth = isSameMonth(d, calendarMonth);
+                                  const isDayToday = dayStr === todayStr || isSameDay(d, new Date());
+                                  const isWeekend = format(d, 'EEE') === 'Sat' || format(d, 'EEE') === 'Sun';
+
+                                  return (
+                                    <div key={dayStr} className="flex items-center justify-between px-1 h-6">
+                                      <div className="flex items-center space-x-1">
+                                        {isDayToday && (
+                                          <>
+                                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block shadow-sm" title="Today" />
+                                            <span className="text-[9px] font-black uppercase text-emerald-700 tracking-wider">Today</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      <span
+                                        className={`text-xs font-mono font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
+                                          isDayToday
+                                            ? 'bg-[#3D87D3] text-white font-black shadow-sm'
+                                            : isCurrentMonth
+                                              ? (isWeekend ? 'text-rose-600 font-extrabold' : 'text-slate-800 font-extrabold')
+                                              : 'text-slate-400'
+                                        }`}
+                                      >
+                                        {format(d, 'd')}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Spanning Event Tracks */}
+                              <div className="space-y-1 flex flex-col">
+                                {/* Public Holidays */}
+                                {weekHolidays.map(h => {
+                                  const startCol = weekDays.findIndex(d => format(d, 'yyyy-MM-dd') === h.date) + 1;
+                                  return (
+                                    <div key={`hol-${h.date}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                                      <div 
+                                        style={{ gridColumn: `${startCol} / span 1` }} 
+                                        className="py-1 px-2 rounded-lg bg-rose-50 text-rose-900 border border-rose-200/80 text-[10px] font-extrabold truncate shadow-2xs flex items-center" 
+                                        title={h.name_en}
+                                      >
+                                        <span className="mr-1">🔴</span>
+                                        <span className="truncate">{h.name_en}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Mandatory Closures */}
+                                {weekMandatory.map((m, mIdx) => {
+                                  let startCol = 1;
+                                  let endCol = 7;
+                                  let isActualStart = false;
+                                  let isActualEnd = false;
+
+                                  if (m.start_date >= weekStartStr) {
+                                    const idx = weekDays.findIndex(d => format(d, 'yyyy-MM-dd') >= m.start_date);
+                                    if (idx !== -1) { startCol = idx + 1; isActualStart = true; }
+                                  }
+                                  if (m.end_date <= weekEndStr) {
+                                    const idx = weekDays.findIndex(d => format(d, 'yyyy-MM-dd') >= m.end_date);
+                                    if (idx !== -1) { endCol = idx + 1; isActualEnd = true; }
+                                    else { endCol = weekDays.findIndex(d => format(d, 'yyyy-MM-dd') <= m.end_date) + 1; isActualEnd = true; }
+                                  }
+                                  const span = Math.max(1, endCol - startCol + 1);
+
+                                  return (
+                                    <div key={`m-${m.id || mIdx}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                                      <div
+                                        style={{ gridColumn: `${startCol} / span ${span}` }}
+                                        className={`py-1.5 px-2.5 text-[11px] font-extrabold text-white shadow-xs flex items-center justify-between bg-purple-700 transition-transform hover:scale-[1.01] ${
+                                          isActualStart && isActualEnd ? 'rounded-lg' :
+                                          isActualStart ? 'rounded-l-lg rounded-r-none pr-1' :
+                                          isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
+                                          'rounded-none px-1'
+                                        }`}
+                                        title={`Company Closure: ${m.start_date} → ${m.end_date}`}
+                                      >
+                                        <span className="truncate flex items-center font-black">
+                                          <span className="mr-1.5">🔒</span>
+                                          <span className="truncate">{'name' in m ? m.name : 'Company Closure'}</span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Employee Leaves */}
+                                {weekMyLeaves.map((req, rIdx) => {
+                                  const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+                                  let startCol = 1;
+                                  let endCol = 7;
+                                  let isActualStart = false;
+                                  let isActualEnd = false;
+
+                                  if (req.start_date >= weekStartStr) {
+                                    const idx = weekDays.findIndex(d => format(d, 'yyyy-MM-dd') === req.start_date);
+                                    if (idx !== -1) { startCol = idx + 1; isActualStart = true; }
+                                  }
+                                  if (req.end_date <= weekEndStr) {
+                                    const idx = weekDays.findIndex(d => format(d, 'yyyy-MM-dd') === req.end_date);
+                                    if (idx !== -1) { endCol = idx + 1; isActualEnd = true; }
+                                  }
+                                  const span = Math.max(1, endCol - startCol + 1);
+
+                                  return (
+                                    <div key={`l-${req.id || rIdx}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                                      <div
+                                        style={{ gridColumn: `${startCol} / span ${span}`, backgroundColor: lt?.colour || '#3D87D3' }}
+                                        className={`py-1.5 px-2.5 text-[11px] font-extrabold text-white shadow-xs flex items-center justify-between transition-transform hover:scale-[1.01] ${
+                                          isActualStart && isActualEnd ? 'rounded-lg' :
+                                          isActualStart ? 'rounded-l-lg rounded-r-none pr-1' :
+                                          isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
+                                          'rounded-none px-1'
+                                        }`}
+                                        title={`${lt?.name_en} (${req.start_date} → ${req.end_date})`}
+                                      >
+                                        <span className="truncate flex items-center font-black text-white">
+                                          <span className="mr-1.5">🏖️</span>
+                                          <span className="truncate">{lt?.name_el || 'Leave'}</span>
+                                        </span>
+                                        {isActualEnd && (
+                                          <span className="ml-2 text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/25 text-white font-black shrink-0">
+                                            {req.status === 'pending' ? '⏳ PENDING' : '✓ APPROVED'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
                         );
@@ -590,9 +667,9 @@ export default function LeaveManagementPage() {
                 </h3>
                 <div className="space-y-3">
                   {leaveTypes.map(lt => {
-                    const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id);
-                    const approvedDays = myCatLeaves.filter(r => r.status === 'approved' || r.status === 'taken').reduce((a, b) => a + b.working_days, 0);
-                    const pendingDays = myCatLeaves.filter(r => r.status === 'pending').reduce((a, b) => a + b.working_days, 0);
+                    const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id && r.origin !== 'mandatory');
+                    const approvedDays = myCatLeaves.filter(r => r.status === 'approved' || r.status === 'taken').reduce((a, b) => a + getEffectiveDays(b), 0);
+                    const pendingDays = myCatLeaves.filter(r => r.status === 'pending').reduce((a, b) => a + getEffectiveDays(b), 0);
                     const isAnnual = lt.id === 'lt-annual' || lt.id === 'vacation' || lt.name_en?.toLowerCase().includes('annual') || lt.name_en?.toLowerCase().includes('vacation');
 
                     return (
@@ -679,7 +756,7 @@ export default function LeaveManagementPage() {
                             </div>
 
                             <p className="text-xs text-slate-500 font-medium">
-                              Dates: <strong className="text-slate-800 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{req.working_days}d</strong>
+                              Dates: <strong className="text-slate-800 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{getEffectiveDays(req)}d</strong>
                             </p>
                             {req.note && <p className="text-[11px] text-slate-600 italic font-medium">&ldquo;{req.note}&rdquo;</p>}
 
@@ -750,7 +827,7 @@ export default function LeaveManagementPage() {
                       {req.origin === 'admin_entry' && <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">Admin Entry</span>}
                     </div>
                     <p className="text-xs text-slate-500 font-medium">
-                      Dates: <strong className="text-slate-700 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{req.working_days} working days</strong>
+                      Dates: <strong className="text-slate-700 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{getEffectiveDays(req)} working days</strong>
                     </p>
                     <p className="text-[11px] text-slate-600 italic">&ldquo;{req.note || 'No notes attached'}&rdquo;</p>
 
@@ -865,7 +942,7 @@ export default function LeaveManagementPage() {
                       )}
                     </div>
                     <p className="text-sm font-bold text-[#3D87D3] font-mono mt-1">{req.start_date} &rarr; {req.end_date}</p>
-                    <p className="text-xs text-slate-500 mt-1">{req.working_days} scheduled working days</p>
+                    <p className="text-xs text-slate-500 mt-1">{getEffectiveDays(req)} scheduled working days</p>
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">

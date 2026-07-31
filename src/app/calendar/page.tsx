@@ -314,131 +314,235 @@ export default function CompanyCalendarPage() {
           <div className="text-slate-400">Sunday</div>
         </div>
 
-        {/* Day Cells Grid */}
-        <div className="grid grid-cols-7 auto-rows-[minmax(145px,_auto)] divide-x divide-y divide-slate-200/80 bg-slate-200/20">
-          {calendarDays.map((day, idx) => {
-            const hasHolidays = day.holidays.length > 0 || day.mandatoryLeaves.length > 0;
-            const hasLeaves = day.leaves.length > 0;
-            const hasRemotes = day.remotes.length > 0;
-
-            const showHolidays = eventTypeFilter === 'all' || eventTypeFilter === 'holiday';
-            const showLeaves = eventTypeFilter === 'all' || eventTypeFilter === 'leave';
-            const showRemotes = eventTypeFilter === 'all' || eventTypeFilter === 'remote';
-
-            // Collect items to display in cell
-            const cellItems: React.ReactNode[] = [];
-
-            if (showHolidays) {
-              day.holidays.forEach(h => {
-                cellItems.push(
-                  <div key={`hol-${h.id}`} className="px-2 py-1 rounded-md bg-indigo-600 text-white text-[10px] font-extrabold truncate flex items-center shadow-2xs">
-                    🎉 {h.name_en || h.name_el}
-                  </div>
-                );
-              });
-              day.mandatoryLeaves.forEach(ml => {
-                cellItems.push(
-                  <div key={`ml-${ml.id}`} className="px-2 py-1 rounded-md bg-purple-700 text-white text-[10px] font-extrabold truncate flex items-center shadow-2xs">
-                    🔒 {ml.name}
-                  </div>
-                );
-              });
+        {/* Day Cells Grid - Solid Spanning Week-Row Architecture */}
+        <div className="flex flex-col bg-slate-200/20 divide-y divide-slate-200/80 border-b border-slate-200/80">
+          {(() => {
+            const weeks: typeof calendarDays[] = [];
+            for (let i = 0; i < calendarDays.length; i += 7) {
+              weeks.push(calendarDays.slice(i, i + 7));
             }
 
-            if (showLeaves) {
-              day.leaves.forEach((l, lIdx) => {
-                cellItems.push(
-                  <div 
-                    key={`l-${l.request.id}-${lIdx}`} 
-                    title={`${l.profile.first_name} ${l.profile.last_name} - ${l.displayType}`}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold truncate flex items-center border ${
-                      l.showDetails 
-                        ? 'bg-rose-50 text-rose-800 border-rose-200/80' 
-                        : 'bg-amber-50/90 text-amber-900 border-amber-200/80'
-                    }`}
-                  >
-                    <span className="mr-1">🏖️</span> 
-                    <span className="font-extrabold mr-1">{l.profile.first_name}</span> 
-                    <span className="opacity-80 font-normal">({l.displayType})</span>
+            return weeks.map((weekDays, wIdx) => {
+              const weekStartStr = weekDays[0]?.dateStr || '';
+              const weekEndStr = weekDays[weekDays.length - 1]?.dateStr || '';
+
+              const showHolidays = eventTypeFilter === 'all' || eventTypeFilter === 'holiday';
+              const showLeaves = eventTypeFilter === 'all' || eventTypeFilter === 'leave';
+              const showRemotes = eventTypeFilter === 'all' || eventTypeFilter === 'remote';
+
+              // Collect unique spanning holidays in this week
+              const weekHolidays = showHolidays ? publicHolidays.filter(h => h.date >= weekStartStr && h.date <= weekEndStr) : [];
+              // Collect unique mandatory leaves in this week
+              const weekMandatory = showHolidays ? mandatoryLeaves.filter(m => !(m.end_date < weekStartStr || m.start_date > weekEndStr)) : [];
+              
+              // Collect unique approved employee leave requests that overlap this week
+              const weekLeaveRequests = showLeaves ? leaveRequests.filter(r => 
+                r.origin !== 'mandatory' &&
+                (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken') &&
+                !(r.end_date < weekStartStr || r.start_date > weekEndStr) &&
+                activeProfiles.some(p => p.id === r.profile_id && p.employment_type !== 'contractor')
+              ) : [];
+
+              return (
+                <div key={wIdx} className="relative min-h-[155px] border-b border-slate-200/80 last:border-b-0 flex flex-col">
+                  {/* Layer 1: Background Interactive Day Grid */}
+                  <div className="absolute inset-0 grid grid-cols-7 divide-x divide-slate-200/80 pointer-events-auto">
+                    {weekDays.map(day => (
+                      <div
+                        key={day.dateStr}
+                        onClick={() => setSelectedDay(day)}
+                        className={`h-full transition-colors cursor-pointer group ${
+                          !day.isCurrentMonth
+                            ? 'bg-slate-50/70 text-slate-400'
+                            : day.isToday
+                              ? 'bg-blue-50/30 ring-2 ring-inset ring-[#3D87D3]'
+                              : 'bg-white hover:bg-slate-50/90'
+                        }`}
+                      />
+                    ))}
                   </div>
-                );
-              });
-            }
 
-            if (showRemotes) {
-              day.remotes.forEach((r, rIdx) => {
-                cellItems.push(
-                  <div 
-                    key={`r-${r.profile.id}-${rIdx}`} 
-                    title={`${r.profile.first_name} ${r.profile.last_name}: ${r.mode.replace('_', ' ').toUpperCase()}`}
-                    className="px-2 py-0.5 rounded-md bg-cyan-50/80 text-cyan-950 border border-cyan-200/80 text-[10px] font-semibold truncate flex items-center"
-                  >
-                    <span className="mr-1">{r.mode === 'remote_abroad' ? '✈️' : '🏠'}</span>
-                    <span className="font-bold mr-1">{r.profile.first_name}</span>
-                    <span className="text-slate-500 font-normal">{r.mode === 'remote_abroad' ? `(Abroad: ${r.location || 'Logged'})` : '(Remote GR)'}</span>
-                  </div>
-                );
-              });
-            }
-
-            const visibleItems = cellItems.slice(0, 4);
-            const overflowCount = cellItems.length - visibleItems.length;
-
-            return (
-              <div
-                key={day.dateStr}
-                onClick={() => setSelectedDay(day)}
-                className={`p-2.5 transition-colors cursor-pointer flex flex-col justify-between group ${
-                  !day.isCurrentMonth
-                    ? 'bg-slate-50/70 text-slate-400'
-                    : day.isToday
-                      ? 'bg-blue-50/30 ring-2 ring-inset ring-[#3D87D3]'
-                      : 'bg-white hover:bg-slate-50/90'
-                }`}
-              >
-                {/* Date number Top Header */}
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] text-slate-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
-                    <Info className="w-3 h-3 mr-0.5" /> Detail
-                  </span>
-                  <span
-                    className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
-                      day.isToday
-                        ? 'bg-[#3D87D3] text-white font-extrabold shadow-sm'
-                        : day.isCurrentMonth
-                          ? 'text-slate-800 group-hover:bg-slate-200/70'
-                          : 'text-slate-400'
-                    }`}
-                  >
-                    {format(day.dateObj, 'd')}
-                  </span>
-                </div>
-
-                {/* Event Chips Stack */}
-                <div className="space-y-1 overflow-hidden flex-1">
-                  {visibleItems}
-                  {overflowCount > 0 && (
-                    <div className="px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 text-center transition-colors border border-slate-200">
-                      +{overflowCount} more event{overflowCount > 1 ? 's' : ''}...
+                  {/* Layer 2: Foreground Content */}
+                  <div className="relative z-10 pointer-events-none pb-2 flex flex-col justify-start flex-1">
+                    {/* Date Numeral Header */}
+                    <div className="grid grid-cols-7 pt-2 px-2 mb-1">
+                      {weekDays.map(day => (
+                        <div key={day.dateStr} className="flex items-center justify-between h-6 pointer-events-auto" onClick={() => setSelectedDay(day)}>
+                          <span className="text-[10px] text-slate-400 font-medium opacity-0 hover:opacity-100 transition-opacity flex items-center cursor-pointer">
+                            <Info className="w-3 h-3 mr-0.5" /> Detail
+                          </span>
+                          <span
+                            className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
+                              day.isToday
+                                ? 'bg-[#3D87D3] text-white font-extrabold shadow-sm'
+                                : day.isCurrentMonth
+                                  ? 'text-slate-800'
+                                  : 'text-slate-400'
+                            }`}
+                          >
+                            {format(day.dateObj, 'd')}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                  {cellItems.length === 0 && day.isCurrentMonth && (
-                    <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] text-slate-300 italic">Office routine</span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Footer tally badge for Office Headcount */}
-                {day.isCurrentMonth && (day.inOffice.length > 0) && (
-                  <div className="mt-2 pt-1 border-t border-slate-100 text-[9px] font-medium text-slate-400 flex items-center justify-between">
-                    <span>🏢 Office HQ</span>
-                    <span className="font-bold text-slate-600">{day.inOffice.length} on-site</span>
+                    {/* Spanning Event Tracks (Holidays, Closures, Multi-day Leaves) */}
+                    <div className="space-y-1 mb-1.5 flex flex-col">
+                      {/* Public Holidays */}
+                      {weekHolidays.map(h => {
+                        const idx = weekDays.findIndex(d => d.dateStr === h.date);
+                        if (idx === -1) return null;
+                        const startCol = idx + 1;
+                        return (
+                          <div key={`hol-${h.date}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                            <div
+                              style={{ gridColumn: `${startCol} / span 1` }}
+                              className="py-1 px-2 rounded-md bg-indigo-600 text-white text-[11px] font-extrabold truncate flex items-center shadow-2xs"
+                              title={h.name_en || h.name_el}
+                            >
+                              <span className="mr-1.5">🎉</span>
+                              <span className="truncate">{h.name_en || h.name_el}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Mandatory Closures */}
+                      {weekMandatory.map((m, mIdx) => {
+                        let startCol = 1;
+                        let endCol = 7;
+                        let isActualStart = false;
+                        let isActualEnd = false;
+
+                        if (m.start_date >= weekStartStr) {
+                          const idx = weekDays.findIndex(d => d.dateStr >= m.start_date);
+                          if (idx !== -1) { startCol = idx + 1; isActualStart = true; }
+                        }
+                        if (m.end_date <= weekEndStr) {
+                          const idx = weekDays.findIndex(d => d.dateStr >= m.end_date);
+                          if (idx !== -1) { endCol = idx + 1; isActualEnd = true; }
+                          else { endCol = weekDays.findIndex(d => d.dateStr <= m.end_date) + 1; isActualEnd = true; }
+                        }
+                        const span = Math.max(1, endCol - startCol + 1);
+
+                        return (
+                          <div key={`ml-${m.id || mIdx}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                            <div
+                              style={{ gridColumn: `${startCol} / span ${span}` }}
+                              className={`py-1.5 px-2.5 rounded-md bg-purple-700 text-white text-[11px] font-extrabold truncate flex items-center shadow-xs ${
+                                isActualStart && isActualEnd ? 'rounded-lg' :
+                                isActualStart ? 'rounded-l-lg rounded-r-none pr-1' :
+                                isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
+                                'rounded-none px-1'
+                              }`}
+                              title={`Company Closure: ${m.name}`}
+                            >
+                              <span className="mr-1.5">🔒</span>
+                              <span className="truncate">{m.name}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Employee Leaves Spanning Ribbons */}
+                      {weekLeaveRequests.map(req => {
+                        const prof = activeProfiles.find(p => p.id === req.profile_id);
+                        if (!prof) return null;
+                        const lType = leaveTypes.find(lt => lt.id === req.leave_type_id || lt.code === req.leave_type?.code);
+                        const showDetails = isAdmin || prof.id === currentUser.id;
+                        const displayType = showDetails ? (lType?.name_en || 'Approved Leave') : 'Out-of-Office (OOO)';
+
+                        let startCol = 1;
+                        let endCol = 7;
+                        let isActualStart = false;
+                        let isActualEnd = false;
+
+                        if (req.start_date >= weekStartStr) {
+                          const idx = weekDays.findIndex(d => d.dateStr >= req.start_date);
+                          if (idx !== -1) { startCol = idx + 1; isActualStart = true; }
+                        }
+                        if (req.end_date <= weekEndStr) {
+                          const idx = weekDays.findIndex(d => d.dateStr >= req.end_date);
+                          if (idx !== -1) { endCol = idx + 1; isActualEnd = true; }
+                          else { endCol = weekDays.findIndex(d => d.dateStr <= req.end_date) + 1; isActualEnd = true; }
+                        }
+                        const span = Math.max(1, endCol - startCol + 1);
+
+                        return (
+                          <div key={`lr-${req.id}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                            <div
+                              style={{ gridColumn: `${startCol} / span ${span}` }}
+                              className={`py-1 px-2 text-[11px] font-bold truncate flex items-center justify-between border shadow-2xs transition-transform hover:scale-[1.01] ${
+                                showDetails 
+                                  ? 'bg-rose-50 text-rose-950 border-rose-300/80 font-extrabold' 
+                                  : 'bg-amber-50/95 text-amber-950 border-amber-300/80 font-bold'
+                              } ${
+                                isActualStart && isActualEnd ? 'rounded-md' :
+                                isActualStart ? 'rounded-l-md rounded-r-none pr-1 border-r border-dashed border-rose-300' :
+                                isActualEnd ? 'rounded-r-md rounded-l-none pl-1 border-l border-dashed border-rose-300' :
+                                'rounded-none px-1 border-l border-r border-dashed border-rose-300'
+                              }`}
+                              title={`${prof.first_name} ${prof.last_name} — ${displayType} (${req.start_date} to ${req.end_date})`}
+                            >
+                              <div className="flex items-center truncate">
+                                <span className="mr-1.5">🏖️</span>
+                                <span className="font-extrabold mr-1.5">{prof.first_name} {prof.last_name}</span>
+                                <span className="opacity-80 font-medium">({displayType})</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Daily Specific Cell Content (Remotes & In-Office Tallies) */}
+                    <div className="grid grid-cols-7 px-1 flex-1 gap-x-1">
+                      {weekDays.map(day => {
+                        const cellItems: React.ReactNode[] = [];
+                        if (showRemotes) {
+                          day.remotes.forEach((r, rIdx) => {
+                            cellItems.push(
+                              <div
+                                key={`r-${r.profile.id}-${rIdx}`}
+                                title={`${r.profile.first_name} ${r.profile.last_name}: ${r.mode.replace('_', ' ').toUpperCase()}`}
+                                className="px-2 py-0.5 my-0.5 rounded-md bg-cyan-50/90 text-cyan-950 border border-cyan-200/80 text-[10px] font-semibold truncate flex items-center shadow-2xs pointer-events-auto"
+                              >
+                                <span className="mr-1">{r.mode === 'remote_abroad' ? '✈️' : '🏠'}</span>
+                                <span className="font-bold mr-1">{r.profile.first_name}</span>
+                                <span className="text-slate-500 font-normal">{r.mode === 'remote_abroad' ? `(Abroad)` : '(Remote GR)'}</span>
+                              </div>
+                            );
+                          });
+                        }
+
+                        const visibleItems = cellItems.slice(0, 3);
+                        const overflowCount = cellItems.length - visibleItems.length;
+
+                        return (
+                          <div key={`daily-${day.dateStr}`} className="flex flex-col justify-between overflow-hidden">
+                            <div className="space-y-0.5">
+                              {visibleItems}
+                              {overflowCount > 0 && (
+                                <div className="px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 text-center transition-colors border border-slate-200 pointer-events-auto cursor-pointer" onClick={() => setSelectedDay(day)}>
+                                  +{overflowCount} more...
+                                </div>
+                              )}
+                            </div>
+                            {day.isCurrentMonth && day.inOffice.length > 0 && (
+                              <div className="mt-2 pt-1 border-t border-slate-200/80 text-[9px] font-medium text-slate-400 flex items-center justify-between px-1 pointer-events-auto">
+                                <span>🏢 Office HQ</span>
+                                <span className="font-extrabold text-slate-700">{day.inOffice.length} on-site</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 

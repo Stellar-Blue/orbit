@@ -439,7 +439,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const dStr = d.toISOString().split('T')[0];
         const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
         const isHol = holidays.some(h => h.date === dStr);
-        if (!isHol && workSchedule.includes(dayOfWeek)) count++;
+        const isMandatory = mandatoryLeaves.some(m => dStr >= m.start_date && dStr <= m.end_date) ||
+                            leaveRequests.some(r => r.origin === 'mandatory' && r.profile_id === req.profile_id && dStr >= r.start_date && dStr <= r.end_date);
+        if (!isHol && !isMandatory && workSchedule.includes(dayOfWeek)) count++;
         d.setDate(d.getDate() + 1);
       }
       return count;
@@ -494,13 +496,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return lt ? lt.counts_against_balance !== false : true;
     });
 
+    const prof = profiles.find(p => p.id === profileId);
+    const workSchedule = prof?.work_schedule || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const mandatoryList = [
+      ...mandatoryLeaves.map(m => ({ start: m.start_date, end: m.end_date })),
+      ...userReqs.filter(r => r.origin === 'mandatory').map(r => ({ start: r.start_date, end: r.end_date }))
+    ];
+
+    const getEffectiveRegularDays = (r: LeaveRequest) => {
+      try {
+        let d = new Date(r.start_date);
+        const endD = new Date(r.end_date);
+        if (isNaN(d.getTime()) || isNaN(endD.getTime())) return Number(r.working_days || 0);
+        let count = 0;
+        while (d <= endD) {
+          const dStr = d.toISOString().split('T')[0];
+          const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+          const isMandatory = mandatoryList.some(m => dStr >= m.start && dStr <= m.end);
+          if (!isMandatory && workSchedule.includes(dayOfWeek)) {
+            count++;
+          }
+          d.setDate(d.getDate() + 1);
+        }
+        return Math.min(Number(r.working_days || 0), count);
+      } catch {
+        return Number(r.working_days || 0);
+      }
+    };
+
     const taken = userReqs
       .filter(r => (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken' || r.status === 'cancellation_requested') && r.origin !== 'mandatory')
-      .reduce((sum, r) => sum + Number(r.working_days || 0), 0);
+      .reduce((sum, r) => sum + getEffectiveRegularDays(r), 0);
 
     const reserved = userReqs
-      .filter(r => r.status === 'pending')
-      .reduce((sum, r) => sum + Number(r.working_days || 0), 0);
+      .filter(r => r.status === 'pending' && r.origin !== 'mandatory')
+      .reduce((sum, r) => sum + getEffectiveRegularDays(r), 0);
 
     const mandatory = userReqs
       .filter(r => r.origin === 'mandatory' && !r.detached && (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken'))

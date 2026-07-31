@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays, remotePatterns, remotePolicies } = useAuth();
+  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays, remotePatterns, remotePolicies, getEmployeeLeaveBalance } = useAuth();
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
@@ -32,9 +32,7 @@ export default function DashboardPage() {
 
   // Employee personal leave entitlement
   const myEntitlement = entitlements.find(e => e.profile_id === currentUser.id && e.year === 2026);
-  const myLeavesTaken = leaveRequests
-    .filter(r => r.profile_id === currentUser.id && r.status === 'approved' && (r.leave_type?.code === 'annual' || r.leave_type_id === 'lt-annual'))
-    .reduce((acc, r) => acc + r.working_days, 0);
+  const myLeavesTaken = getEmployeeLeaveBalance(currentUser.id, 2026).taken;
 
   const myExistingPatterns = (remotePatterns || []).filter(rp => rp.profile_id === currentUser.id);
   const getPatternMode = (day: string) => {
