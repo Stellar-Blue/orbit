@@ -24,7 +24,7 @@ export default function LeaveManagementPage() {
 
   // New Leave Request State (< 30s filing)
   const [isRequestOpen, setIsRequestOpen] = useState(false);
-  const [reqType, setReqType] = useState('lt-annual');
+  const [reqType, setReqType] = useState(leaveTypes[0]?.id || 'lt-annual');
   const [startDate, setStartDate] = useState('2026-09-14');
   const [endDate, setEndDate] = useState('2026-09-18');
   const [note, setNote] = useState('');
@@ -81,7 +81,7 @@ export default function LeaveManagementPage() {
   const handlePublishMandatory = () => {
     addMandatoryLeave({
       name: mName,
-      leave_type_id: 'lt-annual',
+      leave_type_id: leaveTypes.find(t => t.code === 'annual')?.id || 'lt-annual',
       start_date: mStart,
       end_date: mEnd,
       status: 'published',

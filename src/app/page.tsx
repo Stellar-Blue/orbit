@@ -33,7 +33,7 @@ export default function DashboardPage() {
   // Employee personal leave entitlement
   const myEntitlement = entitlements.find(e => e.profile_id === currentUser.id && e.year === 2026);
   const myLeavesTaken = leaveRequests
-    .filter(r => r.profile_id === currentUser.id && r.status === 'approved' && r.leave_type_id === 'lt-annual')
+    .filter(r => r.profile_id === currentUser.id && r.status === 'approved' && (r.leave_type?.code === 'annual' || r.leave_type_id === 'lt-annual'))
     .reduce((acc, r) => acc + r.working_days, 0);
 
   // Setup checklist state for guided initial manual setup (requirements decision)

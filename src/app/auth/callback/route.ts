@@ -112,6 +112,13 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${origin}/login?error=UnprovisionedUser`);
     }
 
+    const coreAdmins = ['zbampos@stellarblue.eu', 'gtsoumalis@stellarblue.eu', 'gchatzis@stellarblue.eu'];
+    const rolesToInsert = coreAdmins.includes(email) 
+      ? [{ profile_id: createdProfile.id, role: 'employee' }, { profile_id: createdProfile.id, role: 'admin' }]
+      : [{ profile_id: createdProfile.id, role: 'employee' }];
+      
+    await supabase.from('user_roles').insert(rolesToInsert);
+
     profile = createdProfile;
   } else if (!profile.auth_user_id) {
     // Link Supabase auth user ID to the existing directory profile

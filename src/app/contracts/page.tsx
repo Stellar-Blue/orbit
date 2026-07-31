@@ -41,7 +41,7 @@ export default function ContractsRegistryPage() {
   const handleCreateContract = (e: React.FormEvent) => {
     e.preventDefault();
     addContract({
-      counterparty_id: 'cp-depa', // Defaulting to DEPA for quick testing
+      counterparty_id: counterparties[0]?.id || 'cp-depa', // Defaulting to first counterparty
       counterparty: counterparties[0],
       direction: newDirection,
       reference: newRef,
