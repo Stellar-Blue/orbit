@@ -267,7 +267,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card title="My Weekly Remote Work Pattern" subtitle="Set your recurring default schedule" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-medium">Edit Pattern</Link>} className="md:col-span-2">
+          <Card title="My Telework Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your monthly declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Schedule Calendar</Link>} className="md:col-span-2">
             <div className="grid grid-cols-5 gap-3 mt-2">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
                 const isScheduled = currentUser.work_schedule.includes(day);
@@ -301,8 +301,8 @@ export default function DashboardPage() {
               })}
             </div>
             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span>Policy quota: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
-              <span>Status: <span className={isPatternCompliant ? "text-emerald-700 font-semibold" : "text-amber-600 font-semibold"}>{isPatternCompliant ? "In Compliance" : "Over Quota"} ({plannedDaysForPeriod} days planned/{periodLabel})</span></span>
+              <span>Policy limit: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
+              <span>Remaining Quota: <strong className="text-[#3D87D3] font-bold">{Math.max(0, quotaMaxDays - (remoteDays || []).filter(r => r.profile_id === currentUser.id && r.mode !== 'office' && r.date.startsWith('2026-08')).length)} days available</strong> in August</span>
             </div>
           </Card>
         </div>

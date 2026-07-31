@@ -132,32 +132,14 @@ export default function CompanyCalendarPage() {
           return;
         }
 
-        // Check daily remote override
+        // Check declared telework in remoteDays (patterns are now only an auto-fill helper)
         const override = remoteDays.find(rd => rd.profile_id === prof.id && rd.date === dateStr);
-        if (override) {
-          if (override.mode === 'remote_gr' || override.mode === 'remote_abroad') {
-            remotes.push({
-              profile: prof,
-              mode: override.mode as any,
-              location: override.location,
-              isOverride: true
-            });
-            return;
-          } else {
-            inOffice.push({ profile: prof });
-            return;
-          }
-        }
-
-        // Check recurring pattern
-        const pattern = remotePatterns.find(rp => rp.profile_id === prof.id && rp.weekday === weekdayStr);
-        const mode = pattern ? pattern.mode : (weekdayStr === 'Tue' || weekdayStr === 'Thu' ? 'remote_gr' : 'office');
-        
-        if (mode === 'remote_gr' || mode === 'remote_abroad') {
+        if (override && (override.mode === 'remote_gr' || override.mode === 'remote_abroad')) {
           remotes.push({
             profile: prof,
-            mode: mode as any,
-            isOverride: false
+            mode: override.mode as any,
+            location: override.location,
+            isOverride: true
           });
         } else {
           inOffice.push({ profile: prof });
