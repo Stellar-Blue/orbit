@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export default function RemoteWorkLogPage() {
-  const { currentUser, profiles, remoteDays, remotePatterns, updateErganiStatus } = useAuth();
+  const { currentUser, profiles, remoteDays, remotePatterns, updateErganiStatus, saveRemotePattern, addRemoteDay } = useAuth();
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
@@ -19,13 +19,19 @@ export default function RemoteWorkLogPage() {
   const [abroadLocation, setAbroadLocation] = useState('');
   const [note, setNote] = useState('');
 
-  // Weekly pattern states
+  // Weekly pattern states - load from DB if user already saved a pattern!
+  const myExistingPatterns = remotePatterns.filter(rp => rp.profile_id === currentUser.id);
+  const getInitialMode = (day: string, defaultMode: 'office' | 'remote_gr'): 'office' | 'remote_gr' | 'remote_abroad' => {
+    const found = myExistingPatterns.find(p => p.weekday === day);
+    return found ? (found.mode as any) : defaultMode;
+  };
+
   const [pattern, setPattern] = useState<{ [key: string]: 'office' | 'remote_gr' | 'remote_abroad' }>({
-    Mon: 'office',
-    Tue: 'remote_gr',
-    Wed: 'office',
-    Thu: 'remote_gr',
-    Fri: 'office'
+    Mon: getInitialMode('Mon', 'office'),
+    Tue: getInitialMode('Tue', 'remote_gr'),
+    Wed: getInitialMode('Wed', 'office'),
+    Thu: getInitialMode('Thu', 'remote_gr'),
+    Fri: getInitialMode('Fri', 'office')
   });
 
   if (isContractor) {
@@ -49,7 +55,17 @@ export default function RemoteWorkLogPage() {
       alert('VALIDATION ERROR: Location is mandatory when working remotely from abroad due to real tax and social-security implications!');
       return;
     }
-    alert(`Logged ${selectedMode.toUpperCase()} for ${selectedDay}. Marked pending for ΕΡΓΑΝΗ τηλεργασία filing.`);
+    addRemoteDay({
+      profile_id: currentUser.id,
+      date: selectedDay,
+      mode: selectedMode,
+      location: selectedMode === 'remote_abroad' ? abroadLocation : undefined,
+      note: note || undefined,
+      ergani_status: selectedMode === 'office' ? 'not_required' : 'pending'
+    });
+    alert(`Logged ${selectedMode.toUpperCase()} for ${selectedDay} and persisted to database. Marked pending for ΕΡΓΑΝΗ τηλεργασία filing.`);
+    setNote('');
+    setAbroadLocation('');
   };
 
   const unsubmittedRemote = remoteDays.filter(r => r.mode !== 'office' && r.ergani_status !== 'submitted');
@@ -143,7 +159,11 @@ export default function RemoteWorkLogPage() {
                   </div>
                 </div>
               ))}
-              <Button variant="secondary" className="w-full mt-2 text-xs cursor-pointer" onClick={() => alert('Recurring pattern saved!')}>
+              <Button variant="secondary" className="w-full mt-2 text-xs cursor-pointer" onClick={() => {
+                const patternEntries = Object.entries(pattern).map(([weekday, mode]) => ({ weekday, mode }));
+                saveRemotePattern(currentUser.id, patternEntries);
+                alert('Recurring remote pattern successfully saved to Postgres!');
+              }}>
                 Update Recurring Pattern &rarr;
               </Button>
             </div>

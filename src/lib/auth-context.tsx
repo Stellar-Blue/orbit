@@ -6,7 +6,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode 
 } from './types';
 import * as InitialData from './mock-data';
 
@@ -41,6 +41,8 @@ interface AppState {
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted') => void;
+  saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => void;
+  addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
 }
 
 const AuthContext = createContext<AppState | undefined>(undefined);
@@ -434,6 +436,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => {
+    const validFrom = new Date().toISOString().split('T')[0];
+    const updatedPatterns: RemotePattern[] = patternEntries.map(pe => ({
+      id: generateUUID(),
+      profile_id: profileId,
+      weekday: pe.weekday,
+      mode: pe.mode,
+      valid_from: validFrom
+    }));
+
+    setRemotePatterns(prev => {
+      const filtered = prev.filter(p => p.profile_id !== profileId || !patternEntries.some(pe => pe.weekday === p.weekday));
+      return [...filtered, ...updatedPatterns];
+    });
+
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const payload = patternEntries.map(pe => ({
+        profile_id: profileId,
+        weekday: pe.weekday,
+        mode: pe.mode,
+        valid_from: validFrom
+      }));
+      const { error } = await supabase.from('remote_patterns').upsert(payload, { onConflict: 'profile_id,weekday' });
+      if (error) console.error("Failed to persist remote pattern in Supabase:", error);
+    } catch (e) {
+      console.error("Exception saving remote patterns:", e);
+    }
+  };
+
+  const addRemoteDay = async (day: Omit<RemoteDay, 'id'> & { id?: string }) => {
+    const newDay: RemoteDay = {
+      ...day,
+      id: day.id || generateUUID()
+    };
+
+    setRemoteDays(prev => {
+      const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
+      return [newDay, ...filtered];
+    });
+
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('remote_days').upsert({
+        id: newDay.id,
+        profile_id: newDay.profile_id,
+        date: newDay.date,
+        mode: newDay.mode,
+        location: newDay.location || null,
+        note: newDay.note || null,
+        ergani_status: newDay.ergani_status
+      }, { onConflict: 'profile_id,date' });
+      if (error) console.error("Failed to persist remote day override:", error);
+    } catch (e) {
+      console.error("Exception saving remote day:", e);
+    }
+  };
+
 
   return (
     <AuthContext.Provider value={{
@@ -464,7 +524,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       generateDraftMonth,
       addContract,
       updateContract,
-      updateErganiStatus
+      updateErganiStatus,
+      saveRemotePattern,
+      addRemoteDay
     }}>
       {children}
     </AuthContext.Provider>
