@@ -6,7 +6,8 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
-  Users, ShieldCheck, FileText, Sparkles, Filter, Edit3, HelpCircle, ArrowRight, ShieldAlert
+  Users, ShieldCheck, FileText, Sparkles, Filter, Edit3, HelpCircle, ArrowRight, ShieldAlert,
+  BarChart3, CalendarDays, Briefcase
 } from 'lucide-react';
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore } from 'date-fns';
 import { LeaveRequest } from '@/lib/types';
@@ -24,7 +25,7 @@ export default function LeaveManagementPage() {
   const isContractor = currentUser.employment_type === 'contractor';
 
   // Tabs
-  const [tab, setTab] = useState<'requests' | 'calendar' | 'mandatory' | 'ergani'>('requests');
+  const [tab, setTab] = useState<'my_leaves' | 'requests' | 'calendar' | 'mandatory' | 'ergani'>('my_leaves');
 
   // New Leave Request State (< 30s filing)
   const [isRequestOpen, setIsRequestOpen] = useState(false);
@@ -232,74 +233,38 @@ export default function LeaveManagementPage() {
         </div>
       </div>
 
-      {/* BALANCE EQUATION CLARITY CARD (§7) */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-[#3D87D3] text-white shadow-md border border-slate-700">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3 pb-3 border-b border-white/10">
-          <div className="flex items-center space-x-2">
-            <HelpCircle className="w-5 h-5 text-sky-400 shrink-0" />
-            <div>
-              <h3 className="text-sm font-bold tracking-wide uppercase text-white">Your 2026 Leave Equation (Balance Breakdown)</h3>
-              <p className="text-[11px] text-slate-300">Complete transparency on how your available balance is calculated in real time</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3 text-right">
-            <span className="text-xs uppercase text-slate-300 font-semibold">Net Available:</span>
-            <span className="px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-lg font-mono shadow-xs">
-              {myBalance.available} Days
-            </span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
-          <div className="p-3 rounded-xl bg-white/10 border border-white/15">
-            <p className="text-[10px] uppercase text-slate-300 font-bold">Annual Entitlement</p>
-            <p className="text-lg font-extrabold font-mono text-white mt-0.5">{myBalance.entitlement} days</p>
-          </div>
-          <div className="p-3 rounded-xl bg-white/10 border border-white/15">
-            <p className="text-[10px] uppercase text-sky-300 font-bold">+ Carry-Over</p>
-            <p className="text-lg font-extrabold font-mono text-sky-400 mt-0.5">{myBalance.carryOver} days</p>
-            <p className="text-[9px] text-slate-300 mt-0.5">Expires {myBalance.carryOverExpires}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-white/10 border border-white/15">
-            <p className="text-[10px] uppercase text-amber-300 font-bold">− Taken / Approved</p>
-            <p className="text-lg font-extrabold font-mono text-amber-300 mt-0.5">−{myBalance.taken} days</p>
-          </div>
-          <div className="p-3 rounded-xl bg-white/10 border border-white/15">
-            <p className="text-[10px] uppercase text-purple-300 font-bold">− Reserved (Pending)</p>
-            <p className="text-lg font-extrabold font-mono text-purple-300 mt-0.5">−{myBalance.reserved} days</p>
-          </div>
-          <div className="p-3 rounded-xl bg-white/10 border border-white/15">
-            <p className="text-[10px] uppercase text-indigo-300 font-bold">− Mandatory Closures</p>
-            <p className="text-lg font-extrabold font-mono text-indigo-300 mt-0.5">−{myBalance.mandatory} days</p>
-          </div>
-        </div>
-      </div>
-
       {/* Tabs Toolbar */}
-      <div className="flex border-b border-slate-200 space-x-6 text-sm">
+      <div className="flex border-b border-slate-200 space-x-6 text-sm flex-wrap gap-y-2">
         <button 
-          onClick={() => setTab('requests')}
-          className={`pb-3 font-semibold transition-all flex items-center cursor-pointer ${tab === 'requests' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+          onClick={() => setTab('my_leaves')}
+          className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'my_leaves' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          {isAdmin ? 'Shared Founder Approval Queue & Register' : 'My Leave Requests & History'}
-          {pendingCount > 0 && <span className="ml-2 px-2 py-0.5 rounded-full bg-[#3D87D3]/10 border border-[#3D87D3]/20 text-[#3D87D3] font-bold text-xs">{pendingCount}</span>}
+          <BarChart3 className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> My Leaves & Big Picture
         </button>
         <button 
           onClick={() => setTab('calendar')}
-          className={`pb-3 font-semibold transition-all flex items-center cursor-pointer ${tab === 'calendar' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+          className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'calendar' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          Team Out-of-Office Calendar (Privacy Lens)
+          <CalendarDays className="w-4 h-4 mr-1.5 text-indigo-500" /> Team Out-of-Office Calendar
         </button>
         {isAdmin && (
           <>
             <button 
-              onClick={() => setTab('mandatory')}
-              className={`pb-3 font-semibold transition-all flex items-center cursor-pointer ${tab === 'mandatory' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+              onClick={() => setTab('requests')}
+              className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'requests' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
             >
-              Mandatory Closures ({mandatoryLeaves.length})
+              <span>Shared Founder Approval Queue & Register</span>
+              {pendingCount > 0 && <span className="ml-2 px-2 py-0.5 rounded-full bg-[#3D87D3]/10 border border-[#3D87D3]/20 text-[#3D87D3] font-bold text-xs">{pendingCount}</span>}
+            </button>
+            <button 
+              onClick={() => setTab('mandatory')}
+              className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'mandatory' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              <span>Mandatory Closures ({mandatoryLeaves.length})</span>
             </button>
             <button 
               onClick={() => setTab('ergani')}
-              className={`pb-3 font-semibold transition-all flex items-center cursor-pointer ${tab === 'ergani' ? 'border-b-2 border-rose-600 text-rose-600 font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+              className={`pb-3 font-extrabold transition-all flex items-center cursor-pointer ${tab === 'ergani' ? 'border-b-2 border-rose-600 text-rose-600 font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
             >
               <ShieldCheck className="w-4 h-4 mr-1.5 text-rose-600" /> ΕΡΓΑΝΗ Filing & Amendment Drift ({unsubmittedErgani.length})
             </button>
@@ -307,11 +272,246 @@ export default function LeaveManagementPage() {
         )}
       </div>
 
-      {/* TAB 1: REQUESTS & APPROVAL QUEUE */}
-      {tab === 'requests' && (
-        <Card title={isAdmin ? "Shared Admin Queue & Leave Register" : "My Submitted Leaves & Balances"}>
+      {/* TAB 0: MY LEAVES (THE BIG PICTURE) */}
+      {tab === 'my_leaves' && (
+        <div className="space-y-8 animate-in fade-in duration-200">
+          {/* BALANCE EQUATION CLARITY CARD */}
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-[#255e96] text-white shadow-md border border-slate-700">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-4 border-b border-white/10">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-sky-500/20 rounded-xl border border-sky-400/30">
+                  <BarChart3 className="w-6 h-6 text-sky-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold tracking-wide uppercase text-white">Your 2026 Leave Balance & Big Picture</h3>
+                  <p className="text-xs text-slate-300 mt-0.5">Complete transparency on how your available vacation pool is calculated in real time</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3 text-right">
+                <span className="text-xs uppercase text-slate-300 font-extrabold tracking-wider">Net Available Pool:</span>
+                <span className="px-4 py-1.5 rounded-full bg-emerald-500 text-white font-black text-xl font-mono shadow-xs">
+                  {myBalance.available} Days
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
+                <p className="text-[10px] uppercase text-slate-300 font-extrabold">Annual Entitlement</p>
+                <p className="text-xl font-extrabold font-mono text-white mt-1">{myBalance.entitlement} days</p>
+                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Greek statutory base</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
+                <p className="text-[10px] uppercase text-sky-300 font-extrabold">+ Carry-Over</p>
+                <p className="text-xl font-extrabold font-mono text-sky-300 mt-1">{myBalance.carryOver} days</p>
+                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Expires {myBalance.carryOverExpires}</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
+                <p className="text-[10px] uppercase text-amber-300 font-extrabold">− Taken / Approved</p>
+                <p className="text-xl font-extrabold font-mono text-amber-300 mt-1">−{myBalance.taken} days</p>
+                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Confirmed holidays</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
+                <p className="text-[10px] uppercase text-purple-300 font-extrabold">− Reserved (Pending)</p>
+                <p className="text-xl font-extrabold font-mono text-purple-300 mt-1">−{myBalance.reserved} days</p>
+                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Awaiting sign-off</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white/10 border border-white/15">
+                <p className="text-[10px] uppercase text-indigo-300 font-extrabold">− Mandatory Closures</p>
+                <p className="text-xl font-extrabold font-mono text-indigo-300 mt-1">−{myBalance.mandatory} days</p>
+                <p className="text-[10px] text-slate-300 mt-0.5 font-medium">Company bridge days</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Upcoming scheduled time-off banner */}
+          {(() => {
+            const myApprovedFuture = leaveRequests
+              .filter(r => r.profile_id === currentUser.id && (r.status === 'approved' || r.status === 'in_progress') && isAfter(parseISO(r.end_date), parseISO('2026-07-30')))
+              .sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+            if (myApprovedFuture.length > 0) {
+              const nextLeave = myApprovedFuture[0];
+              const lt = leaveTypes.find(t => t.id === nextLeave.leave_type_id);
+              return (
+                <div className="p-5 rounded-xl bg-gradient-to-r from-emerald-900 to-teal-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm border border-emerald-700/80">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-3 bg-white/10 rounded-xl text-emerald-300">
+                      <CalendarDays className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase tracking-widest font-extrabold text-emerald-300 block">Next Scheduled Time Off</span>
+                      <h4 className="text-base font-black text-white mt-0.5">{lt?.name_en || 'Scheduled Leave'} &bull; {nextLeave.start_date} to {nextLeave.end_date}</h4>
+                      <p className="text-xs text-emerald-100 mt-0.5 font-medium">{nextLeave.working_days} working days deduction {nextLeave.note ? `— "${nextLeave.note}"` : ''}</p>
+                    </div>
+                  </div>
+                  <Badge variant="success" className="bg-emerald-500/40 text-white border-emerald-300/60 text-xs py-1.5 px-4 font-black shadow-2xs shrink-0">
+                    Confirmed & Ready
+                  </Badge>
+                </div>
+              );
+            } else {
+              return (
+                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-3 bg-[#3D87D3]/10 text-[#3D87D3] rounded-xl font-bold">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">No upcoming time-off planned yet!</h4>
+                      <p className="text-xs text-slate-500 mt-0.5 font-medium">You have <strong className="text-slate-800 font-extrabold">{myBalance.available} available vacation days</strong> remaining to spend in 2026. Plan ahead to maximize your rest!</p>
+                    </div>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-extrabold cursor-pointer shrink-0 py-2.5 px-5 rounded-xl shadow-xs">
+                    <Plus className="w-4 h-4 mr-1.5" /> Plan Holiday Now
+                  </Button>
+                </div>
+              );
+            }
+          })()}
+
+          {/* LEAVE CATEGORIES BREAKDOWN ("THE BIG PICTURE") */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center">
+              <Briefcase className="w-4 h-4 mr-2 text-[#3D87D3]" /> All Leave Category Quotas & Policy Rules
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {leaveTypes.map(lt => {
+                const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id);
+                const approvedDays = myCatLeaves.filter(r => r.status === 'approved' || r.status === 'taken').reduce((a, b) => a + b.working_days, 0);
+                const pendingDays = myCatLeaves.filter(r => r.status === 'pending').reduce((a, b) => a + b.working_days, 0);
+                const isAnnual = lt.id === 'lt-annual' || lt.id === 'vacation' || lt.name_en?.toLowerCase().includes('annual') || lt.name_en?.toLowerCase().includes('vacation');
+
+                return (
+                  <Card key={lt.id} className="border-slate-200 shadow-2xs hover:shadow-xs transition-all relative overflow-hidden p-5 bg-white">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: lt.colour || '#3D87D3' }} />
+                          <h4 className="font-extrabold text-slate-900 text-sm">{lt.name_el}</h4>
+                          <span className="text-xs text-slate-500 font-bold">({lt.name_en})</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Min Notice: <strong className="text-slate-800 font-bold">{lt.min_notice_days} days prior</strong> &bull; Quota Rule: <strong className="text-slate-800 font-bold">{lt.counts_against_balance ? 'Deducted from Allowance' : 'No Balance Deduction'}</strong>{lt.requires_document && <span className="text-amber-700 font-bold"> &bull; Doc Required</span>}
+                        </p>
+                      </div>
+                      <Badge variant={approvedDays > 0 ? "info" : "neutral"} className="text-xs shrink-0 font-bold py-1 px-2.5">
+                        {approvedDays} Days Used
+                      </Badge>
+                    </div>
+
+                    {isAnnual ? (
+                      <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                        <div className="flex justify-between text-[11px] font-extrabold text-slate-700">
+                          <span>Annual Pool Utilization</span>
+                          <span>{approvedDays + myBalance.mandatory} / {myBalance.entitlement + myBalance.carryOver} Total Pool</span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden flex shadow-inner">
+                          <div 
+                            className="bg-[#3D87D3] h-full transition-all duration-500 rounded-full" 
+                            style={{ width: `${Math.min(100, ((approvedDays + myBalance.mandatory) / (myBalance.entitlement + myBalance.carryOver || 1)) * 100)}%` }} 
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                        <span>Pending requests: <strong className="text-slate-800 font-bold">{pendingDays} days</strong></span>
+                        <span>Total logged in 2026: <strong className="text-slate-800 font-bold">{approvedDays + pendingDays} days</strong></span>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* MY PERSONAL LEAVE HISTORY & REQUESTS LOG */}
+          <Card title="My Personal Leave History & Requests Log" subtitle="Complete audit trail of all leave applications submitted by you in 2026" className="border-slate-200 shadow-xs">
+            <div className="space-y-3 mt-2">
+              {(() => {
+                const myHistory = leaveRequests.filter(r => r.profile_id === currentUser.id);
+                if (myHistory.length === 0) {
+                  return (
+                    <div className="p-10 text-center text-slate-500 text-xs border border-dashed rounded-xl">
+                      You have not filed any personal leave requests yet. Click &ldquo;File Leave Request&rdquo; above to file your first holiday!
+                    </div>
+                  );
+                }
+                return myHistory.map(req => {
+                  const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
+                  const isMandatory = req.origin === 'mandatory';
+                  const isFuture = isAfter(parseISO(req.start_date), parseISO(todayStr));
+
+                  return (
+                    <div key={req.id} className={`p-4 rounded-xl bg-white border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs ${
+                      req.status === 'cancellation_requested' ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 hover:border-slate-300'
+                    }`}>
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center space-x-2.5">
+                          <span className="font-extrabold text-sm text-slate-900">{lType?.name_el || 'Leave'} ({lType?.name_en})</span>
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: lType?.colour }} />
+                          {isMandatory && <Badge variant="info" className="text-[10px] bg-[#3D87D3]/10 text-[#3D87D3] border-[#3D87D3]/20 font-extrabold">Company-Wide Closure</Badge>}
+                          {req.origin === 'admin_entry' && <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">Admin Recorded</span>}
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Dates: <strong className="text-slate-800 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{req.working_days} working days</strong>
+                        </p>
+                        <p className="text-[11px] text-slate-600 italic font-medium">&ldquo;{req.note || 'No additional note provided'}&rdquo;</p>
+
+                        {req.rejection_reason && (
+                          <div className="mt-1 p-2 rounded bg-rose-50 border border-rose-200 text-[11px] text-rose-800 font-bold">
+                            <strong>Rejection Reason:</strong> {req.rejection_reason}
+                          </div>
+                        )}
+                        {req.admin_edit_reason && (
+                          <div className="mt-1 p-2 rounded bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900 flex items-center font-bold">
+                            <Edit3 className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
+                            <span><strong>Admin Modification Note:</strong> {req.admin_edit_reason}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`px-2 py-1 rounded text-[10px] font-extrabold uppercase border ${
+                          req.ergani_status === 'submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                          req.ergani_status === 'needs_amendment' ? 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse font-black' :
+                          req.ergani_status === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}>
+                          ΕΡΓΑΝΗ: {req.ergani_status}
+                        </span>
+
+                        <Badge variant={
+                          req.status === 'approved' || req.status === 'taken' ? 'success' : 
+                          req.status === 'rejected' ? 'error' : 
+                          req.status === 'cancelled' ? 'neutral' : 'warning'
+                        } className="text-xs py-1 px-3 uppercase font-extrabold">
+                          {req.status.replace('_', ' ')}
+                        </Badge>
+
+                        {req.status === 'pending' && (
+                          <Button size="sm" variant="outline" className="text-xs font-bold text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer" onClick={() => updateLeaveRequestStatus(req.id, 'cancelled')}>
+                            Cancel Request
+                          </Button>
+                        )}
+                        {req.status === 'approved' && isFuture && (
+                          <Button size="sm" variant="outline" className="text-xs font-bold text-amber-700 border-amber-300 hover:bg-amber-50 cursor-pointer" onClick={() => requestLeaveCancellation(req.id)}>
+                            Request Cancellation
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB 1: SHARED FOUNDER APPROVAL QUEUE & REGISTER (ADMIN ONLY) */}
+      {tab === 'requests' && isAdmin && (
+        <Card title="Shared Founder Approval Queue & Team Register" subtitle="Organization-wide oversight of employee leave applications">
           <div className="space-y-3 mt-2">
-            {leaveRequests.filter(r => isAdmin || r.profile_id === currentUser.id).map(req => {
+            {leaveRequests.map(req => {
               const prof = profiles.find(p => p.id === req.profile_id);
               const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
               const isMandatory = req.origin === 'mandatory';
@@ -324,24 +524,23 @@ export default function LeaveManagementPage() {
                 }`}>
                   <div className="space-y-1.5 flex-1">
                     <div className="flex items-center space-x-2.5">
-                      <span className="font-bold text-sm text-slate-800">{prof?.first_name} {prof?.last_name}</span>
-                      <Badge variant="neutral" className="text-[10px]" style={{ borderColor: lType?.colour }}>{lType?.name_el} ({lType?.name_en})</Badge>
-                      {isMandatory && <Badge variant="info" className="text-[10px] bg-[#3D87D3]/10 text-[#3D87D3] border-[#3D87D3]/20">Company-Wide Closure</Badge>}
-                      {req.origin === 'admin_entry' && <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold">Admin Entry</span>}
+                      <span className="font-extrabold text-sm text-slate-900">{prof?.first_name} {prof?.last_name}</span>
+                      <Badge variant="neutral" className="text-[10px] font-bold" style={{ borderColor: lType?.colour }}>{lType?.name_el} ({lType?.name_en})</Badge>
+                      {isMandatory && <Badge variant="info" className="text-[10px] bg-[#3D87D3]/10 text-[#3D87D3] border-[#3D87D3]/20 font-bold">Company-Wide Closure</Badge>}
+                      {req.origin === 'admin_entry' && <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">Admin Entry</span>}
                     </div>
-                    <p className="text-xs text-slate-500">
-                      Dates: <strong className="text-slate-700 font-mono">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3]">{req.working_days} working days</strong>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Dates: <strong className="text-slate-700 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{req.working_days} working days</strong>
                     </p>
-                    <p className="text-[11px] text-slate-600 italic">&ldquo;{req.note}&rdquo;</p>
+                    <p className="text-[11px] text-slate-600 italic">&ldquo;{req.note || 'No notes attached'}&rdquo;</p>
 
-                    {/* Audit explanations (§1 & §2) */}
                     {req.rejection_reason && (
-                      <div className="mt-1 p-2 rounded bg-rose-50 border border-rose-200 text-[11px] text-rose-800">
+                      <div className="mt-1 p-2 rounded bg-rose-50 border border-rose-200 text-[11px] text-rose-800 font-bold">
                         <strong>Rejection Reason:</strong> {req.rejection_reason}
                       </div>
                     )}
                     {req.admin_edit_reason && (
-                      <div className="mt-1 p-2 rounded bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900 flex items-center">
+                      <div className="mt-1 p-2 rounded bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900 flex items-center font-bold">
                         <Edit3 className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
                         <span><strong>Admin Modification:</strong> {req.admin_edit_reason}</span>
                       </div>
@@ -349,8 +548,7 @@ export default function LeaveManagementPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    {/* Ergani badge */}
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase border ${
+                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
                       req.ergani_status === 'submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
                       req.ergani_status === 'needs_amendment' ? 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse' :
                       req.ergani_status === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'
@@ -358,28 +556,27 @@ export default function LeaveManagementPage() {
                       ΕΡΓΑΝΗ: {req.ergani_status}
                     </span>
 
-                    {/* Status & Approval / Cancellation action buttons */}
-                    {req.status === 'pending' && isAdmin ? (
+                    {req.status === 'pending' ? (
                       <div className="flex items-center space-x-1.5">
                         <Button 
-                          size="sm" variant="primary" className="bg-emerald-600 hover:bg-emerald-500 border-none text-xs cursor-pointer"
+                          size="sm" variant="primary" className="bg-emerald-600 hover:bg-emerald-500 font-extrabold border-none text-xs cursor-pointer"
                           onClick={() => updateLeaveRequestStatus(req.id, 'approved')}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
                         </Button>
                         <Button 
-                          size="sm" variant="danger" className="text-xs cursor-pointer"
+                          size="sm" variant="danger" className="text-xs font-extrabold cursor-pointer"
                           onClick={() => setRejectModalTarget(req.id)}
                         >
                           <XCircle className="w-3.5 h-3.5 mr-1" /> Reject...
                         </Button>
                       </div>
-                    ) : req.status === 'cancellation_requested' && isAdmin ? (
+                    ) : req.status === 'cancellation_requested' ? (
                       <div className="flex items-center space-x-1.5">
-                        <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-500 text-xs cursor-pointer" onClick={() => decideLeaveCancellation(req.id, true)}>
+                        <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-500 text-xs font-extrabold cursor-pointer" onClick={() => decideLeaveCancellation(req.id, true)}>
                           Accept Cancel
                         </Button>
-                        <Button size="sm" variant="outline" className="text-xs cursor-pointer" onClick={() => decideLeaveCancellation(req.id, false)}>
+                        <Button size="sm" variant="outline" className="text-xs font-bold cursor-pointer" onClick={() => decideLeaveCancellation(req.id, false)}>
                           Decline
                         </Button>
                       </div>
@@ -388,33 +585,21 @@ export default function LeaveManagementPage() {
                         req.status === 'approved' || req.status === 'taken' ? 'success' : 
                         req.status === 'rejected' ? 'error' : 
                         req.status === 'cancelled' ? 'neutral' : 'warning'
-                      } className="text-xs py-1 uppercase">
+                      } className="text-xs py-1 px-2.5 uppercase font-bold">
                         {req.status.replace('_', ' ')}
                       </Badge>
                     )}
 
-                    {/* Employee actions (§1): Cancel freely when pending; Request cancellation when approved future */}
-                    {isSelf && req.status === 'pending' && (
-                      <Button size="sm" variant="outline" className="text-[11px] text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer" onClick={() => updateLeaveRequestStatus(req.id, 'cancelled')}>
-                        Cancel Request
-                      </Button>
-                    )}
-                    {isSelf && req.status === 'approved' && isFuture && (
-                      <Button size="sm" variant="outline" className="text-[11px] text-amber-700 border-amber-300 hover:bg-amber-50 cursor-pointer" onClick={() => requestLeaveCancellation(req.id)}>
-                        Request Cancellation
-                      </Button>
-                    )}
-
-                    {/* Admin Post-Approval Editor button (§2) */}
-                    {isAdmin && (req.status === 'approved' || req.status === 'in_progress' || req.status === 'taken') && (
-                      <Button size="sm" variant="outline" className="text-[11px] text-indigo-700 border-indigo-200 hover:bg-indigo-50 cursor-pointer flex items-center" onClick={() => {
+                    {/* Admin Post-Approval Editor button */}
+                    {(req.status === 'approved' || req.status === 'in_progress' || req.status === 'taken') && (
+                      <Button size="sm" variant="outline" className="text-xs font-bold text-indigo-700 border-indigo-200 hover:bg-indigo-50 cursor-pointer flex items-center" onClick={() => {
                         setEditingLeave(req);
                         setEditStartDate(req.start_date);
                         setEditEndDate(req.end_date);
                         setEditNote(req.note || '');
                         setEditReason('');
                       }}>
-                        <Edit3 className="w-3 h-3 mr-1" /> Admin Edit
+                        <Edit3 className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Admin Edit
                       </Button>
                     )}
                   </div>
