@@ -8,7 +8,6 @@ import {
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode 
 } from './types';
-import * as InitialData from './mock-data';
 
 interface AppState {
   currentUser: Profile;
@@ -72,22 +71,22 @@ const generateUUID = (): string => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
-  const [profiles, setProfiles] = useState<Profile[]>(InitialData.MOCK_PROFILES);
-  const [currentUserId, setCurrentUserId] = useState<string>('prof-eleni'); // Default to Founder Eleni
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
   const [isDevMode, setIsDevMode] = useState<boolean>(true);
-  const [teams, setTeams] = useState<Team[]>(InitialData.MOCK_TEAMS);
-  const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>(InitialData.MOCK_PAYMENT_TYPES);
-  const [salaries, setSalaries] = useState<SalaryRecord[]>(InitialData.MOCK_SALARIES);
-  const [payments, setPayments] = useState<PaymentRecord[]>(InitialData.MOCK_PAYMENTS);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>(InitialData.MOCK_LEAVE_TYPES);
-  const [entitlements, setEntitlements] = useState<LeaveEntitlement[]>(InitialData.MOCK_ENTITLEMENTS);
-  const [mandatoryLeaves, setMandatoryLeaves] = useState<MandatoryLeave[]>(InitialData.MOCK_MANDATORY_LEAVES);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(InitialData.MOCK_LEAVE_REQUESTS);
-  const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>(InitialData.MOCK_PUBLIC_HOLIDAYS);
-  const [remoteDays, setRemoteDays] = useState<RemoteDay[]>(InitialData.MOCK_REMOTE_DAYS);
-  const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>(InitialData.MOCK_REMOTE_PATTERNS);
-  const [counterparties, setCounterparties] = useState<Counterparty[]>(InitialData.MOCK_COUNTERPARTIES);
-  const [contracts, setContracts] = useState<Contract[]>(InitialData.MOCK_CONTRACTS);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);
+  const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [entitlements, setEntitlements] = useState<LeaveEntitlement[]>([]);
+  const [mandatoryLeaves, setMandatoryLeaves] = useState<MandatoryLeave[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
+  const [remoteDays, setRemoteDays] = useState<RemoteDay[]>([]);
+  const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
 
   useEffect(() => {
     // Intercept OAuth authorization code if Supabase redirects to site root instead of /auth/callback
@@ -127,37 +126,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('contracts').select('*')
         ]);
 
-        const loadedTeams: Team[] = (teamsRes.data && teamsRes.data.length > 0) ? teamsRes.data : InitialData.MOCK_TEAMS;
+        const loadedTeams: Team[] = teamsRes.data || [];
         setTeams(loadedTeams);
 
-        const loadedPaymentTypes: PaymentType[] = (paymentTypesRes.data && paymentTypesRes.data.length > 0) ? paymentTypesRes.data : InitialData.MOCK_PAYMENT_TYPES;
+        const loadedPaymentTypes: PaymentType[] = paymentTypesRes.data || [];
         setPaymentTypes(loadedPaymentTypes);
 
-        const loadedSalaries: SalaryRecord[] = (salariesRes.data && salariesRes.data.length > 0) ? salariesRes.data : InitialData.MOCK_SALARIES;
+        const loadedSalaries: SalaryRecord[] = salariesRes.data || [];
         setSalaries(loadedSalaries);
 
-        const loadedLeaveTypes: LeaveType[] = (leaveTypesRes.data && leaveTypesRes.data.length > 0) ? leaveTypesRes.data : InitialData.MOCK_LEAVE_TYPES;
+        const loadedLeaveTypes: LeaveType[] = leaveTypesRes.data || [];
         setLeaveTypes(loadedLeaveTypes);
 
-        const loadedEntitlements: LeaveEntitlement[] = (entitlementsRes.data && entitlementsRes.data.length > 0) ? entitlementsRes.data : InitialData.MOCK_ENTITLEMENTS;
+        const loadedEntitlements: LeaveEntitlement[] = entitlementsRes.data || [];
         setEntitlements(loadedEntitlements);
 
-        const loadedMandatory: MandatoryLeave[] = (mandatoryRes.data && mandatoryRes.data.length > 0) ? mandatoryRes.data : InitialData.MOCK_MANDATORY_LEAVES;
+        const loadedMandatory: MandatoryLeave[] = mandatoryRes.data || [];
         setMandatoryLeaves(loadedMandatory);
 
-        const loadedHolidays: PublicHoliday[] = (holidaysRes.data && holidaysRes.data.length > 0) ? holidaysRes.data : InitialData.MOCK_PUBLIC_HOLIDAYS;
+        const loadedHolidays: PublicHoliday[] = holidaysRes.data || [];
         setPublicHolidays(loadedHolidays);
 
-        const loadedRemoteDays: RemoteDay[] = (remoteDaysRes.data && remoteDaysRes.data.length > 0) ? remoteDaysRes.data : InitialData.MOCK_REMOTE_DAYS;
+        const loadedRemoteDays: RemoteDay[] = remoteDaysRes.data || [];
         setRemoteDays(loadedRemoteDays);
 
-        const loadedRemotePatterns: RemotePattern[] = (remotePatternsRes.data && remotePatternsRes.data.length > 0) ? remotePatternsRes.data : InitialData.MOCK_REMOTE_PATTERNS;
+        const loadedRemotePatterns: RemotePattern[] = remotePatternsRes.data || [];
         setRemotePatterns(loadedRemotePatterns);
 
-        const loadedCounterparties: Counterparty[] = (counterpartiesRes.data && counterpartiesRes.data.length > 0) ? counterpartiesRes.data : InitialData.MOCK_COUNTERPARTIES;
+        const loadedCounterparties: Counterparty[] = counterpartiesRes.data || [];
         setCounterparties(loadedCounterparties);
 
-        let loadedProfiles: Profile[] = InitialData.MOCK_PROFILES;
+        let loadedProfiles: Profile[] = [];
         if (profilesRes.data && profilesRes.data.length > 0) {
           const roles = rolesRes.data || [];
           const sensitives = sensitiveRes.data || [];
@@ -171,41 +170,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setProfiles(loadedProfiles);
         }
 
-        if (paymentsRes.data && paymentsRes.data.length > 0) {
-          const enrichedPayments = paymentsRes.data.map((pay: any) => {
-            const payment_type = loadedPaymentTypes.find(pt => pt.id === pay.payment_type_id);
-            return { ...pay, payment_type };
-          });
-          setPayments(enrichedPayments);
-        }
+        const enrichedPayments = (paymentsRes.data || []).map((pay: any) => {
+          const payment_type = loadedPaymentTypes.find(pt => pt.id === pay.payment_type_id);
+          return { ...pay, payment_type };
+        });
+        setPayments(enrichedPayments);
 
-        if (leaveRequestsRes.data && leaveRequestsRes.data.length > 0) {
-          const enrichedRequests = leaveRequestsRes.data.map((req: any) => {
-            const leave_type = loadedLeaveTypes.find(lt => lt.id === req.leave_type_id);
-            return { ...req, leave_type };
-          });
-          setLeaveRequests(enrichedRequests);
-        }
+        const enrichedRequests = (leaveRequestsRes.data || []).map((req: any) => {
+          const leave_type = loadedLeaveTypes.find(lt => lt.id === req.leave_type_id);
+          return { ...req, leave_type };
+        });
+        setLeaveRequests(enrichedRequests);
 
-        if (contractsRes.data && contractsRes.data.length > 0) {
-          const enrichedContracts = contractsRes.data.map((cnt: any) => {
-            const counterparty = loadedCounterparties.find(c => c.id === cnt.counterparty_id);
-            const owner_profile = loadedProfiles.find(p => p.id === cnt.owner_profile_id);
-            return { ...cnt, counterparty, owner_profile };
-          });
-          setContracts(enrichedContracts);
-        }
+        const enrichedContracts = (contractsRes.data || []).map((cnt: any) => {
+          const counterparty = loadedCounterparties.find(c => c.id === cnt.counterparty_id);
+          const owner_profile = loadedProfiles.find(p => p.id === cnt.owner_profile_id);
+          return { ...cnt, counterparty, owner_profile };
+        });
+        setContracts(enrichedContracts);
 
+        let matchedId = '';
         const { data: { session } } = await supabase.auth.getSession();
         if (session && session.user && session.user.email) {
           const email = session.user.email.toLowerCase();
-          const match = loadedProfiles.find(p => p.work_email.toLowerCase() === email);
+          const match = loadedProfiles.find(p => p.work_email?.toLowerCase() === email);
           if (match) {
-            setCurrentUserId(match.id);
+            matchedId = match.id;
           }
         }
+        if (!matchedId && loadedProfiles.length > 0) {
+          matchedId = loadedProfiles[0].id;
+        }
+        if (matchedId) {
+          setCurrentUserId(matchedId);
+        }
       } catch (err) {
-        console.error("Live database sync exception (fallback to mock):", err);
+        console.error("Live database sync exception:", err);
       }
     };
 
@@ -213,7 +213,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Derive active user
-  const currentUser = profiles.find(p => p.id === currentUserId) || profiles.find(p => p.work_email.includes('eleni')) || profiles[0];
+  const fallbackProfile: Profile = {
+    id: '',
+    first_name: 'Database Sync',
+    last_name: '',
+    name_el: '',
+    title: 'Loading from Supabase...',
+    work_email: '',
+    role: 'employee',
+    team_id: '',
+    employment_type: 'full_time',
+    start_date: '2026-01-01',
+    status: 'active',
+    work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+  };
+
+  const currentUser = profiles.find(p => p.id === currentUserId) || profiles[0] || fallbackProfile;
 
   const signOut = async () => {
     try {
@@ -231,15 +246,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateProfile = async (updated: Profile) => {
-    setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
     const supabase = getSupabaseBrowserClient();
     const { team, sensitive, role, ...cleanProfile } = updated as any;
     try {
-      await supabase.from('profiles').update(cleanProfile).eq('id', updated.id);
+      const { error } = await supabase.from('profiles').update(cleanProfile).eq('id', updated.id);
+      if (error) {
+        console.error('Failed to update profile in database:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
       if (sensitive) {
         await supabase.from('profile_sensitive').upsert({ ...sensitive, profile_id: updated.id });
       }
-    } catch (e) {
+      setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
+    } catch (e: any) {
       console.error('Failed to update profile in database:', e);
     }
   };
@@ -247,32 +267,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addProfile = async (newProf: Profile) => {
     const id = (newProf.id && newProf.id.includes('-') && newProf.id.length === 36) ? newProf.id : generateUUID();
     const profWithId = { ...newProf, id };
-    setProfiles(prev => [profWithId, ...prev]);
-
     const supabase = getSupabaseBrowserClient();
     const { team, sensitive, role, ...cleanProfile } = profWithId as any;
     try {
-      await supabase.from('profiles').insert(cleanProfile);
+      const { error } = await supabase.from('profiles').insert(cleanProfile);
+      if (error) {
+        console.error('Failed to insert profile into database:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
       if (role) {
         await supabase.from('user_roles').insert({ profile_id: id, role });
       }
       if (sensitive) {
         await supabase.from('profile_sensitive').insert({ ...sensitive, profile_id: id });
       }
-    } catch (e) {
+      setProfiles(prev => [profWithId, ...prev]);
+    } catch (e: any) {
       console.error('Failed to insert profile into database:', e);
     }
   };
 
   const addLeaveRequest = async (req: Omit<LeaveRequest, 'id'>) => {
     const newReq: LeaveRequest = { ...req, id: generateUUID() };
-    setLeaveRequests(prev => [newReq, ...prev]);
-
     const supabase = getSupabaseBrowserClient();
     const { leave_type, ...cleanReq } = newReq as any;
     try {
-      await supabase.from('leave_requests').insert(cleanReq);
-    } catch (e) {
+      const { error, data } = await supabase.from('leave_requests').insert(cleanReq).select();
+      if (error) {
+        console.error('Failed to insert leave request into database:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      const savedReq = (data && data[0]) ? { ...data[0], leave_type: leaveTypes.find(lt => lt.id === data[0].leave_type_id) } : newReq;
+      setLeaveRequests(prev => [savedReq, ...prev]);
+    } catch (e: any) {
       console.error('Failed to insert leave request into database:', e);
     }
   };
@@ -280,36 +309,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateLeaveRequestStatus = async (id: string, status: LeaveRequest['status'], rejectionReason?: string) => {
     const decided_by = currentUser.id;
     const decided_at = new Date().toISOString().split('T')[0];
-    setLeaveRequests(prev => prev.map(r => r.id === id ? { 
-      ...r, 
-      status, 
-      decided_by, 
-      decided_at, 
-      rejection_reason: rejectionReason || r.rejection_reason 
-    } : r));
-
     const supabase = getSupabaseBrowserClient();
     try {
       const updateData: any = { status, decided_by, decided_at };
       if (rejectionReason) updateData.rejection_reason = rejectionReason;
-      await supabase.from('leave_requests').update(updateData).eq('id', id);
-    } catch (e) {
+      const { error } = await supabase.from('leave_requests').update(updateData).eq('id', id);
+      if (error) {
+        console.error('Failed to update leave request status:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setLeaveRequests(prev => prev.map(r => r.id === id ? { 
+        ...r, 
+        status, 
+        decided_by, 
+        decided_at, 
+        rejection_reason: rejectionReason || r.rejection_reason 
+      } : r));
+    } catch (e: any) {
       console.error('Failed to update leave request status:', e);
     }
   };
 
   const editLeaveRequest = async (id: string, updated: Partial<LeaveRequest>, editReason?: string) => {
-    setLeaveRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const newErganiStatus = (r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
-      return {
-        ...r,
-        ...updated,
-        admin_edit_reason: editReason || updated.admin_edit_reason || r.admin_edit_reason,
-        ergani_status: newErganiStatus
-      };
-    }));
-
     const supabase = getSupabaseBrowserClient();
     try {
       const target = leaveRequests.find(r => r.id === id);
@@ -320,38 +342,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         admin_edit_reason: editReason || cleanUpdate.admin_edit_reason,
         ...(newErganiStatus !== target?.ergani_status ? { ergani_status: newErganiStatus } : {})
       };
-      await supabase.from('leave_requests').update(updateData).eq('id', id);
-    } catch (e) {
+      const { error } = await supabase.from('leave_requests').update(updateData).eq('id', id);
+      if (error) {
+        console.error('Failed to edit leave request in database:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setLeaveRequests(prev => prev.map(r => {
+        if (r.id !== id) return r;
+        const ergani = (r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
+        return {
+          ...r,
+          ...updated,
+          admin_edit_reason: editReason || updated.admin_edit_reason || r.admin_edit_reason,
+          ergani_status: ergani
+        };
+      }));
+    } catch (e: any) {
       console.error('Failed to edit leave request in database:', e);
     }
   };
 
   const requestLeaveCancellation = async (id: string) => {
-    setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancellation_requested' } : r));
     const supabase = getSupabaseBrowserClient();
     try {
-      await supabase.from('leave_requests').update({ status: 'cancellation_requested' }).eq('id', id);
-    } catch (e) {
+      const { error } = await supabase.from('leave_requests').update({ status: 'cancellation_requested' }).eq('id', id);
+      if (error) {
+        console.error('Failed to request leave cancellation:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancellation_requested' } : r));
+    } catch (e: any) {
       console.error('Failed to request leave cancellation:', e);
     }
   };
 
   const decideLeaveCancellation = async (id: string, approve: boolean) => {
     const newStatus: LeaveRequest['status'] = approve ? 'cancelled' : 'approved';
-    setLeaveRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const ergani = (approve && r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
-      return { ...r, status: newStatus, ergani_status: ergani, decided_by: currentUser.id, decided_at: new Date().toISOString().split('T')[0] };
-    }));
-
     const supabase = getSupabaseBrowserClient();
     try {
       const target = leaveRequests.find(r => r.id === id);
       const ergani = (approve && target?.ergani_status === 'submitted') ? 'needs_amendment' : target?.ergani_status;
       const payload: any = { status: newStatus, decided_by: currentUser.id, decided_at: new Date().toISOString().split('T')[0] };
       if (ergani !== target?.ergani_status) payload.ergani_status = ergani;
-      await supabase.from('leave_requests').update(payload).eq('id', id);
-    } catch (e) {
+      const { error } = await supabase.from('leave_requests').update(payload).eq('id', id);
+      if (error) {
+        console.error('Failed to decide leave cancellation:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setLeaveRequests(prev => prev.map(r => {
+        if (r.id !== id) return r;
+        const ergani = (approve && r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
+        return { ...r, status: newStatus, ergani_status: ergani, decided_by: currentUser.id, decided_at: new Date().toISOString().split('T')[0] };
+      }));
+    } catch (e: any) {
       console.error('Failed to decide leave cancellation:', e);
     }
   };
@@ -401,13 +447,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       linked_request_id: firstId
     };
 
-    setLeaveRequests(prev => [req2, req1, ...prev]);
     const supabase = getSupabaseBrowserClient();
     try {
       const { leave_type: lt1, ...clean1 } = req1 as any;
       const { leave_type: lt2, ...clean2 } = req2 as any;
-      await supabase.from('leave_requests').insert([clean1, clean2]);
-    } catch (e) {
+      const { error } = await supabase.from('leave_requests').insert([clean1, clean2]);
+      if (error) {
+        console.error('Failed to save year-boundary split leave requests:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setLeaveRequests(prev => [req2, req1, ...prev]);
+    } catch (e: any) {
       console.error('Failed to save year-boundary split leave requests:', e);
     }
   };
@@ -446,13 +497,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addMandatoryLeave = async (ml: Omit<MandatoryLeave, 'id'>) => {
     const newMl: MandatoryLeave = { ...ml, id: generateUUID() };
-    setMandatoryLeaves(prev => [newMl, ...prev]);
-
     const supabase = getSupabaseBrowserClient();
     try {
-      await supabase.from('mandatory_leaves').insert(newMl);
-    } catch (e) {
+      const { error } = await supabase.from('mandatory_leaves').insert(newMl);
+      if (error) {
+        console.error('Failed to insert mandatory leave:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setMandatoryLeaves(prev => [newMl, ...prev]);
+    } catch (e: any) {
       console.error('Failed to insert mandatory leave:', e);
+      return;
     }
 
     // Perform Idempotent Fan-out to all active non-contractors!
@@ -466,19 +522,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         end_date: newMl.end_date,
         half_day_start: false,
         half_day_end: false,
-        working_days: p.employment_type === 'part_time' ? 2 : 3, // Calculated respecting schedule
+        working_days: p.employment_type === 'part_time' ? 2 : 3,
         status: 'approved',
         origin: 'mandatory',
         mandatory_leave_id: newMl.id,
         note: `Company-wide mandatory leave: ${newMl.name}`,
         ergani_status: 'not_required'
       }));
-      setLeaveRequests(prev => [...newRequests, ...prev]);
 
       try {
         const cleanRequests = newRequests.map(({ leave_type, ...r }: any) => r);
-        await supabase.from('leave_requests').insert(cleanRequests);
-      } catch (e) {
+        const { error: reqError } = await supabase.from('leave_requests').insert(cleanRequests);
+        if (reqError) {
+          console.error('Failed to fan-out mandatory leave requests:', reqError);
+          alert(`Database Error fanning out leave requests: ${reqError.message}`);
+          return;
+        }
+        setLeaveRequests(prev => [...newRequests, ...prev]);
+      } catch (e: any) {
         console.error('Failed to fan-out mandatory leave requests:', e);
       }
     }
@@ -486,13 +547,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addPaymentRecord = async (pay: Omit<PaymentRecord, 'id'>) => {
     const newPay: PaymentRecord = { ...pay, id: generateUUID() };
-    setPayments(prev => [newPay, ...prev]);
-
     const supabase = getSupabaseBrowserClient();
     const { payment_type, ...cleanPay } = newPay as any;
     try {
-      await supabase.from('payments').insert(cleanPay);
-    } catch (e) {
+      const { error } = await supabase.from('payments').insert(cleanPay);
+      if (error) {
+        console.error('Failed to insert payment record:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setPayments(prev => [newPay, ...prev]);
+    } catch (e: any) {
       console.error('Failed to insert payment record:', e);
     }
   };
@@ -544,40 +609,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    setPayments(prev => [...newPays, ...prev]);
-
     const supabase = getSupabaseBrowserClient();
     try {
       const cleanPays = newPays.map(({ payment_type, ...p }: any) => p);
       if (cleanPays.length > 0) {
-        await supabase.from('payments').insert(cleanPays);
+        const { error } = await supabase.from('payments').insert(cleanPays);
+        if (error) {
+          console.error('Failed to batch insert draft payments:', error);
+          alert(`Database Error generating draft payments: ${error.message}`);
+          return;
+        }
       }
-    } catch (e) {
+      setPayments(prev => [...newPays, ...prev]);
+    } catch (e: any) {
       console.error('Failed to batch insert draft payments:', e);
     }
   };
 
   const addContract = async (cnt: Omit<Contract, 'id'>) => {
     const newCnt: Contract = { ...cnt, id: generateUUID() };
-    setContracts(prev => [newCnt, ...prev]);
-
     const supabase = getSupabaseBrowserClient();
     const { counterparty, owner_profile, ...cleanCnt } = newCnt as any;
     try {
-      await supabase.from('contracts').insert(cleanCnt);
-    } catch (e) {
+      const { error } = await supabase.from('contracts').insert(cleanCnt);
+      if (error) {
+        console.error('Failed to insert contract:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setContracts(prev => [newCnt, ...prev]);
+    } catch (e: any) {
       console.error('Failed to insert contract:', e);
     }
   };
 
   const updateContract = async (updated: Contract) => {
-    setContracts(prev => prev.map(c => c.id === updated.id ? updated : c));
-
     const supabase = getSupabaseBrowserClient();
     const { counterparty, owner_profile, ...cleanCnt } = updated as any;
     try {
-      await supabase.from('contracts').update(cleanCnt).eq('id', updated.id);
-    } catch (e) {
+      const { error } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id);
+      if (error) {
+        console.error('Failed to update contract:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setContracts(prev => prev.map(c => c.id === updated.id ? updated : c));
+    } catch (e: any) {
       console.error('Failed to update contract:', e);
     }
   };
@@ -587,17 +664,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const supabase = getSupabaseBrowserClient();
 
     if (entity === 'leave') {
-      setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, ergani_status: status, ergani_submitted_at: submittedAt } : r));
       try {
-        await supabase.from('leave_requests').update({ ergani_status: status, ergani_submitted_at: submittedAt }).eq('id', id);
-      } catch (e) {
+        const { error } = await supabase.from('leave_requests').update({ ergani_status: status, ergani_submitted_at: submittedAt }).eq('id', id);
+        if (error) {
+          alert(`Database Error: ${error.message}`);
+          return;
+        }
+        setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, ergani_status: status, ergani_submitted_at: submittedAt } : r));
+      } catch (e: any) {
         console.error('Failed to update ergani status for leave request:', e);
       }
     } else {
-      setRemoteDays(prev => prev.map(r => r.id === id ? { ...r, ergani_status: status, ergani_submitted_at: submittedAt } : r));
       try {
-        await supabase.from('remote_days').update({ ergani_status: status, ergani_submitted_at: submittedAt }).eq('id', id);
-      } catch (e) {
+        const { error } = await supabase.from('remote_days').update({ ergani_status: status, ergani_submitted_at: submittedAt }).eq('id', id);
+        if (error) {
+          alert(`Database Error: ${error.message}`);
+          return;
+        }
+        setRemoteDays(prev => prev.map(r => r.id === id ? { ...r, ergani_status: status, ergani_submitted_at: submittedAt } : r));
+      } catch (e: any) {
         console.error('Failed to update ergani status for remote day:', e);
       }
     }
@@ -605,19 +690,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => {
     const validFrom = new Date().toISOString().split('T')[0];
-    const updatedPatterns: RemotePattern[] = patternEntries.map(pe => ({
-      id: generateUUID(),
-      profile_id: profileId,
-      weekday: pe.weekday,
-      mode: pe.mode,
-      valid_from: validFrom
-    }));
-
-    setRemotePatterns(prev => {
-      const filtered = prev.filter(p => p.profile_id !== profileId || !patternEntries.some(pe => pe.weekday === p.weekday));
-      return [...filtered, ...updatedPatterns];
-    });
-
     const supabase = getSupabaseBrowserClient();
     try {
       const payload = patternEntries.map(pe => ({
@@ -629,14 +701,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error, data } = await supabase.from('remote_patterns').upsert(payload, { onConflict: 'profile_id,weekday' }).select();
       if (error) {
         console.error("Failed to persist remote pattern in Supabase:", error);
+        alert(`Database Error: ${error.message}`);
       } else if (data && data.length > 0) {
         setRemotePatterns(prev => {
           const filtered = prev.filter(p => p.profile_id !== profileId || !patternEntries.some(pe => pe.weekday === p.weekday));
           return [...filtered, ...(data as RemotePattern[])];
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Exception saving remote patterns:", e);
+      alert(`Database exception: ${e.message}`);
     }
   };
 
@@ -645,15 +719,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...day,
       id: day.id || generateUUID()
     };
-
-    setRemoteDays(prev => {
-      const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
-      return [newDay, ...filtered];
-    });
-
     const supabase = getSupabaseBrowserClient();
     try {
-      const { error } = await supabase.from('remote_days').upsert({
+      const { error, data } = await supabase.from('remote_days').upsert({
         id: newDay.id,
         profile_id: newDay.profile_id,
         date: newDay.date,
@@ -661,9 +729,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         location: newDay.location || null,
         note: newDay.note || null,
         ergani_status: newDay.ergani_status
-      }, { onConflict: 'profile_id,date' });
-      if (error) console.error("Failed to persist remote day override:", error);
-    } catch (e) {
+      }, { onConflict: 'profile_id,date' }).select();
+      if (error) {
+        console.error("Failed to persist remote day override:", error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setRemoteDays(prev => {
+        const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
+        return [newDay, ...filtered];
+      });
+    } catch (e: any) {
       console.error("Exception saving remote day:", e);
     }
   };
