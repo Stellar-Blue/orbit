@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays } = useAuth();
+  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays, remotePatterns } = useAuth();
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
@@ -35,6 +35,18 @@ export default function DashboardPage() {
   const myLeavesTaken = leaveRequests
     .filter(r => r.profile_id === currentUser.id && r.status === 'approved' && (r.leave_type?.code === 'annual' || r.leave_type_id === 'lt-annual'))
     .reduce((acc, r) => acc + r.working_days, 0);
+
+  const myExistingPatterns = (remotePatterns || []).filter(rp => rp.profile_id === currentUser.id);
+  const getPatternMode = (day: string) => {
+    const found = myExistingPatterns.find(p => p.weekday === day);
+    return found ? found.mode : (day === 'Tue' || day === 'Thu' ? 'remote_gr' : 'office');
+  };
+  const weeklyRemoteDaysCount = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].filter(day => {
+    const m = getPatternMode(day);
+    return m === 'remote_gr' || m === 'remote_abroad';
+  }).length;
+  const monthlyPlannedDays = weeklyRemoteDaysCount * 4;
+  const isPatternCompliant = monthlyPlannedDays <= 8;
 
   // Setup checklist state for guided initial manual setup (requirements decision)
   const [checklist, setChecklist] = useState({
@@ -251,7 +263,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-5 gap-3 mt-2">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
                 const isScheduled = currentUser.work_schedule.includes(day);
-                const mode = day === 'Tue' || day === 'Thu' ? 'remote_gr' : 'office';
+                const mode = getPatternMode(day);
                 if (!isScheduled) {
                   return (
                     <div key={day} className="p-3.5 rounded-xl bg-slate-100/60 border border-slate-200 text-center text-slate-400">
@@ -282,7 +294,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
               <span>Policy quota: Max 8 remote days / month</span>
-              <span>Status: <span className="text-emerald-700 font-semibold">In Compliance (4 days planned)</span></span>
+              <span>Status: <span className={isPatternCompliant ? "text-emerald-700 font-semibold" : "text-amber-600 font-semibold"}>{isPatternCompliant ? "In Compliance" : "Over Quota"} ({monthlyPlannedDays} days planned/mo)</span></span>
             </div>
           </Card>
         </div>

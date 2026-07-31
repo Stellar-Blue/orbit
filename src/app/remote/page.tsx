@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -33,6 +33,26 @@ export default function RemoteWorkLogPage() {
     Thu: getInitialMode('Thu', 'remote_gr'),
     Fri: getInitialMode('Fri', 'office')
   });
+
+  useEffect(() => {
+    setPattern({
+      Mon: getInitialMode('Mon', 'office'),
+      Tue: getInitialMode('Tue', 'remote_gr'),
+      Wed: getInitialMode('Wed', 'office'),
+      Thu: getInitialMode('Thu', 'remote_gr'),
+      Fri: getInitialMode('Fri', 'office')
+    });
+  }, [remotePatterns, currentUser.id]);
+
+  const getActivePatternSummary = () => {
+    const remoteDaysList = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].filter(day => {
+      const mode = getInitialMode(day, day === 'Tue' || day === 'Thu' ? 'remote_gr' : 'office');
+      return mode === 'remote_gr' || mode === 'remote_abroad';
+    });
+    if (remoteDaysList.length === 0) return 'Full-Time Office HQ';
+    if (remoteDaysList.length === 5) return 'Full-Time Remote';
+    return `${remoteDaysList.join(', ').replace(/, ([^,]*)$/, ' & $1')} Remote (GR)`;
+  };
 
   if (isContractor) {
     return (
@@ -97,7 +117,7 @@ export default function RemoteWorkLogPage() {
         
         <Card className="shadow-xs">
           <span className="text-xs font-bold uppercase text-slate-400">Active Weekly Pattern</span>
-          <h4 className="text-lg font-bold text-slate-800 mt-2">Tue & Thu Remote (GR)</h4>
+          <h4 className="text-lg font-bold text-slate-800 mt-2">{getActivePatternSummary()}</h4>
           <p className="text-[11px] text-slate-500 mt-1">Auto-applied unless daily override is entered.</p>
         </Card>
 
@@ -159,9 +179,9 @@ export default function RemoteWorkLogPage() {
                   </div>
                 </div>
               ))}
-              <Button variant="secondary" className="w-full mt-2 text-xs cursor-pointer" onClick={() => {
+              <Button variant="secondary" className="w-full mt-2 text-xs cursor-pointer" onClick={async () => {
                 const patternEntries = Object.entries(pattern).map(([weekday, mode]) => ({ weekday, mode }));
-                saveRemotePattern(currentUser.id, patternEntries);
+                await saveRemotePattern(currentUser.id, patternEntries);
                 alert('Recurring remote pattern successfully saved to Postgres!');
               }}>
                 Update Recurring Pattern &rarr;

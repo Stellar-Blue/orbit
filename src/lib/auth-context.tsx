@@ -41,7 +41,7 @@ interface AppState {
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
-  saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => void;
+  saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<void>;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
   requestLeaveCancellation: (id: string) => void;
@@ -626,8 +626,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         mode: pe.mode,
         valid_from: validFrom
       }));
-      const { error } = await supabase.from('remote_patterns').upsert(payload, { onConflict: 'profile_id,weekday' });
-      if (error) console.error("Failed to persist remote pattern in Supabase:", error);
+      const { error, data } = await supabase.from('remote_patterns').upsert(payload, { onConflict: 'profile_id,weekday' }).select();
+      if (error) {
+        console.error("Failed to persist remote pattern in Supabase:", error);
+      } else if (data && data.length > 0) {
+        setRemotePatterns(prev => {
+          const filtered = prev.filter(p => p.profile_id !== profileId || !patternEntries.some(pe => pe.weekday === p.weekday));
+          return [...filtered, ...(data as RemotePattern[])];
+        });
+      }
     } catch (e) {
       console.error("Exception saving remote patterns:", e);
     }
