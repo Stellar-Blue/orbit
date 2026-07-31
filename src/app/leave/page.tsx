@@ -443,9 +443,11 @@ export default function LeaveManagementPage() {
                     <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping mr-1.5 inline-block shadow-sm" /> Today Indicator</span>
                   </div>
 
-                  {/* Day of Week Headers - Company Calendar Style */}
-                  <div className="grid grid-cols-7 border-t border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-3 mt-2 rounded-t-xl">
-                    <div>Monday</div>
+                  {/* Day of Week Headers with Mobile Swipe Support */}
+                  <div className="overflow-x-auto mt-2 pb-1">
+                    <div className="min-w-[750px] w-full">
+                      <div className="grid grid-cols-7 border-t border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-3 rounded-t-xl">
+                        <div>Monday</div>
                     <div>Tuesday</div>
                     <div>Wednesday</div>
                     <div>Thursday</div>
@@ -655,11 +657,13 @@ export default function LeaveManagementPage() {
                     })()}
                   </div>
                 </div>
-              </Card>
+              </div>
             </div>
+          </Card>
+        </div>
 
-            {/* RIGHT COLUMN: LEAVE CATEGORY QUOTAS & PERSONAL LEAVE HISTORY (5 COLS) */}
-            <div className="lg:col-span-5 space-y-6">
+        {/* RIGHT COLUMN: LEAVE CATEGORY QUOTAS & PERSONAL LEAVE HISTORY (5 COLS) */}
+        <div className="lg:col-span-5 space-y-6">
               {/* LEAVE CATEGORIES BREAKDOWN ("THE BIG PICTURE") */}
               <div className="space-y-3">
                 <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center">

@@ -482,11 +482,13 @@ export default function RemoteWorkLogPage() {
               </div>
             </div>
 
-            {/* Weekday Header */}
-            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-2.5 rounded-t-xl">
-              <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
-              <div className="text-slate-400">Sat</div><div className="text-slate-400">Sun</div>
-            </div>
+            {/* Weekday Header with Mobile Swipe Support */}
+            <div className="overflow-x-auto mt-2">
+              <div className="min-w-[700px] w-full">
+                <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-2.5 rounded-t-xl">
+                  <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
+                  <div className="text-slate-400">Sat</div><div className="text-slate-400">Sun</div>
+                </div>
 
             {/* Month Day Cells Grid */}
             <div className="grid grid-cols-7 auto-rows-[minmax(95px,_auto)] divide-x divide-y divide-slate-200/80 bg-slate-200/20 rounded-b-xl overflow-hidden">
@@ -570,6 +572,8 @@ export default function RemoteWorkLogPage() {
                   </div>
                 );
               })}
+            </div>
+              </div>
             </div>
           </div>
         </div>

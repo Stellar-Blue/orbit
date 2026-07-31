@@ -268,31 +268,31 @@ export default function DashboardPage() {
           </Card>
 
           <Card title="My Telework Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your monthly declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Schedule Calendar</Link>} className="md:col-span-2">
-            <div className="grid grid-cols-5 gap-3 mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 mt-2">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
                 const isScheduled = currentUser.work_schedule.includes(day);
                 const mode = getPatternMode(day);
                 if (!isScheduled) {
                   return (
-                    <div key={day} className="p-3.5 rounded-xl bg-slate-100/60 border border-slate-200 text-center text-slate-400">
+                    <div key={day} className="p-3 sm:p-3.5 rounded-xl bg-slate-100/60 border border-slate-200 text-center text-slate-400 flex flex-col justify-center">
                       <div className="text-xs font-bold">{day}</div>
-                      <div className="text-[11px] mt-2 font-semibold">Non-Working Day</div>
+                      <div className="text-[11px] mt-1.5 font-semibold">Non-Working Day</div>
                     </div>
                   );
                 }
                 return (
-                  <div key={day} className={`p-3.5 rounded-xl border text-center transition-all ${mode === 'remote_gr' ? 'bg-[#3D87D3]/10 border-[#3D87D3]/30 text-[#3D87D3]' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                  <div key={day} className={`p-3 sm:p-3.5 rounded-xl border text-center transition-all flex flex-col justify-between ${mode === 'remote_gr' ? 'bg-[#3D87D3]/10 border-[#3D87D3]/30 text-[#3D87D3]' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
                     <div className="text-xs font-bold tracking-wider uppercase text-slate-500">{day}</div>
-                    <div className="mt-3 flex items-center justify-center space-x-1 font-semibold text-xs">
+                    <div className="mt-2.5 flex items-center justify-center space-x-1 font-semibold text-xs">
                       {mode === 'remote_gr' ? (
                         <>
-                          <MapPin className="w-3.5 h-3.5 text-[#3D87D3]" />
-                          <span>Remote (GR)</span>
+                          <MapPin className="w-3.5 h-3.5 text-[#3D87D3] shrink-0" />
+                          <span className="truncate">Remote (GR)</span>
                         </>
                       ) : (
                         <>
-                          <Users className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Office</span>
+                          <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">Office</span>
                         </>
                       )}
                     </div>
@@ -300,7 +300,7 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
               <span>Policy limit: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
               <span>Remaining Quota: <strong className="text-[#3D87D3] font-bold">{Math.max(0, quotaMaxDays - (remoteDays || []).filter(r => r.profile_id === currentUser.id && r.mode !== 'office' && r.date.startsWith('2026-08')).length)} days available</strong> in August</span>
             </div>

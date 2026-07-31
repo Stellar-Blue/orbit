@@ -283,10 +283,11 @@ export default function CompanyCalendarPage() {
         </div>
       </div>
 
-      {/* Calendar Grid View */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md overflow-hidden">
-        {/* Weekday Column Headers */}
-        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-3.5">
+      {/* Calendar Grid View with Mobile Swipe Overflow */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md overflow-x-auto">
+        <div className="min-w-[850px] w-full">
+          {/* Weekday Column Headers */}
+          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-extrabold text-slate-600 uppercase tracking-wider py-3.5">
           <div>Monday</div>
           <div>Tuesday</div>
           <div>Wednesday</div>
@@ -525,6 +526,7 @@ export default function CompanyCalendarPage() {
               );
             });
           })()}
+        </div>
         </div>
       </div>
 
