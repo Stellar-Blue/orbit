@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
-  Settings, CalendarDays, Home, Briefcase, X 
+  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff 
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -18,7 +18,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen }) => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode, signOut } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
@@ -145,6 +145,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
 
       {/* Footer / User Profile & Dev Mode Switcher */}
       <div className="p-4 border-t border-slate-200/80 bg-slate-50/60 shrink-0">
+        {realUserRole === 'admin' && (
+          <div className="mb-3">
+            <button
+              onClick={() => setIsViewAsEmployee(!isViewAsEmployee)}
+              className={`w-full p-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer shadow-2xs border ${
+                isViewAsEmployee 
+                  ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600' 
+                  : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50/80'
+              }`}
+              title={isViewAsEmployee ? "Return to Full Admin view" : "Switch view to experience platform as an ordinary employee"}
+            >
+              <span className="flex items-center truncate">
+                {isViewAsEmployee ? (
+                  <EyeOff className="w-3.5 h-3.5 mr-2 shrink-0 text-white" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5 mr-2 shrink-0 text-indigo-600" />
+                )}
+                <span>{isViewAsEmployee ? 'Exit Employee Preview' : 'View as Employee'}</span>
+              </span>
+              <Badge variant={isViewAsEmployee ? 'neutral' : 'info'} className={`text-[9px] px-1.5 py-0.5 font-black shrink-0 ${isViewAsEmployee ? 'bg-white text-amber-950 border-amber-300' : ''}`}>
+                {isViewAsEmployee ? 'ACTIVE' : 'PREVIEW'}
+              </Badge>
+            </button>
+          </div>
+        )}
+
         {isDevMode && (
           <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-blue-50/90 border border-blue-200/80 text-[#3D87D3] flex items-center justify-between text-xs shadow-2xs">
             <span className="flex items-center font-extrabold truncate">

@@ -197,7 +197,7 @@ export default function LeaveManagementPage() {
             <Calendar className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> View Company Unified Calendar
           </Link>
           <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-black px-4 py-2">
-            <Plus className="w-4 h-4 mr-1" /> File Leave Request (<span className="font-mono font-bold">&lt;30s</span>)
+            <Plus className="w-4 h-4 mr-1.5" /> File Leave Request
           </Button>
         </div>
       </div>

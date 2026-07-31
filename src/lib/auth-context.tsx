@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
@@ -28,6 +28,9 @@ interface AppState {
   counterparties: Counterparty[];
   contracts: Contract[];
   isDevMode: boolean;
+  isViewAsEmployee: boolean;
+  setIsViewAsEmployee: (val: boolean | ((prev: boolean) => boolean)) => void;
+  realUserRole: 'admin' | 'employee' | string;
   signOut: () => Promise<void> | void;
   
   // Actions for immediate optimistic mutation in UI
@@ -86,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [isDevMode, setIsDevMode] = useState<boolean>(true);
+  const [isViewAsEmployee, setIsViewAsEmployee] = useState<boolean>(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);
   const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
@@ -259,7 +263,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
   };
 
-  const currentUser = profiles.find(p => p.id === currentUserId) || profiles[0] || fallbackProfile;
+  const baseCurrentUser = profiles.find(p => p.id === currentUserId) || profiles[0] || fallbackProfile;
+  const realUserRole = baseCurrentUser.role;
+  const currentUser = useMemo(() => {
+    if (isViewAsEmployee && baseCurrentUser.role === 'admin') {
+      return { ...baseCurrentUser, role: 'employee' as const };
+    }
+    return baseCurrentUser;
+  }, [baseCurrentUser, isViewAsEmployee]);
 
   const signOut = async () => {
     try {
@@ -274,6 +285,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const switchUser = (profileId: string) => {
     setCurrentUserId(profileId);
+    setIsViewAsEmployee(false);
   };
 
   const updateProfile = async (updated: Profile) => {
@@ -1056,6 +1068,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{
       currentUser,
+      isViewAsEmployee,
+      setIsViewAsEmployee,
+      realUserRole,
       profiles,
       teams,
       paymentTypes,

@@ -4,12 +4,15 @@ import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandMenu } from "@/components/layout/command-menu";
-import { Menu, Search } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { Menu, Search, Eye, EyeOff } from "lucide-react";
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole } = useAuth();
 
   if (isAuthPage) {
     return (
@@ -42,6 +45,17 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
           </div>
           
           <div className="flex items-center space-x-3 shrink-0">
+            {realUserRole === 'admin' && !isViewAsEmployee && (
+              <button
+                onClick={() => setIsViewAsEmployee(true)}
+                className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-extrabold text-xs flex items-center transition-all shadow-2xs cursor-pointer shrink-0"
+                title="Switch view to experience Orbit exactly as an ordinary employee"
+              >
+                <Eye className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
+                <span>View as Employee</span>
+              </button>
+            )}
+
             <div className="hidden sm:flex text-xs text-slate-500 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/90 items-center space-x-2 shadow-2xs">
               <Search className="w-3.5 h-3.5 text-slate-400" />
               <span>Press</span>
@@ -53,6 +67,25 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
             </div>
           </div>
         </header>
+
+        {/* Persistent Admin Employee-Preview Mode Ribbon */}
+        {realUserRole === 'admin' && isViewAsEmployee && (
+          <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white px-4 sm:px-6 md:px-8 py-2.5 text-xs font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-amber-700 animate-in slide-in-from-top duration-200">
+            <div className="flex items-center space-x-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
+              <span>
+                <strong>Admin Preview Mode Active:</strong> You are currently experiencing Orbit as an employee. Admin menu items and managerial overrides are temporarily hidden.
+              </span>
+            </div>
+            <button
+              onClick={() => setIsViewAsEmployee(false)}
+              className="px-3.5 py-1.5 bg-white text-amber-950 rounded-xl hover:bg-amber-50 font-black shadow-sm cursor-pointer transition-transform active:scale-95 flex items-center shrink-0 text-xs border border-amber-200/80"
+            >
+              <EyeOff className="w-3.5 h-3.5 mr-1.5 text-amber-700 shrink-0" />
+              <span>Exit Employee Preview</span>
+            </button>
+          </div>
+        )}
 
         {/* Page Content with Responsive Padding */}
         <main className="p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto flex-1 overflow-x-hidden">
