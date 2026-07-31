@@ -114,7 +114,7 @@ export async function GET(request: Request) {
 
     const coreAdmins = ['zbampos@stellarblue.eu', 'gtsoumalis@stellarblue.eu', 'gchatzis@stellarblue.eu'];
     const rolesToInsert = coreAdmins.includes(email) 
-      ? [{ profile_id: createdProfile.id, role: 'employee' }, { profile_id: createdProfile.id, role: 'admin' }]
+      ? [{ profile_id: createdProfile.id, role: 'admin' }]
       : [{ profile_id: createdProfile.id, role: 'employee' }];
       
     await supabase.from('user_roles').insert(rolesToInsert);
