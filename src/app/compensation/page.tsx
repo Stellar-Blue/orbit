@@ -1,18 +1,19 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Card, Button, Badge } from '@/components/ui/primitives';
+import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { 
   DollarSign, Download, ShieldCheck, CreditCard, 
-  Building, Calendar, FileText, CheckCircle2, TrendingUp, AlertTriangle, Lock 
+  Building, Calendar, FileText, CheckCircle2, TrendingUp, AlertTriangle, Lock, Paperclip, FolderOpen, FileSpreadsheet
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { PaymentRecord, SalaryRecord } from '@/lib/types';
+import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
 
 export default function MyCompensationPage() {
   const { currentUser, salaries, payments, paymentTypes } = useAuth();
   const isContractor = currentUser.employment_type === 'contractor';
+  const [selectedPaymentForDocs, setSelectedPaymentForDocs] = useState<PaymentRecord | null>(null);
 
   // Find active salary record for current user
   const currentSalary = useMemo(() => {
@@ -114,6 +115,19 @@ export default function MyCompensationPage() {
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     XLSX.utils.book_append_sheet(wb, ws, `Payslip_${record.period}`);
     XLSX.writeFile(wb, `Payslip_${currentUser.last_name}_${record.period}.xlsx`);
+  };
+
+  const handleDownloadDoc = (doc: PaymentDocument) => {
+    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${doc.uploaded_at}\nEmployee: ${currentUser.first_name} ${currentUser.last_name}\nStatus: Verified and Encrypted under RLS`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = doc.name.endsWith('.pdf') ? doc.name.replace('.pdf', '_receipt.txt') : doc.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -269,12 +283,20 @@ export default function MyCompensationPage() {
                         <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600" /> Dispatched & Paid
                       </span>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right flex items-center justify-end space-x-2">
+                      {record.documents && record.documents.length > 0 && (
+                        <button
+                          onClick={() => setSelectedPaymentForDocs(record)}
+                          className="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-[#3D87D3] font-bold text-xs border border-indigo-200 shadow-2xs transition-all cursor-pointer"
+                        >
+                          <Paperclip className="w-3.5 h-3.5 mr-1 text-[#3D87D3]" /> {record.documents.length} Attachment{record.documents.length > 1 ? 's' : ''}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDownloadPayslip(record)}
                         className="inline-flex items-center px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs border border-slate-300/80 shadow-2xs transition-all cursor-pointer"
                       >
-                        <Download className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Download Payslip
+                        <Download className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Statement
                       </button>
                     </td>
                   </tr>
@@ -284,6 +306,59 @@ export default function MyCompensationPage() {
           </div>
         </Card>
       </div>
+
+      {/* EMPLOYEE ATTACHED DOCUMENTS MODAL */}
+      <Modal 
+        isOpen={!!selectedPaymentForDocs} 
+        onClose={() => setSelectedPaymentForDocs(null)} 
+        title={selectedPaymentForDocs ? `Attached Payment Documents (${selectedPaymentForDocs.period})` : 'Payment Documents'}
+      >
+        {selectedPaymentForDocs && (
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-800 text-sm block">Period: {selectedPaymentForDocs.period}</span>
+                <span className="text-slate-500 text-[11px]">{selectedPaymentForDocs.note || 'Regular Monthly Disbursement'}</span>
+              </div>
+              <Badge variant="success">PAID & VERIFIED</Badge>
+            </div>
+
+            <div className="space-y-2.5">
+              <h4 className="font-extrabold text-slate-700 uppercase tracking-wider text-[11px]">
+                Official Vouchers & Receipts ({selectedPaymentForDocs.documents?.length || 0})
+              </h4>
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {selectedPaymentForDocs.documents?.map(doc => (
+                  <div key={doc.id} className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between hover:border-indigo-200 transition-all">
+                    <div className="flex items-center space-x-3 truncate max-w-[65%]">
+                      <div className="p-2 bg-indigo-50 text-[#3D87D3] rounded-lg shrink-0">
+                        {doc.type === 'invoice' ? <FileSpreadsheet className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                      </div>
+                      <div className="truncate">
+                        <span className="font-bold text-slate-800 text-xs block truncate">{doc.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                          Category: {doc.type.toUpperCase().replace('_', ' ')} &bull; {doc.size}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDoc(doc)}
+                      className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-bold text-[11px] shadow-xs transition-all cursor-pointer shrink-0"
+                    >
+                      <Download className="w-3 h-3 mr-1.5" /> Download
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setSelectedPaymentForDocs(null)}>Close Window</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -71,6 +71,15 @@ export interface SalaryRecord {
   note?: string;
 }
 
+export interface PaymentDocument {
+  id: string;
+  name: string;
+  type: 'payslip' | 'receipt' | 'invoice' | 'tax_sheet' | 'other' | string;
+  size: string;
+  uploaded_at: string;
+  url?: string;
+}
+
 export interface PaymentRecord {
   id: string;
   profile_id: string;
@@ -85,6 +94,7 @@ export interface PaymentRecord {
   bank_reference?: string;
   status: 'planned' | 'paid' | 'cancelled';
   note?: string;
+  documents?: PaymentDocument[];
 }
 
 export interface LeaveType {

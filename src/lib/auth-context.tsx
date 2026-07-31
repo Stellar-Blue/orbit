@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
-  Profile, Team, PaymentType, SalaryRecord, PaymentRecord, 
+  Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest 
 } from './types';
@@ -41,6 +41,8 @@ interface AppState {
   updateLeaveRequestStatus: (id: string, status: LeaveRequest['status'], rejectionReason?: string) => void;
   addMandatoryLeave: (ml: Omit<MandatoryLeave, 'id'>) => void;
   addPaymentRecord: (pay: Omit<PaymentRecord, 'id'>) => void;
+  addPaymentDocuments: (paymentId: string, docs: PaymentDocument[]) => void;
+  deletePaymentDocument: (paymentId: string, documentId: string) => void;
   generateDraftMonth: (period: string) => void;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
@@ -621,7 +623,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addPaymentRecord = async (pay: Omit<PaymentRecord, 'id'>) => {
     const newPay: PaymentRecord = { ...pay, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
-    const { payment_type, ...cleanPay } = newPay as any;
+    const { payment_type, documents, ...cleanPay } = newPay as any;
     try {
       const { error } = await supabase.from('payments').insert(cleanPay);
       if (error) {
@@ -633,6 +635,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e: any) {
       console.error('Failed to insert payment record:', e);
     }
+  };
+
+  const addPaymentDocuments = (paymentId: string, docs: PaymentDocument[]) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id === paymentId) {
+        return { ...p, documents: [...(p.documents || []), ...docs] };
+      }
+      return p;
+    }));
+  };
+
+  const deletePaymentDocument = (paymentId: string, documentId: string) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id === paymentId) {
+        return { ...p, documents: (p.documents || []).filter(d => d.id !== documentId) };
+      }
+      return p;
+    }));
   };
 
   const generateDraftMonth = async (period: string) => {
@@ -1096,6 +1116,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateLeaveRequestStatus,
       addMandatoryLeave,
       addPaymentRecord,
+      addPaymentDocuments,
+      deletePaymentDocument,
       generateDraftMonth,
       addContract,
       updateContract,
