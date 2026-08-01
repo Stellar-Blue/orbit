@@ -7,172 +7,151 @@ export async function POST(request: Request) {
 
     const cleanToken = (token || '').trim();
     const targetSlug = attributeSlug || 'relationship_type';
-    const targetWhitelist: string[] = Array.isArray(whitelistValues) ? whitelistValues : ['Client', 'Customer', 'Supplier', 'Partner', 'Vendor'];
+    const targetWhitelist: string[] = Array.isArray(whitelistValues) ? whitelistValues : [];
 
-    if (cleanToken.length >= 8 && cleanToken.startsWith('attio_')) {
+    if (!cleanToken || cleanToken.length < 8) {
+      return NextResponse.json(
+        { success: false, error: 'No Attio API Key configured. Please save your valid Attio Access Token in Orbit Settings.' },
+        { status: 400 }
+      );
+    }
+
+    // Attempt to query Attio v2 Records API for companies (trying both 'companies' and 'company' object slugs)
+    let response = await fetch('https://api.attio.com/v2/objects/companies/records/query', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cleanToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ limit: 200 }),
+      signal: AbortSignal.timeout(12000)
+    });
+
+    if (!response.ok && response.status === 404) {
+      // Try singular object name as alternative in Attio v2 schema
+      response = await fetch('https://api.attio.com/v2/objects/company/records/query', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ limit: 200 }),
+        signal: AbortSignal.timeout(12000)
+      });
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMsg = `Attio API returned HTTP ${response.status}`;
       try {
-        // Query Attio v2 Records API for companies
-        const response = await fetch('https://api.attio.com/v2/objects/companies/records/query', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${cleanToken}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({ limit: 100 }),
-          signal: AbortSignal.timeout(8000)
-        });
+        const parsed = JSON.parse(errorText);
+        if (parsed?.message || parsed?.error) {
+          errorMsg = parsed.message || (typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error));
+        }
+      } catch (e) {
+        // use raw text if not json
+        if (errorText && errorText.length < 200) errorMsg = errorText;
+      }
+      return NextResponse.json({
+        success: false,
+        error: `Failed to fetch companies from Attio API: ${errorMsg}. Please verify your API Key has Read Records permissions in Attio.`
+      }, { status: response.status });
+    }
 
-        if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data?.data) && data.data.length > 0) {
-            const liveCompanies = data.data.map((rec: any) => {
-              const recordId = rec.id?.record_id || rec.id || 'attio_' + Math.random().toString(36).substring(2, 9);
-              
-              // Helper to extract value from Attio record values
-              const getValue = (slug: string) => {
-                const field = rec.values?.[slug];
-                if (Array.isArray(field) && field[0]) {
-                  return field[0].value || field[0].title || field[0].name || field[0].option?.title || '';
-                }
-                return '';
-              };
+    const data = await response.json();
+    if (!data?.data || !Array.isArray(data.data)) {
+      return NextResponse.json({
+        success: true,
+        source: 'live_api',
+        count: 0,
+        companies: []
+      });
+    }
 
-              const name = getValue('name') || getValue('company_name') || getValue('title') || `Attio Entity (${recordId.slice(-6)})`;
-              const relationship = getValue(targetSlug) || getValue('relationship_type') || getValue('status') || 'Client';
-              const country = getValue('country') || getValue('billing_country') || 'GR';
-              const vat = getValue('vat') || getValue('vat_number') || getValue('tax_id') || `EL${Math.floor(100000000 + Math.random() * 900000000)}`;
-              const domain = getValue('domain') || getValue('website') || `${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
-
-              return {
-                attio_record_id: recordId,
-                legal_name: name,
-                relationship_status: relationship,
-                country_code: country.toUpperCase().slice(0, 2),
-                vat_number: vat,
-                domain: domain,
-                suggested_role: relationship.toLowerCase().includes('suppl') || relationship.toLowerCase().includes('vendor') ? 'supplier' : 'client',
-                estimated_arr: Math.floor(40000 + Math.random() * 250000)
-              };
-            });
-
-            // Filter by qualifying statuses if specified
-            const filtered = liveCompanies.filter((c: any) => {
-              if (targetWhitelist.length === 0) return true;
-              return targetWhitelist.some(val => 
-                c.relationship_status.toLowerCase() === val.toLowerCase() ||
-                c.relationship_status.toLowerCase().includes(val.toLowerCase())
-              );
-            });
-
-            return NextResponse.json({
-              success: true,
-              source: 'live_api',
-              count: filtered.length,
-              companies: filtered.length > 0 ? filtered : liveCompanies // Fallback to all if strict filter matched 0 in dev test
-            });
+    const liveCompanies = data.data.map((rec: any) => {
+      const recordId = rec.id?.record_id || rec.id || 'attio_unknown_id';
+      
+      // Helper to safely extract value from Attio record values map
+      const getValue = (slugs: string[]) => {
+        if (!rec.values) return '';
+        for (const slug of slugs) {
+          const field = rec.values[slug];
+          if (Array.isArray(field) && field.length > 0) {
+            const item = field[0];
+            // Select option or status option
+            if (item.option && item.option.title) return item.option.title;
+            if (item.status && item.status.title) return item.status.title;
+            // Domain root or email or phone
+            if (item.root_domain) return item.root_domain;
+            if (item.email_address) return item.email_address;
+            // Plain text / numbers / titles / names
+            if (typeof item.value !== 'undefined' && item.value !== null) return String(item.value);
+            if (item.title) return String(item.title);
+            if (item.name) return String(item.name);
+            if (typeof item === 'string') return item;
           }
         }
-      } catch (err) {
-        // Network timeout or local sandboxed connectivity, continue to high fidelity simulation
+        return '';
+      };
+
+      const name = getValue(['name', 'company_name', 'title', 'legal_name', 'company']) || `Attio Entity (${String(recordId).slice(-6)})`;
+      const relationship = getValue([targetSlug, 'relationship_type', 'relationship_status', 'status', 'type', 'category']) || 'Active Record';
+      const countryRaw = getValue(['country', 'billing_country', 'country_code', 'hq_country', 'address']) || 'Europe';
+      const vat = getValue(['vat', 'vat_number', 'tax_id', 'registration_number', 'afm', 'tax_code']) || '';
+      const domain = getValue(['domain', 'website', 'url', 'company_domain', 'web_address']) || '';
+      const arrRaw = getValue(['arr', 'estimated_arr', 'mrr', 'revenue', 'value', 'contract_value']);
+
+      let role: 'client' | 'supplier' | 'both' = 'client';
+      const relLow = relationship.toLowerCase();
+      if (relLow.includes('suppl') || relLow.includes('vendor') || relLow.includes('cost')) {
+        role = 'supplier';
+      } else if (relLow.includes('both') || relLow.includes('partner') || relLow.includes('joint')) {
+        role = 'both';
+      }
+
+      let estArr = 0;
+      if (arrRaw && !isNaN(Number(arrRaw))) {
+        estArr = Number(arrRaw);
+      }
+
+      return {
+        attio_record_id: recordId,
+        legal_name: name,
+        relationship_status: relationship,
+        country_code: countryRaw.length === 2 ? countryRaw.toUpperCase() : countryRaw,
+        vat_number: vat || 'N/A in Attio',
+        domain: domain,
+        suggested_role: role,
+        estimated_arr: estArr
+      };
+    });
+
+    // Filter by qualifying whitelist statuses if specified and if matches exist
+    let resultCompanies = liveCompanies;
+    if (targetWhitelist.length > 0) {
+      const strictMatches = liveCompanies.filter((c: any) => 
+        targetWhitelist.some((val: string) => 
+          c.relationship_status.toLowerCase() === val.toLowerCase() ||
+          c.relationship_status.toLowerCase().includes(val.toLowerCase())
+        )
+      );
+      // If user's whitelist matches specific companies, return those; otherwise return all live companies from their Attio account so nothing is hidden
+      if (strictMatches.length > 0) {
+        resultCompanies = strictMatches;
       }
     }
 
-    // High fidelity realistic Attio company records tailored for energy & corporate enterprise trade
-    const simulatedCompanies = [
-      {
-        attio_record_id: 'rec_01HXY820A91BC',
-        legal_name: 'Stellar Solutions Europe B.V.',
-        relationship_status: 'Client',
-        country_code: 'NL',
-        vat_number: 'NL829104851B01',
-        domain: 'stellarsolutions.nl',
-        suggested_role: 'client',
-        estimated_arr: 145000,
-        email: 'billing@stellarsolutions.nl'
-      },
-      {
-        attio_record_id: 'rec_01HXY820A92DF',
-        legal_name: 'Helena Gas & Energy Trading S.A.',
-        relationship_status: 'Supplier',
-        country_code: 'GR',
-        vat_number: 'EL094038102',
-        domain: 'helenagas.gr',
-        suggested_role: 'supplier',
-        estimated_arr: 420000,
-        email: 'finance@helenagas.gr'
-      },
-      {
-        attio_record_id: 'rec_01HXY820A93EG',
-        legal_name: 'Nordic Maritime Systems A/S',
-        relationship_status: 'Client',
-        country_code: 'NO',
-        vat_number: 'NO987654321MVA',
-        domain: 'nordicmaritime.no',
-        suggested_role: 'client',
-        estimated_arr: 95000,
-        email: 'accounts@nordicmaritime.no'
-      },
-      {
-        attio_record_id: 'rec_01HXY820A94HK',
-        legal_name: 'Apex Cloud AI Analytics Ltd.',
-        relationship_status: 'Partner',
-        country_code: 'UK',
-        vat_number: 'GB318290145',
-        domain: 'apexcloud.ai',
-        suggested_role: 'both',
-        estimated_arr: 68000,
-        email: 'operations@apexcloud.ai'
-      },
-      {
-        attio_record_id: 'rec_01HXY820A95JL',
-        legal_name: 'Vanguard Logistics & Transport GmbH',
-        relationship_status: 'Customer',
-        country_code: 'DE',
-        vat_number: 'DE291048510',
-        domain: 'vanguard-logistics.de',
-        suggested_role: 'client',
-        estimated_arr: 215000,
-        email: 'buchhaltung@vanguard-logistics.de'
-      },
-      {
-        attio_record_id: 'rec_01HXY820A96MQ',
-        legal_name: 'Aegean Renewable Power Corp',
-        relationship_status: 'Client',
-        country_code: 'GR',
-        vat_number: 'EL801948201',
-        domain: 'aegeanpower.com',
-        suggested_role: 'client',
-        estimated_arr: 190000,
-        email: 'contracts@aegeanpower.com'
-      },
-      {
-        attio_record_id: 'rec_01HXY820A97PW',
-        legal_name: 'Trans-Adriatic Energy Hub S.R.L.',
-        relationship_status: 'Supplier',
-        country_code: 'IT',
-        vat_number: 'IT08492010948',
-        domain: 'ta-energy.it',
-        suggested_role: 'supplier',
-        estimated_arr: 330000,
-        email: 'invoices@ta-energy.it'
-      }
-    ];
-
-    // Filter by user's whitelist if non-empty, otherwise return all
-    const filteredSim = targetWhitelist.length > 0
-      ? simulatedCompanies.filter(c => targetWhitelist.some(val => c.relationship_status.toLowerCase().includes(val.toLowerCase())))
-      : simulatedCompanies;
-
     return NextResponse.json({
       success: true,
-      source: 'simulation_registry',
-      count: filteredSim.length > 0 ? filteredSim.length : simulatedCompanies.length,
-      companies: filteredSim.length > 0 ? filteredSim : simulatedCompanies
+      source: 'live_attio_api',
+      count: resultCompanies.length,
+      companies: resultCompanies
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: error?.message || 'Server error fetching companies from Attio' },
+      { success: false, error: `Server network error connecting to Attio: ${error?.message || 'Timeout or network exception'}` },
       { status: 500 }
     );
   }

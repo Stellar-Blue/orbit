@@ -190,11 +190,19 @@ export default function CounterpartiesRegistryPage() {
         body: JSON.stringify({ token, attributeSlug, whitelistValues })
       });
       const data = await res.json();
+      if (!res.ok || data.success === false) {
+        alert(data.error || "Failed to communicate with Attio API.");
+        return;
+      }
       if (data && data.companies) {
         setAttioSyncCompanies(data.companies);
+        if (data.companies.length === 0) {
+          alert("Connected successfully to Attio, but 0 corporate records matched your filter criteria.");
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error pulling Attio companies:", err);
+      alert(`Network or server error connecting to Attio: ${err?.message || 'Check console'}`);
     } finally {
       setFetchingAttioSync(false);
     }
