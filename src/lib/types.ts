@@ -246,4 +246,47 @@ export interface Contract {
   document_name?: string;
   document_url?: string;
   document_uploaded_at?: string;
+  discount_pct?: number;
+  term_years?: number;
+  service_start_date?: string;
+  lines?: ContractLine[];
+  schedule?: ContractSchedule[];
+}
+
+export interface CatalogModule {
+  id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
+  created_at?: string;
+}
+
+export interface CatalogItem {
+  id: string;
+  module_id: string;
+  name: string;
+  default_unit_price: number;
+  unit_label: string;
+  default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time';
+  active: boolean;
+  created_at?: string;
+}
+
+export interface ContractLine {
+  id: string;
+  contract_id: string;
+  catalog_item_id?: string | null;
+  name: string;
+  unit_price: number;
+  quantity: number;
+  unit_label: string;
+  frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time';
+  note?: string | null;
+}
+
+export interface ContractSchedule {
+  id: string;
+  contract_id: string;
+  period: string; // Format YYYY-MM
+  amount: number;
 }

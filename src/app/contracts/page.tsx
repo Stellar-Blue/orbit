@@ -7,16 +7,18 @@ import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check 
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles
 } from 'lucide-react';
+import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, addContract, updateContract } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, saveContractPricing } = useAuth();
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [dossierTab, setDossierTab] = useState<'general' | 'pricing'>('general');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('kanban');
 
   const isAdmin = currentUser.role === 'admin';
 
@@ -169,6 +171,12 @@ export default function ContractsRegistryPage() {
               className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'table' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Timeline List
+            </button>
+            <button 
+              onClick={() => setViewMode('revenue')} 
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${viewMode === 'revenue' ? 'bg-[#3D87D3] text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" /> Revenue Schedule & MRR
             </button>
           </div>
           {isAdmin && (
@@ -352,7 +360,128 @@ export default function ContractsRegistryPage() {
         </div>
       )}
 
-      {/* CONTRACT DETAIL MODAL WITH VERSIONED DOCUMENTS */}
+      {/* VIEW 3: EXECUTIVE REVENUE SCHEDULE & MRR LANDING */}
+      {viewMode === 'revenue' && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shadow-xl border border-slate-700/80">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-emerald-400" />
+                  <span className="text-xs font-mono font-black tracking-widest text-emerald-300 uppercase">Executive Financial Monitor</span>
+                </div>
+                <h3 className="text-2xl font-black text-white mt-1">Modular Revenue & MRR Schedule</h3>
+                <p className="text-xs text-slate-300 max-w-2xl mt-0.5">
+                  Real-time aggregation of net monthly recurring rates and total contract valuation across active commercial agreements.
+                </p>
+              </div>
+              <div className="flex items-center space-x-6 bg-slate-900/80 px-6 py-4 rounded-xl border border-slate-700/60">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Total Portfolio MRR</span>
+                  <span className="text-2xl font-mono font-black text-emerald-400 mt-0.5 block">
+                    €{filteredContracts.reduce((acc, c) => {
+                      if (c.lines && c.lines.length > 0) {
+                        let gross = 0;
+                        c.lines.forEach(l => {
+                          if (l.frequency !== 'one_time') gross += (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+                        });
+                        return acc + (gross * Math.max(0, 1 - (Number(c.discount_pct) || 0) / 100));
+                      }
+                      return acc + (c.direction === 'revenue' ? (c.value || 0) / 12 : 0);
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Active contracts Net Rate</span>
+                </div>
+                <div className="border-l border-slate-700 pl-6">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Total Portfolio TCV</span>
+                  <span className="text-2xl font-mono font-black text-blue-400 mt-0.5 block">
+                    €{filteredContracts.reduce((acc, c) => acc + (c.value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Committed deal value</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-sm font-extrabold text-slate-800 flex items-center">
+                <TrendingUp className="w-4 h-4 mr-2 text-indigo-600" /> Active Contract Pricing breakdown ({filteredContracts.length})
+              </span>
+              <span className="text-xs text-slate-500 font-mono">Snapshots preserved independently per agreement</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
+                    <th className="py-3 px-5">Ref / Entity</th>
+                    <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Term & Start</th>
+                    <th className="py-3 px-4">Discount</th>
+                    <th className="py-3 px-4 text-right">Net Monthly MRR</th>
+                    <th className="py-3 px-4 text-right">Total Contract Value (TCV)</th>
+                    <th className="py-3 px-5 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-sm">
+                  {filteredContracts.map((c) => {
+                    let netMrr = (c.value || 0) / 12;
+                    if (c.lines && c.lines.length > 0) {
+                      let gross = 0;
+                      c.lines.forEach(l => {
+                        if (l.frequency !== 'one_time') gross += (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+                      });
+                      netMrr = gross * Math.max(0, 1 - (Number(c.discount_pct) || 0) / 100);
+                    }
+
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3.5 px-5 font-semibold text-slate-800">
+                          <div className="font-extrabold text-slate-900">{c.reference}</div>
+                          <div className="text-xs text-slate-500 font-normal">{c.counterparty?.legal_name || 'Client Entity'}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <Badge variant={c.direction === 'revenue' ? 'success' : 'warning'}>
+                            {c.direction === 'revenue' ? 'Revenue' : 'Spend'}
+                          </Badge>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs font-semibold text-slate-700">
+                          <div>{c.term_years ? `${c.term_years} Year(s)` : 'Standard Term'}</div>
+                          <div className="text-[11px] text-slate-400 font-mono">{c.service_start_date || c.starts_on}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs font-bold text-amber-600">
+                          {c.discount_pct ? `${c.discount_pct}% Off` : 'None (0%)'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-700">
+                          €{netMrr.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                          €{(c.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3.5 px-5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedContract(c);
+                              setDossierTab('pricing');
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs inline-flex items-center transition-colors shadow-2xs cursor-pointer"
+                          >
+                            <Layers className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                            {c.lines && c.lines.length > 0 ? `Edit Rate Sheet (${c.lines.length})` : 'Build Rate Sheet'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTRACT DETAIL MODAL WITH VERSIONED DOCUMENTS & MODULAR PRICING */}
       <Modal 
         isOpen={!!selectedContract} 
         onClose={() => setSelectedContract(null)} 
@@ -360,6 +489,65 @@ export default function ContractsRegistryPage() {
       >
         {selectedContract && (
           <div className="space-y-5 text-sm">
+            {/* Modal Internal Navigation */}
+            <div className="flex items-center border-b border-slate-200 pb-2 space-x-4">
+              <button
+                type="button"
+                onClick={() => setDossierTab('general')}
+                className={`pb-2 text-xs font-bold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'general' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 mr-1.5" /> General Terms & Legal Dossier
+              </button>
+              <button
+                type="button"
+                onClick={() => setDossierTab('pricing')}
+                className={`pb-2 text-xs font-bold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'pricing' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 mr-1.5 text-purple-600" /> Modular Rate Sheet & Revenue Schedule
+                {selectedContract.lines && selectedContract.lines.length > 0 && (
+                  <Badge variant="success" className="ml-1.5 text-[10px] py-0">{selectedContract.lines.length}</Badge>
+                )}
+              </button>
+            </div>
+
+            {dossierTab === 'pricing' ? (
+              <div className="pt-2">
+                <ContractPricingBuilder
+                  contractId={selectedContract.id}
+                  initialLines={selectedContract.lines || []}
+                  initialDiscountPct={selectedContract.discount_pct || 0}
+                  initialTermYears={selectedContract.term_years || 1}
+                  initialStartDate={selectedContract.service_start_date || selectedContract.starts_on}
+                  onSave={async (lines, schedule, discountPct, termYears, startDate, tcv) => {
+                    await saveContractPricing(
+                      selectedContract.id,
+                      lines as any,
+                      schedule as any,
+                      discountPct,
+                      termYears,
+                      startDate,
+                      tcv
+                    );
+                    setSelectedContract({
+                      ...selectedContract,
+                      lines: lines as any,
+                      schedule: schedule as any,
+                      discount_pct: discountPct,
+                      term_years: termYears,
+                      service_start_date: startDate,
+                      value: tcv
+                    });
+                    alert("Modular pricing snapshot and revenue schedule locked to deal!");
+                  }}
+                  onCancel={() => setSelectedContract(null)}
+                />
+              </div>
+            ) : (
+            <div className="space-y-5 text-sm">
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold uppercase text-slate-400 block">Counterparty Entity</span>
@@ -451,6 +639,8 @@ export default function ContractsRegistryPage() {
                 </div>
               )}
             </div>
+            </div>
+            )}
           </div>
         )}
       </Modal>

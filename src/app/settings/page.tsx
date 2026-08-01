@@ -5,19 +5,26 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
-  Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X 
+  Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag
 } from 'lucide-react';
-import { PolicyPeriod, RemotePolicy, Team, LeaveType } from '@/lib/types';
+import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 
 export default function CompanySettingsPage() {
   const { 
     currentUser, remotePolicies, updateRemotePolicy, 
     teams, profiles, addTeam, updateTeam, deleteTeam,
-    leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType
+    leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType,
+    catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'general'>('remote');
+  const [newModuleId, setNewModuleId] = useState('');
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState<number>(1000);
+  const [newItemUnit, setNewItemUnit] = useState('flat');
+  const [newItemFreq, setNewItemFreq] = useState<'monthly' | 'quarterly' | 'annual' | 'one_time'>('monthly');
+  const [newModuleName, setNewModuleName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -245,6 +252,17 @@ export default function CompanySettingsPage() {
         >
           <Calendar className="w-4 h-4 text-amber-500" />
           <span>Leave Categories & Policies ({leaveTypes.length})</span>
+        </button>
+        <button
+          onClick={() => setSelectedTab('pricing')}
+          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
+            selectedTab === 'pricing'
+              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Layers className="w-4 h-4 text-purple-500" />
+          <span>Modular Contract Pricing ({catalogItems.length})</span>
         </button>
         <button
           onClick={() => setSelectedTab('general')}
@@ -848,6 +866,208 @@ export default function CompanySettingsPage() {
                   className="w-full py-3 bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center mt-4"
                 >
                   <Plus className="w-4 h-4 mr-1.5" /> Register Leave Category
+                </Button>
+              </form>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: MODULAR CONTRACT PRICING CATALOG */}
+      {selectedTab === 'pricing' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          {/* Active Modules and Items List */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center">
+                  <Layers className="w-5 h-5 mr-2 text-purple-600" /> Modular Rate Sheet Catalog ({catalogItems.length} Items)
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Configure core ETRM subscriptions, optimization engines, and billing tiers for commercial proposals.
+                </p>
+              </div>
+              <Badge variant="info">Synced with public.catalog_items</Badge>
+            </div>
+
+            <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 flex items-start space-x-3">
+              <Info className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-purple-900">
+                <span className="font-extrabold block mb-0.5">Snapshot Pricing Guarantee</span>
+                Changing default prices or removing catalog items applies strictly to <strong>future contracts</strong>. Existing signed agreements independently copy and preserve their original line items and revenue schedules.
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {catalogModules.length === 0 ? (
+                <Card className="p-12 text-center text-slate-500 text-xs border-dashed">
+                  No catalog modules found. Create your first product tier on the right.
+                </Card>
+              ) : (
+                catalogModules.map(mod => {
+                  const items = catalogItems.filter(i => i.module_id === mod.id);
+                  return (
+                    <Card key={mod.id} className="overflow-hidden border-slate-200 shadow-xs">
+                      <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-extrabold text-slate-800">{mod.name}</span>
+                          <Badge variant="info">{items.length} rate items</Badge>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Delete module "${mod.name}" and its ${items.length} items?`)) {
+                              deleteCatalogModule(mod.id);
+                            }
+                          }}
+                          className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50 cursor-pointer text-xs flex items-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Module
+                        </button>
+                      </div>
+
+                      {items.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 text-xs">
+                          No rate items attached to this module yet.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {items.map(item => (
+                            <div key={item.id} className="p-4 flex items-center justify-between hover:bg-slate-50/60 transition-colors">
+                              <div className="space-y-1">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-bold text-slate-900">{item.name}</span>
+                                  <Badge variant={item.default_frequency === 'one_time' ? 'warning' : 'success'}>
+                                    {item.default_frequency}
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-slate-500 font-mono flex items-center space-x-3">
+                                  <span>Default Rate: <strong className="text-slate-800">€{Number(item.default_unit_price).toLocaleString()}</strong> / {item.unit_label}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteCatalogItem(item.id)}
+                                  className="text-slate-400 hover:text-rose-600 transition-colors p-1.5 rounded hover:bg-rose-50 cursor-pointer"
+                                  title="Delete item from catalog"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Right Column: Creation Form Cards */}
+          <div className="space-y-6">
+            <Card title="Register Rate Sheet Item" subtitle="Add a standardized fee or license item to the catalog" className="shadow-sm border-slate-200">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const targetModule = newModuleId || (catalogModules[0]?.id || '');
+                if (!targetModule || !newItemName.trim()) return;
+                await saveCatalogItem({
+                  module_id: targetModule,
+                  name: newItemName.trim(),
+                  default_unit_price: Number(newItemPrice) || 0,
+                  unit_label: newItemUnit.trim() || 'unit',
+                  default_frequency: newItemFreq,
+                  active: true
+                });
+                setNewItemName('');
+                setNewItemPrice(1000);
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Target Product Module</label>
+                  <select
+                    value={newModuleId || catalogModules[0]?.id || ''}
+                    onChange={e => setNewModuleId(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-semibold focus:ring-2 focus:ring-purple-500 bg-white"
+                    required
+                  >
+                    {catalogModules.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Fee / Service Item Name</label>
+                  <input
+                    type="text"
+                    value={newItemName}
+                    onChange={e => setNewItemName(e.target.value)}
+                    placeholder="e.g. PV Dispatch 50–200 Band..."
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-purple-500 font-medium"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Default Rate (€)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newItemPrice}
+                      onChange={e => setNewItemPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-purple-500 font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Unit Label</label>
+                    <input
+                      type="text"
+                      value={newItemUnit}
+                      onChange={e => setNewItemUnit(e.target.value)}
+                      placeholder="flat, MW, assets..."
+                      className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-purple-500 font-medium"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Default Payment Cadence</label>
+                  <select
+                    value={newItemFreq}
+                    onChange={e => setNewItemFreq(e.target.value as any)}
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-semibold focus:ring-2 focus:ring-purple-500 bg-white uppercase"
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annual">Annual</option>
+                    <option value="one_time">One-time (undiscounted)</option>
+                  </select>
+                </div>
+                <Button type="submit" variant="primary" className="w-full justify-center bg-purple-600 hover:bg-purple-700 text-white font-extrabold cursor-pointer shadow-md">
+                  <Plus className="w-4 h-4 mr-1" /> Register Catalog Item
+                </Button>
+              </form>
+            </Card>
+
+            <Card title="Add Product Module" subtitle="Create a top-level category header in the catalog" className="shadow-sm border-slate-200">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newModuleName.trim()) return;
+                await saveCatalogModule({ name: newModuleName.trim(), sort_order: (catalogModules.length + 1) * 10, active: true });
+                setNewModuleName('');
+              }} className="space-y-3">
+                <input
+                  type="text"
+                  value={newModuleName}
+                  onChange={e => setNewModuleName(e.target.value)}
+                  placeholder="Module category name..."
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-purple-500 font-medium"
+                  required
+                />
+                <Button type="submit" variant="outline" className="w-full justify-center text-xs font-bold border-purple-300 text-purple-700 hover:bg-purple-50 cursor-pointer">
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Category Module
                 </Button>
               </form>
             </Card>

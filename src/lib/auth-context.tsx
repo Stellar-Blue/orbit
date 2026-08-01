@@ -6,7 +6,8 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
+  CatalogModule, CatalogItem, ContractLine, ContractSchedule 
 } from './types';
 
 interface AppState {
@@ -27,6 +28,10 @@ interface AppState {
   remoteAmendmentRequests: RemoteAmendmentRequest[];
   counterparties: Counterparty[];
   contracts: Contract[];
+  catalogModules: CatalogModule[];
+  catalogItems: CatalogItem[];
+  contractLines: ContractLine[];
+  contractSchedules: ContractSchedule[];
   isDevMode: boolean;
   isViewAsEmployee: boolean;
   setIsViewAsEmployee: (val: boolean | ((prev: boolean) => boolean)) => void;
@@ -80,6 +85,11 @@ interface AppState {
     mandatory: number;
     available: number;
   };
+  saveContractPricing: (contractId: string, lines: Omit<ContractLine, 'id' | 'contract_id'>[], schedules: { period: string; amount: number }[], discount_pct: number, term_years: number, service_start_date: string, calculatedValue: number) => Promise<boolean>;
+  saveCatalogModule: (module: Partial<CatalogModule> & { name: string }) => Promise<boolean>;
+  deleteCatalogModule: (id: string) => Promise<boolean>;
+  saveCatalogItem: (item: Partial<CatalogItem> & { module_id: string; name: string; default_unit_price: number; unit_label: string; default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time' }) => Promise<boolean>;
+  deleteCatalogItem: (id: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AppState | undefined>(undefined);
@@ -115,6 +125,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [catalogModules, setCatalogModules] = useState<CatalogModule[]>([]);
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+  const [contractLines, setContractLines] = useState<ContractLine[]>([]);
+  const [contractSchedules, setContractSchedules] = useState<ContractSchedule[]>([]);
 
   useEffect(() => {
     // Intercept OAuth authorization code if Supabase redirects to site root instead of /auth/callback
@@ -134,7 +148,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const [
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
-          holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes
+          holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
+          catalogModulesRes, catalogItemsRes, contractLinesRes, contractScheduleRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -152,7 +167,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('remote_patterns').select('*'),
           supabase.from('counterparties').select('*'),
           supabase.from('contracts').select('*'),
-          supabase.from('remote_policies').select('*')
+          supabase.from('remote_policies').select('*'),
+          supabase.from('catalog_modules').select('*').order('sort_order', { ascending: true }),
+          supabase.from('catalog_items').select('*'),
+          supabase.from('contract_lines').select('*'),
+          supabase.from('contract_schedule').select('*').order('period', { ascending: true })
         ]);
 
         const loadedTeams: Team[] = teamsRes.data || [];
@@ -211,10 +230,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         setLeaveRequests(enrichedRequests);
 
+        const loadedCatalogModules: CatalogModule[] = catalogModulesRes?.data || [];
+        setCatalogModules(loadedCatalogModules);
+
+        const loadedCatalogItems: CatalogItem[] = catalogItemsRes?.data || [];
+        setCatalogItems(loadedCatalogItems);
+
+        const loadedContractLines: ContractLine[] = contractLinesRes?.data || [];
+        setContractLines(loadedContractLines);
+
+        const loadedContractSchedules: ContractSchedule[] = contractScheduleRes?.data || [];
+        setContractSchedules(loadedContractSchedules);
+
         const enrichedContracts = (contractsRes.data || []).map((cnt: any) => {
           const counterparty = loadedCounterparties.find(c => c.id === cnt.counterparty_id);
           const owner_profile = loadedProfiles.find(p => p.id === cnt.owner_profile_id);
-          return { ...cnt, counterparty, owner_profile };
+          const lines = loadedContractLines.filter(l => l.contract_id === cnt.id);
+          const schedule = loadedContractSchedules.filter(s => s.contract_id === cnt.id);
+          return { ...cnt, counterparty, owner_profile, lines, schedule };
         });
         setContracts(enrichedContracts);
 
@@ -897,7 +930,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addContract = async (cnt: Omit<Contract, 'id'>) => {
     const newCnt: Contract = { ...cnt, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, notice_deadline, ...cleanCnt } = newCnt as any;
+    const { counterparty, owner_profile, notice_deadline, lines, schedule, ...cleanCnt } = newCnt as any;
     try {
       const { error, data } = await supabase.from('contracts').insert(cleanCnt).select().single();
       if (error) {
@@ -905,7 +938,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         alert(`Database Error: ${error.message}`);
         return;
       }
-      const savedCnt = data ? { ...newCnt, ...data, counterparty: newCnt.counterparty, owner_profile: newCnt.owner_profile } : newCnt;
+      const savedCnt = data ? { ...newCnt, ...data, counterparty: newCnt.counterparty, owner_profile: newCnt.owner_profile, lines: lines || [], schedule: schedule || [] } : newCnt;
       setContracts(prev => [savedCnt, ...prev]);
     } catch (e: any) {
       console.error('Failed to insert contract:', e);
@@ -914,7 +947,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateContract = async (updated: Contract) => {
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, notice_deadline, ...cleanCnt } = updated as any;
+    const { counterparty, owner_profile, notice_deadline, lines, schedule, ...cleanCnt } = updated as any;
     try {
       const { error, data } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id).select().single();
       if (error) {
@@ -922,10 +955,153 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         alert(`Database Error: ${error.message}`);
         return;
       }
-      const savedCnt = data ? { ...updated, ...data, counterparty: updated.counterparty, owner_profile: updated.owner_profile } : updated;
+      const savedCnt = data ? { ...updated, ...data, counterparty: updated.counterparty, owner_profile: updated.owner_profile, lines: lines || [], schedule: schedule || [] } : updated;
       setContracts(prev => prev.map(c => c.id === updated.id ? savedCnt : c));
     } catch (e: any) {
       console.error('Failed to update contract:', e);
+    }
+  };
+
+  const saveContractPricing = async (
+    contractId: string, 
+    lines: Omit<ContractLine, 'id' | 'contract_id'>[], 
+    schedules: { period: string; amount: number }[], 
+    discount_pct: number, 
+    term_years: number, 
+    service_start_date: string, 
+    calculatedValue: number
+  ): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('contracts').update({
+        discount_pct,
+        term_years,
+        service_start_date,
+        value: calculatedValue
+      }).eq('id', contractId);
+
+      await supabase.from('contract_lines').delete().eq('contract_id', contractId);
+      const linesToInsert = lines.map(l => ({
+        id: generateUUID(),
+        contract_id: contractId,
+        catalog_item_id: l.catalog_item_id || null,
+        name: l.name,
+        unit_price: l.unit_price,
+        quantity: l.quantity,
+        unit_label: l.unit_label,
+        frequency: l.frequency,
+        note: l.note || null
+      }));
+      if (linesToInsert.length > 0) {
+        await supabase.from('contract_lines').insert(linesToInsert);
+      }
+
+      const nowPeriod = new Date().toISOString().slice(0, 7);
+      const { data: existingSched } = await supabase.from('contract_schedule').select('*').eq('contract_id', contractId);
+      const historicalSched = (existingSched || []).filter((s: any) => s.period < nowPeriod);
+      const historicalPeriods = new Set(historicalSched.map((s: any) => s.period));
+
+      await supabase.from('contract_schedule').delete().eq('contract_id', contractId).gte('period', nowPeriod);
+
+      const schedsToInsert = schedules
+        .filter(s => !historicalPeriods.has(s.period))
+        .map(s => ({
+          id: generateUUID(),
+          contract_id: contractId,
+          period: s.period,
+          amount: s.amount
+        }));
+
+      if (schedsToInsert.length > 0) {
+        await supabase.from('contract_schedule').insert(schedsToInsert);
+      }
+
+      const finalLines = linesToInsert;
+      const finalSchedule = [...historicalSched, ...schedsToInsert].sort((a, b) => a.period.localeCompare(b.period));
+
+      setContractLines(prev => [...prev.filter(l => l.contract_id !== contractId), ...finalLines]);
+      setContractSchedules(prev => [...prev.filter(s => s.contract_id !== contractId), ...finalSchedule]);
+      setContracts(prev => prev.map(c => c.id === contractId ? {
+        ...c,
+        discount_pct,
+        term_years,
+        service_start_date,
+        value: calculatedValue,
+        lines: finalLines,
+        schedule: finalSchedule
+      } : c));
+      return true;
+    } catch (err: any) {
+      console.error('saveContractPricing error:', err);
+      alert(`Error saving contract pricing: ${err.message}`);
+      return false;
+    }
+  };
+
+  const saveCatalogModule = async (module: Partial<CatalogModule> & { name: string }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      if (module.id) {
+        const { error, data } = await supabase.from('catalog_modules').update(module).eq('id', module.id).select().single();
+        if (error) throw error;
+        setCatalogModules(prev => prev.map(m => m.id === module.id ? data || { ...m, ...module } : m));
+      } else {
+        const payload = { ...module, id: generateUUID(), sort_order: module.sort_order ?? 10, active: module.active ?? true };
+        const { error, data } = await supabase.from('catalog_modules').insert(payload).select().single();
+        if (error) throw error;
+        setCatalogModules(prev => [...prev, data || payload]);
+      }
+      return true;
+    } catch (err: any) {
+      alert(`Error saving module: ${err.message}`);
+      return false;
+    }
+  };
+
+  const deleteCatalogModule = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('catalog_modules').delete().eq('id', id);
+      if (error) throw error;
+      setCatalogModules(prev => prev.filter(m => m.id !== id));
+      setCatalogItems(prev => prev.filter(i => i.module_id !== id));
+      return true;
+    } catch (err: any) {
+      alert(`Error deleting module: ${err.message}`);
+      return false;
+    }
+  };
+
+  const saveCatalogItem = async (item: Partial<CatalogItem> & { module_id: string; name: string; default_unit_price: number; unit_label: string; default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time' }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      if (item.id) {
+        const { error, data } = await supabase.from('catalog_items').update(item).eq('id', item.id).select().single();
+        if (error) throw error;
+        setCatalogItems(prev => prev.map(i => i.id === item.id ? data || { ...i, ...item } : i));
+      } else {
+        const payload = { ...item, id: generateUUID(), active: item.active ?? true };
+        const { error, data } = await supabase.from('catalog_items').insert(payload).select().single();
+        if (error) throw error;
+        setCatalogItems(prev => [...prev, data || payload]);
+      }
+      return true;
+    } catch (err: any) {
+      alert(`Error saving item: ${err.message}`);
+      return false;
+    }
+  };
+
+  const deleteCatalogItem = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('catalog_items').delete().eq('id', id);
+      if (error) throw error;
+      setCatalogItems(prev => prev.filter(i => i.id !== id));
+      return true;
+    } catch (err: any) {
+      alert(`Error deleting item: ${err.message}`);
+      return false;
     }
   };
 
@@ -1282,6 +1458,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       remoteAmendmentRequests,
       counterparties,
       contracts,
+      catalogModules,
+      catalogItems,
+      contractLines,
+      contractSchedules,
       isDevMode,
       signOut,
       switchUser,
@@ -1304,6 +1484,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateSalaryRecord,
       addContract,
       updateContract,
+      saveContractPricing,
+      saveCatalogModule,
+      deleteCatalogModule,
+      saveCatalogItem,
+      deleteCatalogItem,
       updateErganiStatus,
       saveRemotePattern,
       updateRemotePolicy,
