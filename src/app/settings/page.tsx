@@ -6,7 +6,7 @@ import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
-  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff
+  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 
@@ -30,6 +30,9 @@ export default function CompanySettingsPage() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [autoVerifyVies, setAutoVerifyVies] = useState(true);
   const [nightlyCron, setNightlyCron] = useState(true);
+  const [attioRelAttribute, setAttioRelAttribute] = useState('relationship_type');
+  const [attioRelValues, setAttioRelValues] = useState<string[]>(['Client', 'Customer', 'Supplier', 'Partner', 'Vendor']);
+  const [newRelValue, setNewRelValue] = useState('');
 
   const [newModuleId, setNewModuleId] = useState('');
   const [newItemName, setNewItemName] = useState('');
@@ -1472,6 +1475,128 @@ export default function CompanySettingsPage() {
               </div>
             </Card>
           </div>
+
+          {/* MIDDLE CARD: ATTIO RELATIONSHIP TYPE & ATTRIBUTE MAPPING FILTER */}
+          <Card className="p-6 border-slate-200/80 shadow-sm space-y-6 bg-gradient-to-r from-blue-50/40 via-white to-slate-50/40">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/20">
+                  <Filter className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    Inbound Sync Filtering by Attio Relationship Type
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Define which CRM attribute and specific status values qualify an Attio company for synchronization into Orbit&apos;s financial corporate registry
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  alert(`Relationship attribute "${attioRelAttribute}" with ${attioRelValues.length} active sync criteria saved successfully!`);
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 shrink-0 shadow-md shadow-indigo-500/20"
+              >
+                <Save className="w-4 h-4 mr-1.5" />
+                Save Sync Criteria
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Column 1: Attribute Slug Input */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-700">
+                  1. Attio Attribute Slug / Field Name
+                </label>
+                <input
+                  type="text"
+                  value={attioRelAttribute}
+                  onChange={(e) => setAttioRelAttribute(e.target.value)}
+                  placeholder="e.g. relationship_type or lifecycle_stage"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/10 shadow-2xs font-semibold"
+                />
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Enter the API field identifier or custom attribute slug in Attio (such as <code>relationship_type</code> or <code>status</code>) that Orbit&apos;s webhook processor should inspect upon receiving event triggers.
+                </p>
+              </div>
+
+              {/* Column 2: Whitelisted Values Tags */}
+              <div className="md:col-span-2 space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-700 flex items-center justify-between">
+                  <span>2. Qualifying Relationship Statuses (Whitelist)</span>
+                  <span className="text-[10px] text-indigo-600 font-semibold normal-case">Only these trigger creation in Orbit</span>
+                </label>
+
+                <div className="p-3 bg-white border border-slate-300 rounded-2xl shadow-2xs min-h-[90px] flex flex-col justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {attioRelValues.map((val) => (
+                      <span key={val} className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-all group">
+                        <Tag className="w-3 h-3 text-indigo-500" />
+                        {val}
+                        <button
+                          type="button"
+                          onClick={() => setAttioRelValues(attioRelValues.filter(x => x !== val))}
+                          className="w-4 h-4 rounded-full bg-indigo-200 text-indigo-800 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-colors text-[10px] ml-1 cursor-pointer"
+                          title={`Remove "${val}" from sync whitelist`}
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                    {attioRelValues.length === 0 && (
+                      <span className="text-xs text-amber-600 font-medium italic">No qualifying status values specified. Inbound syncing paused.</span>
+                    )}
+                  </div>
+
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    if (newRelValue.trim() && !attioRelValues.includes(newRelValue.trim())) {
+                      setAttioRelValues([...attioRelValues, newRelValue.trim()]);
+                      setNewRelValue('');
+                    }
+                  }} className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                    <input
+                      type="text"
+                      value={newRelValue}
+                      onChange={(e) => setNewRelValue(e.target.value)}
+                      placeholder="Add another status value (e.g. Joint Venture, Contracted)..."
+                      className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                    />
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="sm"
+                      disabled={!newRelValue.trim()}
+                      className="bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200 font-bold shrink-0 text-xs py-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Add Status
+                    </Button>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            {/* Sync Behavior matrix */}
+            <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-white block">CRM De-escalation Protection Rule</span>
+                  <span className="text-slate-300">If an existing linked company transitions out of an approved status in Attio (e.g. to Churned or Archived), Orbit retains the counterparty untouched.</span>
+                </div>
+              </div>
+              <div className="shrink-0 font-mono text-[11px] bg-slate-800 text-emerald-400 px-3 py-1.5 rounded-lg border border-slate-700 font-semibold">
+                Rule: Archiving in CRM never deletes Orbit contract history
+              </div>
+            </div>
+          </Card>
 
           {/* Bottom Card: Automation & Sync Policy Protocols */}
           <Card className="p-6 border-slate-200/80 shadow-sm space-y-5 bg-slate-50/50">
