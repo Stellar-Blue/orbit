@@ -40,6 +40,8 @@ interface AppState {
   addLeaveRequest: (req: Omit<LeaveRequest, 'id'>) => void;
   updateLeaveRequestStatus: (id: string, status: LeaveRequest['status'], rejectionReason?: string) => void;
   addMandatoryLeave: (ml: Omit<MandatoryLeave, 'id'>) => void;
+  updateMandatoryLeave: (id: string, updated: Partial<MandatoryLeave>) => Promise<void>;
+  deleteMandatoryLeave: (id: string) => Promise<void>;
   addPaymentRecord: (pay: Omit<PaymentRecord, 'id'>) => void;
   updatePaymentRecord: (id: string, updates: Partial<PaymentRecord>) => Promise<void>;
   deletePaymentRecord: (id: string) => Promise<void>;
@@ -623,6 +625,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e: any) {
         console.error('Failed to fan-out mandatory leave requests:', e);
       }
+    }
+  };
+
+  const updateMandatoryLeave = async (id: string, updated: Partial<MandatoryLeave>) => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('mandatory_leaves').update(updated).eq('id', id);
+      if (error) {
+        console.error('Failed to update mandatory leave:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setMandatoryLeaves(prev => prev.map(m => m.id === id ? { ...m, ...updated } : m));
+
+      const reqUpdates: any = {};
+      if (updated.start_date) reqUpdates.start_date = updated.start_date;
+      if (updated.end_date) reqUpdates.end_date = updated.end_date;
+      if (updated.leave_type_id) reqUpdates.leave_type_id = updated.leave_type_id;
+      if (updated.name) reqUpdates.note = `Company-wide mandatory leave: ${updated.name}`;
+
+      if (Object.keys(reqUpdates).length > 0) {
+        await supabase.from('leave_requests').update(reqUpdates).eq('mandatory_leave_id', id);
+        setLeaveRequests(prev => prev.map(r => r.mandatory_leave_id === id ? { ...r, ...reqUpdates } : r));
+      }
+    } catch (e: any) {
+      console.error('Failed to update mandatory leave:', e);
+    }
+  };
+
+  const deleteMandatoryLeave = async (id: string) => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('leave_requests').delete().eq('mandatory_leave_id', id);
+      setLeaveRequests(prev => prev.filter(r => r.mandatory_leave_id !== id));
+
+      const { error } = await supabase.from('mandatory_leaves').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete mandatory leave:', error);
+        alert(`Database Error: ${error.message}`);
+        return;
+      }
+      setMandatoryLeaves(prev => prev.filter(m => m.id !== id));
+    } catch (e: any) {
+      console.error('Failed to delete mandatory leave:', e);
     }
   };
 
@@ -1244,6 +1290,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addLeaveRequest,
       updateLeaveRequestStatus,
       addMandatoryLeave,
+      updateMandatoryLeave,
+      deleteMandatoryLeave,
       addPaymentRecord,
       updatePaymentRecord,
       deletePaymentRecord,

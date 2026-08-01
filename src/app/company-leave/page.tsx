@@ -14,8 +14,8 @@ import { LeaveRequest, LeaveType } from '@/lib/types';
 export default function CompanyLeaveManagementPage() {
   const { 
     currentUser, profiles, leaveTypes, leaveRequests, mandatoryLeaves, publicHolidays, 
-    updateLeaveRequestStatus, addMandatoryLeave,
-    editLeaveRequest, decideLeaveCancellation,
+    updateLeaveRequestStatus, addMandatoryLeave, updateMandatoryLeave, deleteMandatoryLeave,
+    editLeaveRequest, decideLeaveCancellation, splitAndAddLeaveRequest,
     addLeaveType, updateLeaveType, deleteLeaveType
   } = useAuth();
 
@@ -41,11 +41,38 @@ export default function CompanyLeaveManagementPage() {
 
   // Mandatory Leave Declaration State
   const [isMandatoryOpen, setIsMandatoryOpen] = useState(false);
+  const [editingMandatoryId, setEditingMandatoryId] = useState<string | null>(null);
   const [mName, setMName] = useState('Mandatory August Summer Bridge 2026');
   const [mStart, setMStart] = useState('2026-08-10');
   const [mEnd, setMEnd] = useState('2026-08-14');
   const [mNote, setMNote] = useState('Company-wide summer vacation week.');
   const [previewMode, setPreviewMode] = useState(false);
+
+  // Admin Record Employee Leave State
+  const [isAddEmployeeLeaveOpen, setIsAddEmployeeLeaveOpen] = useState(false);
+  const [addEmpId, setAddEmpId] = useState('');
+  const [addEmpLeaveTypeId, setAddEmpLeaveTypeId] = useState('');
+  const [addEmpStart, setAddEmpStart] = useState(() => new Date().toISOString().split('T')[0]);
+  const [addEmpEnd, setAddEmpEnd] = useState(() => new Date().toISOString().split('T')[0]);
+  const [addEmpStatus, setAddEmpStatus] = useState<'approved' | 'taken' | 'pending'>('approved');
+  const [addEmpNote, setAddEmpNote] = useState('');
+
+  const addEmpCalculatedDays = useMemo(() => {
+    const targetEmp = profiles.find(p => p.id === (addEmpId || profiles[0]?.id));
+    if (!addEmpStart || !addEmpEnd || addEmpStart > addEmpEnd || !targetEmp) return 0;
+    let wd = 0;
+    let cur = new Date(addEmpStart);
+    const end = new Date(addEmpEnd);
+    const schedule = targetEmp.work_schedule || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    while (cur <= end) {
+      const dStr = cur.toISOString().split('T')[0];
+      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][cur.getDay()];
+      const isHoliday = publicHolidays.some(h => h.date === dStr);
+      if (schedule.includes(dayName) && !isHoliday) wd += 1;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return wd;
+  }, [addEmpId, addEmpStart, addEmpEnd, profiles, publicHolidays]);
 
   // New / Edit Leave Category Modal State
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -105,19 +132,75 @@ export default function CompanyLeaveManagementPage() {
     setEditingLeave(null);
   };
 
-  // Handle Publish Mandatory Leave
-  const handlePublishMandatory = () => {
-    addMandatoryLeave({
-      name: mName,
-      leave_type_id: leaveTypes[0]?.id || 'lt-annual',
-      start_date: mStart,
-      end_date: mEnd,
-      note: mNote,
-      status: 'published',
-      created_by: currentUser.id
-    });
+  // Handle Publish / Save Mandatory Leave
+  const handlePublishMandatory = async () => {
+    if (editingMandatoryId) {
+      await updateMandatoryLeave(editingMandatoryId, {
+        name: mName,
+        start_date: mStart,
+        end_date: mEnd,
+        note: mNote,
+      });
+      setEditingMandatoryId(null);
+    } else {
+      addMandatoryLeave({
+        name: mName,
+        leave_type_id: leaveTypes[0]?.id || 'lt-annual',
+        start_date: mStart,
+        end_date: mEnd,
+        note: mNote,
+        status: 'published',
+        created_by: currentUser.id
+      });
+    }
     setIsMandatoryOpen(false);
     setPreviewMode(false);
+  };
+
+  const handleOpenEditMandatory = (ml: any) => {
+    setEditingMandatoryId(ml.id);
+    setMName(ml.name);
+    setMStart(ml.start_date);
+    setMEnd(ml.end_date);
+    setMNote(ml.note || '');
+    setPreviewMode(false);
+    setIsMandatoryOpen(true);
+  };
+
+  const handleDeleteMandatory = async (id: string) => {
+    if (window.confirm("Are you sure you want to remove this mandatory company closure? This will also remove the fanned-out leave entries from all employee schedules.")) {
+      await deleteMandatoryLeave(id);
+    }
+  };
+
+  const handleAddEmployeeLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetEmp = profiles.find(p => p.id === (addEmpId || profiles[0]?.id));
+    const targetTypeId = addEmpLeaveTypeId || leaveTypes[0]?.id;
+    if (!targetEmp || !targetTypeId) {
+      alert('Please select an employee and leave category.');
+      return;
+    }
+    if (!addEmpStart || !addEmpEnd || addEmpStart > addEmpEnd) {
+      alert('Please select valid start and end dates.');
+      return;
+    }
+    splitAndAddLeaveRequest({
+      profile_id: targetEmp.id,
+      leave_type_id: targetTypeId,
+      start_date: addEmpStart,
+      end_date: addEmpEnd,
+      half_day_start: false,
+      half_day_end: false,
+      working_days: Math.max(1, addEmpCalculatedDays),
+      status: addEmpStatus,
+      origin: 'admin_entry',
+      note: addEmpNote || `Entered by Admin (${currentUser.first_name} ${currentUser.last_name})`,
+      ergani_status: 'pending'
+    }, targetEmp.work_schedule || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], publicHolidays);
+    setIsAddEmployeeLeaveOpen(false);
+    setAddEmpNote('');
+    alert('Employee leave record added successfully!');
   };
 
   // Handle Save Leave Category
@@ -227,10 +310,23 @@ export default function CompanyLeaveManagementPage() {
             </Button>
           )}
           <Button
-            onClick={() => setIsMandatoryOpen(true)}
+            onClick={() => {
+              setEditingMandatoryId(null);
+              setMName('Mandatory August Summer Bridge 2026');
+              setMStart('2026-08-10');
+              setMEnd('2026-08-14');
+              setMNote('Offices closed company-wide for mid-August block.');
+              setIsMandatoryOpen(true);
+            }}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 shadow-sm flex items-center gap-2 cursor-pointer"
           >
-            <Plus className="w-4 h-4" /> Declare Mandatory Company Closure
+            <Plus className="w-4 h-4" /> Declare Mandatory Closure
+          </Button>
+          <Button
+            onClick={() => setIsAddEmployeeLeaveOpen(true)}
+            className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold text-xs px-4 py-2 shadow-sm flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Record Employee Leave
           </Button>
         </div>
       </div>
@@ -496,11 +592,29 @@ export default function CompanyLeaveManagementPage() {
             <div className="space-y-4 mt-3">
               {mandatoryLeaves.map(ml => (
                 <div key={ml.id} className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs space-y-3 hover:border-slate-300 transition-all">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
                     <h4 className="font-extrabold text-base text-slate-900 flex items-center">
-                      <Calendar className="w-5 h-5 mr-2 text-indigo-600" /> {ml.name}
+                      <Calendar className="w-5 h-5 mr-2 text-indigo-600 shrink-0" /> {ml.name}
                     </h4>
-                    <Badge variant="info" className="font-bold">{ml.status.toUpperCase()}</Badge>
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="info" className="font-bold">{ml.status.toUpperCase()}</Badge>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditMandatory(ml)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-all flex items-center cursor-pointer border border-indigo-200"
+                        title="Edit Mandatory Closure"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 mr-1" /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMandatory(ml.id)}
+                        className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-all cursor-pointer border border-rose-200"
+                        title="Delete Mandatory Closure"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-slate-600">
                     Dates Horizon: <strong className="text-[#3D87D3] font-mono">{ml.start_date} &rarr; {ml.end_date}</strong> &bull; Announcement Notes: {ml.note}
@@ -653,13 +767,13 @@ export default function CompanyLeaveManagementPage() {
         )}
       </Modal>
 
-      {/* MANDATORY LEAVE DECLARATION MODAL */}
-      <Modal isOpen={isMandatoryOpen} onClose={() => { setIsMandatoryOpen(false); setPreviewMode(false); }} title="Declare Mandatory Company Closure">
+      {/* MANDATORY LEAVE DECLARATION / EDIT MODAL */}
+      <Modal isOpen={isMandatoryOpen} onClose={() => { setIsMandatoryOpen(false); setPreviewMode(false); setEditingMandatoryId(null); }} title={editingMandatoryId ? "Edit Mandatory Company Closure" : "Declare Mandatory Company Closure"}>
         <div className="space-y-4 text-xs">
           {!previewMode ? (
             <>
               <p className="text-slate-600 text-[11px]">
-                Declare organization-wide breaks (e.g., August Summer Bridge). Orbit will automatically fan out this closure across all staff members, respecting individual schedules and part-time multipliers while skipping external contractor partners.
+                {editingMandatoryId ? "Adjust dates or description for this company closure. Changes will immediately sync to all fanned-out employee leave records." : "Declare organization-wide breaks (e.g., August Summer Bridge). Orbit will automatically fan out this closure across all staff members, respecting individual schedules and part-time multipliers while skipping external contractor partners."}
               </p>
               <div>
                 <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Closure Name / Description</label>
@@ -680,8 +794,12 @@ export default function CompanyLeaveManagementPage() {
                 <textarea rows={2} value={mNote} onChange={e => setMNote(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-medium" />
               </div>
               <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
-                <Button variant="outline" size="sm" onClick={() => setIsMandatoryOpen(false)}>Cancel</Button>
-                <Button variant="primary" size="sm" onClick={() => setPreviewMode(true)} className="bg-indigo-600 hover:bg-indigo-700 font-black">Preview Fan-Out Impact &rarr;</Button>
+                <Button variant="outline" size="sm" onClick={() => { setIsMandatoryOpen(false); setEditingMandatoryId(null); }}>Cancel</Button>
+                {editingMandatoryId ? (
+                  <Button variant="primary" size="sm" onClick={handlePublishMandatory} className="bg-emerald-600 hover:bg-emerald-500 font-black cursor-pointer">Save Changes &rarr;</Button>
+                ) : (
+                  <Button variant="primary" size="sm" onClick={() => setPreviewMode(true)} className="bg-indigo-600 hover:bg-indigo-700 font-black cursor-pointer">Preview Fan-Out Impact &rarr;</Button>
+                )}
               </div>
             </>
           ) : (
@@ -842,6 +960,101 @@ export default function CompanyLeaveManagementPage() {
             <Button variant="outline" size="sm" type="button" onClick={() => setIsCategoryModalOpen(false)}>Cancel</Button>
             <Button variant="primary" size="sm" type="submit" className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-black">
               {catEditingId ? "Save Category Changes" : "Create Leave Category"} &rarr;
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ADMIN RECORD EMPLOYEE LEAVE MODAL */}
+      <Modal isOpen={isAddEmployeeLeaveOpen} onClose={() => setIsAddEmployeeLeaveOpen(false)} title="Record Leave for Employee">
+        <form onSubmit={handleAddEmployeeLeave} className="space-y-4 text-xs">
+          <p className="text-slate-600 text-[11px]">
+            As an Administrator, you can directly record approved time-off or past vacation days for any staff member in Orbit.
+          </p>
+          <div>
+            <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Select Employee</label>
+            <select
+              value={addEmpId || (profiles[0]?.id || '')}
+              onChange={e => setAddEmpId(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+            >
+              {profiles.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.first_name} {p.last_name} ({p.work_email} - {p.employment_type.toUpperCase()})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Leave Category / Type</label>
+            <select
+              value={addEmpLeaveTypeId || (leaveTypes[0]?.id || '')}
+              onChange={e => setAddEmpLeaveTypeId(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+            >
+              {leaveTypes.map(lt => (
+                <option key={lt.id} value={lt.id}>
+                  {lt.name_en} ({lt.name_el})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Start Date</label>
+              <input 
+                type="date" 
+                value={addEmpStart} 
+                onChange={e => setAddEmpStart(e.target.value)} 
+                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" 
+              />
+            </div>
+            <div>
+              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">End Date</label>
+              <input 
+                type="date" 
+                value={addEmpEnd} 
+                onChange={e => setAddEmpEnd(e.target.value)} 
+                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" 
+              />
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex items-center justify-between text-xs text-slate-800 font-medium">
+            <span>Calculated Working Days (Excluding Weekends &amp; Greek Holidays):</span>
+            <span className="text-base font-black text-[#3D87D3] font-mono">{addEmpCalculatedDays} Days</span>
+          </div>
+
+          <div>
+            <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Record Status</label>
+            <select
+              value={addEmpStatus}
+              onChange={e => setAddEmpStatus(e.target.value as any)}
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+            >
+              <option value="approved">Approved (Active schedule record)</option>
+              <option value="taken">Taken (Past historical record)</option>
+              <option value="pending">Pending (Requires further review)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Note / Memo (Optional)</label>
+            <textarea
+              rows={2}
+              value={addEmpNote}
+              onChange={e => setAddEmpNote(e.target.value)}
+              placeholder="e.g. Added by HR, medical leave documentation filed..."
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-medium placeholder:text-slate-400"
+            />
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
+            <Button variant="outline" size="sm" type="button" onClick={() => setIsAddEmployeeLeaveOpen(false)}>Cancel</Button>
+            <Button variant="primary" size="sm" type="submit" className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-black cursor-pointer">
+              Save Employee Leave Record &rarr;
             </Button>
           </div>
         </form>
