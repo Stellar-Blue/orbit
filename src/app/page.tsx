@@ -12,7 +12,7 @@ import { Card, StatCard, Badge, Button } from '@/components/ui/primitives';
 import { 
   Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
   CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
-  CalendarDays, ChevronLeft, ChevronRight, Filter, Search, Globe,
+  CalendarDays, ChevronLeft, ChevronRight, Search, Globe,
   ShieldCheck, Building2, Info, X
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
@@ -78,39 +78,9 @@ export default function DashboardPage() {
   const urgentContracts = contracts.filter(c => c.status === 'active' || c.status === 'expiring').slice(0, 3);
   const pendingLeaves = leaveRequests.filter(r => r.status === 'pending');
 
-  // --- 3. EMPLOYEE LEAVE & REMOTE PATTERN HELPER ---
+  // --- 3. EMPLOYEE LEAVE HELPER ---
   const myEntitlement = entitlements.find(e => e.profile_id === currentUser.id && e.year === 2026);
   const myLeavesTaken = getEmployeeLeaveBalance(currentUser.id, 2026).taken;
-
-  const myExistingPatterns = useMemo(() => (remotePatterns || []).filter(rp => rp.profile_id === currentUser.id), [remotePatterns, currentUser.id]);
-  const getPatternMode = (day: string) => {
-    const found = myExistingPatterns.find(p => p.weekday === day);
-    return found ? found.mode : (day === 'Tue' || day === 'Thu' ? 'remote_gr' : 'office');
-  };
-  const weeklyRemoteDaysCount = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].filter(day => {
-    const m = getPatternMode(day);
-    return m === 'remote_gr' || m === 'remote_abroad';
-  }).length;
-  const companyPolicy = (remotePolicies || []).find(p => p.scope_type === 'company');
-  const quotaMaxDays = companyPolicy ? (companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8) : 8;
-  const quotaPeriod = companyPolicy ? (companyPolicy.period_type || 'month') : 'month';
-
-  const periodFullLabel = quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month';
-
-  const myLoggedRemoteInPeriod = (remoteDays || []).filter(r => {
-    if (r.profile_id !== currentUser.id || r.mode === 'office') return false;
-    const now = new Date();
-    if (quotaPeriod === 'week') {
-      const wStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-      const wEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-      return r.date >= wStart && r.date <= wEnd;
-    } else if (quotaPeriod === 'year') {
-      return r.date.startsWith(format(now, 'yyyy'));
-    } else {
-      return r.date.startsWith(format(now, 'yyyy-MM'));
-    }
-  }).length;
-  const remainingPeriodQuota = Math.max(0, quotaMaxDays - myLoggedRemoteInPeriod);
 
   // --- 4. ORGANIZATIONAL OFFICE & REMOTE ROSTER STATE ---
   const [rosterDate, setRosterDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -149,6 +119,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [eventTypeFilter, setEventTypeFilter] = useState<'all' | 'remote' | 'leave' | 'holiday'>('all');
   const [selectedDay, setSelectedDay] = useState<DaySchedule | null>(null);
+  const [calendarViewMode, setCalendarViewMode] = useState<'calendar' | 'team'>('calendar');
 
   const activeProfiles = useMemo(() => {
     return profiles.filter(p => {
@@ -245,6 +216,10 @@ export default function DashboardPage() {
       } as DaySchedule;
     });
   }, [currentMonth, activeProfiles, publicHolidays, mandatoryLeaves, leaveRequests, leaveTypes, remoteDays, isAdmin, currentUser.id]);
+
+  const currentMonthDays = useMemo(() => {
+    return calendarDays.filter(d => d.isCurrentMonth);
+  }, [calendarDays]);
 
   const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
   const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
@@ -407,81 +382,49 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 4. EMPLOYEE PERSONAL SUMMARY (LEAVE & REMOTE PATTERN) */}
+      {/* 4. EMPLOYEE PERSONAL SUMMARY (LEAVE QUOTA) */}
       {!isContractor ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card title="2026 Annual Leave Quota" subtitle="Managed manually per employee per year" className="md:col-span-1 border-slate-200/90 shadow-2xs">
-            {myEntitlement ? (
-              <div className="space-y-4">
-                <div className="flex items-baseline justify-between p-4 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20">
-                  <div>
-                    <span className="text-3xl font-black text-[#3D87D3]">{myEntitlement.entitlement_days + myEntitlement.carried_over_days - myLeavesTaken}</span>
-                    <span className="text-xs text-slate-600 ml-1.5 font-bold">days remaining</span>
-                  </div>
-                  <Badge variant="info" className="font-bold">2026 Quota</Badge>
+        <Card title="My 2026 Annual Leave Quota" subtitle="Managed per employee per year" className="border-slate-200/90 shadow-2xs">
+          {myEntitlement ? (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6 p-2">
+              <div className="flex items-center space-x-5">
+                <div className="px-6 py-4 rounded-2xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex flex-col justify-center shrink-0">
+                  <span className="text-3xl font-black text-[#3D87D3] leading-none">
+                    {myEntitlement.entitlement_days + myEntitlement.carried_over_days - myLeavesTaken}
+                  </span>
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mt-1">Days Remaining</span>
                 </div>
-                <div className="space-y-2 text-xs text-slate-700 border-t border-slate-100 pt-3 font-medium">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Annual Entitlement:</span>
-                    <span className="font-bold">{myEntitlement.entitlement_days} days</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Carried Over (from 2025):</span>
-                    <span className="font-bold text-emerald-700">+{myEntitlement.carried_over_days} days</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Approved &amp; Taken:</span>
-                    <span className="font-bold text-rose-600">-{myLeavesTaken} days</span>
-                  </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Your Available Time Off</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mt-0.5">
+                    Plan your breaks and time away. Submit requests directly via the leave management workspace.
+                  </p>
                 </div>
               </div>
-            ) : (
-              <div className="p-6 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl font-medium">
-                <AlertTriangle className="w-5 h-5 mx-auto mb-2 text-amber-600" />
-                Entitlement not yet set for 2026 &mdash; please contact a founder/admin to configure your annual quota.
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 text-xs font-semibold bg-slate-50 p-4 rounded-xl border border-slate-200/80 shrink-0">
+                <div>
+                  <span className="text-slate-400 text-[11px] block">Entitlement</span>
+                  <span className="font-bold text-slate-800 text-sm">{myEntitlement.entitlement_days} d</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div>
+                  <span className="text-slate-400 text-[11px] block">Carried Over</span>
+                  <span className="font-extrabold text-emerald-600 text-sm">+{myEntitlement.carried_over_days} d</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                <div>
+                  <span className="text-slate-400 text-[11px] block">Taken / Approved</span>
+                  <span className="font-extrabold text-rose-600 text-sm">-{myLeavesTaken} d</span>
+                </div>
               </div>
-            )}
-          </Card>
-
-          <Card title="My Remote Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your remote declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Remote Log</Link>} className="md:col-span-2 border-slate-200/90 shadow-2xs">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 mt-2">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
-                const isScheduled = currentUser.work_schedule.includes(day);
-                const mode = getPatternMode(day);
-                if (!isScheduled) {
-                  return (
-                    <div key={day} className="p-3 sm:p-3.5 rounded-xl bg-slate-100/60 border border-slate-200 text-center text-slate-400 flex flex-col justify-center">
-                      <div className="text-xs font-bold">{day}</div>
-                      <div className="text-[11px] mt-1.5 font-semibold">Non-Working Day</div>
-                    </div>
-                  );
-                }
-                return (
-                  <div key={day} className={`p-3 sm:p-3.5 rounded-xl border text-center transition-all flex flex-col justify-between ${mode === 'remote_gr' ? 'bg-[#3D87D3]/10 border-[#3D87D3]/30 text-[#3D87D3]' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
-                    <div className="text-xs font-bold tracking-wider uppercase text-slate-500">{day}</div>
-                    <div className="mt-2.5 flex items-center justify-center space-x-1 font-semibold text-xs">
-                      {mode === 'remote_gr' ? (
-                        <>
-                          <MapPin className="w-3.5 h-3.5 text-[#3D87D3] shrink-0" />
-                          <span className="truncate">Remote (GR)</span>
-                        </>
-                      ) : (
-                        <>
-                          <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate">Office</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
             </div>
-            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500 font-medium">
-              <span>Policy limit: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
-              <span>Remaining Quota: <strong className="text-[#3D87D3] font-black">{remainingPeriodQuota} {remainingPeriodQuota === 1 ? 'day available' : 'days available'}</strong> this {periodFullLabel}</span>
+          ) : (
+            <div className="p-6 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl font-medium">
+              <AlertTriangle className="w-5 h-5 mx-auto mb-2 text-amber-600" />
+              Entitlement not yet set for 2026 &mdash; please contact a founder/admin to configure your annual quota.
             </div>
-          </Card>
-        </div>
+          )}
+        </Card>
       ) : (
         <Card title="Contractor Retainer Summary & Invoicing" subtitle="StellarBlue contractor partner workspace" className="border-slate-200/90 shadow-2xs">
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
@@ -583,109 +526,138 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* 6. UNIFIED COMPANY & TEAM CALENDAR (Merged straight into Homepage) */}
-      <div className="space-y-6 pt-6 border-t border-slate-200/80">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-1.5">
-              <Sparkles className="w-3 h-3 text-indigo-600" />
-              <span>Unified Organizational Schedule</span>
+      {/* 6. UNIFIED COMPANY & TEAM CALENDAR */}
+      <div className="space-y-4 pt-6 border-t border-slate-200/80">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center">
+                <CalendarDays className="w-6 h-6 mr-2.5 text-[#3D87D3]" /> Company&apos;s Calendar
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                Comprehensive organizational schedule combining daily remote logs, approved leave requests, and celebrations.
+              </p>
             </div>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center">
-              <CalendarDays className="w-6 h-6 mr-2.5 text-[#3D87D3]" /> Interactive Company &amp; Leave Calendar
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              Comprehensive schedule synthesis combining daily remote work overrides, weekly routines, approved leaves, and birthday celebrations.
-            </p>
           </div>
-        </div>
 
-        {/* Calendar Toolbar & Filter Console */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center rounded-xl border border-slate-300 overflow-hidden shadow-2xs bg-slate-50/50">
-              <button
-                onClick={handlePrevMonth}
-                className="p-2.5 text-slate-600 hover:bg-slate-200/60 hover:text-slate-950 transition-all cursor-pointer"
-                title="Previous Month"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <span className="px-5 py-1 text-base font-black text-slate-800 font-mono tracking-tight select-none">
-                {format(currentMonth, 'MMMM yyyy')}
-              </span>
-              <button
-                onClick={handleNextMonth}
-                className="p-2.5 text-slate-600 hover:bg-slate-200/60 hover:text-slate-950 transition-all cursor-pointer"
-                title="Next Month"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
+          {/* View Switcher Tabs (Calendar vs Team View) */}
+          <div className="flex items-center space-x-1 border-b border-slate-200 pb-2">
             <button
-              onClick={handleToday}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-extrabold text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+              onClick={() => setCalendarViewMode('calendar')}
+              className={`px-3.5 py-1.5 rounded-lg font-extrabold text-xs transition-all cursor-pointer ${
+                calendarViewMode === 'calendar'
+                  ? 'bg-slate-200/80 text-slate-900 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+              }`}
             >
-              Today ({format(new Date(), "MMM yyyy")})
+              Calendar
+            </button>
+            <button
+              onClick={() => setCalendarViewMode('team')}
+              className={`px-3.5 py-1.5 rounded-lg font-extrabold text-xs transition-all cursor-pointer ${
+                calendarViewMode === 'team'
+                  ? 'bg-slate-200/80 text-slate-900 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+              }`}
+            >
+              Team view
             </button>
           </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex items-center">
-              <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-              <select
-                value={selectedTeamId}
-                onChange={(e) => setSelectedTeamId(e.target.value)}
-                className="pl-8 pr-4 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] cursor-pointer shadow-2xs"
-              >
-                <option value="all">All Teams &amp; Departments</option>
-                {teams.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="relative w-44 sm:w-56">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Filter by colleague..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-8 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] shadow-2xs"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-bold">
-              {(['all', 'remote', 'leave', 'holiday'] as const).map((type) => (
+        {/* Sleek & Compact Calendar Toolbar */}
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Left: Month Controls */}
+            <div className="flex items-center space-x-2">
+              <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5 shadow-2xs">
                 <button
-                  key={type}
-                  onClick={() => setEventTypeFilter(type)}
-                  className={`px-3 py-1.5 rounded-lg transition-all capitalize cursor-pointer ${
-                    eventTypeFilter === type
-                      ? 'bg-white text-[#3D87D3] shadow-xs font-black'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={handlePrevMonth}
+                  className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-white rounded-md transition-all cursor-pointer"
+                  title="Previous Month"
                 >
-                  {type === 'all' && 'All Activity'}
-                  {type === 'remote' && '🏠 Remote'}
-                  {type === 'leave' && '🏖️ Leaves'}
-                  {type === 'holiday' && '🎉 Holidays & B-days'}
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
-              ))}
+                <span className="px-3 text-xs font-bold text-slate-800 font-mono select-none min-w-[120px] text-center">
+                  {format(currentMonth, 'MMMM yyyy')}
+                </span>
+                <button
+                  onClick={handleNextMonth}
+                  className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-white rounded-md transition-all cursor-pointer"
+                  title="Next Month"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={handleToday}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all cursor-pointer shadow-2xs"
+              >
+                Today
+              </button>
+            </div>
+
+            {/* Right: Filters (Team, Search, Types) */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Team Selector */}
+              <div className="relative">
+                <select
+                  value={selectedTeamId}
+                  onChange={(e) => setSelectedTeamId(e.target.value)}
+                  className="h-8 pl-3 pr-7 py-0 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-white text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D87D3] cursor-pointer shadow-2xs transition-all"
+                >
+                  <option value="all">All Teams</option>
+                  {teams.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Employee Search Input */}
+              <div className="relative w-40 sm:w-48">
+                <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Find colleague..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-8 pl-7 pr-7 text-xs font-medium rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-white placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D87D3] shadow-2xs transition-all"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Event Type Toggle Pills */}
+              <div className="inline-flex rounded-lg bg-slate-100/80 p-0.5 border border-slate-200/80 text-[11px] font-bold">
+                {(['all', 'remote', 'leave', 'holiday'] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setEventTypeFilter(type)}
+                    className={`px-2.5 py-1 rounded-md transition-all capitalize cursor-pointer ${
+                      eventTypeFilter === type
+                        ? 'bg-white text-[#3D87D3] shadow-2xs font-extrabold'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {type === 'all' && 'All'}
+                    {type === 'remote' && 'Remote'}
+                    {type === 'leave' && 'Leaves'}
+                    {type === 'holiday' && 'Holidays'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Calendar Grid View */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md overflow-x-auto">
-          <div className="min-w-[850px] w-full">
-            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-black text-slate-600 uppercase tracking-wider py-3.5">
+        {/* Calendar / Team Matrix Views */}
+        {calendarViewMode === 'calendar' ? (
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md overflow-x-auto">
+            <div className="min-w-[850px] w-full">
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-black text-slate-600 uppercase tracking-wider py-3.5">
               <div>Monday</div>
               <div>Tuesday</div>
               <div>Wednesday</div>
@@ -930,6 +902,141 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        ) : (
+          /* Team View Matrix Timeline */
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md overflow-x-auto max-h-[650px] relative">
+            <table className="min-w-[1100px] w-full border-collapse select-none text-xs">
+              <thead>
+                <tr className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs shadow-xs border-b border-slate-200">
+                  <th className="min-w-[200px] w-[220px] sticky left-0 z-30 bg-slate-50/95 backdrop-blur-xs border-b border-r border-slate-200/80 p-3 text-left font-extrabold text-slate-700 uppercase tracking-wider text-[11px]">
+                    Teammate
+                  </th>
+                  {currentMonthDays.map(day => {
+                    const isWeekend = day.dateObj.getDay() === 0 || day.dateObj.getDay() === 6;
+                    return (
+                      <th
+                        key={day.dateStr}
+                        onClick={() => setSelectedDay(day)}
+                        className={`w-9 min-w-[34px] max-w-[38px] p-2 text-center border-b border-r border-slate-200/60 font-mono transition-colors cursor-pointer ${
+                          day.isToday
+                            ? 'bg-cyan-50/80 text-cyan-950 font-black'
+                            : isWeekend
+                            ? 'bg-slate-100/70 text-slate-400 font-medium'
+                            : 'bg-slate-50/90 text-slate-700 font-bold hover:bg-slate-100'
+                        }`}
+                      >
+                        {day.isToday ? (
+                          <div className="w-6 h-6 rounded-full bg-cyan-600 text-white font-black flex items-center justify-center mx-auto text-xs shadow-xs" title="Today">
+                            {format(day.dateObj, 'd')}
+                          </div>
+                        ) : (
+                          <span>{format(day.dateObj, 'd')}</span>
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200/60">
+                {activeProfiles.length === 0 ? (
+                  <tr>
+                    <td colSpan={currentMonthDays.length + 1} className="p-8 text-center text-slate-400 font-medium text-sm">
+                      No team members match the selected filters.
+                    </td>
+                  </tr>
+                ) : (
+                  activeProfiles.map(p => (
+                    <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
+                      <td className="min-w-[200px] w-[220px] sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-b border-r border-slate-200/80 p-2.5 transition-colors text-left font-sans shadow-2xs">
+                        <div className="flex items-center space-x-2.5">
+                          {(p as any).avatar_url ? (
+                            <img src={(p as any).avatar_url} alt={p.first_name} className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0" />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-cyan-100/80 text-cyan-800 border border-cyan-200/60 font-bold text-[11px] flex items-center justify-center shrink-0 tracking-tighter">
+                              {p.first_name[0]}{p.last_name[0]}
+                            </div>
+                          )}
+                          <div className="truncate">
+                            <span className="text-xs font-bold text-slate-800 tracking-tight block truncate">
+                              {p.first_name} {p.last_name}
+                            </span>
+                            {p.title && (
+                              <span className="text-[10px] text-slate-400 block truncate font-medium">
+                                {p.title}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      {currentMonthDays.map((day, dIdx) => {
+                        const isWeekend = day.dateObj.getDay() === 0 || day.dateObj.getDay() === 6;
+                        const prevDay = dIdx > 0 ? currentMonthDays[dIdx - 1] : null;
+                        const nextDay = dIdx < currentMonthDays.length - 1 ? currentMonthDays[dIdx + 1] : null;
+
+                        // Check events
+                        const isOnLeave = (eventTypeFilter === 'all' || eventTypeFilter === 'leave') && day.leaves.some(l => l.profile.id === p.id);
+                        const prevOnLeave = prevDay && (eventTypeFilter === 'all' || eventTypeFilter === 'leave') && prevDay.leaves.some(l => l.profile.id === p.id);
+                        const nextOnLeave = nextDay && (eventTypeFilter === 'all' || eventTypeFilter === 'leave') && nextDay.leaves.some(l => l.profile.id === p.id);
+
+                        const remoteInfo = (eventTypeFilter === 'all' || eventTypeFilter === 'remote') ? day.remotes.find(r => r.profile.id === p.id) : undefined;
+                        const prevRemote = prevDay && (eventTypeFilter === 'all' || eventTypeFilter === 'remote') ? prevDay.remotes.find(r => r.profile.id === p.id) : undefined;
+                        const nextRemote = nextDay && (eventTypeFilter === 'all' || eventTypeFilter === 'remote') ? nextDay.remotes.find(r => r.profile.id === p.id) : undefined;
+
+                        const isBirthday = (eventTypeFilter === 'all' || eventTypeFilter === 'holiday') && day.birthdays.some(b => b.id === p.id);
+                        const isHoliday = (eventTypeFilter === 'all' || eventTypeFilter === 'holiday') && day.holidays.length > 0;
+
+                        return (
+                          <td
+                            key={day.dateStr}
+                            onClick={() => setSelectedDay(day)}
+                            className={`p-0 h-11 border-b border-r border-slate-200/50 text-center relative cursor-pointer transition-colors ${
+                              day.isToday
+                                ? 'bg-cyan-50/40 hover:bg-cyan-50/70'
+                                : isWeekend
+                                ? 'bg-slate-100/60 hover:bg-slate-100'
+                                : 'bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            {isOnLeave && (
+                              <div
+                                title={`${p.first_name} ${p.last_name}: On Leave`}
+                                className={`h-6 bg-[#3D87D3] text-white flex items-center justify-center text-[9px] font-bold shadow-2xs ${
+                                  prevOnLeave ? 'rounded-l-none ml-0' : 'rounded-l-md ml-0.5'
+                                } ${
+                                  nextOnLeave ? 'rounded-r-none mr-0' : 'rounded-r-md mr-0.5'
+                                }`}
+                              />
+                            )}
+                            {!isOnLeave && remoteInfo && (
+                              <div
+                                title={`${p.first_name} ${p.last_name}: Working Remotely (${remoteInfo.mode === 'remote_abroad' ? 'Abroad' : 'GR'})`}
+                                className={`h-6 ${remoteInfo.mode === 'remote_abroad' ? 'bg-indigo-500' : 'bg-cyan-500'} text-white flex items-center justify-center text-[9px] font-bold shadow-2xs ${
+                                  prevRemote ? 'rounded-l-none ml-0' : 'rounded-l-md ml-0.5'
+                                } ${
+                                  nextRemote ? 'rounded-r-none mr-0' : 'rounded-r-md mr-0.5'
+                                }`}
+                              />
+                            )}
+                            {!isOnLeave && !remoteInfo && isBirthday && (
+                              <div title="Birthday Today!" className="h-6 mx-0.5 rounded-md bg-amber-500 text-white font-black text-[10px] flex items-center justify-center shadow-2xs">
+                                🎂
+                              </div>
+                            )}
+                            {!isOnLeave && !remoteInfo && !isBirthday && isHoliday && (
+                              <div title={day.holidays[0]?.name_en || day.holidays[0]?.name_el || 'Public Holiday'} className="h-6 mx-0.5 rounded-md bg-purple-100/80 text-purple-700 font-bold text-[10px] flex items-center justify-center">
+                                🏖️
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Calendar Legend & Privacy Lens Footer */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 p-5 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-xs text-xs text-slate-600">
