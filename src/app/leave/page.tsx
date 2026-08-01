@@ -7,9 +7,10 @@ import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
   Users, ShieldCheck, FileText, Sparkles, Filter, Edit3, HelpCircle, ArrowRight, ShieldAlert,
-  BarChart3, CalendarDays, Briefcase, ChevronLeft, ChevronRight
+  BarChart3, CalendarDays, Briefcase, ChevronLeft, ChevronRight, Table, Download
 } from 'lucide-react';
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
+import * as XLSX from 'xlsx';
 import { LeaveRequest } from '@/lib/types';
 
 export default function LeaveManagementPage() {
@@ -168,6 +169,58 @@ export default function LeaveManagementPage() {
     alert('Leave request submitted successfully!');
   };
 
+  // Grid View & Export state
+  const [viewMode, setViewMode] = useState<'calendar' | 'grid'>('calendar');
+  const [selectedYear, setSelectedYear] = useState<number>(2026);
+
+  const exportYearBalance = useMemo(() => {
+    return getEmployeeLeaveBalance(currentUser.id, selectedYear);
+  }, [currentUser.id, selectedYear, getEmployeeLeaveBalance, leaveRequests]);
+
+  const exportYearLeaves = useMemo(() => {
+    return leaveRequests.filter(r => 
+      r.profile_id === currentUser.id && r.start_date.startsWith(String(selectedYear))
+    ).sort((a, b) => b.start_date.localeCompare(a.start_date));
+  }, [leaveRequests, currentUser.id, selectedYear]);
+
+  const handleExportLeaveReport = () => {
+    const wsData = [
+      ['STELLARBLUE ORBIT — OFFICIAL ANNUAL LEAVE & ALLOWANCE REPORT'],
+      [''],
+      ['Employee Name:', `${currentUser.first_name} ${currentUser.last_name}`],
+      ['Work Email:', currentUser.work_email],
+      ['Report Year:', String(selectedYear)],
+      ['Total Annual Allowance Quota:', `${exportYearBalance.entitlement + exportYearBalance.carryOver} working days`],
+      ['Consumed / Approved Leaves:', `${exportYearBalance.taken + exportYearBalance.reserved} working days`],
+      ['AVAILABLE / REMAINING LEAVES:', `${exportYearBalance.available} working days`],
+      [''],
+      ['START DATE', 'END DATE', 'LEAVE CATEGORY / TYPE', 'WORKING DAYS DEDUCTED', 'STATUS', 'ORIGIN', 'MEMO & REASON']
+    ];
+
+    if (exportYearLeaves.length === 0) {
+      wsData.push(['No recorded leaves for selected year', '', '', '', '', '', '']);
+    } else {
+      exportYearLeaves.forEach(req => {
+        const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+        const effDays = getEffectiveDays(req);
+        wsData.push([
+          req.start_date,
+          req.end_date,
+          lt?.name_en || (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave'),
+          `${effDays}d`,
+          req.status.toUpperCase(),
+          req.origin.toUpperCase(),
+          req.note || 'Standard time off'
+        ]);
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    XLSX.utils.book_append_sheet(wb, ws, `Leave_Report_${selectedYear}`);
+    XLSX.writeFile(wb, `Leave_Report_${currentUser.last_name}_${selectedYear}.xlsx`);
+  };
+
   if (isContractor) {
     return (
       <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
@@ -276,16 +329,62 @@ export default function LeaveManagementPage() {
           {/* TWO-COLUMN LAYOUT: CALENDAR ON LEFT, QUOTAS & HISTORY ON RIGHT */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* LEFT COLUMN: INTERACTIVE LEAVE CALENDAR (7 COLS) */}
-            <div className="lg:col-span-7 space-y-6" onMouseUp={handleCalendarMouseUp} onMouseLeave={() => { if (isDragging) { setIsDragging(false); setDragStart(null); setDragCurrent(null); } }}>
-              <Card 
-                title="Interactive Leave & Holiday Calendar" 
-                subtitle="View your holidays, public holidays, and company closures. Click & drag across dates to immediately file time-off!"
+            <div className="lg:col-span-7 space-y-5" onMouseUp={handleCalendarMouseUp} onMouseLeave={() => { if (isDragging) { setIsDragging(false); setDragStart(null); setDragCurrent(null); } }}>
+              {/* View Switcher & Year Export Top Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+                <div className="flex items-center space-x-1.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('calendar')}
+                    className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center transition-all cursor-pointer ${
+                      viewMode === 'calendar' ? 'bg-[#3D87D3] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Calendar className="w-3.5 h-3.5 mr-1.5" /> Calendar View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grid')}
+                    className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center transition-all cursor-pointer ${
+                      viewMode === 'grid' ? 'bg-[#3D87D3] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Table className="w-3.5 h-3.5 mr-1.5" /> Grid View
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-2.5">
+                  <span className="text-xs font-extrabold text-slate-500">Year:</span>
+                  <select
+                    value={selectedYear}
+                    onChange={e => setSelectedYear(Number(e.target.value))}
+                    className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  >
+                    <option value={2027}>2027</option>
+                    <option value={2026}>2026</option>
+                    <option value={2025}>2025</option>
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportLeaveReport}
+                    className="bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-extrabold text-xs shadow-2xs py-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Export Year (XLSX)
+                  </Button>
+                </div>
+              </div>
+
+              {viewMode === 'calendar' ? (
+                <Card 
+                  title="Leave Schedule & Holiday Calendar" 
+                subtitle="Click & drag across dates on the grid below to instantly select your vacation days and apply."
                 className="border-slate-200 shadow-sm"
               >
-                <div className="space-y-4 mt-2">
-                  {/* Calendar Navigation Header - Company Calendar Style */}
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
-                    <div className="flex items-center space-x-2">
+                <div className="space-y-3 mt-2">
+                  {/* Calendar Navigation Header & Legend */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs gap-3">
+                    <div className="flex items-center space-x-2 shrink-0">
                       <div className="flex items-center rounded-xl border border-slate-300 overflow-hidden bg-white shadow-2xs">
                         <button
                           onClick={() => setCalendarMonth(prev => subMonths(prev, 1))}
@@ -312,21 +411,12 @@ export default function LeaveManagementPage() {
                         Today ({format(new Date(), 'MMMM yyyy')})
                       </button>
                     </div>
-                  </div>
 
-                  {/* Quick Guide Banner */}
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-sky-500/10 via-[#3D87D3]/10 to-indigo-500/10 border border-[#3D87D3]/20 flex items-center justify-between text-xs text-[#2b6097] font-bold">
-                    <span className="flex items-center">
-                      <Sparkles className="w-4 h-4 mr-1.5 text-[#3D87D3] shrink-0" />
-                      ✨ Click &amp; drag across dates on the grid below to instantly select your vacation dates and apply!
-                    </span>
-                  </div>
-
-                  {/* Calendar Legend */}
-                  <div className="flex items-center gap-4 text-[11px] font-bold text-slate-600 px-1 flex-wrap">
-                    <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-[#3D87D3] mr-1.5 inline-block shadow-2xs" /> My Approved / Pending Leaves</span>
-                    <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-indigo-700 mr-1.5 inline-block shadow-2xs" /> Mandatory Closure</span>
-                    <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-rose-500 mr-1.5 inline-block shadow-2xs" /> Greek Public Holiday</span>
+                    <div className="flex items-center gap-3.5 text-[11px] font-bold text-slate-600 flex-wrap">
+                      <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-[#3D87D3] mr-1.5 inline-block shadow-2xs" /> My Leaves</span>
+                      <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-indigo-700 mr-1.5 inline-block shadow-2xs" /> Mandatory Closure</span>
+                      <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-rose-500 mr-1.5 inline-block shadow-2xs" /> Holiday</span>
+                    </div>
                   </div>
 
                   {/* Day of Week Headers with Mobile Swipe Support */}
@@ -540,6 +630,99 @@ export default function LeaveManagementPage() {
               </div>
             </div>
           </Card>
+        ) : (
+          <Card 
+            title={`Annual Leave Grid (${selectedYear})`}
+            subtitle="Detailed table breakdown of your scheduled leave records, status, and remaining available quota for the selected year."
+            className="border-slate-200 shadow-sm"
+          >
+            <div className="space-y-5 mt-3">
+              {/* Annual Quota Status Ribbon */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 p-4 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm border border-slate-700">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-extrabold block mb-0.5">Total Allowance Quota</span>
+                  <strong className="text-xl font-mono font-extrabold text-white">{exportYearBalance.entitlement + exportYearBalance.carryOver} <span className="text-xs font-sans text-slate-300">days</span></strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Annual entitlement</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-extrabold block mb-0.5">Consumed / Scheduled</span>
+                  <strong className="text-xl font-mono font-extrabold text-amber-300">{exportYearBalance.taken + exportYearBalance.reserved} <span className="text-xs font-sans text-slate-300">days</span></strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Deducted working days</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex flex-col justify-center">
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-300 font-extrabold block mb-0.5 flex items-center">
+                    <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-400 shrink-0" /> Available Remaining
+                  </span>
+                  <strong className="text-2xl font-mono font-black text-emerald-300">{exportYearBalance.available} <span className="text-xs font-sans text-emerald-200 font-bold">working days</span></strong>
+                </div>
+              </div>
+
+              {/* Table Grid */}
+              <div className="overflow-hidden rounded-xl border border-slate-200 shadow-2xs">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase font-extrabold tracking-wider text-[10px]">
+                    <tr>
+                      <th className="p-3 pl-4">Date Range</th>
+                      <th className="p-3">Category / Type</th>
+                      <th className="p-3 text-center">Working Days</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 pr-4">Memo &amp; Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white font-medium">
+                    {exportYearLeaves.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-400 italic">
+                          No leave requests recorded for {selectedYear} yet. Click on the calendar or quick filer to submit time-off!
+                        </td>
+                      </tr>
+                    ) : (
+                      exportYearLeaves.map((req, idx) => {
+                        const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+                        const effDays = getEffectiveDays(req);
+                        return (
+                          <tr key={req.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-3 pl-4 font-mono font-extrabold text-slate-900">
+                              {req.start_date} &rarr; {req.end_date}
+                            </td>
+                            <td className="p-3 font-semibold text-slate-800">
+                              <span className="flex items-center">
+                                <span className="w-2.5 h-2.5 rounded-full mr-2 inline-block shrink-0" style={{ backgroundColor: lt?.colour || '#3D87D3' }} />
+                                {lt?.name_el || (req.origin === 'mandatory' ? 'Mandatory Closure' : 'Regular Leave')}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center font-mono font-bold text-slate-700">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 font-extrabold">
+                                {effDays}d
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              {req.status === 'approved' && (
+                                <Badge variant="success">✓ APPROVED</Badge>
+                              )}
+                              {req.status === 'pending' && (
+                                <Badge variant="warning">⏳ PENDING</Badge>
+                              )}
+                              {req.status === 'rejected' && (
+                                <Badge variant="error">✕ REJECTED</Badge>
+                              )}
+                              {req.status === 'taken' && (
+                                <Badge variant="neutral">✓ TAKEN</Badge>
+                              )}
+                            </td>
+                            <td className="p-3 pr-4 text-slate-500 truncate max-w-[150px]" title={req.note}>
+                              {req.note || 'Standard time off'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Card>
+        )}
         </div>
 
         {/* RIGHT COLUMN: LEAVE CATEGORY QUOTAS & PERSONAL LEAVE HISTORY (5 COLS) */}
