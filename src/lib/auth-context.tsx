@@ -59,6 +59,7 @@ interface AppState {
   updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
+  deleteContract: (id: string) => Promise<boolean>;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
   saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<boolean>;
   updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
@@ -962,6 +963,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const deleteContract = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('contract_lines').delete().eq('contract_id', id);
+      await supabase.from('contract_schedule').delete().eq('contract_id', id);
+      const { error } = await supabase.from('contracts').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete contract:', error);
+        alert(`Database Error deleting contract: ${error.message}`);
+        return false;
+      }
+      setContracts(prev => prev.filter(c => c.id !== id));
+      setContractLines(prev => prev.filter(l => l.contract_id !== id));
+      setContractSchedules(prev => prev.filter(s => s.contract_id !== id));
+      return true;
+    } catch (e: any) {
+      console.error('Failed to delete contract:', e);
+      return false;
+    }
+  };
+
   const saveContractPricing = async (
     contractId: string, 
     lines: Omit<ContractLine, 'id' | 'contract_id'>[], 
@@ -1484,6 +1506,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateSalaryRecord,
       addContract,
       updateContract,
+      deleteContract,
       saveContractPricing,
       saveCatalogModule,
       deleteCatalogModule,

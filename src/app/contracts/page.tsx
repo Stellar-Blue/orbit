@@ -7,12 +7,12 @@ import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, saveContractPricing } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing } = useAuth();
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
@@ -278,7 +278,24 @@ export default function ContractsRegistryPage() {
                         <div>
                           <div className="flex items-center justify-between text-[10px] mb-1">
                             <Badge variant={isRevenue ? 'success' : 'warning'}>{c.direction.toUpperCase()}</Badge>
-                            <span className="font-mono text-slate-400">{c.reference}</span>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono text-slate-400">{c.reference}</span>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
+                                      await deleteContract(c.id);
+                                    }
+                                  }}
+                                  className="text-slate-300 hover:text-rose-600 transition-colors p-0.5 cursor-pointer"
+                                  title="Delete Contract"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <h4 className="font-bold text-sm text-slate-800 group-hover:text-[#3D87D3] transition-colors leading-tight">
                             {c.counterparty?.legal_name || 'Counterparty'}
@@ -323,6 +340,7 @@ export default function ContractsRegistryPage() {
                 <th className="p-3.5">Term Window</th>
                 <th className="p-3.5">Notice Deadline Alert</th>
                 <th className="p-3.5">Status</th>
+                {isAdmin && <th className="p-3.5 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -352,6 +370,22 @@ export default function ContractsRegistryPage() {
                     <td className="p-3.5">
                       <Badge variant={c.status === 'active' ? 'success' : 'error'}>{c.status.toUpperCase()}</Badge>
                     </td>
+                    {isAdmin && (
+                      <td className="p-3.5 text-right" onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
+                              await deleteContract(c.id);
+                            }
+                          }}
+                          className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50 cursor-pointer"
+                          title="Delete Contract"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -458,7 +492,7 @@ export default function ContractsRegistryPage() {
                         <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
                           €{(c.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td className="py-3.5 px-5 text-center">
+                        <td className="py-3.5 px-5 text-center flex items-center justify-center space-x-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -470,6 +504,20 @@ export default function ContractsRegistryPage() {
                             <Layers className="w-3.5 h-3.5 mr-1 text-indigo-600" />
                             {c.lines && c.lines.length > 0 ? `Edit Rate Sheet (${c.lines.length})` : 'Build Rate Sheet'}
                           </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
+                                  await deleteContract(c.id);
+                                }
+                              }}
+                              className="text-slate-400 hover:text-rose-600 transition-colors p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
+                              title="Delete Contract"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -648,17 +696,37 @@ export default function ContractsRegistryPage() {
                     </h4>
                     <p className="text-xs text-slate-500 mt-0.5">Modify agreement parameters, dates, and legal notes directly below</p>
                   </div>
-                  <Button 
-                    variant="primary" 
-                    size="sm"
-                    onClick={() => {
-                      updateContract(selectedContract);
-                      alert("General terms and contract metadata successfully updated!");
-                    }}
-                    className="shadow-sm font-bold bg-[#3D87D3] hover:bg-[#3476B8] cursor-pointer"
-                  >
-                    <Save className="w-4 h-4 mr-1.5" /> Save Changes
-                  </Button>
+                  <div className="flex items-center space-x-2">
+                    {isAdmin && (
+                      <Button 
+                        variant="danger" 
+                        size="sm"
+                        onClick={async () => {
+                          if (confirm(`Are you certain you want to completely delete agreement "${selectedContract.reference}" (${selectedContract.counterparty?.legal_name})? This action cannot be undone.`)) {
+                            const ok = await deleteContract(selectedContract.id);
+                            if (ok) {
+                              setSelectedContract(null);
+                              alert("Contract has been completely deleted.");
+                            }
+                          }
+                        }}
+                        className="shadow-sm font-bold cursor-pointer bg-rose-600 hover:bg-rose-700 text-white"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1.5" /> Delete Contract
+                      </Button>
+                    )}
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      onClick={() => {
+                        updateContract(selectedContract);
+                        alert("General terms and contract metadata successfully updated!");
+                      }}
+                      className="shadow-sm font-bold bg-[#3D87D3] hover:bg-[#3476B8] cursor-pointer"
+                    >
+                      <Save className="w-4 h-4 mr-1.5" /> Save Changes
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
