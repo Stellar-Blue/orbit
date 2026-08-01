@@ -171,6 +171,8 @@ export default function LeaveManagementPage() {
   // Grid View & Export state
   const [viewMode, setViewMode] = useState<'calendar' | 'grid'>('calendar');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportTargetYear, setExportTargetYear] = useState<number>(() => new Date().getFullYear() || 2026);
 
   const exportYearBalance = useMemo(() => {
     return getEmployeeLeaveBalance(currentUser.id, selectedYear);
@@ -182,24 +184,29 @@ export default function LeaveManagementPage() {
     ).sort((a, b) => b.start_date.localeCompare(a.start_date));
   }, [leaveRequests, currentUser.id, selectedYear]);
 
-  const handleExportLeaveReport = () => {
+  const handleConfirmExport = () => {
+    const targetBalance = getEmployeeLeaveBalance(currentUser.id, exportTargetYear);
+    const targetLeaves = leaveRequests.filter(r => 
+      r.profile_id === currentUser.id && r.start_date.startsWith(String(exportTargetYear))
+    ).sort((a, b) => b.start_date.localeCompare(a.start_date));
+
     const wsData = [
       ['STELLARBLUE ORBIT — OFFICIAL ANNUAL LEAVE & ALLOWANCE REPORT'],
       [''],
       ['Employee Name:', `${currentUser.first_name} ${currentUser.last_name}`],
       ['Work Email:', currentUser.work_email],
-      ['Report Year:', String(selectedYear)],
-      ['Total Annual Allowance Quota:', `${exportYearBalance.entitlement + exportYearBalance.carryOver} working days`],
-      ['Consumed / Approved Leaves:', `${exportYearBalance.taken + exportYearBalance.reserved} working days`],
-      ['AVAILABLE / REMAINING LEAVES:', `${exportYearBalance.available} working days`],
+      ['Report Year:', String(exportTargetYear)],
+      ['Total Annual Allowance Quota:', `${targetBalance.entitlement + targetBalance.carryOver} working days`],
+      ['Consumed / Approved Leaves:', `${targetBalance.taken + targetBalance.reserved} working days`],
+      ['AVAILABLE / REMAINING LEAVES:', `${targetBalance.available} working days`],
       [''],
       ['START DATE', 'END DATE', 'LEAVE CATEGORY / TYPE', 'WORKING DAYS DEDUCTED', 'STATUS', 'ORIGIN', 'MEMO & REASON']
     ];
 
-    if (exportYearLeaves.length === 0) {
+    if (targetLeaves.length === 0) {
       wsData.push(['No recorded leaves for selected year', '', '', '', '', '', '']);
     } else {
-      exportYearLeaves.forEach(req => {
+      targetLeaves.forEach(req => {
         const lt = leaveTypes.find(t => t.id === req.leave_type_id);
         const effDays = getEffectiveDays(req);
         wsData.push([
@@ -216,8 +223,9 @@ export default function LeaveManagementPage() {
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(wb, ws, `Leave_Report_${selectedYear}`);
-    XLSX.writeFile(wb, `Leave_Report_${currentUser.last_name}_${selectedYear}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `Leave_Report_${exportTargetYear}`);
+    XLSX.writeFile(wb, `Leave_Report_${currentUser.last_name}_${exportTargetYear}.xlsx`);
+    setIsExportModalOpen(false);
   };
 
   if (isContractor) {
@@ -349,24 +357,14 @@ export default function LeaveManagementPage() {
                   </button>
                 </div>
 
-                <div className="flex items-center space-x-2.5">
-                  <span className="text-xs font-extrabold text-slate-500">Year:</span>
-                  <select
-                    value={selectedYear}
-                    onChange={e => setSelectedYear(Number(e.target.value))}
-                    className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                  >
-                    <option value={2027}>2027</option>
-                    <option value={2026}>2026</option>
-                    <option value={2025}>2025</option>
-                  </select>
+                <div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleExportLeaveReport}
-                    className="bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-extrabold text-xs shadow-2xs py-1.5 cursor-pointer"
+                    onClick={() => setIsExportModalOpen(true)}
+                    className="bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-extrabold text-xs shadow-2xs py-1.5 px-3.5 cursor-pointer flex items-center"
                   >
-                    <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Export Year (XLSX)
+                    <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-600 shrink-0" /> Export leaves
                   </Button>
                 </div>
               </div>
@@ -633,6 +631,19 @@ export default function LeaveManagementPage() {
             className="border-slate-200 shadow-sm"
           >
             <div className="space-y-5 mt-3">
+              <div className="flex items-center justify-end space-x-2 pb-1">
+                <span className="text-xs font-extrabold text-slate-600">Select Grid Year:</span>
+                <select
+                  value={selectedYear}
+                  onChange={e => setSelectedYear(Number(e.target.value))}
+                  className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  <option value={2027}>2027</option>
+                  <option value={2026}>2026</option>
+                  <option value={2025}>2025</option>
+                </select>
+              </div>
+
               {/* Annual Quota Status Ribbon */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 p-4 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm border border-slate-700">
                 <div>
@@ -935,6 +946,58 @@ export default function LeaveManagementPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Export Year Selection Modal */}
+      <Modal 
+        isOpen={isExportModalOpen} 
+        onClose={() => setIsExportModalOpen(false)} 
+        title="Export Annual Leave Report (XLSX)"
+      >
+        <div className="space-y-4 text-xs">
+          <p className="text-slate-600 leading-relaxed font-medium">
+            Select a report year to download an official spreadsheet detailing your leave records, working days deducted, and remaining available quota.
+          </p>
+          <div>
+            <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Target Report Year</label>
+            <select
+              value={exportTargetYear}
+              onChange={e => setExportTargetYear(Number(e.target.value))}
+              className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+            >
+              <option value={2027}>2027</option>
+              <option value={2026}>2026</option>
+              <option value={2025}>2025</option>
+              <option value={2024}>2024</option>
+            </select>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-slate-600">
+            <p className="font-semibold text-slate-800 flex items-center">
+              <FileText className="w-4 h-4 mr-1.5 text-[#3D87D3] shrink-0" /> Included Report Data
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-slate-500 font-medium">
+              <li>Total Annual Allowance Quota &amp; Carryover Days</li>
+              <li>Consumed working days &amp; exact remaining balance</li>
+              <li>Detailed ledger of all scheduled, approved, and pending time-off</li>
+            </ul>
+          </div>
+
+          <div className="pt-3 flex justify-end space-x-2.5 border-t border-slate-200/80">
+            <Button variant="outline" size="sm" type="button" onClick={() => setIsExportModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              type="button" 
+              onClick={handleConfirmExport}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 cursor-pointer flex items-center shadow-xs"
+            >
+              <Download className="w-4 h-4 mr-1.5 shrink-0" /> Download Excel Report
+            </Button>
+          </div>
+        </div>
       </Modal>
 
     </div>
