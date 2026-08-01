@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
@@ -392,9 +391,6 @@ export default function RemoteWorkLogPage() {
             Declare remote work schedules, utilize pattern auto-fill templates, and inspect organizational office rosters.
           </p>
         </div>
-        <Link href="/calendar" className="px-4 py-2.5 rounded-xl bg-cyan-50 hover:bg-cyan-100/80 text-cyan-900 font-bold text-xs border border-cyan-200 transition-all flex items-center shadow-2xs shrink-0">
-          <CalendarIcon className="w-4 h-4 mr-1.5 text-cyan-600" /> View Unified Calendar Grid
-        </Link>
       </div>
 
       {/* Unobtrusive Quota Banner (Remaining Quota Only) */}

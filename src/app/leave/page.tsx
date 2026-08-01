@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -246,9 +245,6 @@ export default function LeaveManagementPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Link href="/calendar" className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-xs border border-indigo-200 transition-all flex items-center shadow-2xs">
-            <Calendar className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> View Company Unified Calendar
-          </Link>
           <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-black px-4 py-2">
             <Plus className="w-4 h-4 mr-1.5" /> File Leave Request
           </Button>
