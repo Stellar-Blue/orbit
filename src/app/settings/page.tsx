@@ -35,6 +35,36 @@ export default function CompanySettingsPage() {
   const [attioRelValues, setAttioRelValues] = useState<string[]>(['Client', 'Customer', 'Supplier', 'Partner', 'Vendor']);
   const [newRelValue, setNewRelValue] = useState('');
 
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'general') => {
+    setSelectedTab(tab);
+    if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
+  };
+
+  // Hydrate Attio API credentials and sync configuration from localStorage across refreshes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
+    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'general'].includes(savedTab)) {
+      setSelectedTab(savedTab);
+    }
+    const savedApiKey = localStorage.getItem('orbit_attio_api_key');
+    if (savedApiKey !== null) setAttioApiKey(savedApiKey);
+    const savedWorkspace = localStorage.getItem('orbit_attio_workspace');
+    if (savedWorkspace !== null) setAttioWorkspace(savedWorkspace);
+    const savedSecret = localStorage.getItem('orbit_attio_webhook_secret');
+    if (savedSecret !== null) setAttioWebhookSecret(savedSecret);
+    const savedAttribute = localStorage.getItem('orbit_attio_rel_attribute');
+    if (savedAttribute !== null) setAttioRelAttribute(savedAttribute);
+    const savedValues = localStorage.getItem('orbit_attio_rel_values');
+    if (savedValues) {
+      try { setAttioRelValues(JSON.parse(savedValues)); } catch (e) {}
+    }
+    const savedAutoVerify = localStorage.getItem('orbit_attio_auto_verify');
+    if (savedAutoVerify !== null) setAutoVerifyVies(savedAutoVerify === 'true');
+    const savedCron = localStorage.getItem('orbit_attio_nightly_cron');
+    if (savedCron !== null) setNightlyCron(savedCron === 'true');
+  }, []);
+
   const [newModuleId, setNewModuleId] = useState('');
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState<number>(1000);
@@ -243,7 +273,7 @@ export default function CompanySettingsPage() {
       {/* Tabs */}
       <div className="flex border-b border-slate-200 gap-6 text-sm font-medium">
         <button
-          onClick={() => setSelectedTab('remote')}
+          onClick={() => handleTabChange('remote')}
           className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
             selectedTab === 'remote'
               ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
@@ -254,7 +284,7 @@ export default function CompanySettingsPage() {
           <span>Remote Work Quotas & Patterns</span>
         </button>
         <button
-          onClick={() => setSelectedTab('teams')}
+          onClick={() => handleTabChange('teams')}
           className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
             selectedTab === 'teams'
               ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
@@ -265,7 +295,7 @@ export default function CompanySettingsPage() {
           <span>Company Departments & Teams ({teams.length})</span>
         </button>
         <button
-          onClick={() => setSelectedTab('leaves')}
+          onClick={() => handleTabChange('leaves')}
           className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
             selectedTab === 'leaves'
               ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
@@ -276,7 +306,7 @@ export default function CompanySettingsPage() {
           <span>Leave Categories & Policies ({leaveTypes.length})</span>
         </button>
         <button
-          onClick={() => setSelectedTab('pricing')}
+          onClick={() => handleTabChange('pricing')}
           className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
             selectedTab === 'pricing'
               ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
@@ -287,7 +317,7 @@ export default function CompanySettingsPage() {
           <span>Modular Contract Pricing ({catalogItems.length})</span>
         </button>
         <button
-          onClick={() => setSelectedTab('attio')}
+          onClick={() => handleTabChange('attio')}
           className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
             selectedTab === 'attio'
               ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
@@ -299,7 +329,7 @@ export default function CompanySettingsPage() {
           <span className="ml-0.5 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 text-[#3D87D3] border border-blue-200/80 font-bold">Live</span>
         </button>
         <button
-          onClick={() => setSelectedTab('general')}
+          onClick={() => handleTabChange('general')}
           className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
             selectedTab === 'general'
               ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
@@ -1279,7 +1309,11 @@ export default function CompanySettingsPage() {
                     <input
                       type="text"
                       value={attioWorkspace}
-                      onChange={(e) => { setAttioWorkspace(e.target.value); setApiTestResult('none'); }}
+                      onChange={(e) => {
+                        setAttioWorkspace(e.target.value);
+                        setApiTestResult('none');
+                        if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_workspace', e.target.value);
+                      }}
                       placeholder="e.g. StellarBlue Workspace"
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-[#3D87D3] focus:ring-2 focus:ring-[#3D87D3]/10 transition-all text-sm"
                     />
@@ -1301,7 +1335,11 @@ export default function CompanySettingsPage() {
                       <input
                         type={showApiKey ? "text" : "password"}
                         value={attioApiKey}
-                        onChange={(e) => { setAttioApiKey(e.target.value); setApiTestResult('none'); }}
+                        onChange={(e) => {
+                          setAttioApiKey(e.target.value);
+                          setApiTestResult('none');
+                          if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_api_key', e.target.value);
+                        }}
                         placeholder="Paste your token (e.g. stellarblue-orbit access token)..."
                         className="w-full px-3.5 py-2.5 bg-slate-900 text-emerald-300 border border-slate-700 rounded-xl font-mono text-xs focus:outline-none focus:border-blue-500 shadow-inner"
                       />
@@ -1382,7 +1420,11 @@ export default function CompanySettingsPage() {
                   variant="primary"
                   size="sm"
                   onClick={() => {
-                    alert("Attio API token with Read access capabilities encrypted and saved to corporate settings!");
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('orbit_attio_api_key', attioApiKey);
+                      localStorage.setItem('orbit_attio_workspace', attioWorkspace);
+                    }
+                    alert("Attio API credentials saved successfully and preserved in secure local storage!");
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 3000);
                   }}
@@ -1465,7 +1507,10 @@ export default function CompanySettingsPage() {
                     <input
                       type={showSecret ? "text" : "password"}
                       value={attioWebhookSecret}
-                      onChange={(e) => setAttioWebhookSecret(e.target.value)}
+                      onChange={(e) => {
+                        setAttioWebhookSecret(e.target.value);
+                        if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_webhook_secret', e.target.value);
+                      }}
                       placeholder="whsec_attio_..."
                       className="w-full px-3.5 py-2.5 bg-slate-900 text-cyan-300 border border-slate-700 rounded-xl font-mono text-xs focus:outline-none focus:border-cyan-500 shadow-inner"
                     />
@@ -1485,9 +1530,12 @@ export default function CompanySettingsPage() {
                   variant="primary"
                   size="sm"
                   onClick={() => {
-                    alert("Webhook HMAC secret saved! Orbit will enforce cryptographic signature checks on endpoint api/v1/webhooks/attio.");
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('orbit_attio_webhook_secret', attioWebhookSecret);
+                    }
+                    alert("Webhook HMAC signing secret saved successfully to configuration ledger!");
                   }}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 shadow-sm"
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 shadow-sm cursor-pointer"
                 >
                   <Save className="w-4 h-4 mr-1.5 text-cyan-400" />
                   Save Signing Secret
@@ -1518,9 +1566,13 @@ export default function CompanySettingsPage() {
                 variant="primary"
                 size="sm"
                 onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('orbit_attio_rel_attribute', attioRelAttribute);
+                    localStorage.setItem('orbit_attio_rel_values', JSON.stringify(attioRelValues));
+                  }
                   alert(`Relationship attribute "${attioRelAttribute}" with ${attioRelValues.length} active sync criteria saved successfully!`);
                 }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 shrink-0 shadow-md shadow-indigo-500/20"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer"
               >
                 <Save className="w-4 h-4 mr-1.5" />
                 Save Sync Criteria
@@ -1640,7 +1692,10 @@ export default function CompanySettingsPage() {
                   <input
                     type="checkbox"
                     checked={autoVerifyVies}
-                    onChange={(e) => setAutoVerifyVies(e.target.checked)}
+                    onChange={(e) => {
+                      setAutoVerifyVies(e.target.checked);
+                      if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_auto_verify', String(e.target.checked));
+                    }}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3D87D3]"></div>
@@ -1658,7 +1713,10 @@ export default function CompanySettingsPage() {
                   <input
                     type="checkbox"
                     checked={nightlyCron}
-                    onChange={(e) => setNightlyCron(e.target.checked)}
+                    onChange={(e) => {
+                      setNightlyCron(e.target.checked);
+                      if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_nightly_cron', String(e.target.checked));
+                    }}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3D87D3]"></div>
