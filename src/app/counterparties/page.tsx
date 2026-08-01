@@ -456,12 +456,19 @@ export default function CounterpartiesRegistryPage() {
                             )}
                           </div>
                         </td>
-                        <td className="p-4">
+                        <td className="p-4" onClick={e => e.stopPropagation()}>
                           {isLinked ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
-                              <RefreshCw className="w-3.5 h-3.5 text-[#3D87D3]" />
-                              Attio Linked
-                            </span>
+                            <a
+                              href={`https://app.attio.com/companies/${cp.attio_link?.attio_record_id || cp.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-extrabold bg-gradient-to-r from-blue-50 via-cyan-50 to-indigo-50 hover:from-blue-100 hover:to-cyan-100 text-blue-700 hover:text-blue-900 border border-blue-200/80 rounded-full transition-all shadow-2xs group/link cursor-pointer"
+                              title={`Click to open Attio CRM profile (${cp.attio_link?.attio_record_id})`}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-blue-600 group-hover/link:rotate-180 transition-transform duration-500" />
+                              <span>Attio Linked</span>
+                              <ExternalLink className="w-3.5 h-3.5 ml-0.5 text-blue-500 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-transform" />
+                            </a>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 rounded-full">
                               <Unlink className="w-3.5 h-3.5 text-slate-400" />
@@ -879,29 +886,43 @@ export default function CounterpartiesRegistryPage() {
 
                     {selectedEntity.attio_link?.link_status === 'linked' ? (
                       <div className="space-y-4">
-                        <div className="p-3.5 bg-blue-50/60 border border-blue-200/80 rounded-xl flex items-center justify-between">
+                        <div className="p-3.5 bg-blue-50/60 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-600 text-white rounded-lg">
+                            <div className="p-2 bg-blue-600 text-white rounded-lg shadow-sm">
                               <Check className="w-4 h-4" />
                             </div>
                             <div>
-                              <div className="text-sm font-bold text-slate-900">Active CRM Sync Established</div>
+                              <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                                Active CRM Sync Established
+                                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-extrabold">Connected</span>
+                              </div>
                               <div className="text-xs font-mono text-slate-600">Attio ID: {selectedEntity.attio_link.attio_record_id}</div>
                             </div>
                           </div>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => {
-                              if (confirm("Unlink this entity from Attio CRM? Future contract financial rollups will no longer push automatically.")) {
-                                linkToAttio(selectedEntity.id, "");
-                                setSelectedEntity(prev => prev ? { ...prev, attio_link: { ...prev.attio_link!, link_status: 'unlinked' } } : null);
-                              }
-                            }}
-                            className="text-red-600 border-red-200 hover:bg-red-50"
-                          >
-                            <Unlink className="w-3.5 h-3.5 mr-1" /> Unlink
-                          </Button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <a
+                              href={`https://app.attio.com/companies/${selectedEntity.attio_link.attio_record_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0"
+                            >
+                              <span>Open in Attio CRM</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => {
+                                if (confirm("Unlink this entity from Attio CRM? Future contract financial rollups will no longer push automatically.")) {
+                                  linkToAttio(selectedEntity.id, "");
+                                  setSelectedEntity(prev => prev ? { ...prev, attio_link: { ...prev.attio_link!, link_status: 'unlinked' } } : null);
+                                }
+                              }}
+                              className="text-red-600 border-red-200 hover:bg-red-50 py-2 h-auto text-xs"
+                            >
+                              <Unlink className="w-3.5 h-3.5 mr-1" /> Unlink
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 text-xs">

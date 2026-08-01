@@ -34,6 +34,35 @@ export default function CompanySettingsPage() {
   const [attioRelAttribute, setAttioRelAttribute] = useState('relationship_type');
   const [attioRelValues, setAttioRelValues] = useState<string[]>(['Client', 'Customer', 'Supplier', 'Partner', 'Vendor']);
   const [newRelValue, setNewRelValue] = useState('');
+  const [fetchingOptions, setFetchingOptions] = useState(false);
+  const [attioAttributesList, setAttioAttributesList] = useState<Array<{
+    api_slug: string;
+    title: string;
+    type: string;
+    description?: string;
+    options: Array<{ id: string; title: string }>;
+  }> | null>(null);
+  const [showOptionExplorer, setShowOptionExplorer] = useState(false);
+
+  const handleFetchAttioAttributes = async () => {
+    setFetchingOptions(true);
+    try {
+      const res = await fetch('/api/v1/attio/attributes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: attioApiKey })
+      });
+      const data = await res.json();
+      if (data && data.attributes) {
+        setAttioAttributesList(data.attributes);
+        setShowOptionExplorer(true);
+      }
+    } catch (err) {
+      console.error("Error fetching Attio attributes & options:", err);
+    } finally {
+      setFetchingOptions(false);
+    }
+  };
 
   const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'general') => {
     setSelectedTab(tab);
@@ -1561,22 +1590,36 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
 
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    localStorage.setItem('orbit_attio_rel_attribute', attioRelAttribute);
-                    localStorage.setItem('orbit_attio_rel_values', JSON.stringify(attioRelValues));
-                  }
-                  alert(`Relationship attribute "${attioRelAttribute}" with ${attioRelValues.length} active sync criteria saved successfully!`);
-                }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer"
-              >
-                <Save className="w-4 h-4 mr-1.5" />
-                Save Sync Criteria
-              </Button>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFetchAttioAttributes}
+                  disabled={fetchingOptions}
+                  className="bg-white hover:bg-slate-50 text-indigo-700 border-indigo-200 font-bold px-4 shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-4 h-4 text-indigo-600 ${fetchingOptions ? 'animate-spin' : ''}`} />
+                  <span>{fetchingOptions ? "Retrieving from Attio..." : "Fetch Attributes & Options"}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('orbit_attio_rel_attribute', attioRelAttribute);
+                      localStorage.setItem('orbit_attio_rel_values', JSON.stringify(attioRelValues));
+                    }
+                    alert(`Relationship attribute "${attioRelAttribute}" with ${attioRelValues.length} active sync criteria saved successfully!`);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer flex items-center"
+                >
+                  <Save className="w-4 h-4 mr-1.5" />
+                  Save Sync Criteria
+                </Button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1588,7 +1631,10 @@ export default function CompanySettingsPage() {
                 <input
                   type="text"
                   value={attioRelAttribute}
-                  onChange={(e) => setAttioRelAttribute(e.target.value)}
+                  onChange={(e) => {
+                    setAttioRelAttribute(e.target.value);
+                    if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_rel_attribute', e.target.value);
+                  }}
                   placeholder="e.g. relationship_type or lifecycle_stage"
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/10 shadow-2xs font-semibold"
                 />
@@ -1612,7 +1658,11 @@ export default function CompanySettingsPage() {
                         {val}
                         <button
                           type="button"
-                          onClick={() => setAttioRelValues(attioRelValues.filter(x => x !== val))}
+                          onClick={() => {
+                            const filtered = attioRelValues.filter(x => x !== val);
+                            setAttioRelValues(filtered);
+                            if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_rel_values', JSON.stringify(filtered));
+                          }}
                           className="w-4 h-4 rounded-full bg-indigo-200 text-indigo-800 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-colors text-[10px] ml-1 cursor-pointer"
                           title={`Remove "${val}" from sync whitelist`}
                         >
@@ -1628,7 +1678,9 @@ export default function CompanySettingsPage() {
                   <form onSubmit={(e) => {
                     e.preventDefault();
                     if (newRelValue.trim() && !attioRelValues.includes(newRelValue.trim())) {
-                      setAttioRelValues([...attioRelValues, newRelValue.trim()]);
+                      const updated = [...attioRelValues, newRelValue.trim()];
+                      setAttioRelValues(updated);
+                      if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_rel_values', JSON.stringify(updated));
                       setNewRelValue('');
                     }
                   }} className="flex items-center gap-2 pt-2 border-t border-slate-100">
@@ -1652,6 +1704,142 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* INTERACTIVE ATTIO ATTRIBUTES & SELECT OPTIONS EXPLORER */}
+            {showOptionExplorer && attioAttributesList && (
+              <div className="p-5 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl border border-indigo-500/30 shadow-xl space-y-5 animate-in fade-in duration-300">
+                <div className="flex items-center justify-between border-b border-slate-700/80 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="w-5 h-5 text-indigo-400" />
+                    <div>
+                      <h5 className="font-bold text-sm text-white flex items-center gap-2">
+                        Retrieved Attio CRM Company Attributes & Select Options
+                        <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full font-mono font-bold">
+                          {attioAttributesList.length} attributes discovered
+                        </span>
+                      </h5>
+                      <p className="text-xs text-slate-300">
+                        Click any attribute slug below to set it as your target field, or click select option pills to instantly toggle them into your sync whitelist.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowOptionExplorer(false)}
+                    className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors cursor-pointer"
+                    title="Close option explorer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 max-h-[420px] overflow-y-auto pr-1">
+                  {attioAttributesList.map((attr) => {
+                    const isSelectedAttr = attioRelAttribute === attr.api_slug;
+                    return (
+                      <div
+                        key={attr.api_slug}
+                        className={`p-4 rounded-xl border transition-all ${
+                          isSelectedAttr
+                            ? 'bg-indigo-900/40 border-indigo-400/80 shadow-md ring-1 ring-indigo-500/50'
+                            : 'bg-slate-800/60 border-slate-700/80 hover:border-slate-600'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAttioRelAttribute(attr.api_slug);
+                                  if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_rel_attribute', attr.api_slug);
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                  isSelectedAttr
+                                    ? 'bg-indigo-500 text-white shadow-sm'
+                                    : 'bg-slate-900 text-slate-300 border border-slate-700 hover:border-indigo-400 hover:text-white'
+                                }`}
+                              >
+                                <span>{attr.api_slug}</span>
+                                {isSelectedAttr && <Check className="w-3 h-3 text-white" />}
+                              </button>
+                              <span className="text-sm font-bold text-white">{attr.title}</span>
+                              <span className="text-[10px] font-mono uppercase bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-semibold">
+                                {attr.type}
+                              </span>
+                            </div>
+                            {attr.description && (
+                              <p className="text-xs text-slate-400 pl-0.5">{attr.description}</p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAttioRelAttribute(attr.api_slug);
+                              if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_rel_attribute', attr.api_slug);
+                            }}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                              isSelectedAttr
+                                ? 'bg-indigo-600/40 text-indigo-300 border border-indigo-400/30'
+                                : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                            }`}
+                          >
+                            {isSelectedAttr ? 'Active Attribute' : 'Select Attribute'}
+                          </button>
+                        </div>
+
+                        {attr.options && attr.options.length > 0 ? (
+                          <div className="mt-3 pt-3 border-t border-slate-700/60">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300 block mb-2">
+                              Available Select Options in Attio (Click to add/remove from whitelist):
+                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {attr.options.map((opt) => {
+                                const isWhitelisted = attioRelValues.includes(opt.title);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={opt.id || opt.title}
+                                    onClick={() => {
+                                      let newVals: string[];
+                                      if (isWhitelisted) {
+                                        newVals = attioRelValues.filter(x => x !== opt.title);
+                                      } else {
+                                        newVals = [...attioRelValues, opt.title];
+                                      }
+                                      setAttioRelValues(newVals);
+                                      if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_rel_values', JSON.stringify(newVals));
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                      isWhitelisted
+                                        ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm shadow-indigo-500/30 ring-1 ring-indigo-400/50'
+                                        : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:border-slate-500 hover:text-white'
+                                    }`}
+                                  >
+                                    <Tag className={`w-3 h-3 ${isWhitelisted ? 'text-indigo-200' : 'text-slate-500'}`} />
+                                    <span>{opt.title}</span>
+                                    {isWhitelisted ? (
+                                      <Check className="w-3.5 h-3.5 text-white ml-0.5" />
+                                    ) : (
+                                      <Plus className="w-3.5 h-3.5 text-slate-500 ml-0.5" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400 italic pt-2 border-t border-slate-700/40">
+                            This is a free-text or scalar field without pre-defined dropdown select options in Attio.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Sync Behavior matrix */}
             <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
