@@ -25,6 +25,12 @@ export default function CompanySettingsPage() {
   const [newItemUnit, setNewItemUnit] = useState('flat');
   const [newItemFreq, setNewItemFreq] = useState<'monthly' | 'quarterly' | 'annual' | 'one_time'>('monthly');
   const [newModuleName, setNewModuleName] = useState('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editItemName, setEditItemName] = useState<string>('');
+  const [editItemPrice, setEditItemPrice] = useState<number>(0);
+  const [editItemUnit, setEditItemUnit] = useState<string>('');
+  const [editItemFreq, setEditItemFreq] = useState<'monthly' | 'quarterly' | 'annual' | 'one_time'>('monthly');
+  const [editItemModuleId, setEditItemModuleId] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -932,7 +938,107 @@ export default function CompanySettingsPage() {
                         </div>
                       ) : (
                         <div className="divide-y divide-slate-100">
-                          {items.map(item => (
+                          {items.map(item => {
+                            if (editingItemId === item.id) {
+                              return (
+                                <form
+                                  key={item.id}
+                                  onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    await saveCatalogItem({
+                                      id: item.id,
+                                      module_id: editItemModuleId || item.module_id,
+                                      name: editItemName.trim(),
+                                      default_unit_price: Number(editItemPrice) || 0,
+                                      unit_label: editItemUnit.trim() || 'unit',
+                                      default_frequency: editItemFreq,
+                                      active: item.active
+                                    });
+                                    setEditingItemId(null);
+                                  }}
+                                  className="p-4 bg-purple-50/70 border-l-4 border-purple-600 space-y-3"
+                                >
+                                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                                    <div className="flex-1 w-full">
+                                      <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Item Description / Name</label>
+                                      <input
+                                        type="text"
+                                        value={editItemName}
+                                        onChange={e => setEditItemName(e.target.value)}
+                                        className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        required
+                                      />
+                                    </div>
+                                    <div className="w-full sm:w-44">
+                                      <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Module Category</label>
+                                      <select
+                                        value={editItemModuleId || item.module_id}
+                                        onChange={e => setEditItemModuleId(e.target.value)}
+                                        className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      >
+                                        {catalogModules.map(m => (
+                                          <option key={m.id} value={m.id}>{m.name}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div>
+                                      <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Default Rate (€)</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        value={editItemPrice}
+                                        onChange={e => setEditItemPrice(parseFloat(e.target.value) || 0)}
+                                        className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Unit Label</label>
+                                      <input
+                                        type="text"
+                                        value={editItemUnit}
+                                        onChange={e => setEditItemUnit(e.target.value)}
+                                        placeholder="flat, MW, assets..."
+                                        className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Default Cadence</label>
+                                      <select
+                                        value={editItemFreq}
+                                        onChange={e => setEditItemFreq(e.target.value as any)}
+                                        className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-semibold uppercase text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      >
+                                        <option value="monthly">Monthly</option>
+                                        <option value="quarterly">Quarterly</option>
+                                        <option value="annual">Annual</option>
+                                        <option value="one_time">One-time</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-end space-x-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingItemId(null)}
+                                      className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 font-extrabold text-xs inline-flex items-center transition-colors cursor-pointer"
+                                    >
+                                      <X className="w-3.5 h-3.5 mr-1" /> Cancel
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs inline-flex items-center shadow-md transition-colors cursor-pointer"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Save Changes
+                                    </button>
+                                  </div>
+                                </form>
+                              );
+                            }
+
+                            return (
                             <div key={item.id} className="p-4 flex items-center justify-between hover:bg-slate-50/60 transition-colors">
                               <div className="space-y-1">
                                 <div className="flex items-center space-x-2">
@@ -948,6 +1054,21 @@ export default function CompanySettingsPage() {
                               <div className="flex items-center space-x-2">
                                 <button
                                   type="button"
+                                  onClick={() => {
+                                    setEditingItemId(item.id);
+                                    setEditItemName(item.name);
+                                    setEditItemPrice(Number(item.default_unit_price));
+                                    setEditItemUnit(item.unit_label);
+                                    setEditItemFreq(item.default_frequency);
+                                    setEditItemModuleId(item.module_id);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 text-slate-600 font-bold text-xs inline-flex items-center transition-all cursor-pointer shadow-2xs"
+                                  title="Edit rate item default values"
+                                >
+                                  <Edit2 className="w-3 h-3 mr-1" /> Edit
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => deleteCatalogItem(item.id)}
                                   className="text-slate-400 hover:text-rose-600 transition-colors p-1.5 rounded hover:bg-rose-50 cursor-pointer"
                                   title="Delete item from catalog"
@@ -956,7 +1077,8 @@ export default function CompanySettingsPage() {
                                 </button>
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </Card>
