@@ -781,9 +781,6 @@ export default function CounterpartiesRegistryPage() {
         </div>
       )}
 
-        </div>
-      )}
-
       {/* DOSSIER DRAWER / MODAL */}
       {selectedEntity && (
         <Modal
