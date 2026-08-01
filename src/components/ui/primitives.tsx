@@ -86,16 +86,37 @@ export const StatCard: React.FC<{ title: string; value: string | number; subtitl
   </Card>
 );
 
-export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+export const Modal: React.FC<{ 
+  isOpen: boolean; 
+  onClose: () => void; 
+  title: string; 
+  children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
+}> = ({ isOpen, onClose, title, children, size = 'lg' }) => {
   if (!isOpen) return null;
+
+  const sizeClasses = {
+    sm: 'max-w-sm',
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-xl',
+    '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
+    '7xl': 'max-w-7xl',
+    full: 'max-w-[95vw]',
+  }[size];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white border border-slate-200 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-150">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h3 className="font-semibold text-slate-800 text-base">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg cursor-pointer">&times;</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className={`bg-white border border-slate-200 w-full ${sizeClasses} rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-150`}>
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
+          <h3 className="font-extrabold text-slate-900 text-lg">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-800 text-2xl font-bold cursor-pointer transition-colors leading-none">&times;</button>
         </div>
-        <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-700">
+        <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-700 flex-1">
           {children}
         </div>
       </div>

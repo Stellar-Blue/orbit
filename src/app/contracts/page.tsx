@@ -7,7 +7,7 @@ import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 
@@ -485,37 +485,38 @@ export default function ContractsRegistryPage() {
       <Modal 
         isOpen={!!selectedContract} 
         onClose={() => setSelectedContract(null)} 
-        title={selectedContract ? `Contract Dossier: ${selectedContract.reference}` : 'Contract'}
+        title={selectedContract ? `Contract Dossier & Edit Hub: ${selectedContract.reference}` : 'Contract'}
+        size="6xl"
       >
         {selectedContract && (
-          <div className="space-y-5 text-sm">
+          <div className="space-y-6 text-sm">
             {/* Modal Internal Navigation */}
-            <div className="flex items-center border-b border-slate-200 pb-2 space-x-4">
+            <div className="flex items-center border-b border-slate-200 pb-2 space-x-6">
               <button
                 type="button"
                 onClick={() => setDossierTab('general')}
-                className={`pb-2 text-xs font-bold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'general' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-800'
+                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'general' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
                 }`}
               >
-                <FileText className="w-3.5 h-3.5 mr-1.5" /> General Terms & Legal Dossier
+                <Edit3 className="w-4 h-4 mr-2" /> General Terms & Metadata Editor
               </button>
               <button
                 type="button"
                 onClick={() => setDossierTab('pricing')}
-                className={`pb-2 text-xs font-bold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'pricing' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-800'
+                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'pricing' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5 mr-1.5 text-purple-600" /> Modular Rate Sheet & Revenue Schedule
+                <Layers className="w-4 h-4 mr-2 text-purple-600" /> Modular Rate Sheet & Revenue Schedule
                 {selectedContract.lines && selectedContract.lines.length > 0 && (
-                  <Badge variant="success" className="ml-1.5 text-[10px] py-0">{selectedContract.lines.length}</Badge>
+                  <Badge variant="success" className="ml-2 text-[11px] px-2 py-0.5">{selectedContract.lines.length}</Badge>
                 )}
               </button>
             </div>
 
             {dossierTab === 'pricing' ? (
-              <div className="pt-2">
+              <div className="pt-2 min-h-[500px]">
                 <ContractPricingBuilder
                   contractId={selectedContract.id}
                   initialLines={selectedContract.lines || []}
@@ -547,98 +548,195 @@ export default function ContractsRegistryPage() {
                 />
               </div>
             ) : (
-            <div className="space-y-5 text-sm">
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold uppercase text-slate-400 block">Counterparty Entity</span>
-                <span className="text-lg font-bold text-slate-800">{selectedContract.counterparty?.legal_name}</span>
-                <span className="text-xs text-slate-500 block mt-0.5">ΑΦΜ: <strong className="text-slate-700 font-mono">{selectedContract.counterparty?.afm || 'Unspecified'}</strong> &bull; Country: {selectedContract.counterparty?.country}</span>
-              </div>
-              <Badge variant={selectedContract.direction === 'revenue' ? 'success' : 'warning'} className="text-xs py-1">
-                {selectedContract.direction === 'revenue' ? 'Client Revenue' : 'Supplier Spend'}
-              </Badge>
-            </div>
-
-            {/* Notice Window High-ROI Warning Box */}
-            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
-              <div className="flex items-center justify-between text-rose-900 font-bold text-sm">
-                <span className="flex items-center"><AlertTriangle className="w-4 h-4 mr-2 text-rose-600" /> Notice Deadline Alert Trigger</span>
-                <span>{selectedContract.notice_deadline}</span>
-              </div>
-              <p className="text-xs text-rose-800">
-                This contract auto-renews with a required <strong className="font-extrabold">{selectedContract.notice_period_days}-day notice period</strong> prior to its end date ({selectedContract.ends_on}). Missing this window locks in auto-renewal spend or subscription term!
-              </p>
-            </div>
-
-            {/* Key Clauses & Notes */}
-            <div className="space-y-2">
-              <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Key Clauses & Legal Notes</span>
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed font-mono">
-                {selectedContract.notes || 'Standard terms apply. No custom indemnities or liability caps flagged.'}
-              </div>
-            </div>
-
-            {/* Supabase Document Attachments */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Attached Contract Document</span>
-                <div>
-                  <input
-                    type="file"
-                    id="doc-upload-selected"
-                    className="hidden"
-                    onChange={handleUploadDocForSelected}
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-                  />
-                  <label
-                    htmlFor="doc-upload-selected"
-                    className={`px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs inline-flex items-center cursor-pointer shadow-2xs transition-all ${isUploadingDoc ? 'opacity-60 pointer-events-none' : ''}`}
-                  >
-                    <Upload className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> 
-                    {isUploadingDoc ? 'Uploading to Supabase Storage...' : selectedContract.document_name ? 'Replace Document' : 'Upload to Supabase Storage'}
-                  </label>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+              {/* Left Column: Entity Specs & Attachments (5 cols) */}
+              <div className="lg:col-span-5 space-y-5">
+                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold uppercase text-slate-400 tracking-wider">Counterparty Entity</span>
+                    <Badge variant={selectedContract.direction === 'revenue' ? 'success' : 'warning'} className="text-xs py-1 px-2.5 font-bold">
+                      {selectedContract.direction === 'revenue' ? 'Client Revenue' : 'Supplier Spend'}
+                    </Badge>
+                  </div>
+                  <div className="text-xl font-black text-slate-900">{selectedContract.counterparty?.legal_name || 'Designated Entity'}</div>
+                  <div className="pt-2 border-t border-slate-200/80 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                    <div>ΑΦΜ: <strong className="text-slate-800 font-mono">{selectedContract.counterparty?.afm || 'Unspecified'}</strong></div>
+                    <div>Country: <strong className="text-slate-800">{selectedContract.counterparty?.country || 'Greece'}</strong></div>
+                  </div>
                 </div>
-              </div>
 
-              {selectedContract.document_name ? (
-                <div className="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200/80 flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-800">
-                      <FileText className="w-5 h-5" />
-                    </div>
+                {/* Notice Window Warning Box */}
+                <div className="p-4 rounded-2xl bg-rose-50/90 border border-rose-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between text-rose-900 font-extrabold text-xs uppercase tracking-wide">
+                    <span className="flex items-center"><AlertTriangle className="w-4 h-4 mr-2 text-rose-600 shrink-0" /> Notice Window Alarm</span>
+                    <span className="font-mono bg-rose-100 px-2 py-0.5 rounded text-rose-950">{selectedContract.notice_deadline}</span>
+                  </div>
+                  <p className="text-xs text-rose-900/90 leading-relaxed">
+                    This contract requires a <strong className="font-extrabold underline">{selectedContract.notice_period_days}-day advance written notice</strong> prior to {selectedContract.ends_on} to cancel or renegotiate terms.
+                  </p>
+                </div>
+
+                {/* Supabase Document Attachments */}
+                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs uppercase font-extrabold text-slate-700 tracking-wide">Signed Document Dossier</span>
                     <div>
-                      <p className="font-bold text-slate-900">{selectedContract.document_name}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">
-                        Uploaded {selectedContract.document_uploaded_at ? new Date(selectedContract.document_uploaded_at).toLocaleDateString() : 'recently'} · Hosted in Supabase Storage Bucket
-                      </p>
+                      <input
+                        type="file"
+                        id="doc-upload-selected"
+                        className="hidden"
+                        onChange={handleUploadDocForSelected}
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                      />
+                      <label
+                        htmlFor="doc-upload-selected"
+                        className={`px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs inline-flex items-center cursor-pointer shadow-2xs transition-all ${isUploadingDoc ? 'opacity-60 pointer-events-none' : ''}`}
+                      >
+                        <Upload className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> 
+                        {isUploadingDoc ? 'Uploading...' : selectedContract.document_name ? 'Replace Doc' : 'Attach PDF / Doc'}
+                      </label>
                     </div>
                   </div>
+
+                  {selectedContract.document_name ? (
+                    <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 flex items-center justify-between text-xs">
+                      <div className="flex items-center space-x-3 truncate mr-2">
+                        <div className="p-2.5 bg-emerald-600 rounded-xl text-white shrink-0 shadow-2xs">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="truncate">
+                          <p className="font-extrabold text-slate-900 truncate">{selectedContract.document_name}</p>
+                          <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                            Active execution copy · Hosted in Supabase
+                          </p>
+                        </div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        onClick={() => {
+                          if (selectedContract.document_url?.startsWith('data:')) {
+                            const a = document.createElement('a');
+                            a.href = selectedContract.document_url;
+                            a.download = selectedContract.document_name || 'contract_document.pdf';
+                            a.click();
+                          } else {
+                            alert(`Downloading ${selectedContract.document_name}...`);
+                          }
+                        }}
+                        className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs shrink-0 text-xs py-1 px-3"
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1 text-blue-600" /> Download
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="p-6 rounded-xl bg-slate-50/70 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
+                      <FileText className="w-8 h-8 mx-auto text-slate-400" />
+                      <p className="font-extrabold text-slate-700 text-sm">No signed PDF attached</p>
+                      <p className="text-[11px]">Click &ldquo;Attach PDF / Doc&rdquo; above to preserve the execution version.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Interactive Contract Terms Editor (7 cols) */}
+              <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+                  <div>
+                    <h4 className="text-base font-black text-slate-900 flex items-center">
+                      <Edit3 className="w-4 h-4 mr-2 text-[#3D87D3]" /> Contract Terms & Metadata Editor
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Modify agreement parameters, dates, and legal notes directly below</p>
+                  </div>
                   <Button 
-                    size="sm" 
-                    variant="secondary" 
+                    variant="primary" 
+                    size="sm"
                     onClick={() => {
-                      if (selectedContract.document_url?.startsWith('data:')) {
-                        const a = document.createElement('a');
-                        a.href = selectedContract.document_url;
-                        a.download = selectedContract.document_name || 'contract_document.pdf';
-                        a.click();
-                      } else {
-                        alert(`Downloading ${selectedContract.document_name}...`);
-                      }
+                      updateContract(selectedContract);
+                      alert("General terms and contract metadata successfully updated!");
                     }}
-                    className="bg-white border-slate-300 font-bold cursor-pointer hover:bg-slate-100 shadow-2xs"
+                    className="shadow-sm font-bold bg-[#3D87D3] hover:bg-[#3476B8] cursor-pointer"
                   >
-                    <Download className="w-3.5 h-3.5 mr-1.5 text-blue-600" /> Download
+                    <Save className="w-4 h-4 mr-1.5" /> Save Changes
                   </Button>
                 </div>
-              ) : (
-                <div className="p-6 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center text-xs text-slate-500">
-                  <FileText className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                  <p className="font-semibold text-slate-700">No signed document attached yet.</p>
-                  <p className="text-[11px] mt-0.5">Click &ldquo;Upload Signed PDF / Doc&rdquo; above to attach the final execution version.</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Contract Title / Reference</label>
+                    <input
+                      type="text"
+                      value={selectedContract.reference}
+                      onChange={e => setSelectedContract({ ...selectedContract, reference: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Agreement Direction</label>
+                    <select
+                      value={selectedContract.direction}
+                      onChange={e => setSelectedContract({ ...selectedContract, direction: e.target.value as ContractDirection })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    >
+                      <option value="revenue">Client Revenue (Inbound)</option>
+                      <option value="cost">Supplier Spend (Outbound)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective Start Date</label>
+                    <input
+                      type="date"
+                      value={selectedContract.service_start_date || selectedContract.starts_on}
+                      onChange={e => setSelectedContract({ ...selectedContract, starts_on: e.target.value, service_start_date: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Contract Expiration Date</label>
+                    <input
+                      type="date"
+                      value={selectedContract.ends_on}
+                      onChange={e => setSelectedContract({ ...selectedContract, ends_on: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Notice Period (Days Prior to End)</label>
+                    <input
+                      type="number"
+                      value={selectedContract.notice_period_days}
+                      onChange={e => {
+                        const days = parseInt(e.target.value) || 0;
+                        setSelectedContract({ ...selectedContract, notice_period_days: days });
+                      }}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Notice Window Deadline</label>
+                    <input
+                      type="date"
+                      value={selectedContract.notice_deadline}
+                      onChange={e => setSelectedContract({ ...selectedContract, notice_deadline: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-800 mb-1.5 flex items-center justify-between">
+                    <span>Key Legal Clauses & Terms Documentation</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Internal compliance notes</span>
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={selectedContract.notes || ''}
+                    placeholder="Document specific liability caps, SLA penalties, payment terms, or negotiated exemptions here..."
+                    onChange={e => setSelectedContract({ ...selectedContract, notes: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 font-mono focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all leading-relaxed"
+                  />
+                </div>
+              </div>
             </div>
             )}
           </div>
@@ -646,7 +744,7 @@ export default function ContractsRegistryPage() {
       </Modal>
 
       {/* CREATE CONTRACT MODAL */}
-      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Register New Contract">
+      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Register New Contract" size="2xl">
         <form onSubmit={handleCreateContract} className="space-y-4 text-xs">
           <div>
             <label className="block font-semibold uppercase text-slate-500 mb-1">Direction & Counterparty</label>
