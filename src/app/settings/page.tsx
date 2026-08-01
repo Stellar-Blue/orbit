@@ -187,7 +187,7 @@ export default function CompanySettingsPage() {
   const activeEmployees = profiles.filter(p => p.status === 'active' && p.employment_type !== 'contractor');
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16 animate-in fade-in duration-200">
+    <div className="space-y-8 pb-16 animate-in fade-in duration-200">
       {/* Header section with modern backdrop */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-[#225287] p-8 text-white shadow-md">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">

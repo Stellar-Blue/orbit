@@ -226,7 +226,7 @@ export default function DashboardPage() {
   const handleToday = () => setCurrentMonth(new Date());
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-200 max-w-7xl mx-auto pb-24">
+    <div className="space-y-10 animate-in fade-in duration-200 pb-24">
       {/* 1. Today's Birthday Celebration Banner (If Any) */}
       {todayBirthdays.length > 0 && (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-rose-500 to-purple-600 p-6 text-white shadow-lg animate-in fade-in duration-300">

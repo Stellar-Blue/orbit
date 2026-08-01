@@ -289,7 +289,7 @@ export default function CompanyLeaveManagementPage() {
   const pendingCount = leaveRequests.filter(r => r.status === 'pending' || r.status === 'cancellation_requested').length;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200 max-w-7xl mx-auto pb-20">
+    <div className="space-y-8 animate-in fade-in duration-200 pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>

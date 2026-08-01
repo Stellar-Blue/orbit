@@ -88,7 +88,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
         )}
 
         {/* Page Content with Responsive Padding */}
-        <main className="p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto flex-1 overflow-x-hidden">
+        <main className="p-4 sm:p-6 md:p-8 w-full max-w-full flex-1 overflow-x-hidden">
           {children}
         </main>
       </div>
