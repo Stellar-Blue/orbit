@@ -63,6 +63,8 @@ interface AppState {
   deleteContract: (id: string) => Promise<boolean>;
   addCounterparty: (cp: Partial<Counterparty>, attioRecordId?: string) => Promise<Counterparty | null>;
   updateCounterparty: (cp: Counterparty) => Promise<boolean>;
+  deleteCounterparty: (id: string) => Promise<boolean>;
+  deleteAllCounterparties: () => Promise<boolean>;
   linkToAttio: (counterpartyId: string, attioRecordId: string) => Promise<boolean>;
   processAttioReviewEvent: (eventId: string, action: 'confirm' | 'link' | 'skip', targetCpId?: string) => Promise<boolean>;
   reconcileAttio: () => Promise<void>;
@@ -1169,6 +1171,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const deleteCounterparty = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('attio_links').delete().eq('counterparty_id', id);
+      await supabase.from('counterparty_contacts').delete().eq('counterparty_id', id);
+      const { error } = await supabase.from('counterparties').delete().eq('id', id);
+      if (error) throw error;
+      setCounterparties(prev => prev.filter(c => c.id !== id));
+      return true;
+    } catch (e) {
+      console.error('Error deleting counterparty:', e);
+      return false;
+    }
+  };
+
+  const deleteAllCounterparties = async (): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('attio_links').delete().neq('counterparty_id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('counterparty_contacts').delete().neq('counterparty_id', '00000000-0000-0000-0000-000000000000');
+      const { error } = await supabase.from('counterparties').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) throw error;
+      setCounterparties([]);
+      return true;
+    } catch (e) {
+      console.error('Error deleting all counterparties:', e);
+      return false;
+    }
+  };
+
   const linkToAttio = async (counterpartyId: string, attioRecordId: string): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
@@ -1774,6 +1806,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteContract,
       addCounterparty,
       updateCounterparty,
+      deleteCounterparty,
+      deleteAllCounterparties,
       linkToAttio,
       processAttioReviewEvent,
       reconcileAttio,

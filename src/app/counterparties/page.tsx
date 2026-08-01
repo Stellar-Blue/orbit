@@ -15,10 +15,10 @@ export default function CounterpartiesRegistryPage() {
   const { 
     counterparties, contracts, attioEvents, addCounterparty, updateCounterparty, 
     linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, 
-    addCounterpartyContact, currentUser 
+    addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser 
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'registry' | 'queue' | 'repair'>('registry');
+  const [activeTab, setActiveTab] = useState<'registry' | 'queue'>('registry');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [selectedEntity, setSelectedEntity] = useState<Counterparty | null>(null);
@@ -52,25 +52,22 @@ export default function CounterpartiesRegistryPage() {
   const [contactRole, setContactRole] = useState("");
   const [contactPhone, setContactPhone] = useState("");
 
-  // Data Repair State
-  const [repairSourceCpId, setRepairSourceCpId] = useState<string>("");
-  const [repairTargetCpId, setRepairTargetCpId] = useState<string>("");
-  const [selectedContractIds, setSelectedContractIds] = useState<string[]>([]);
+  // Attio CRM Inbound Sync state
+  const [attioSyncCompanies, setAttioSyncCompanies] = useState<Array<{
+    attio_record_id: string;
+    legal_name: string;
+    relationship_status: string;
+    country_code: string;
+    vat_number: string;
+    domain: string;
+    suggested_role: 'client' | 'supplier' | 'both';
+    estimated_arr: number;
+    email?: string;
+  }> | null>(null);
+  const [fetchingAttioSync, setFetchingAttioSync] = useState(false);
+  const [importingRecordId, setImportingRecordId] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === 'admin';
-
-  // Default repair source to DEPA if present
-  const depaEntity = useMemo(() => {
-    return counterparties.find(c => c.legal_name?.toLowerCase().includes('depa') || c.trade_name?.toLowerCase().includes('депа') || c.trade_name?.toLowerCase().includes('depa') || c.id === 'cp-depa');
-  }, [counterparties]);
-
-  React.useEffect(() => {
-    if (depaEntity && !repairSourceCpId) {
-      setRepairSourceCpId(depaEntity.id);
-    } else if (!repairSourceCpId && counterparties.length > 0) {
-      setRepairSourceCpId(counterparties[0].id);
-    }
-  }, [depaEntity, counterparties, repairSourceCpId]);
 
   // KPIs
   const totalEntities = counterparties.filter(c => c.status !== 'archived').length;
@@ -179,40 +176,68 @@ export default function CounterpartiesRegistryPage() {
     return contracts.filter(c => c.counterparty_id === cpId && c.status === 'active').length;
   };
 
-  // Contracts for repair tab
-  const repairSourceContracts = useMemo(() => {
-    return contracts.filter(c => c.counterparty_id === repairSourceCpId);
-  }, [contracts, repairSourceCpId]);
+  const handleFetchAttioCompanies = async () => {
+    setFetchingAttioSync(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('orbit_attio_api_key') : '';
+      const attributeSlug = typeof window !== 'undefined' ? localStorage.getItem('orbit_attio_rel_attribute') || 'relationship_type' : 'relationship_type';
+      const rawVals = typeof window !== 'undefined' ? localStorage.getItem('orbit_attio_rel_values') : null;
+      const whitelistValues = rawVals ? JSON.parse(rawVals) : ['Client', 'Customer', 'Supplier', 'Partner', 'Vendor'];
 
-  const handleToggleSelectContract = (id: string) => {
-    setSelectedContractIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const handleSelectAllRepair = () => {
-    if (selectedContractIds.length === repairSourceContracts.length) {
-      setSelectedContractIds([]);
-    } else {
-      setSelectedContractIds(repairSourceContracts.map(c => c.id));
-    }
-  };
-
-  const handleExecuteRepair = async () => {
-    if (selectedContractIds.length === 0) {
-      alert("Please check at least one contract to reassign.");
-      return;
-    }
-    if (!repairTargetCpId || repairTargetCpId === repairSourceCpId) {
-      alert("Please select a different target counterparty to reassign these contracts to.");
-      return;
-    }
-    const targetCp = counterparties.find(c => c.id === repairTargetCpId);
-    if (confirm(`Are you sure you want to reassign ${selectedContractIds.length} contract(s) from "${counterparties.find(c => c.id === repairSourceCpId)?.legal_name}" to "${targetCp?.legal_name}"?`)) {
-      const success = await reassignContracts(repairSourceCpId, selectedContractIds, repairTargetCpId);
-      if (success) {
-        setSelectedContractIds([]);
-        setRepairTargetCpId("");
-        alert("Contracts successfully reassigned! Financial rollups and derived relationship roles updated.");
+      const res = await fetch('/api/v1/attio/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, attributeSlug, whitelistValues })
+      });
+      const data = await res.json();
+      if (data && data.companies) {
+        setAttioSyncCompanies(data.companies);
       }
+    } catch (err) {
+      console.error("Error pulling Attio companies:", err);
+    } finally {
+      setFetchingAttioSync(false);
+    }
+  };
+
+  const handleImportCompany = async (comp: any) => {
+    setImportingRecordId(comp.attio_record_id);
+    try {
+      const created = await addCounterparty({
+        legal_name: comp.legal_name,
+        trade_name: comp.legal_name,
+        country: comp.country_code === 'GR' ? 'Greece' : comp.country_code === 'NL' ? 'Netherlands' : comp.country_code === 'DE' ? 'Germany' : comp.country_code === 'IT' ? 'Italy' : 'Europe',
+        country_code: comp.country_code,
+        vat_number: comp.vat_number,
+        afm: comp.country_code === 'GR' ? comp.vat_number : '',
+        vies_registered: true,
+        status: 'active',
+        derived_role: comp.suggested_role || 'client',
+        website_domain: comp.domain,
+        sync_to_attio: true,
+        notes: `Imported via Attio CRM sync (${comp.relationship_status})`
+      }, comp.attio_record_id);
+      
+      if (created && comp.attio_record_id) {
+        await linkToAttio(created.id, comp.attio_record_id);
+      }
+    } finally {
+      setImportingRecordId(null);
+    }
+  };
+
+  const handleBulkImportAll = async () => {
+    if (!attioSyncCompanies || attioSyncCompanies.length === 0) return;
+    const unimported = attioSyncCompanies.filter(comp => !counterparties.some(c => c.attio_link?.attio_record_id === comp.attio_record_id || c.vat_number === comp.vat_number || c.legal_name?.toLowerCase() === comp.legal_name?.toLowerCase()));
+    if (unimported.length === 0) {
+      alert("All fetched Attio CRM entities have already been imported into Orbit!");
+      return;
+    }
+    if (confirm(`Bulk import all ${unimported.length} qualifying Attio CRM companies into Orbit's Corporate Entity Registry?`)) {
+      for (const comp of unimported) {
+        await handleImportCompany(comp);
+      }
+      alert(`Successfully imported and linked ${unimported.length} corporate entities from Attio CRM!`);
     }
   };
 
@@ -247,6 +272,22 @@ export default function CounterpartiesRegistryPage() {
             >
               <RefreshCw className={`w-4 h-4 mr-2 text-[#3D87D3] ${isReconciling ? 'animate-spin' : ''}`} />
               {isReconciling ? "Reconciling Rollups..." : "Run Nightly Reconciliation"}
+            </Button>
+          )}
+          {isAdmin && counterparties.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                if (confirm(`WARNING: Are you sure you want to delete ALL ${counterparties.length} current counterparties? This will clean out the entire existing registry so you can import clean data.`)) {
+                  await deleteAllCounterparties();
+                  alert("All counterparties have been successfully removed!");
+                }
+              }}
+              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 font-bold shadow-2xs cursor-pointer flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600" />
+              <span>Delete All Companies</span>
             </Button>
           )}
           {isAdmin && (
@@ -324,19 +365,6 @@ export default function CounterpartiesRegistryPage() {
           {pendingReviewCount > 0 && (
             <span className="ml-1.5 px-2 py-0.5 text-[10px] rounded-full bg-amber-100 text-amber-700 font-extrabold animate-bounce">{pendingReviewCount}</span>
           )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('repair')}
-          className={`pb-3 px-5 text-sm font-medium transition-all relative cursor-pointer flex items-center gap-2 ${
-            activeTab === 'repair'
-              ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <RefreshCw className="w-4 h-4 text-indigo-500" />
-          Data Repair & Contract Reassigner
-          <span className="ml-1.5 px-2 py-0.5 text-[10px] rounded-full bg-indigo-50 text-indigo-700 font-semibold">Utility</span>
         </button>
       </div>
 
@@ -476,10 +504,25 @@ export default function CounterpartiesRegistryPage() {
                             </span>
                           )}
                         </td>
-                        <td className="p-4 pr-6 text-right" onClick={e => e.stopPropagation()}>
+                        <td className="p-4 pr-6 text-right flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
                           <Button size="sm" variant="outline" onClick={() => openDossier(cp)}>
                             Manage Dossier
                           </Button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete corporate entity "${cp.legal_name}"?`)) {
+                                  await deleteCounterparty(cp.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete entity"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -522,6 +565,115 @@ export default function CounterpartiesRegistryPage() {
               </div>
             </div>
           </Card>
+
+          {/* On-Demand Attio Companies Filter & Sync */}
+          <div className="p-6 bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white rounded-2xl border border-indigo-500/30 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-500/20 pb-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 text-[10px] font-mono font-bold uppercase">
+                  <Sparkles className="w-3 h-3 text-indigo-300 animate-pulse" />
+                  <span>On-Demand CRM Synchronizer</span>
+                </div>
+                <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                  Pull Qualified Attio Companies by Sync Criteria
+                </h4>
+                <p className="text-xs text-indigo-200">
+                  Instantly query Attio CRM for companies matching your configured Relationship Type whitelist (Client, Supplier, etc.) and import them into Orbit with 1-click.
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0">
+                {attioSyncCompanies && attioSyncCompanies.length > 0 && (
+                  <Button
+                    type="button"
+                    onClick={handleBulkImportAll}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-500/20 px-4 py-2 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span>Import All Filtered ({attioSyncCompanies.filter(c => !counterparties.some(cp => cp.attio_link?.attio_record_id === c.attio_record_id || cp.vat_number === c.vat_number || cp.legal_name === c.legal_name)).length})</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={handleFetchAttioCompanies}
+                  disabled={fetchingAttioSync}
+                  size="sm"
+                  className="bg-[#3D87D3] hover:bg-blue-600 text-white font-bold shadow-md shadow-blue-500/20 px-5 py-2 cursor-pointer flex items-center gap-2"
+                >
+                  <RefreshCw className={`w-4 h-4 ${fetchingAttioSync ? 'animate-spin' : ''}`} />
+                  <span>{fetchingAttioSync ? "Querying Attio CRM..." : "Sync & Filter Attio Companies"}</span>
+                </Button>
+              </div>
+            </div>
+
+            {attioSyncCompanies && (
+              <div className="space-y-3 animate-in fade-in duration-300">
+                <div className="flex items-center justify-between text-xs text-indigo-200 font-medium px-1">
+                  <span>Found <strong>{attioSyncCompanies.length}</strong> qualifying corporate entities in Attio CRM matching sync criteria:</span>
+                  <span className="font-mono text-[11px] text-slate-300">Ready for 1-click Orbit import</span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[500px] overflow-y-auto pr-1">
+                  {attioSyncCompanies.map((comp) => {
+                    const existingCp = counterparties.find(c => c.attio_link?.attio_record_id === comp.attio_record_id || c.vat_number === comp.vat_number || c.legal_name?.toLowerCase() === comp.legal_name?.toLowerCase());
+                    const isImporting = importingRecordId === comp.attio_record_id;
+
+                    return (
+                      <div key={comp.attio_record_id} className="p-4 rounded-xl bg-slate-800/80 border border-slate-700 hover:border-indigo-400/60 transition-all shadow-md flex flex-col justify-between gap-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-bold text-sm text-white truncate">{comp.legal_name}</h5>
+                              <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                                {comp.relationship_status}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-300 font-mono">
+                              <span>VAT: <strong className="text-white">{comp.vat_number}</strong></span>
+                              <span>•</span>
+                              <span>Country: <strong className="text-cyan-300">{comp.country_code}</strong></span>
+                              <span>•</span>
+                              <span>Est. ARR: <strong className="text-emerald-400">€{comp.estimated_arr.toLocaleString()}</strong></span>
+                            </div>
+                            {comp.domain && (
+                              <div className="text-xs text-slate-400 flex items-center gap-1">
+                                <Globe className="w-3 h-3 text-slate-500" />
+                                <span className="underline decoration-slate-600">{comp.domain}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="shrink-0">
+                            {existingCp ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl font-bold text-xs">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                <span>Imported in Orbit</span>
+                              </span>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={isImporting}
+                                onClick={() => handleImportCompany(comp)}
+                                className="bg-[#3D87D3] hover:bg-blue-600 text-white font-bold shadow-md shadow-blue-500/25 px-3.5 py-1.5 cursor-pointer text-xs shrink-0"
+                              >
+                                {isImporting ? (
+                                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                ) : (
+                                  <Plus className="w-3.5 h-3.5 mr-1" />
+                                )}
+                                {isImporting ? "Importing..." : "Import to Orbit"}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-4">
             <h4 className="text-sm font-bold uppercase tracking-wider text-slate-600 pl-1">
@@ -629,159 +781,6 @@ export default function CounterpartiesRegistryPage() {
         </div>
       )}
 
-      {/* TAB 3: DATA REPAIR (THE ΔΕΠΑ SITUATION) */}
-      {activeTab === 'repair' && (
-        <div className="space-y-6">
-          <Card className="p-6 bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white border-indigo-500/30 shadow-xl rounded-2xl">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 rounded-2xl shrink-0 mt-0.5">
-                <RefreshCw className="w-7 h-7" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  Bulk Contract Reassignment & Registry Data Repair Utility
-                </h3>
-                <p className="text-sm text-indigo-200 mt-1 max-w-3xl leading-relaxed">
-                  Previously, contract registration defaulted to the first database entity (often <strong>DEPA COMMERCIAL S.A.</strong>) when no counterparty was explicitly selected. Use this utility to inspect agreements currently assigned to a source entity and batch reassign them to their genuine Client or Supplier record.
-                </p>
-                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20 text-xs font-semibold text-indigo-200">
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  Automatically recomputes ARR rollups, active counts, and relationship roles upon transfer.
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Step 1: Select Source & Contracts */}
-            <div className="lg:col-span-2 space-y-4">
-              <Card className="p-5 border-slate-200/80 shadow-sm">
-                <div className="flex items-center justify-between mb-4 border-b pb-3 border-slate-100">
-                  <h4 className="font-bold text-slate-800 flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs flex items-center justify-center font-extrabold">1</span>
-                    Select Source Entity to Clean Up
-                  </h4>
-                  <select
-                    value={repairSourceCpId}
-                    onChange={(e) => { setRepairSourceCpId(e.target.value); setSelectedContractIds([]); }}
-                    className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#3D87D3]"
-                  >
-                    {counterparties.map(cp => (
-                      <option key={cp.id} value={cp.id}>
-                        {cp.legal_name} ({getContractCount(cp.id)} agreements)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-                  <span>Showing agreements under {counterparties.find(c => c.id === repairSourceCpId)?.legal_name}</span>
-                  <button
-                    type="button"
-                    onClick={handleSelectAllRepair}
-                    className="text-indigo-600 font-semibold hover:underline"
-                  >
-                    {selectedContractIds.length === repairSourceContracts.length && repairSourceContracts.length > 0 ? "Deselect All" : "Select All"}
-                  </button>
-                </div>
-
-                <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto border border-slate-200/80 rounded-xl">
-                  {repairSourceContracts.length > 0 ? (
-                    repairSourceContracts.map(c => {
-                      const isChecked = selectedContractIds.includes(c.id);
-                      return (
-                        <div
-                          key={c.id}
-                          onClick={() => handleToggleSelectContract(c.id)}
-                          className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                            isChecked ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-0 cursor-pointer"
-                            />
-                            <div className="min-w-0">
-                              <div className="font-bold text-slate-800 text-sm truncate flex items-center gap-2">
-                                {c.reference}
-                                <span className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded ${
-                                  c.direction === 'revenue' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                }`}>
-                                  {c.direction === 'revenue' ? 'Client Rev' : 'Supplier Cost'}
-                                </span>
-                              </div>
-                              <div className="text-xs text-slate-500 truncate mt-0.5">
-                                {c.product || c.type} • Ends on {c.ends_on || 'Indefinite'}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-right font-mono font-bold text-slate-900 text-sm shrink-0">
-                            €{(c.value || 0).toLocaleString()}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="p-10 text-center text-slate-400 text-sm">
-                      <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                      No contracts associated with this entity. Clean slate!
-                    </div>
-                  )}
-                </div>
-              </Card>
-            </div>
-
-            {/* Step 2: Pick Target & Transfer */}
-            <div className="space-y-4">
-              <Card className="p-6 border-slate-200/80 shadow-sm bg-slate-50/50 flex flex-col justify-between h-full min-h-[340px]">
-                <div className="space-y-4">
-                  <h4 className="font-bold text-slate-800 flex items-center gap-2 pb-3 border-b border-slate-200">
-                    <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center font-extrabold">2</span>
-                    Assign to True Counterparty
-                  </h4>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-slate-500 mb-2">
-                      Target Entity Registry Lookup
-                    </label>
-                    <CounterpartyPicker
-                      value={repairTargetCpId}
-                      onChange={(val) => setRepairTargetCpId(val)}
-                      placeholder="Search or add correct entity..."
-                    />
-                  </div>
-
-                  <div className="p-3 bg-white border border-slate-200 rounded-xl text-xs space-y-2">
-                    <div className="flex justify-between font-medium text-slate-600">
-                      <span>Selected Agreements:</span>
-                      <span className="font-bold text-indigo-600">{selectedContractIds.length}</span>
-                    </div>
-                    <div className="flex justify-between font-medium text-slate-600">
-                      <span>Total Value to Transfer:</span>
-                      <span className="font-bold font-mono text-slate-800">
-                        €{repairSourceContracts.filter(c => selectedContractIds.includes(c.id)).reduce((a, b) => a + (b.value || 0), 0).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-6">
-                  <Button
-                    variant="primary"
-                    disabled={selectedContractIds.length === 0 || !repairTargetCpId || repairTargetCpId === repairSourceCpId}
-                    onClick={handleExecuteRepair}
-                    className="w-full py-3 bg-gradient-to-r from-indigo-600 to-[#3D87D3] hover:from-indigo-700 hover:to-blue-600 text-white font-bold shadow-lg shadow-indigo-500/25 justify-center"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Execute Reassignment ({selectedContractIds.length})
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          </div>
         </div>
       )}
 

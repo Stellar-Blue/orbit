@@ -275,30 +275,7 @@ export default function CompanySettingsPage() {
   const activeEmployees = profiles.filter(p => p.status === 'active' && p.employment_type !== 'contractor');
 
   return (
-    <div className="space-y-8 pb-16 animate-in fade-in duration-200">
-      {/* Header section with modern backdrop */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-[#225287] p-8 text-white shadow-md">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-[11px] font-semibold tracking-wider uppercase text-[#73A7E3]">
-              <Sparkles className="w-3.5 h-3.5 mr-1 text-amber-300 animate-pulse" />
-              <span>Global Organizational Controls</span>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center">
-              <Settings className="w-7 h-7 mr-3 text-[#73A7E3]" /> Company Settings & Policies
-            </h1>
-            <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Configure company-wide rules, departmental team structures, and automated compliance thresholds. Changes persisted here directly update PostgreSQL tables and immediately apply across all member modules.
-            </p>
-          </div>
-          <div className="flex flex-col items-end shrink-0">
-            <Badge variant="info">Live Supabase Storage</Badge>
-            <span className="text-[11px] text-slate-400 mt-1 font-mono">Tables: public.teams / remote_policies</span>
-          </div>
-        </div>
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-[#3D87D3]/20 blur-3xl pointer-events-none" />
-      </div>
-
+    <div className="space-y-6 pb-16 animate-in fade-in duration-200">
       {/* Tabs */}
       <div className="flex border-b border-slate-200 gap-6 text-sm font-medium">
         <button
