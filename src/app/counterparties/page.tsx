@@ -208,16 +208,27 @@ export default function CounterpartiesRegistryPage() {
     }
   };
 
+  const isCompanyImported = (comp: any) => {
+    const validVat = comp.vat_number && comp.vat_number !== 'N/A in Attio' && comp.vat_number !== 'N/A' && comp.vat_number.trim() !== '' ? comp.vat_number.trim().toLowerCase() : null;
+    return counterparties.some(c => {
+      if (c.attio_link?.attio_record_id && c.attio_link.attio_record_id === comp.attio_record_id) return true;
+      if (validVat && c.vat_number && c.vat_number.trim().toLowerCase() === validVat) return true;
+      if (c.legal_name && comp.legal_name && c.legal_name.trim().toLowerCase() === comp.legal_name.trim().toLowerCase()) return true;
+      return false;
+    });
+  };
+
   const handleImportCompany = async (comp: any) => {
     setImportingRecordId(comp.attio_record_id);
     try {
+      const cleanVat = comp.vat_number && comp.vat_number !== 'N/A in Attio' && comp.vat_number !== 'N/A' && comp.vat_number.trim() !== '' ? comp.vat_number.trim() : undefined;
       const created = await addCounterparty({
         legal_name: comp.legal_name,
         trade_name: comp.legal_name,
         country: comp.country_code === 'GR' ? 'Greece' : comp.country_code === 'NL' ? 'Netherlands' : comp.country_code === 'DE' ? 'Germany' : comp.country_code === 'IT' ? 'Italy' : 'Europe',
-        vat_number: comp.vat_number,
-        afm: comp.country_code === 'GR' ? comp.vat_number : '',
-        vat_valid: true,
+        vat_number: cleanVat,
+        afm: cleanVat && comp.country_code === 'GR' ? cleanVat : undefined,
+        vat_valid: !!cleanVat,
         status: 'active',
         derived_role: comp.suggested_role || 'client',
         website_domain: comp.domain,
@@ -235,7 +246,7 @@ export default function CounterpartiesRegistryPage() {
 
   const handleBulkImportAll = async () => {
     if (!attioSyncCompanies || attioSyncCompanies.length === 0) return;
-    const unimported = attioSyncCompanies.filter(comp => !counterparties.some(c => c.attio_link?.attio_record_id === comp.attio_record_id || c.vat_number === comp.vat_number || c.legal_name?.toLowerCase() === comp.legal_name?.toLowerCase()));
+    const unimported = attioSyncCompanies.filter(comp => !isCompanyImported(comp));
     if (unimported.length === 0) {
       alert("All fetched Attio CRM entities have already been imported into Orbit!");
       return;
@@ -597,7 +608,7 @@ export default function CounterpartiesRegistryPage() {
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-500/20 px-4 py-2 cursor-pointer flex items-center gap-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4 text-white" />
-                    <span>Import All Filtered ({attioSyncCompanies.filter(c => !counterparties.some(cp => cp.attio_link?.attio_record_id === c.attio_record_id || cp.vat_number === c.vat_number || cp.legal_name === c.legal_name)).length})</span>
+                    <span>Import All Filtered ({attioSyncCompanies.filter(c => !isCompanyImported(c)).length})</span>
                   </Button>
                 )}
                 <Button
@@ -622,7 +633,7 @@ export default function CounterpartiesRegistryPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[500px] overflow-y-auto pr-1">
                   {attioSyncCompanies.map((comp) => {
-                    const existingCp = counterparties.find(c => c.attio_link?.attio_record_id === comp.attio_record_id || c.vat_number === comp.vat_number || c.legal_name?.toLowerCase() === comp.legal_name?.toLowerCase());
+                    const existingCp = isCompanyImported(comp);
                     const isImporting = importingRecordId === comp.attio_record_id;
 
                     return (

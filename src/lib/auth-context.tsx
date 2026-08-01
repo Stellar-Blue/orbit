@@ -1096,7 +1096,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const supabase = getSupabaseBrowserClient();
     try {
       const id = generateUUID();
-      const vat_number = cp.vat_number || cp.afm || undefined;
+      let vat_number = cp.vat_number || cp.afm || undefined;
+      if (vat_number && (vat_number === 'N/A in Attio' || vat_number === 'N/A' || vat_number.trim() === '')) {
+        vat_number = undefined;
+      }
       let vat_valid = true;
       let vat_checked_at = new Date().toISOString();
 
