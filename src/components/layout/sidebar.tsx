@@ -27,7 +27,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
   // Primary General Links (Top)
   const primaryItems = [
     { label: 'Home', path: '/', icon: <Home className="w-4 h-4 mr-3 text-[#3D87D3]" />, show: true },
-    { label: 'Calendar', path: '/calendar', icon: <CalendarDays className="w-4 h-4 mr-3 text-indigo-500" />, show: true },
   ];
 
   // Personal Section

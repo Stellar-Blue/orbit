@@ -95,7 +95,16 @@ export const MOCK_PROFILES: Profile[] = [
     start_date: '2023-06-15',
     status: 'active',
     work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-    role: 'employee'
+    role: 'employee',
+    sensitive: {
+      profile_id: 'prof-maria',
+      afm: '148293049',
+      amka: '01089201938',
+      ama_efka: '59201923',
+      iban: 'GR6601400000000045678901234',
+      address: 'Egnatia 80, Thessaloniki 54622',
+      birth_date: '1992-08-01'
+    }
   },
   {
     id: 'prof-yannis',

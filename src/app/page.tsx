@@ -1,41 +1,88 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { format, startOfWeek, endOfWeek } from 'date-fns';
+import { 
+  format, startOfWeek, endOfWeek, addMonths, subMonths, 
+  startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, 
+  isSameDay, parseISO, isWithinInterval 
+} from 'date-fns';
 import { Card, StatCard, Badge, Button } from '@/components/ui/primitives';
 import { 
-  Users, FileText, Calendar, DollarSign, AlertTriangle, 
-  CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus 
+  Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
+  CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
+  CalendarDays, ChevronLeft, ChevronRight, Filter, Search, Globe,
+  ShieldCheck, Building2, Info, X
 } from 'lucide-react';
+import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
+
+interface DaySchedule {
+  dateStr: string;
+  dateObj: Date;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  holidays: PublicHoliday[];
+  mandatoryLeaves: MandatoryLeave[];
+  leaves: {
+    profile: Profile;
+    request: LeaveRequest;
+    displayType: string;
+    showDetails: boolean;
+    leaveType?: LeaveType;
+  }[];
+  remotes: {
+    profile: Profile;
+    mode: 'remote_gr' | 'remote_abroad';
+    location?: string;
+    isOverride: boolean;
+  }[];
+  inOffice: {
+    profile: Profile;
+  }[];
+  birthdays: Profile[];
+}
 
 export default function DashboardPage() {
-  const { currentUser, profiles, contracts, leaveRequests, entitlements, salaries, remoteDays, remotePatterns, remotePolicies, getEmployeeLeaveBalance } = useAuth();
+  const { 
+    currentUser, profiles, teams, contracts, leaveRequests, leaveTypes, 
+    entitlements, salaries, remoteDays, remotePatterns, remotePolicies, 
+    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance 
+  } = useAuth();
+  
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
-  // Calculations for Admin view
+  // --- 1. BIRTHDAY CELEBRATION ENGINE ---
+  const todayMonthDay = useMemo(() => format(new Date(), 'MM-dd'), []);
+  const todayBirthdays = useMemo(() => {
+    return profiles.filter(p => {
+      if (p.status !== 'active') return false;
+      const bDate = p.sensitive?.birth_date || (p as any).birth_date;
+      if (!bDate) return false;
+      return bDate.endsWith(todayMonthDay) || bDate.slice(5) === todayMonthDay;
+    });
+  }, [profiles, todayMonthDay]);
+
+  // --- 2. ADMIN EXECUTIVE METRICS ---
   const totalHeadcount = profiles.filter(p => p.status === 'active').length;
   const fullTimeCount = profiles.filter(p => p.status === 'active' && p.employment_type === 'full_time').length;
   const contractorCount = profiles.filter(p => p.status === 'active' && p.employment_type === 'contractor').length;
   
-  // Calculate fully loaded monthly payroll cost
   const monthlyCost = salaries.reduce((acc, sal) => {
-    if (sal.valid_to) return acc; // ignore old salary rows
+    if (sal.valid_to) return acc;
     const employerCont = sal.employer_cost_pct ? sal.gross_amount * (sal.employer_cost_pct / 100) : 0;
     return acc + sal.gross_amount + employerCont;
   }, 0);
 
-  // Notice deadlines within next 90 days or expired notice
   const urgentContracts = contracts.filter(c => c.status === 'active' || c.status === 'expiring').slice(0, 3);
   const pendingLeaves = leaveRequests.filter(r => r.status === 'pending');
 
-  // Employee personal leave entitlement
+  // --- 3. EMPLOYEE LEAVE & REMOTE PATTERN HELPER ---
   const myEntitlement = entitlements.find(e => e.profile_id === currentUser.id && e.year === 2026);
   const myLeavesTaken = getEmployeeLeaveBalance(currentUser.id, 2026).taken;
 
-  const myExistingPatterns = (remotePatterns || []).filter(rp => rp.profile_id === currentUser.id);
+  const myExistingPatterns = useMemo(() => (remotePatterns || []).filter(rp => rp.profile_id === currentUser.id), [remotePatterns, currentUser.id]);
   const getPatternMode = (day: string) => {
     const found = myExistingPatterns.find(p => p.weekday === day);
     return found ? found.mode : (day === 'Tue' || day === 'Thu' ? 'remote_gr' : 'office');
@@ -48,13 +95,6 @@ export default function DashboardPage() {
   const quotaMaxDays = companyPolicy ? (companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8) : 8;
   const quotaPeriod = companyPolicy ? (companyPolicy.period_type || 'month') : 'month';
 
-  let plannedDaysForPeriod = weeklyRemoteDaysCount * 4;
-  if (quotaPeriod === 'week') plannedDaysForPeriod = weeklyRemoteDaysCount;
-  else if (quotaPeriod === 'quarter') plannedDaysForPeriod = weeklyRemoteDaysCount * 13;
-  else if (quotaPeriod === 'year') plannedDaysForPeriod = weeklyRemoteDaysCount * 52;
-
-  const isPatternCompliant = plannedDaysForPeriod <= quotaMaxDays;
-  const periodLabel = quotaPeriod === 'week' ? 'wk' : quotaPeriod === 'quarter' ? 'qtr' : quotaPeriod === 'year' ? 'yr' : 'mo';
   const periodFullLabel = quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month';
 
   const myLoggedRemoteInPeriod = (remoteDays || []).filter(r => {
@@ -72,127 +112,247 @@ export default function DashboardPage() {
   }).length;
   const remainingPeriodQuota = Math.max(0, quotaMaxDays - myLoggedRemoteInPeriod);
 
-  // Setup checklist state for guided initial manual setup (requirements decision)
-  const [checklist, setChecklist] = useState({
-    profiles: true,
-    entitlements: true,
-    salaries: true,
-    contracts: true,
-    reconciliation: false
-  });
+  // --- 4. ORGANIZATIONAL OFFICE & REMOTE ROSTER STATE ---
+  const [rosterDate, setRosterDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  
+  const teamAttendance = useMemo(() => {
+    const activeMembers = (profiles || []).filter(p => p.status === 'active' && p.employment_type !== 'contractor');
+    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let weekdayStr = 'Mon';
+    try {
+      const dateObj = new Date(rosterDate + 'T00:00:00');
+      if (!isNaN(dateObj.getTime())) {
+        weekdayStr = weekdayNames[dateObj.getDay()];
+      }
+    } catch {
+      // fallback
+    }
+
+    return activeMembers.map(prof => {
+      if (weekdayStr === 'Sat' || weekdayStr === 'Sun') {
+        return { profile: prof, mode: 'weekend', source: 'Non-working day' };
+      }
+      const decl = (remoteDays || []).find(rd => rd.profile_id === prof.id && rd.date === rosterDate);
+      if (decl && decl.mode !== 'office') {
+        return { profile: prof, mode: decl.mode, location: decl.location, source: 'Declared Remote Log' };
+      }
+      return { profile: prof, mode: 'office', source: 'Office Routine' };
+    });
+  }, [profiles, remoteDays, rosterDate]);
+
+  const officeCount = teamAttendance.filter(t => t.mode === 'office').length;
+  const remoteCount = teamAttendance.filter(t => t.mode === 'remote_gr' || t.mode === 'remote_abroad').length;
+
+  // --- 5. UNIFIED CALENDAR GRID STATE & ENGINE ---
+  const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date(2026, 7, 1)); // Default demo view August 2026
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [eventTypeFilter, setEventTypeFilter] = useState<'all' | 'remote' | 'leave' | 'holiday'>('all');
+  const [selectedDay, setSelectedDay] = useState<DaySchedule | null>(null);
+
+  const activeProfiles = useMemo(() => {
+    return profiles.filter(p => {
+      if (p.status !== 'active') return false;
+      if (selectedTeamId !== 'all' && p.team_id !== selectedTeamId && p.team?.id !== selectedTeamId) return false;
+      if (searchQuery.trim() !== '') {
+        const full = `${p.first_name} ${p.last_name} ${p.title || ''}`.toLowerCase();
+        if (!full.includes(searchQuery.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [profiles, selectedTeamId, searchQuery]);
+
+  const calendarDays = useMemo(() => {
+    const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
+    const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
+    const dates = eachDayOfInterval({ start, end });
+    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    return dates.map(date => {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const weekdayStr = weekdayNames[date.getDay()];
+      const mDayStr = dateStr.slice(5);
+
+      const birthdays = activeProfiles.filter(p => {
+        const bDate = p.sensitive?.birth_date || (p as any).birth_date;
+        return bDate && (bDate.endsWith(mDayStr) || bDate.slice(5) === mDayStr);
+      });
+
+      const hol = publicHolidays.filter(h => h.date === dateStr);
+      const mandatory = mandatoryLeaves.filter(m => {
+        try {
+          return isWithinInterval(date, { start: parseISO(m.start_date), end: parseISO(m.end_date) });
+        } catch {
+          return false;
+        }
+      });
+
+      const leaves: DaySchedule['leaves'] = [];
+      const remotes: DaySchedule['remotes'] = [];
+      const inOffice: DaySchedule['inOffice'] = [];
+
+      activeProfiles.forEach(prof => {
+        const isContract = prof.employment_type === 'contractor';
+        const activeLeave = leaveRequests.find(r => {
+          if (r.profile_id !== prof.id) return false;
+          if (r.status !== 'approved' && r.status !== 'in_progress' && r.status !== 'taken') return false;
+          try {
+            return isWithinInterval(date, { start: parseISO(r.start_date), end: parseISO(r.end_date) });
+          } catch {
+            return false;
+          }
+        });
+
+        if (activeLeave) {
+          const lType = leaveTypes.find(lt => lt.id === activeLeave.leave_type_id || lt.code === activeLeave.leave_type?.code);
+          const showDetails = isAdmin || prof.id === currentUser.id;
+          leaves.push({
+            profile: prof,
+            request: activeLeave,
+            displayType: showDetails ? (lType?.name_en || 'Approved Leave') : 'Out-of-Office (OOO)',
+            showDetails,
+            leaveType: lType
+          });
+          return;
+        }
+
+        if (isContract || weekdayStr === 'Sat' || weekdayStr === 'Sun') return;
+
+        const override = remoteDays.find(rd => rd.profile_id === prof.id && rd.date === dateStr);
+        if (override && (override.mode === 'remote_gr' || override.mode === 'remote_abroad')) {
+          remotes.push({
+            profile: prof,
+            mode: override.mode as any,
+            location: override.location,
+            isOverride: true
+          });
+        } else {
+          inOffice.push({ profile: prof });
+        }
+      });
+
+      return {
+        dateStr,
+        dateObj: date,
+        isCurrentMonth: isSameMonth(date, currentMonth),
+        isToday: isSameDay(date, new Date()),
+        holidays: hol,
+        mandatoryLeaves: mandatory,
+        leaves,
+        remotes,
+        inOffice,
+        birthdays
+      } as DaySchedule;
+    });
+  }, [currentMonth, activeProfiles, publicHolidays, mandatoryLeaves, leaveRequests, leaveTypes, remoteDays, isAdmin, currentUser.id]);
+
+  const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+  const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+  const handleToday = () => setCurrentMonth(new Date());
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
-      {/* Welcome & Context Header */}
+    <div className="space-y-10 animate-in fade-in duration-200 max-w-7xl mx-auto pb-24">
+      {/* 1. Today's Birthday Celebration Banner (If Any) */}
+      {todayBirthdays.length > 0 && (
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-rose-500 to-purple-600 p-6 text-white shadow-lg animate-in fade-in duration-300">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-4">
+              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-3xl shadow-sm shrink-0">
+                🎂
+              </div>
+              <div>
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md border border-white/25 text-[11px] font-black uppercase tracking-wider text-white mb-1">
+                  <Sparkles className="w-3 h-3 text-amber-200 animate-pulse" />
+                  <span>StellarBlue Celebration Today</span>
+                </div>
+                <h2 className="text-xl font-extrabold text-white tracking-tight">
+                  Happy Birthday, {todayBirthdays.map(p => `${p.first_name} ${p.last_name}`).join(" & ")}! 🎉
+                </h2>
+                <p className="text-xs text-white/90 font-medium mt-0.5">
+                  Wishing our incredible teammate{todayBirthdays.length > 1 ? 's' : ''} a fantastic year ahead! Be sure to send your best wishes in Slack!
+                </p>
+              </div>
+            </div>
+            <Link href="/people" className="px-4 py-2.5 rounded-xl bg-white text-slate-900 font-black text-xs hover:bg-slate-100 transition-all shadow-sm shrink-0 self-start sm:self-center">
+              Send Wishes &rarr;
+            </Link>
+          </div>
+          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-white/15 blur-2xl pointer-events-none" />
+          <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full bg-amber-300/20 blur-2xl pointer-events-none" />
+        </div>
+      )}
+
+      {/* 2. Welcome & Context Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <div className="flex items-center space-x-2.5">
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
               Welcome back, {currentUser.first_name}!
             </h1>
-            <Badge variant={isAdmin ? 'info' : 'neutral'}>{currentUser.title}</Badge>
+            <Badge variant={isAdmin ? 'info' : 'neutral'}>{currentUser.title || 'Team Member'}</Badge>
           </div>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
             {isAdmin 
-              ? "StellarBlue Executive Admin Command Center — Monitoring contracts, compliance, and team operations."
-              : "StellarBlue Employee Portal — Manage your leave requests, out-of-office schedules, and remote pattern."}
+              ? "StellarBlue Executive Hub & Unified Calendar — Monitoring attendance, roster schedules, and contract operations."
+              : "StellarBlue Unified Home — Inspect organization schedules, review attendance rosters, and manage time off."}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0 flex-wrap">
           {!isContractor && (
-            <Link href="/leave">
-              <Button variant="primary" className="cursor-pointer shadow-sm">
-                <Plus className="w-4 h-4 mr-2" /> Request Leave
-              </Button>
-            </Link>
+            <>
+              <Link href="/remote">
+                <Button variant="outline" className="cursor-pointer font-extrabold text-xs shadow-2xs">
+                  <Globe className="w-4 h-4 mr-2 text-cyan-600" /> Log Remote Work
+                </Button>
+              </Link>
+              <Link href="/leave">
+                <Button variant="primary" className="cursor-pointer font-extrabold text-xs bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-sm">
+                  <Plus className="w-4 h-4 mr-1.5" /> Request Leave
+                </Button>
+              </Link>
+            </>
           )}
           <Link href="/people">
-            <Button variant="secondary" className="cursor-pointer">
-              <Users className="w-4 h-4 mr-2" /> Team Directory
+            <Button variant="secondary" className="cursor-pointer font-extrabold text-xs">
+              <Users className="w-4 h-4 mr-2 text-indigo-600" /> Team Directory
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* ADMIN SECTION: EXECUTIVE METRICS & CONTRACT ALERTS */}
+      {/* 3. ADMIN SECTION: EXECUTIVE METRICS & ALERTS */}
       {isAdmin && (
-        <>
+        <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <StatCard 
               title="Fully Loaded Monthly Burn" 
               value={`€${Math.round(monthlyCost).toLocaleString()}`}
               subtitle="Includes employer EFKA & retainer fees"
-              icon={<DollarSign className="w-5 h-5" />}
+              icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
               trend="4.2%" trendUp={true}
             />
             <StatCard 
               title="Active Headcount" 
               value={totalHeadcount} 
               subtitle={`${fullTimeCount} Full-time · ${contractorCount} Contractors`}
-              icon={<Users className="w-5 h-5" />}
+              icon={<Users className="w-5 h-5 text-blue-600" />}
             />
             <StatCard 
               title="Pending Approval Queue" 
               value={pendingLeaves.length}
               subtitle={pendingLeaves.length > 0 ? "Requires Founder decision" : "Queue fully cleared!"}
-              icon={<Calendar className="w-5 h-5" />}
+              icon={<CalendarIcon className="w-5 h-5 text-amber-500" />}
             />
             <StatCard 
               title="Contract Notice Alerts" 
               value="2 Urgent"
               subtitle="Notice closing within 60 days"
-              icon={<AlertTriangle className="w-5 h-5" />}
+              icon={<AlertTriangle className="w-5 h-5 text-rose-500" />}
             />
           </div>
 
-          {/* First-run Manual Setup Guide Checklist (Per confirmed decisions log) */}
-          <Card title="Orbit Initial Setup & Guided Onboarding Checklist" subtitle="Track progress of manual data population across StellarBlue core domains">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-2">
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-emerald-200 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold mb-2">
-                  <span>1. People Directory</span>
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                </div>
-                <p className="text-[11px] text-slate-600">All 11 initial profiles populated with employment types and schedules.</p>
-              </div>
-              
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-emerald-200 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold mb-2">
-                  <span>2. Leave Entitlements</span>
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                </div>
-                <p className="text-[11px] text-slate-600">2026 annual leave quotas manually seeded per accountant directives.</p>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-emerald-200 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold mb-2">
-                  <span>3. Compensation Ledger</span>
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                </div>
-                <p className="text-[11px] text-slate-600">Effective-dated salary records entered. Ready for 14-salary payroll run.</p>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-emerald-200 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold mb-2">
-                  <span>4. Contract Registry</span>
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                </div>
-                <p className="text-[11px] text-slate-600">Client (Atlas ETRM/EMS) & Supplier contracts with notice deadlines set.</p>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-amber-200 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-xs text-amber-700 font-semibold mb-2">
-                  <span>5. ΕΡΓΑΝΗ Reconciliation</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">Pending Run</span>
-                </div>
-                <p className="text-[11px] text-slate-600">Upload monthly portal Excel export to verify zero filing drift.</p>
-              </div>
-            </div>
-          </Card>
-
-          {/* Urgent Admin Queue & Notice Alert Widgets */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card title="Contract Notice Windows & Renewal Alerts" subtitle="The high-ROI alert engine protecting against auto-renewing supplier notice lapses" action={<Link href="/contracts" className="text-xs text-[#3D87D3] hover:underline flex items-center font-medium">View All <ArrowUpRight className="w-3 h-3 ml-1" /></Link>}>
+            <Card title="Contract Notice Windows & Renewal Alerts" subtitle="Alert engine protecting against auto-renewing notice lapses" action={<Link href="/contracts" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">View All <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
               <div className="space-y-3 mt-1">
                 {urgentContracts.map(c => {
                   const isSupplier = c.direction === 'cost';
@@ -206,7 +366,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-slate-500 mt-1">{c.product || c.type} &bull; Ref: <span className="font-mono text-slate-600">{c.reference}</span></p>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs font-semibold text-rose-600 flex items-center justify-end">
+                        <div className="text-xs font-bold text-rose-600 flex items-center justify-end">
                           <Clock className="w-3.5 h-3.5 mr-1 text-rose-600" />
                           Notice: {c.notice_deadline}
                         </div>
@@ -218,9 +378,9 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            <Card title="Founder Approval Queue (Leave Requests)" subtitle="Single-step approval routing to founders queue" action={<Link href="/leave" className="text-xs text-[#3D87D3] hover:underline flex items-center font-medium">Manage Queue <ArrowUpRight className="w-3 h-3 ml-1" /></Link>}>
+            <Card title="Founder Approval Queue (Leave Requests)" subtitle="Single-step approval routing to founders queue" action={<Link href="/leave" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Manage Queue <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
               {pendingLeaves.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm">
+                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
                   <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
                   All leave requests have been processed. Excellent operational flow!
                 </div>
@@ -235,7 +395,7 @@ export default function DashboardPage() {
                           <p className="text-xs text-slate-500 mt-0.5">{req.working_days} working days ({req.start_date} to {req.end_date})</p>
                         </div>
                         <Link href="/leave">
-                          <Button size="sm" variant="primary">Review</Button>
+                          <Button size="sm" variant="primary" className="font-black bg-[#3D87D3]">Review</Button>
                         </Link>
                       </div>
                     );
@@ -244,46 +404,46 @@ export default function DashboardPage() {
               )}
             </Card>
           </div>
-        </>
+        </div>
       )}
 
-      {/* EMPLOYEE WORKSPACE VIEW (LEAVE & REMOTE PATTERN) */}
+      {/* 4. EMPLOYEE PERSONAL SUMMARY (LEAVE & REMOTE PATTERN) */}
       {!isContractor ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card title="2026 Annual Leave Quota" subtitle="Managed manually per employee per year" className="md:col-span-1">
+          <Card title="2026 Annual Leave Quota" subtitle="Managed manually per employee per year" className="md:col-span-1 border-slate-200/90 shadow-2xs">
             {myEntitlement ? (
               <div className="space-y-4">
                 <div className="flex items-baseline justify-between p-4 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20">
                   <div>
-                    <span className="text-3xl font-extrabold text-[#3D87D3]">{myEntitlement.entitlement_days + myEntitlement.carried_over_days - myLeavesTaken}</span>
-                    <span className="text-xs text-slate-600 ml-1.5 font-medium">days remaining</span>
+                    <span className="text-3xl font-black text-[#3D87D3]">{myEntitlement.entitlement_days + myEntitlement.carried_over_days - myLeavesTaken}</span>
+                    <span className="text-xs text-slate-600 ml-1.5 font-bold">days remaining</span>
                   </div>
-                  <Badge variant="info">2026 Quota</Badge>
+                  <Badge variant="info" className="font-bold">2026 Quota</Badge>
                 </div>
-                <div className="space-y-2 text-xs text-slate-700 border-t border-slate-100 pt-3">
+                <div className="space-y-2 text-xs text-slate-700 border-t border-slate-100 pt-3 font-medium">
                   <div className="flex justify-between">
                     <span className="text-slate-500">Annual Entitlement:</span>
-                    <span className="font-semibold">{myEntitlement.entitlement_days} days</span>
+                    <span className="font-bold">{myEntitlement.entitlement_days} days</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Carried Over (from 2025):</span>
-                    <span className="font-semibold text-emerald-700">+{myEntitlement.carried_over_days} days</span>
+                    <span className="font-bold text-emerald-700">+{myEntitlement.carried_over_days} days</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Approved & Taken:</span>
-                    <span className="font-semibold text-rose-600">-{myLeavesTaken} days</span>
+                    <span className="text-slate-500">Approved &amp; Taken:</span>
+                    <span className="font-bold text-rose-600">-{myLeavesTaken} days</span>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="p-6 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="p-6 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl font-medium">
                 <AlertTriangle className="w-5 h-5 mx-auto mb-2 text-amber-600" />
                 Entitlement not yet set for 2026 &mdash; please contact a founder/admin to configure your annual quota.
               </div>
             )}
           </Card>
 
-          <Card title="My Remote Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your remote declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Schedule Calendar</Link>} className="md:col-span-2">
+          <Card title="My Remote Schedule & Pattern Helper" subtitle="Default routine used to auto-fill your remote declarations" action={<Link href="/remote" className="text-xs text-[#3D87D3] hover:underline font-bold">Open Remote Log</Link>} className="md:col-span-2 border-slate-200/90 shadow-2xs">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 mt-2">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
                 const isScheduled = currentUser.work_schedule.includes(day);
@@ -316,22 +476,675 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
+            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500 font-medium">
               <span>Policy limit: Max {quotaMaxDays} remote days / {periodFullLabel}</span>
-              <span>Remaining Quota: <strong className="text-[#3D87D3] font-bold">{remainingPeriodQuota} {remainingPeriodQuota === 1 ? 'day available' : 'days available'}</strong> this {periodFullLabel}</span>
+              <span>Remaining Quota: <strong className="text-[#3D87D3] font-black">{remainingPeriodQuota} {remainingPeriodQuota === 1 ? 'day available' : 'days available'}</strong> this {periodFullLabel}</span>
             </div>
           </Card>
         </div>
       ) : (
-        <Card title="Contractor Retainer Summary & Invoicing" subtitle="StellarBlue contractor partner workspace">
+        <Card title="Contractor Retainer Summary & Invoicing" subtitle="StellarBlue contractor partner workspace" className="border-slate-200/90 shadow-2xs">
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
             <div>
-              <p className="text-slate-800 font-semibold">Active Contractor Agreement</p>
+              <p className="text-slate-800 font-bold">Active Contractor Agreement</p>
               <p className="text-xs text-slate-500 mt-0.5">Invoicing via monthly fixed-fee retainer or day-rate block.</p>
             </div>
-            <Badge variant="info">Mplokaki / External Partner</Badge>
+            <Badge variant="info" className="font-bold">External Partner</Badge>
           </div>
         </Card>
+      )}
+
+      {/* 5. ORGANIZATIONAL OFFICE & REMOTE ROSTER (Moved from /remote to Unified Homepage) */}
+      <div className="space-y-4 pt-6 border-t border-slate-200/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center">
+              <Building2 className="w-6 h-6 mr-2.5 text-emerald-600" /> Organizational Office &amp; Remote Roster
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              Live daily schedule inspection across all departments based on declared remote work logs.
+            </p>
+          </div>
+          <div className="flex items-center space-x-2 text-xs font-bold">
+            <Badge variant="neutral">{officeCount} at Office HQ</Badge>
+            <Badge variant="info">{remoteCount} working Remotely</Badge>
+          </div>
+        </div>
+
+        <Card className="shadow-xs border-slate-200/90">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200/80 mb-5">
+            <div className="flex items-center space-x-2.5">
+              <CalendarIcon className="w-4 h-4 text-slate-500 shrink-0" />
+              <label htmlFor="roster-date-picker" className="text-xs font-extrabold uppercase tracking-wider text-slate-700 select-none">
+                Inspect Date:
+              </label>
+              <input
+                id="roster-date-picker"
+                type="date"
+                value={rosterDate}
+                onChange={(e) => setRosterDate(e.target.value)}
+                className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-slate-900 text-xs font-mono font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3] cursor-pointer"
+              />
+            </div>
+            <span className="text-xs text-slate-600 font-medium">
+              Active schedule roster for <strong className="text-slate-900 font-mono font-extrabold">{rosterDate}</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {teamAttendance.map((item) => {
+              const { profile, mode, location, source } = item;
+              return (
+                <div 
+                  key={profile.id} 
+                  className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-extrabold text-slate-900 text-sm leading-snug">{profile.first_name} {profile.last_name}</p>
+                      <p className="text-xs text-slate-500 font-medium">{profile.title || 'Team Member'}</p>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                      {profile.team?.name || 'Staff'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <span className="text-[11px] text-slate-600 font-medium italic">{source}</span>
+                    <div>
+                      {mode === 'office' && (
+                        <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs font-extrabold border border-slate-200 shadow-2xs flex items-center">
+                          🏢 Office HQ
+                        </span>
+                      )}
+                      {mode === 'remote_gr' && (
+                        <span className="px-2.5 py-1 rounded-md bg-cyan-100 text-cyan-950 text-xs font-extrabold border border-cyan-200 shadow-2xs flex items-center">
+                          🏠 Remote (GR)
+                        </span>
+                      )}
+                      {mode === 'remote_abroad' && (
+                        <span 
+                          title={`Location: ${location || 'Logged in EU'}`}
+                          className="px-2.5 py-1 rounded-md bg-blue-100 text-blue-900 text-xs font-extrabold border border-blue-200 shadow-2xs flex items-center truncate max-w-[140px]"
+                        >
+                          ✈️ Abroad {location ? `(${location})` : ''}
+                        </span>
+                      )}
+                      {mode === 'weekend' && (
+                        <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-500 text-xs font-bold">
+                          ☕ Weekend
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+
+      {/* 6. UNIFIED COMPANY & TEAM CALENDAR (Merged straight into Homepage) */}
+      <div className="space-y-6 pt-6 border-t border-slate-200/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-1.5">
+              <Sparkles className="w-3 h-3 text-indigo-600" />
+              <span>Unified Organizational Schedule</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center">
+              <CalendarDays className="w-6 h-6 mr-2.5 text-[#3D87D3]" /> Interactive Company &amp; Leave Calendar
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              Comprehensive schedule synthesis combining daily remote work overrides, weekly routines, approved leaves, and birthday celebrations.
+            </p>
+          </div>
+        </div>
+
+        {/* Calendar Toolbar & Filter Console */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center rounded-xl border border-slate-300 overflow-hidden shadow-2xs bg-slate-50/50">
+              <button
+                onClick={handlePrevMonth}
+                className="p-2.5 text-slate-600 hover:bg-slate-200/60 hover:text-slate-950 transition-all cursor-pointer"
+                title="Previous Month"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <span className="px-5 py-1 text-base font-black text-slate-800 font-mono tracking-tight select-none">
+                {format(currentMonth, 'MMMM yyyy')}
+              </span>
+              <button
+                onClick={handleNextMonth}
+                className="p-2.5 text-slate-600 hover:bg-slate-200/60 hover:text-slate-950 transition-all cursor-pointer"
+                title="Next Month"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+            <button
+              onClick={handleToday}
+              className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-extrabold text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+            >
+              Today ({format(new Date(), "MMM yyyy")})
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex items-center">
+              <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+              <select
+                value={selectedTeamId}
+                onChange={(e) => setSelectedTeamId(e.target.value)}
+                className="pl-8 pr-4 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] cursor-pointer shadow-2xs"
+              >
+                <option value="all">All Teams &amp; Departments</option>
+                {teams.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative w-44 sm:w-56">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filter by colleague..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-8 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] shadow-2xs"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-bold">
+              {(['all', 'remote', 'leave', 'holiday'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setEventTypeFilter(type)}
+                  className={`px-3 py-1.5 rounded-lg transition-all capitalize cursor-pointer ${
+                    eventTypeFilter === type
+                      ? 'bg-white text-[#3D87D3] shadow-xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {type === 'all' && 'All Activity'}
+                  {type === 'remote' && '🏠 Remote'}
+                  {type === 'leave' && '🏖️ Leaves'}
+                  {type === 'holiday' && '🎉 Holidays & B-days'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Calendar Grid View */}
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md overflow-x-auto">
+          <div className="min-w-[850px] w-full">
+            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-black text-slate-600 uppercase tracking-wider py-3.5">
+              <div>Monday</div>
+              <div>Tuesday</div>
+              <div>Wednesday</div>
+              <div>Thursday</div>
+              <div>Friday</div>
+              <div className="text-slate-400">Saturday</div>
+              <div className="text-slate-400">Sunday</div>
+            </div>
+
+            <div className="flex flex-col bg-slate-200/20 divide-y divide-slate-200/80 border-b border-slate-200/80">
+              {(() => {
+                const weeks: typeof calendarDays[] = [];
+                for (let i = 0; i < calendarDays.length; i += 7) {
+                  weeks.push(calendarDays.slice(i, i + 7));
+                }
+
+                return weeks.map((weekDays, wIdx) => {
+                  const weekStartStr = weekDays[0]?.dateStr || '';
+                  const weekEndStr = weekDays[weekDays.length - 1]?.dateStr || '';
+
+                  const showHolidays = eventTypeFilter === 'all' || eventTypeFilter === 'holiday';
+                  const showLeaves = eventTypeFilter === 'all' || eventTypeFilter === 'leave';
+                  const showRemotes = eventTypeFilter === 'all' || eventTypeFilter === 'remote';
+
+                  const weekHolidays = showHolidays ? publicHolidays.filter(h => h.date >= weekStartStr && h.date <= weekEndStr) : [];
+                  const weekMandatory = showHolidays ? mandatoryLeaves.filter(m => !(m.end_date < weekStartStr || m.start_date > weekEndStr)) : [];
+                  const weekLeaveRequests = showLeaves ? leaveRequests.filter(r => 
+                    r.origin !== 'mandatory' &&
+                    (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken') &&
+                    !(r.end_date < weekStartStr || r.start_date > weekEndStr) &&
+                    activeProfiles.some(p => p.id === r.profile_id && p.employment_type !== 'contractor')
+                  ) : [];
+
+                  return (
+                    <div key={wIdx} className="relative min-h-[160px] border-b border-slate-200/80 last:border-b-0 flex flex-col">
+                      <div className="absolute inset-0 grid grid-cols-7 divide-x divide-slate-200/80 pointer-events-auto">
+                        {weekDays.map(day => (
+                          <div
+                            key={day.dateStr}
+                            onClick={() => setSelectedDay(day)}
+                            className={`h-full transition-colors cursor-pointer group ${
+                              !day.isCurrentMonth
+                                ? 'bg-slate-50/70 text-slate-400'
+                                : day.isToday
+                                  ? 'bg-blue-50/30 ring-2 ring-inset ring-[#3D87D3]'
+                                  : 'bg-white hover:bg-slate-50/90'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      <div className="relative z-10 pointer-events-none pb-2 flex flex-col justify-start flex-1">
+                        <div className="grid grid-cols-7 pt-2 px-2 mb-1">
+                          {weekDays.map(day => (
+                            <div key={day.dateStr} className="flex items-center justify-between h-6 pointer-events-auto" onClick={() => setSelectedDay(day)}>
+                              <span className="text-[10px] text-slate-400 font-bold opacity-0 hover:opacity-100 transition-opacity flex items-center cursor-pointer">
+                                <Info className="w-3 h-3 mr-0.5" /> Detail
+                              </span>
+                              <span
+                                className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
+                                  day.isToday
+                                    ? 'bg-[#3D87D3] text-white font-extrabold shadow-sm'
+                                    : day.isCurrentMonth
+                                      ? 'text-slate-800'
+                                      : 'text-slate-400'
+                                }`}
+                              >
+                                {format(day.dateObj, 'd')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="space-y-1 mb-1.5 flex flex-col">
+                          {weekHolidays.map(h => {
+                            const idx = weekDays.findIndex(d => d.dateStr === h.date);
+                            if (idx === -1) return null;
+                            const startCol = idx + 1;
+                            return (
+                              <div key={`hol-${h.date}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                                <div
+                                  style={{ gridColumn: `${startCol} / span 1` }}
+                                  className="py-1 px-2 rounded-md bg-indigo-600 text-white text-[11px] font-black truncate flex items-center shadow-2xs"
+                                  title={h.name_en || h.name_el}
+                                >
+                                  <span className="mr-1.5">🎉</span>
+                                  <span className="truncate">{h.name_en || h.name_el}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {weekMandatory.map((m, mIdx) => {
+                            let startCol = 1;
+                            let endCol = 7;
+                            let isActualStart = false;
+                            let isActualEnd = false;
+
+                            if (m.start_date >= weekStartStr) {
+                              const idx = weekDays.findIndex(d => d.dateStr >= m.start_date);
+                              if (idx !== -1) { startCol = idx + 1; isActualStart = true; }
+                            }
+                            if (m.end_date <= weekEndStr) {
+                              const idx = weekDays.findIndex(d => d.dateStr >= m.end_date);
+                              if (idx !== -1) { endCol = idx + 1; isActualEnd = true; }
+                              else { endCol = weekDays.findIndex(d => d.dateStr <= m.end_date) + 1; isActualEnd = true; }
+                            }
+                            const span = Math.max(1, endCol - startCol + 1);
+
+                            return (
+                              <div key={`ml-${m.id || mIdx}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                                <div
+                                  style={{ gridColumn: `${startCol} / span ${span}` }}
+                                  className={`py-1.5 px-2.5 rounded-md bg-purple-700 text-white text-[11px] font-black truncate flex items-center shadow-xs ${
+                                    isActualStart && isActualEnd ? 'rounded-lg' :
+                                    isActualStart ? 'rounded-l-lg rounded-r-none pr-1' :
+                                    isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
+                                    'rounded-none px-1'
+                                  }`}
+                                  title={`Company Closure: ${m.name}`}
+                                >
+                                  <span className="mr-1.5">🔒</span>
+                                  <span className="truncate">{m.name}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {weekLeaveRequests.map(req => {
+                            const prof = activeProfiles.find(p => p.id === req.profile_id);
+                            if (!prof) return null;
+                            const lType = leaveTypes.find(lt => lt.id === req.leave_type_id || lt.code === req.leave_type?.code);
+                            const showDetails = isAdmin || prof.id === currentUser.id;
+                            const displayType = showDetails ? (lType?.name_en || 'Approved Leave') : 'Out-of-Office (OOO)';
+
+                            let startCol = 1;
+                            let endCol = 7;
+                            let isActualStart = false;
+                            let isActualEnd = false;
+
+                            if (req.start_date >= weekStartStr) {
+                              const idx = weekDays.findIndex(d => d.dateStr >= req.start_date);
+                              if (idx !== -1) { startCol = idx + 1; isActualStart = true; }
+                            }
+                            if (req.end_date <= weekEndStr) {
+                              const idx = weekDays.findIndex(d => d.dateStr >= req.end_date);
+                              if (idx !== -1) { endCol = idx + 1; isActualEnd = true; }
+                              else { endCol = weekDays.findIndex(d => d.dateStr <= req.end_date) + 1; isActualEnd = true; }
+                            }
+                            const span = Math.max(1, endCol - startCol + 1);
+
+                            return (
+                              <div key={`lr-${req.id}`} className="grid grid-cols-7 px-1 pointer-events-auto">
+                                <div
+                                  style={{ gridColumn: `${startCol} / span ${span}` }}
+                                  className={`py-1 px-2 text-[11px] font-bold truncate flex items-center justify-between border shadow-2xs transition-transform hover:scale-[1.01] ${
+                                    showDetails 
+                                      ? 'bg-rose-50 text-rose-950 border-rose-300/80 font-extrabold' 
+                                      : 'bg-amber-50/95 text-amber-950 border-amber-300/80 font-bold'
+                                  } ${
+                                    isActualStart && isActualEnd ? 'rounded-md' :
+                                    isActualStart ? 'rounded-l-md rounded-r-none pr-1 border-r border-dashed border-rose-300' :
+                                    isActualEnd ? 'rounded-r-md rounded-l-none pl-1 border-l border-dashed border-rose-300' :
+                                    'rounded-none px-1 border-l border-r border-dashed border-rose-300'
+                                  }`}
+                                  title={`${prof.first_name} ${prof.last_name} — ${displayType} (${req.start_date} to ${req.end_date})`}
+                                >
+                                  <div className="flex items-center truncate">
+                                    <span className="mr-1.5">🏖️</span>
+                                    <span className="font-extrabold mr-1.5">{prof.first_name} {prof.last_name}</span>
+                                    <span className="opacity-80 font-medium">({displayType})</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="grid grid-cols-7 px-1 flex-1 gap-x-1">
+                          {weekDays.map(day => {
+                            const cellItems: React.ReactNode[] = [];
+
+                            if (showHolidays) {
+                              day.birthdays.forEach((b, bIdx) => {
+                                cellItems.push(
+                                  <div
+                                    key={`b-${b.id}-${bIdx}`}
+                                    title={`Birthday Celebration: ${b.first_name} ${b.last_name}`}
+                                    className="px-2 py-0.5 my-0.5 rounded-md bg-gradient-to-r from-amber-100 to-rose-100 text-amber-950 border border-amber-300/80 text-[10px] font-black truncate flex items-center shadow-2xs pointer-events-auto"
+                                  >
+                                    <span className="mr-1">🎂</span>
+                                    <span className="truncate">{b.first_name}&apos;s B-day!</span>
+                                  </div>
+                                );
+                              });
+                            }
+
+                            if (showRemotes) {
+                              day.remotes.forEach((r, rIdx) => {
+                                cellItems.push(
+                                  <div
+                                    key={`r-${r.profile.id}-${rIdx}`}
+                                    title={`${r.profile.first_name} ${r.profile.last_name}: ${r.mode.replace('_', ' ').toUpperCase()}`}
+                                    className="px-2 py-0.5 my-0.5 rounded-md bg-cyan-50/90 text-cyan-950 border border-cyan-200/80 text-[10px] font-semibold truncate flex items-center shadow-2xs pointer-events-auto"
+                                  >
+                                    <span className="mr-1">{r.mode === 'remote_abroad' ? '✈️' : '🏠'}</span>
+                                    <span className="font-bold mr-1">{r.profile.first_name}</span>
+                                    <span className="text-slate-500 font-normal">{r.mode === 'remote_abroad' ? `(Abroad)` : '(Remote GR)'}</span>
+                                  </div>
+                                );
+                              });
+                            }
+
+                            const visibleItems = cellItems.slice(0, 3);
+                            const overflowCount = cellItems.length - visibleItems.length;
+
+                            return (
+                              <div key={`daily-${day.dateStr}`} className="flex flex-col justify-between overflow-hidden">
+                                <div className="space-y-0.5">
+                                  {visibleItems}
+                                  {overflowCount > 0 && (
+                                    <div className="px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 text-center transition-colors border border-slate-200 pointer-events-auto cursor-pointer" onClick={() => setSelectedDay(day)}>
+                                      +{overflowCount} more...
+                                    </div>
+                                  )}
+                                </div>
+                                {day.isCurrentMonth && day.inOffice.length > 0 && (
+                                  <div className="mt-2 pt-1 border-t border-slate-200/80 text-[9px] font-medium text-slate-400 flex items-center justify-between px-1 pointer-events-auto">
+                                    <span>🏢 Office HQ</span>
+                                    <span className="font-extrabold text-slate-700">{day.inOffice.length} on-site</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+
+        {/* Calendar Legend & Privacy Lens Footer */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 p-5 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-xs text-xs text-slate-600">
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 rounded-full bg-cyan-500 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-800 block">🏠 Remote Work</span>
+              <span className="text-[11px] text-slate-500">Daily logs &amp; routines</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 rounded-full bg-rose-500 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-800 block">🏖️ Approved Leave</span>
+              <span className="text-[11px] text-slate-500">Vacation or sick leave</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 rounded-full bg-indigo-600 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-800 block">🎉 Holidays &amp; Closures</span>
+              <span className="text-[11px] text-slate-500">Public civic dates &amp; breaks</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 rounded-full bg-amber-500 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-800 block">🎂 Birthdays</span>
+              <span className="text-[11px] text-slate-500">Teammate celebrations</span>
+            </div>
+          </div>
+          <div className="flex items-start space-x-2 md:border-l md:border-slate-200 md:pl-4">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-slate-500 leading-tight">
+              <span className="font-bold text-slate-700 block">§4 Privacy Lens Active</span>
+              Peers view &quot;Out-of-Office&quot; for absences. Details restricted to Admins and self.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 7. INTERACTIVE DAY DETAILS MODAL / SLIDE-OVER */}
+      {selectedDay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="p-6 bg-gradient-to-r from-slate-900 to-[#1E3A5F] text-white flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold uppercase text-cyan-300 tracking-wider flex items-center mb-1">
+                  <Clock className="w-3.5 h-3.5 mr-1" /> Daily Roster &amp; Schedule Breakdown
+                </span>
+                <h3 className="text-xl font-extrabold font-mono">
+                  {format(selectedDay.dateObj, 'EEEE, MMMM d, yyyy')}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedDay(null)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              {/* Birthdays on this day */}
+              {selectedDay.birthdays.length > 0 && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-rose-50 border border-amber-200/80 space-y-2">
+                  <h4 className="font-extrabold text-amber-950 flex items-center text-sm">
+                    <span className="mr-1.5 text-base">🎂</span> Birthday Celebrations for This Date
+                  </h4>
+                  <ul className="space-y-1 text-amber-900 font-bold">
+                    {selectedDay.birthdays.map(b => (
+                      <li key={b.id}>&bull; Happy Birthday to {b.first_name} {b.last_name}! 🎉</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Holidays or Mandatory Closures */}
+              {(selectedDay.holidays.length > 0 || selectedDay.mandatoryLeaves.length > 0) && (
+                <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200/80 space-y-2">
+                  <h4 className="font-bold text-indigo-950 flex items-center text-sm">
+                    <Sparkles className="w-4 h-4 mr-1.5 text-indigo-600" /> Active Holiday or Mandatory Closure
+                  </h4>
+                  <ul className="space-y-1 text-indigo-900">
+                    {selectedDay.holidays.map(h => (
+                      <li key={h.id} className="font-semibold">&bull; Public Holiday: {h.name_en || h.name_el}</li>
+                    ))}
+                    {selectedDay.mandatoryLeaves.map(m => (
+                      <li key={m.id} className="font-semibold">&bull; Company Mandatory Break: {m.name} ({m.note})</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Away on Leave Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center">
+                    <span className="mr-2 text-base">🏖️</span> Away on Leave / OOO ({selectedDay.leaves.length})
+                  </h4>
+                  <Badge variant={selectedDay.leaves.length > 0 ? 'warning' : 'neutral'} className="font-extrabold">
+                    {selectedDay.leaves.length} staff away
+                  </Badge>
+                </div>
+                {selectedDay.leaves.length === 0 ? (
+                  <p className="text-slate-400 italic py-1">No staff members are on approved leave for this date.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {selectedDay.leaves.map((l, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-slate-800">{l.profile.first_name} {l.profile.last_name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono font-bold">{l.profile.team?.name || 'Staff'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                            {l.displayType}
+                          </span>
+                          {l.showDetails && l.request.note && (
+                            <span className="text-[10px] text-slate-500 italic truncate max-w-[120px]" title={l.request.note}>
+                              &ldquo;{l.request.note}&rdquo;
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Working Remotely Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center">
+                    <span className="mr-2 text-base">🏠</span> Working Remotely ({selectedDay.remotes.length})
+                  </h4>
+                  <Badge variant={selectedDay.remotes.length > 0 ? 'info' : 'neutral'} className="font-extrabold">
+                    {selectedDay.remotes.length} remote
+                  </Badge>
+                </div>
+                {selectedDay.remotes.length === 0 ? (
+                  <p className="text-slate-400 italic py-1">No remote workers recorded for this date.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {selectedDay.remotes.map((r, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-cyan-50/50 border border-cyan-200/60 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-slate-800 flex items-center">
+                            {r.mode === 'remote_abroad' ? <Globe className="w-3.5 h-3.5 mr-1 text-blue-600" /> : <MapPin className="w-3.5 h-3.5 mr-1 text-cyan-600" />}
+                            {r.profile.first_name} {r.profile.last_name}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono font-bold">{r.profile.team?.name || 'Staff'}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-cyan-800 capitalize">
+                            {r.mode === 'remote_abroad' ? `Abroad: ${r.location || 'International'}` : 'Remote (Greece)'}
+                          </span>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-white rounded border border-slate-200 text-slate-600">
+                            {r.isOverride ? 'Daily Log' : 'Weekly Pattern'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* In Office HQ Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center">
+                    <span className="mr-2 text-base">🏢</span> On-Site at Office HQ ({selectedDay.inOffice.length})
+                  </h4>
+                  <Badge variant="neutral" className="font-extrabold">
+                    {selectedDay.inOffice.length} present at HQ
+                  </Badge>
+                </div>
+                {selectedDay.inOffice.length === 0 ? (
+                  <p className="text-slate-400 italic py-1">No regular on-site staff scheduled for this date (e.g. weekend or full remote day).</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {selectedDay.inOffice.map((o, idx) => (
+                      <div key={idx} className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold flex items-center">
+                        <Building2 className="w-3 h-3 mr-1 text-slate-500" />
+                        <span>{o.profile.first_name} {o.profile.last_name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 font-semibold">
+                Showing attendance &amp; schedule records synced live from PostgreSQL.
+              </span>
+              <div className="flex items-center space-x-2">
+                <Link
+                  href="/remote"
+                  onClick={() => setSelectedDay(null)}
+                  className="px-4 py-2 rounded-xl bg-[#3D87D3] hover:bg-blue-600 text-white font-black text-xs transition-all flex items-center shadow-xs"
+                >
+                  <Globe className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Log Override for Date</span>
+                </Link>
+                <button
+                  onClick={() => setSelectedDay(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
