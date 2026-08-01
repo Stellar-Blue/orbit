@@ -209,14 +209,63 @@ export interface RemoteAmendmentRequest {
   decided_by?: string;
 }
 
+export interface AttioLink {
+  id: string;
+  counterparty_id: string;
+  attio_record_id: string;
+  attio_object?: string;
+  link_status: 'linked' | 'pending_review' | 'unlinked';
+  linked_at?: string;
+  last_inbound_at?: string;
+  last_outbound_at?: string;
+  orbit_arr?: number;
+  orbit_active_contracts?: number;
+  orbit_next_renewal?: string;
+}
+
+export interface AttioEvent {
+  id: string;
+  attio_event_id: string;
+  event_type: string;
+  payload: any;
+  received_at?: string;
+  processed_at?: string;
+  status: 'processed' | 'skipped' | 'failed' | 'pending_review';
+  error?: string;
+}
+
+export interface CounterpartyContact {
+  id: string;
+  counterparty_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  attio_person_id?: string;
+  created_at?: string;
+}
+
 export interface Counterparty {
   id: string;
   legal_name: string;
+  trade_name?: string;
   afm?: string;
+  vat_number?: string;
+  vat_valid?: boolean;
+  vat_checked_at?: string;
+  registration_number?: string;
   doy?: string;
   country: string;
   address?: string;
+  website_domain?: string;
+  status?: 'active' | 'archived';
+  is_internal?: boolean;
+  sync_to_attio?: boolean;
   notes?: string;
+  attio_link?: AttioLink;
+  contacts?: CounterpartyContact[];
+  // Derived helper field in UI
+  derived_role?: 'client' | 'supplier' | 'both' | 'none yet';
 }
 
 export interface Contract {

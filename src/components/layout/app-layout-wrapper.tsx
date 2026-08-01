@@ -28,7 +28,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
       <CommandMenu />
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden w-full max-w-full">
         {/* Header / Quick Action & Mobile Toggle Bar */}
-        <header className="h-16 border-b border-slate-200/80 bg-white/85 backdrop-blur-md px-4 sm:px-6 md:px-8 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+        <header className="h-16 border-b border-slate-200/80 bg-white/85 backdrop-blur-md px-3 sm:px-4 md:px-5 flex items-center justify-between sticky top-0 z-20 shadow-xs">
           <div className="flex items-center space-x-3 text-sm text-slate-500 overflow-hidden">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -70,7 +70,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
         {/* Persistent Admin Employee-Preview Mode Ribbon */}
         {realUserRole === 'admin' && isViewAsEmployee && (
-          <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white px-4 sm:px-6 md:px-8 py-2.5 text-xs font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-amber-700 animate-in slide-in-from-top duration-200">
+          <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white px-3 sm:px-4 md:px-5 py-2.5 text-xs font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-amber-700 animate-in slide-in-from-top duration-200">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
               <span>
@@ -87,8 +87,8 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
           </div>
         )}
 
-        {/* Page Content with Responsive Padding */}
-        <main className="p-4 sm:p-6 md:p-8 w-full max-w-full flex-1 overflow-x-hidden">
+        {/* Page Content with Responsive Full-Width Layout */}
+        <main className="px-3 sm:px-4 md:px-5 py-5 w-full max-w-full flex-1 overflow-x-hidden">
           {children}
         </main>
       </div>

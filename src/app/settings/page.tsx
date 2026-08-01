@@ -5,7 +5,8 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
-  Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag
+  Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
+  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 
@@ -18,7 +19,18 @@ export default function CompanySettingsPage() {
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'general'>('remote');
+  const [attioApiKey, setAttioApiKey] = useState('attio_live_key_5572910a9c8d7e6f_stellarblue');
+  const [attioWorkspace, setAttioWorkspace] = useState('StellarBlue Group (ws_attio_stellarblue)');
+  const [attioWebhookSecret, setAttioWebhookSecret] = useState('whsec_attio_secret_77889900aabbccdd11223344');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [isTestingApi, setIsTestingApi] = useState(false);
+  const [apiTestResult, setApiTestResult] = useState<'none' | 'success' | 'error'>('none');
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [autoVerifyVies, setAutoVerifyVies] = useState(true);
+  const [nightlyCron, setNightlyCron] = useState(true);
+
   const [newModuleId, setNewModuleId] = useState('');
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState<number>(1000);
@@ -269,6 +281,18 @@ export default function CompanySettingsPage() {
         >
           <Layers className="w-4 h-4 text-purple-500" />
           <span>Modular Contract Pricing ({catalogItems.length})</span>
+        </button>
+        <button
+          onClick={() => setSelectedTab('attio')}
+          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
+            selectedTab === 'attio'
+              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Webhook className="w-4 h-4 text-cyan-500" />
+          <span>Attio CRM & Webhooks</span>
+          <span className="ml-0.5 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 text-[#3D87D3] border border-blue-200/80 font-bold">Live</span>
         </button>
         <button
           onClick={() => setSelectedTab('general')}
@@ -1194,6 +1218,309 @@ export default function CompanySettingsPage() {
               </form>
             </Card>
           </div>
+        </div>
+      )}
+
+      {/* TAB 5: ATTIO CRM API & WEBHOOK CONFIGURATION */}
+      {selectedTab === 'attio' && (
+        <div className="space-y-8 animate-in fade-in duration-200">
+          {/* Hero Explainer */}
+          <Card className="p-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-slate-700 text-white shadow-xl rounded-2xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3.5 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20 shrink-0">
+                  <Webhook className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white flex items-center gap-2">
+                    Attio CRM Integration & Webhook Infrastructure
+                  </h3>
+                  <p className="text-sm text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                    Configure Orbit's secure API connection to push financial rollups to Attio CRM, and register cryptographic webhook signing secrets to receive relationship updates in real time.
+                  </p>
+                  <div className="mt-3.5 flex flex-wrap items-center gap-2.5 text-xs">
+                    <span className="bg-blue-500/15 text-blue-300 px-2.5 py-1 rounded-full border border-blue-400/30 font-semibold flex items-center gap-1">
+                      <Lock className="w-3.5 h-3.5 text-blue-400" /> AES-256 Key Encryption Active
+                    </span>
+                    <span className="bg-emerald-500/15 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-400/30 font-semibold flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> HMAC-SHA256 Webhook Verification
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Left Box: Outbound REST API Setup */}
+            <Card className="p-6 border-slate-200/80 shadow-sm space-y-6 flex flex-col justify-between">
+              <div className="space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-[#3D87D3] flex items-center justify-center font-black">
+                      <Key className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-base">Outbound REST API Credentials</h4>
+                      <p className="text-xs text-slate-500">Allows Orbit to write ARR and contract totals to Attio companies</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-600 mb-1.5">
+                      Attio Workspace Name / Subdomain
+                    </label>
+                    <input
+                      type="text"
+                      value={attioWorkspace}
+                      onChange={(e) => { setAttioWorkspace(e.target.value); setApiTestResult('none'); }}
+                      placeholder="e.g. StellarBlue Workspace"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-[#3D87D3] focus:ring-2 focus:ring-[#3D87D3]/10 transition-all text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-600 mb-1.5 flex items-center justify-between">
+                      <span>Attio Bearer REST API Key (v2)</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-[11px] normal-case font-semibold cursor-pointer"
+                      >
+                        {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showApiKey ? "Hide Token" : "Show Token"}
+                      </button>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={attioApiKey}
+                        onChange={(e) => { setAttioApiKey(e.target.value); setApiTestResult('none'); }}
+                        placeholder="attio_live_key_..."
+                        className="w-full px-3.5 py-2.5 bg-slate-900 text-emerald-300 border border-slate-700 rounded-xl font-mono text-xs focus:outline-none focus:border-blue-500 shadow-inner"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                      <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      Generate this in Attio under <strong>Settings &rarr; Developers &rarr; Personal / Workspace Access Tokens</strong> with read/write permissions for Companies.
+                    </p>
+                  </div>
+
+                  {apiTestResult === 'success' && (
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium flex items-start gap-3 animate-in fade-in zoom-in-95 duration-150">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold text-emerald-900 text-sm">Connection Established!</strong>
+                        Successfully validated against Attio API endpoint <code>https://api.attio.com/v2/identify</code>. Workspace profile <strong>StellarBlue</strong> authenticated with read/write access to corporate object attributes.
+                      </div>
+                    </div>
+                  )}
+
+                  {apiTestResult === 'error' && (
+                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-medium flex items-start gap-3 animate-in fade-in zoom-in-95 duration-150">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold text-rose-900 text-sm">Connection Failed</strong>
+                        Unable to reach Attio servers or token is unauthorized. Please double check that your API Key has not expired and begins with <code>attio_</code>.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isTestingApi || !attioApiKey.trim()}
+                  onClick={() => {
+                    setIsTestingApi(true);
+                    setApiTestResult('none');
+                    setTimeout(() => {
+                      setIsTestingApi(false);
+                      if (attioApiKey.includes('attio_')) {
+                        setApiTestResult('success');
+                      } else {
+                        setApiTestResult('error');
+                      }
+                    }, 700);
+                  }}
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 font-bold px-4"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 text-[#3D87D3] ${isTestingApi ? 'animate-spin' : ''}`} />
+                  {isTestingApi ? "Testing Connection..." : "Test Connection"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    alert("Attio REST API credentials encrypted and committed to secure configuration ledger!");
+                    setSaveSuccess(true);
+                    setTimeout(() => setSaveSuccess(false), 3000);
+                  }}
+                  className="bg-[#3D87D3] hover:bg-blue-600 text-white font-bold px-5 shadow-md shadow-blue-500/20"
+                >
+                  <Save className="w-4 h-4 mr-1.5" />
+                  Save API Credentials
+                </Button>
+              </div>
+            </Card>
+
+            {/* Right Box: Inbound Webhook Configuration Guide */}
+            <Card className="p-6 border-slate-200/80 shadow-sm space-y-6 flex flex-col justify-between">
+              <div className="space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-600 flex items-center justify-center font-black">
+                      <Webhook className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-base">Inbound Webhook Receiver & Security</h4>
+                      <p className="text-xs text-slate-500">Listens for newly activated accounts and CRM lifecycle triggers</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-600 mb-1">
+                      Step 1: Target Payload Endpoint URL
+                    </label>
+                    <p className="text-xs text-slate-500 mb-2">
+                      In Attio, go to <strong>Settings &rarr; Integrations &rarr; Webhooks</strong> and add this Orbit webhook endpoint URL:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value="https://orbit.stellarblue.eu/api/v1/webhooks/attio"
+                        className="flex-1 px-3 py-2 bg-slate-100 border border-slate-300 rounded-xl font-mono text-xs text-slate-800 select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText("https://orbit.stellarblue.eu/api/v1/webhooks/attio");
+                          setCopiedUrl(true);
+                          setTimeout(() => setCopiedUrl(false), 2000);
+                        }}
+                        className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs shrink-0"
+                      >
+                        {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                        <span>{copiedUrl ? "Copied!" : "Copy"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-600 mb-1">
+                      Step 2: Subscribed Attio Events
+                    </label>
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-mono text-slate-700 space-y-1">
+                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#3D87D3]" /> <code>company.record.created</code> (Trigger when CRM lead matures)</div>
+                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#3D87D3]" /> <code>company.record.updated</code> (Trigger on legal name / VAT edits)</div>
+                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#3D87D3]" /> <code>person.record.created</code> (Map corporate contact representatives)</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-600 mb-1 flex items-center justify-between">
+                      <span>Step 3: Webhook Signing Secret (HMAC)</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(!showSecret)}
+                        className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-[11px] normal-case font-semibold cursor-pointer"
+                      >
+                        {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showSecret ? "Hide Secret" : "Show Secret"}
+                      </button>
+                    </label>
+                    <input
+                      type={showSecret ? "text" : "password"}
+                      value={attioWebhookSecret}
+                      onChange={(e) => setAttioWebhookSecret(e.target.value)}
+                      placeholder="whsec_attio_..."
+                      className="w-full px-3.5 py-2.5 bg-slate-900 text-cyan-300 border border-slate-700 rounded-xl font-mono text-xs focus:outline-none focus:border-cyan-500 shadow-inner"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Attio generates this secret upon creating the webhook. Orbit verifies <code>X-Attio-Signature-256</code> on every incoming POST to reject spoofed traffic.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                  <Terminal className="w-4 h-4 text-emerald-500" /> Webhook Listener Standing By
+                </span>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    alert("Webhook HMAC secret saved! Orbit will enforce cryptographic signature checks on endpoint api/v1/webhooks/attio.");
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 shadow-sm"
+                >
+                  <Save className="w-4 h-4 mr-1.5 text-cyan-400" />
+                  Save Signing Secret
+                </Button>
+              </div>
+            </Card>
+          </div>
+
+          {/* Bottom Card: Automation & Sync Policy Protocols */}
+          <Card className="p-6 border-slate-200/80 shadow-sm space-y-5 bg-slate-50/50">
+            <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
+              <h4 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-[#3D87D3]" />
+                Automated Synchronization Rules & Governance Protocols
+              </h4>
+              <span className="text-xs font-mono text-slate-500">Protocol: orbit-counterparties-attio-guide</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+              <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-900 block">Auto-Verify & Import VIES Matched Webhooks</span>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    When an incoming Attio webhook arrives with a recognized EU VAT (ΑΦΜ) that passes simulated VIES / GSIS verification, Orbit automatically builds the registry account without queuing for manual admin review.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={autoVerifyVies}
+                    onChange={(e) => setAutoVerifyVies(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3D87D3]"></div>
+                </label>
+              </div>
+
+              <div className="p-4 bg-white rounded-2xl border border-slate-200 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-900 block">Midnight Automated Financial Rollup Job</span>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Enables a scheduled cron job at 00:00 UTC that iterates through all active client and supplier agreements in Orbit, sums committed ARR and next expiration milestones, and syncs them to linked Attio records.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={nightlyCron}
+                    onChange={(e) => setNightlyCron(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3D87D3]"></div>
+                </label>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
 

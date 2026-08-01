@@ -10,6 +10,7 @@ import {
   ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
+import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing } = useAuth();
@@ -33,6 +34,8 @@ export default function ContractsRegistryPage() {
   const [newDocName, setNewDocName] = useState<string>('');
   const [newDocUrl, setNewDocUrl] = useState<string>('');
   const [isUploadingDoc, setIsUploadingDoc] = useState<boolean>(false);
+  const [newCounterpartyId, setNewCounterpartyId] = useState<string>('');
+  const [cpError, setCpError] = useState<string>('');
 
   const uploadToSupabaseStorage = async (file: File, refPrefix: string): Promise<string | null> => {
     const supabase = getSupabaseBrowserClient();
@@ -117,9 +120,15 @@ export default function ContractsRegistryPage() {
 
   const handleCreateContract = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newCounterpartyId) {
+      setCpError("Please select or create a Counterparty before registering the contract.");
+      return;
+    }
+    setCpError("");
+    const selectedCp = counterparties.find(c => c.id === newCounterpartyId);
     addContract({
-      counterparty_id: counterparties[0]?.id || 'cp-depa', // Defaulting to first counterparty
-      counterparty: counterparties[0],
+      counterparty_id: newCounterpartyId,
+      counterparty: selectedCp,
       direction: newDirection,
       reference: newRef,
       type: newType,
@@ -141,6 +150,7 @@ export default function ContractsRegistryPage() {
     });
     setNewDocName('');
     setNewDocUrl('');
+    setNewCounterpartyId('');
     setIsCreateOpen(false);
   };
 
@@ -815,7 +825,7 @@ export default function ContractsRegistryPage() {
       <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Register New Contract" size="2xl">
         <form onSubmit={handleCreateContract} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold uppercase text-slate-500 mb-1">Direction & Counterparty</label>
+            <label className="block font-semibold uppercase text-slate-500 mb-1">Contract Direction</label>
             <select 
               value={newDirection}
               onChange={e => setNewDirection(e.target.value as ContractDirection)}
@@ -824,6 +834,19 @@ export default function ContractsRegistryPage() {
               <option value="revenue">Client Revenue (Atlas ETRM / EMS / Consulting)</option>
               <option value="cost">Supplier Spend (Cloud / Data Provider / Partnership)</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold uppercase text-slate-500 mb-1.5 flex items-center justify-between">
+              <span>Counterparty (Client / Supplier) <span className="text-red-500">*</span></span>
+              <span className="text-[11px] text-[#3D87D3] normal-case font-semibold">First-Class Registry Entity</span>
+            </label>
+            <CounterpartyPicker
+              value={newCounterpartyId}
+              onChange={(val) => { setNewCounterpartyId(val); setCpError(""); }}
+              error={cpError}
+              allowClear={true}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
