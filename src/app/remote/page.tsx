@@ -24,8 +24,8 @@ export default function RemoteWorkLogPage() {
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
 
-  // Demo Today Reference
-  const todayStr = '2026-08-05';
+  // Dynamic Today Reference
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
   const todayObj = parseISO(todayStr);
 
   // Calendar & Declaration state
@@ -158,7 +158,7 @@ export default function RemoteWorkLogPage() {
       const weekdayStr = weekdayNames[dateObj.getDay()];
       const isWeekend = weekdayStr === 'Sat' || weekdayStr === 'Sun';
       const isCurrentMonth = isSameMonth(dateObj, currentMonth);
-      const isToday = dateStr === todayStr || isSameDay(dateObj, new Date());
+      const isToday = isSameDay(dateObj, new Date());
       const isPast = dateStr < todayStr;
 
       // Check holidays & company closures

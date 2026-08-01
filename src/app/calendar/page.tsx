@@ -150,7 +150,7 @@ export default function CompanyCalendarPage() {
         dateStr,
         dateObj: date,
         isCurrentMonth: isSameMonth(date, currentMonth),
-        isToday: isSameDay(date, new Date()) || dateStr === '2026-08-05', // default demo today pointer
+        isToday: isSameDay(date, new Date()),
         holidays: hol,
         mandatoryLeaves: mandatory,
         leaves,
@@ -162,7 +162,7 @@ export default function CompanyCalendarPage() {
 
   const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
   const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
-  const handleToday = () => setCurrentMonth(new Date(2026, 7, 1));
+  const handleToday = () => setCurrentMonth(new Date());
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-20">
@@ -223,7 +223,7 @@ export default function CompanyCalendarPage() {
             onClick={handleToday}
             className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
           >
-            Today (Aug &apos;26)
+            Today ({format(new Date(), "MMM &apos;yy")})
           </button>
         </div>
 

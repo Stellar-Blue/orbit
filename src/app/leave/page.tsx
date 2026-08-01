@@ -111,7 +111,7 @@ export default function LeaveManagementPage() {
 
   // Earliest valid start date based on min_notice_days (§3)
   const minNoticeDays = selectedLeaveType?.min_notice_days ?? 7;
-  const todayStr = '2026-07-31'; // Baseline dev reference date
+  const todayStr = format(new Date(), 'yyyy-MM-dd'); // Current local reference date
   const earliestValidDate = useMemo(() => {
     if (minNoticeDays === 0) return '2026-01-01';
     return format(addDays(parseISO(todayStr), minNoticeDays), 'yyyy-MM-dd');
@@ -306,10 +306,10 @@ export default function LeaveManagementPage() {
                         </button>
                       </div>
                       <button
-                        onClick={() => setCalendarMonth(new Date('2026-07-01T00:00:00'))}
+                        onClick={() => setCalendarMonth(startOfMonth(new Date()))}
                         className="px-3 py-1.5 rounded-xl border border-indigo-200 text-xs font-bold text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 transition-all cursor-pointer shadow-2xs"
                       >
-                        Today (July 2026)
+                        Today ({format(new Date(), 'MMMM yyyy')})
                       </button>
                     </div>
                   </div>
@@ -327,7 +327,6 @@ export default function LeaveManagementPage() {
                     <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-[#3D87D3] mr-1.5 inline-block shadow-2xs" /> My Approved / Pending Leaves</span>
                     <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-indigo-700 mr-1.5 inline-block shadow-2xs" /> Mandatory Closure</span>
                     <span className="flex items-center"><span className="w-3 h-3 rounded-full bg-rose-500 mr-1.5 inline-block shadow-2xs" /> Greek Public Holiday</span>
-                    <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping mr-1.5 inline-block shadow-sm" /> Today Indicator</span>
                   </div>
 
                   {/* Day of Week Headers with Mobile Swipe Support */}
@@ -377,7 +376,7 @@ export default function LeaveManagementPage() {
                                 const dayStr = format(d, 'yyyy-MM-dd');
                                 const isCurrentMonth = isSameMonth(d, calendarMonth);
                                 const isSelected = isSelectedDuringDrag(dayStr);
-                                const isDayToday = dayStr === todayStr || isSameDay(d, new Date());
+                                const isDayToday = isSameDay(d, new Date());
                                 const isWeekend = format(d, 'EEE') === 'Sat' || format(d, 'EEE') === 'Sun';
 
                                 return (
@@ -406,18 +405,12 @@ export default function LeaveManagementPage() {
                                 {weekDays.map(d => {
                                   const dayStr = format(d, 'yyyy-MM-dd');
                                   const isCurrentMonth = isSameMonth(d, calendarMonth);
-                                  const isDayToday = dayStr === todayStr || isSameDay(d, new Date());
+                                  const isDayToday = isSameDay(d, new Date());
                                   const isWeekend = format(d, 'EEE') === 'Sat' || format(d, 'EEE') === 'Sun';
 
                                   return (
                                     <div key={dayStr} className="flex items-center justify-between px-1 h-6">
                                       <div className="flex items-center space-x-1">
-                                        {isDayToday && (
-                                          <>
-                                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block shadow-sm" title="Today" />
-                                            <span className="text-[9px] font-black uppercase text-emerald-700 tracking-wider">Today</span>
-                                          </>
-                                        )}
                                       </div>
                                       <span
                                         className={`text-xs font-mono font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
