@@ -298,6 +298,7 @@ export interface Contract {
   discount_pct?: number;
   term_years?: number;
   service_start_date?: string;
+  payment_terms_days?: number;
   lines?: ContractLine[];
   schedule?: ContractSchedule[];
 }
@@ -338,4 +339,81 @@ export interface ContractSchedule {
   contract_id: string;
   period: string; // Format YYYY-MM
   amount: number;
+}
+
+export type InvoiceDirection = 'outgoing' | 'incoming';
+export type InvoiceType = 'invoice' | 'credit_note' | 'proforma' | 'debit_note';
+export type InvoiceStatus = 'registered' | 'sent_received' | 'partially_paid' | 'paid' | 'disputed' | 'resolved' | 'cancelled';
+
+export interface InvoiceCategory {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_default: boolean;
+  created_at?: string;
+}
+
+export interface InvoiceDocument {
+  id: string;
+  invoice_id: string;
+  storage_path: string;
+  file_name: string;
+  version: number;
+  uploaded_by?: string | null;
+  uploaded_at?: string;
+  url?: string;
+}
+
+export interface InvoicePayment {
+  id: string;
+  invoice_id: string;
+  paid_on: string;
+  amount: number;
+  bank_reference?: string | null;
+  note?: string | null;
+  created_at?: string;
+}
+
+export interface InvoiceAllocation {
+  id: string;
+  invoice_id: string;
+  contract_id: string;
+  period: string; // YYYY-MM
+  amount: number;
+  created_at?: string;
+}
+
+export interface Invoice {
+  id: string;
+  direction: InvoiceDirection;
+  counterparty_id: string;
+  counterparty?: Counterparty;
+  contract_id?: string | null;
+  contract?: Contract;
+  type: InvoiceType;
+  credits_invoice_id?: string | null;
+  credits_invoice?: Invoice;
+  invoice_number: string;
+  mark?: string | null;
+  internal_ref?: string | null;
+  category?: string | null;
+  issue_date: string;
+  due_date: string;
+  period_from?: string | null;
+  period_to?: string | null;
+  currency: string;
+  fx_rate: number;
+  net: number;
+  vat_amount: number;
+  vat_rate: string;
+  gross: number;
+  gross_eur: number;
+  status: InvoiceStatus;
+  missing_document: boolean;
+  notes?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  documents?: InvoiceDocument[];
+  payments?: InvoicePayment[];
+  allocations?: InvoiceAllocation[];
 }

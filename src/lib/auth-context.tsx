@@ -7,7 +7,8 @@ import {
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
-  CatalogModule, CatalogItem, ContractLine, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact
+  CatalogModule, CatalogItem, ContractLine, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
+  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation
 } from './types';
 
 interface AppState {
@@ -33,6 +34,11 @@ interface AppState {
   catalogItems: CatalogItem[];
   contractLines: ContractLine[];
   contractSchedules: ContractSchedule[];
+  invoices: Invoice[];
+  invoiceCategories: InvoiceCategory[];
+  invoiceDocuments: InvoiceDocument[];
+  invoicePayments: InvoicePayment[];
+  invoiceAllocations: InvoiceAllocation[];
   isDevMode: boolean;
   isViewAsEmployee: boolean;
   setIsViewAsEmployee: (val: boolean | ((prev: boolean) => boolean)) => void;
@@ -101,6 +107,13 @@ interface AppState {
   deleteCatalogModule: (id: string) => Promise<boolean>;
   saveCatalogItem: (item: Partial<CatalogItem> & { module_id: string; name: string; default_unit_price: number; unit_label: string; default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time' }) => Promise<boolean>;
   deleteCatalogItem: (id: string) => Promise<boolean>;
+  addInvoice: (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>) => Promise<Invoice | null>;
+  updateInvoiceStatus: (id: string, status: Invoice['status'], notes?: string) => Promise<boolean>;
+  recordInvoicePayment: (invoiceId: string, paidOn: string, amount: number, bankRef?: string, note?: string) => Promise<boolean>;
+  addInvoiceDocument: (invoiceId: string, doc: Omit<InvoiceDocument, 'id' | 'uploaded_at'>) => Promise<boolean>;
+  saveInvoiceAllocation: (invoiceId: string, contractId: string, period: string, amount: number) => Promise<boolean>;
+  addInvoiceCategory: (name: string, description?: string) => Promise<boolean>;
+  deleteInvoiceCategory: (id: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AppState | undefined>(undefined);
@@ -141,6 +154,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
   const [contractSchedules, setContractSchedules] = useState<ContractSchedule[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoiceCategories, setInvoiceCategories] = useState<InvoiceCategory[]>([]);
+  const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
+  const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
+  const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
 
   useEffect(() => {
     // Intercept OAuth authorization code if Supabase redirects to site root instead of /auth/callback
@@ -298,6 +316,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch {
           // Graceful fallback if remote_amendments table is not created yet
+        }
+
+        try {
+          const [invRes, catRes, docRes, payRes, allocRes] = await Promise.all([
+            supabase.from('invoices').select('*').order('issue_date', { ascending: false }),
+            supabase.from('invoice_categories').select('*').order('name', { ascending: true }),
+            supabase.from('invoice_documents').select('*'),
+            supabase.from('invoice_payments').select('*'),
+            supabase.from('invoice_allocations').select('*'),
+          ]);
+          
+          const loadedCats: InvoiceCategory[] = catRes.data || [];
+          if (loadedCats.length === 0) {
+            const defaultCats: InvoiceCategory[] = [
+              { id: 'cat-1', name: 'Infrastructure & Hosting', description: 'Servers and cloud computing', is_default: true },
+              { id: 'cat-2', name: 'Marketing & Sales', description: 'Advertising and campaigns', is_default: true },
+              { id: 'cat-3', name: 'Office & Admin', description: 'Office rent and supplies', is_default: true },
+              { id: 'cat-4', name: 'Travel & Expense', description: 'Corporate travel and flights', is_default: true },
+              { id: 'cat-5', name: 'Legal & Accounting', description: 'Audit fees and advisory', is_default: true },
+              { id: 'cat-6', name: 'Other Operational', description: 'Miscellaneous operational expenses', is_default: true },
+            ];
+            setInvoiceCategories(defaultCats);
+          } else {
+            setInvoiceCategories(loadedCats);
+          }
+          const loadedDocs: InvoiceDocument[] = docRes.data || [];
+          setInvoiceDocuments(loadedDocs);
+          const loadedPays: InvoicePayment[] = payRes.data || [];
+          setInvoicePayments(loadedPays);
+          const loadedAlloc: InvoiceAllocation[] = allocRes.data || [];
+          setInvoiceAllocations(loadedAlloc);
+
+          const enrichedInvoices: Invoice[] = (invRes.data || []).map((inv: any) => {
+            const cp = enrichedCounterparties.find(c => c.id === inv.counterparty_id);
+            const cnt = enrichedContracts.find(c => c.id === inv.contract_id);
+            const docs = loadedDocs.filter(d => d.invoice_id === inv.id);
+            const pays = loadedPays.filter(p => p.invoice_id === inv.id);
+            const allocs = loadedAlloc.filter(a => a.invoice_id === inv.id);
+            return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs };
+          });
+          setInvoices(enrichedInvoices);
+        } catch (e) {
+          console.warn('Invoice tracking tables sync notice (migration pending):', e);
         }
 
         let matchedId = '';
@@ -1757,6 +1818,206 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const addInvoice = async (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>): Promise<Invoice | null> => {
+    const id = generateUUID();
+    const newInv: Invoice = {
+      ...inv,
+      id,
+      created_at: new Date().toISOString(),
+      counterparty: counterparties.find(c => c.id === inv.counterparty_id),
+      contract: contracts.find(c => c.id === inv.contract_id),
+      documents: [],
+      payments: [],
+      allocations: []
+    };
+    setInvoices(prev => [newInv, ...prev]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const row = {
+        id,
+        direction: inv.direction,
+        counterparty_id: inv.counterparty_id,
+        contract_id: inv.contract_id || null,
+        type: inv.type,
+        credits_invoice_id: inv.credits_invoice_id || null,
+        invoice_number: inv.invoice_number,
+        mark: inv.mark || null,
+        internal_ref: inv.internal_ref || null,
+        category: inv.category || null,
+        issue_date: inv.issue_date,
+        due_date: inv.due_date,
+        period_from: inv.period_from || null,
+        period_to: inv.period_to || null,
+        currency: inv.currency,
+        fx_rate: inv.fx_rate,
+        net: inv.net,
+        vat_amount: inv.vat_amount,
+        vat_rate: inv.vat_rate,
+        gross: inv.gross,
+        gross_eur: inv.gross_eur,
+        status: inv.status,
+        missing_document: inv.missing_document,
+        notes: inv.notes || null
+      };
+      const { error } = await supabase.from('invoices').insert([row]);
+      if (error) console.error("Supabase insert invoice error:", error.message);
+    } catch (e) {
+      console.error(e);
+    }
+    return newInv;
+  };
+
+  const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
+    setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const updatePayload: any = { status };
+      if (notes !== undefined) updatePayload.notes = notes;
+      await supabase.from('invoices').update(updatePayload).eq('id', id);
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  };
+
+  const recordInvoicePayment = async (invoiceId: string, paidOn: string, amount: number, bankRef?: string, note?: string): Promise<boolean> => {
+    const payId = generateUUID();
+    const newPay: InvoicePayment = {
+      id: payId,
+      invoice_id: invoiceId,
+      paid_on: paidOn,
+      amount,
+      bank_reference: bankRef || null,
+      note: note || null,
+      created_at: new Date().toISOString()
+    };
+    setInvoicePayments(prev => [...prev, newPay]);
+
+    setInvoices(prev => prev.map(inv => {
+      if (inv.id !== invoiceId) return inv;
+      const allPays = [...(inv.payments || []), newPay];
+      const totalPaid = allPays.reduce((sum, p) => sum + p.amount, 0);
+      let newStatus = inv.status;
+      if (inv.status !== 'cancelled') {
+        if (totalPaid >= inv.gross - 0.5) newStatus = 'paid';
+        else if (totalPaid > 0) newStatus = 'partially_paid';
+      }
+      return { ...inv, status: newStatus, payments: allPays };
+    }));
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('invoice_payments').insert([{
+        id: payId,
+        invoice_id: invoiceId,
+        paid_on: paidOn,
+        amount,
+        bank_reference: bankRef || null,
+        note: note || null
+      }]);
+      const targetInv = invoices.find(i => i.id === invoiceId);
+      if (targetInv) {
+        const totalPaid = (targetInv.payments || []).reduce((sum, p) => sum + p.amount, 0) + amount;
+        let newStatus = targetInv.status;
+        if (targetInv.status !== 'cancelled') {
+          if (totalPaid >= targetInv.gross - 0.5) newStatus = 'paid';
+          else if (totalPaid > 0) newStatus = 'partially_paid';
+        }
+        await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  };
+
+  const addInvoiceDocument = async (invoiceId: string, doc: Omit<InvoiceDocument, 'id' | 'uploaded_at'>): Promise<boolean> => {
+    const docId = generateUUID();
+    const newDoc: InvoiceDocument = {
+      ...doc,
+      id: docId,
+      uploaded_at: new Date().toISOString()
+    };
+    setInvoiceDocuments(prev => [...prev, newDoc]);
+    setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, missing_document: false, documents: [...(inv.documents || []), newDoc] } : inv));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('invoice_documents').insert([{
+        id: docId,
+        invoice_id: invoiceId,
+        storage_path: doc.storage_path,
+        file_name: doc.file_name,
+        version: doc.version
+      }]);
+      await supabase.from('invoices').update({ missing_document: false }).eq('id', invoiceId);
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  };
+
+  const saveInvoiceAllocation = async (invoiceId: string, contractId: string, period: string, amount: number): Promise<boolean> => {
+    const allocId = generateUUID();
+    const newAlloc: InvoiceAllocation = {
+      id: allocId,
+      invoice_id: invoiceId,
+      contract_id: contractId,
+      period,
+      amount,
+      created_at: new Date().toISOString()
+    };
+    setInvoiceAllocations(prev => [...prev, newAlloc]);
+    setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, allocations: [...(inv.allocations || []), newAlloc] } : inv));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('invoice_allocations').insert([{
+        id: allocId,
+        invoice_id: invoiceId,
+        contract_id: contractId,
+        period,
+        amount
+      }]);
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  };
+
+  const addInvoiceCategory = async (name: string, description?: string): Promise<boolean> => {
+    const catId = generateUUID();
+    const newCat: InvoiceCategory = {
+      id: catId,
+      name,
+      description: description || null,
+      is_default: false,
+      created_at: new Date().toISOString()
+    };
+    setInvoiceCategories(prev => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('invoice_categories').insert([{
+        id: catId,
+        name,
+        description: description || null,
+        is_default: false
+      }]);
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  };
+
+  const deleteInvoiceCategory = async (id: string): Promise<boolean> => {
+    setInvoiceCategories(prev => prev.filter(c => c.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('invoice_categories').delete().eq('id', id);
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
@@ -1784,6 +2045,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       catalogItems,
       contractLines,
       contractSchedules,
+      invoices,
+      invoiceCategories,
+      invoiceDocuments,
+      invoicePayments,
+      invoiceAllocations,
       isDevMode,
       signOut,
       switchUser,
@@ -1838,7 +2104,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addLeaveType,
       updateLeaveType,
       deleteLeaveType,
-      getEmployeeLeaveBalance
+      getEmployeeLeaveBalance,
+      addInvoice,
+      updateInvoiceStatus,
+      recordInvoicePayment,
+      addInvoiceDocument,
+      saveInvoiceAllocation,
+      addInvoiceCategory,
+      deleteInvoiceCategory
     }}>
       {children}
     </AuthContext.Provider>

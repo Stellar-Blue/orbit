@@ -7,17 +7,17 @@ import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices } = useAuth();
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-  const [dossierTab, setDossierTab] = useState<'general' | 'pricing'>('general');
+  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices'>('general');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('kanban');
 
@@ -571,9 +571,112 @@ export default function ContractsRegistryPage() {
                   <Badge variant="success" className="ml-2 text-[11px] px-2 py-0.5">{selectedContract.lines.length}</Badge>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setDossierTab('invoices')}
+                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'invoices' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Receipt className="w-4 h-4 mr-2 text-emerald-600" /> Linked Invoices & Payments
+                {invoices?.filter(i => i.contract_id === selectedContract.id).length > 0 && (
+                  <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{invoices?.filter(i => i.contract_id === selectedContract.id).length}</Badge>
+                )}
+              </button>
             </div>
 
-            {dossierTab === 'pricing' ? (
+            {dossierTab === 'invoices' ? (
+              <div className="space-y-6 pt-3 animate-fadeIn">
+                {(() => {
+                  const linkedInvoices = (invoices || []).filter(i => i.contract_id === selectedContract.id && i.status !== 'cancelled');
+                  const totalGross = linkedInvoices.reduce((s, i) => s + i.gross_eur, 0);
+                  const totalPaid = linkedInvoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + p.amount, 0), 0);
+                  const totalOpen = Math.max(0, totalGross - totalPaid);
+
+                  return (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <Card className="p-4 bg-emerald-50/60 border-emerald-200 rounded-2xl">
+                          <span className="text-xs font-bold text-emerald-800 block">Total Billed Gross</span>
+                          <span className="text-2xl font-black text-emerald-900 mt-1 block font-mono">€{totalGross.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="text-[11px] text-emerald-700 font-medium">Across {linkedInvoices.length} archived invoices</span>
+                        </Card>
+
+                        <Card className="p-4 bg-blue-50/60 border-blue-200 rounded-2xl">
+                          <span className="text-xs font-bold text-blue-800 block">Total Settled / Paid</span>
+                          <span className="text-2xl font-black text-blue-900 mt-1 block font-mono">€{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="text-[11px] text-blue-700 font-medium">Collected via banking wire/SEPA</span>
+                        </Card>
+
+                        <Card className="p-4 bg-amber-50/60 border-amber-200 rounded-2xl">
+                          <span className="text-xs font-bold text-amber-800 block">Open Receivable / Debt</span>
+                          <span className="text-2xl font-black text-amber-900 mt-1 block font-mono">€{totalOpen.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="text-[11px] text-amber-700 font-medium">{totalOpen === 0 ? 'Fully settled obligation' : 'Pending collection or maturity'}</span>
+                        </Card>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                        <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
+                          <div>
+                            <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                              <Receipt className="w-4 h-4 text-emerald-600" />
+                              Contract Invoice Ledger ({linkedInvoices.length} documents)
+                            </h4>
+                            <p className="text-xs text-slate-500">Commercial terms: Net {selectedContract.payment_terms_days ?? 30} Days</p>
+                          </div>
+                          <a href="/invoices" className="text-xs font-bold text-[#3D87D3] hover:underline flex items-center gap-1">
+                            <span>Manage in Global Invoices Hub</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-100 border-b border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
+                            <tr>
+                              <th className="p-3.5">Invoice # & MARK</th>
+                              <th className="p-3.5">Issue Date</th>
+                              <th className="p-3.5">Due Date</th>
+                              <th className="p-3.5 text-right">Gross Amount</th>
+                              <th className="p-3.5 text-right">Paid Amount</th>
+                              <th className="p-3.5 text-center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200/60 bg-white font-medium">
+                            {linkedInvoices.map(inv => {
+                              const pAmt = (inv.payments || []).reduce((s, p) => s + p.amount, 0);
+                              return (
+                                <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
+                                  <td className="p-3.5">
+                                    <span className="font-bold text-slate-900 font-mono block">{inv.invoice_number}</span>
+                                    {inv.mark ? <span className="text-[10px] text-emerald-600 font-mono">MARK: {inv.mark}</span> : <span className="text-[10px] text-amber-600 italic">No MARK code</span>}
+                                  </td>
+                                  <td className="p-3.5 text-slate-700">{inv.issue_date}</td>
+                                  <td className="p-3.5 text-slate-700">{inv.due_date}</td>
+                                  <td className="p-3.5 text-right font-black text-slate-900">€{inv.gross_eur.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                  <td className="p-3.5 text-right font-bold text-emerald-700">€{pAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                  <td className="p-3.5 text-center">
+                                    {inv.status === 'paid' && <Badge variant="success">Paid</Badge>}
+                                    {inv.status === 'partially_paid' && <Badge variant="warning">Partial</Badge>}
+                                    {inv.status !== 'paid' && inv.status !== 'partially_paid' && <Badge variant="info">{inv.status.replace('_', ' ')}</Badge>}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {linkedInvoices.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="p-8 text-center text-slate-400 font-semibold italic">
+                                  No tax invoices linked directly to this contract agreement yet. Head over to the Invoices Register to record billing milestones!
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : dossierTab === 'pricing' ? (
               <div className="pt-2 min-h-[500px]">
                 <ContractPricingBuilder
                   contractId={selectedContract.id}

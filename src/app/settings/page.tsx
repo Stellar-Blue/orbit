@@ -6,7 +6,7 @@ import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
-  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter
+  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter, Receipt
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 
@@ -15,11 +15,14 @@ export default function CompanySettingsPage() {
     currentUser, remotePolicies, updateRemotePolicy, 
     teams, profiles, addTeam, updateTeam, deleteTeam,
     leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType,
-    catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem
+    catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem,
+    invoiceCategories, addInvoiceCategory, deleteInvoiceCategory
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'general'>('remote');
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatDesc, setNewCatDesc] = useState('');
   const [attioApiKey, setAttioApiKey] = useState('attio_live_key_5572910a9c8d7e6f_stellarblue');
   const [attioWorkspace, setAttioWorkspace] = useState('StellarBlue Group (ws_attio_stellarblue)');
   const [attioWebhookSecret, setAttioWebhookSecret] = useState('whsec_attio_secret_77889900aabbccdd11223344');
@@ -64,7 +67,7 @@ export default function CompanySettingsPage() {
     }
   };
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
@@ -73,7 +76,7 @@ export default function CompanySettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
-    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'general'].includes(savedTab)) {
+    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'invoices', 'general'].includes(savedTab)) {
       setSelectedTab(savedTab);
     }
     const savedApiKey = localStorage.getItem('orbit_attio_api_key');
@@ -333,6 +336,17 @@ export default function CompanySettingsPage() {
           <Webhook className="w-4 h-4 text-cyan-500" />
           <span>Attio CRM & Webhooks</span>
           <span className="ml-0.5 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 text-[#3D87D3] border border-blue-200/80 font-bold">Live</span>
+        </button>
+        <button
+          onClick={() => handleTabChange('invoices')}
+          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
+            selectedTab === 'invoices'
+              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Receipt className="w-4 h-4 text-emerald-600" />
+          <span>Invoice & Budget Categories ({invoiceCategories?.length || 0})</span>
         </button>
         <button
           onClick={() => handleTabChange('general')}
@@ -1889,6 +1903,151 @@ export default function CompanySettingsPage() {
               </div>
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* TAB 6: INVOICE & BUDGET CATEGORIES */}
+      {selectedTab === 'invoices' && (
+        <div className="space-y-8 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-emerald-600" />
+                Invoice Expense & Budgeting Categories
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                Configure standardized expenditure tags applied to unlinked supplier bills, one-off vendor invoices, and financial reports. Admins can expand the default catalog with customized corporate budget accounts.
+              </p>
+            </div>
+            <Badge variant="success" className="px-3 py-1 text-xs">Synced with public.invoice_categories</Badge>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Create New Category Card */}
+            <Card className="p-6 border-slate-200 shadow-sm bg-white rounded-2xl h-fit">
+              <h4 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-[#3D87D3]" />
+                Add Custom Budget Category
+              </h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category / Tag Name</label>
+                  <input
+                    type="text"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    placeholder="e.g., Software & R&D Licenses"
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3] transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Description & Usage Guide</label>
+                  <textarea
+                    rows={3}
+                    value={newCatDesc}
+                    onChange={(e) => setNewCatDesc(e.target.value)}
+                    placeholder="Briefly describe what invoices should fall under this financial tag..."
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3] transition-all resize-none"
+                  />
+                </div>
+                <Button
+                  onClick={async () => {
+                    if (!newCatName.trim()) {
+                      alert('Please enter a category name.');
+                      return;
+                    }
+                    await addInvoiceCategory(newCatName.trim(), newCatDesc.trim());
+                    setNewCatName('');
+                    setNewCatDesc('');
+                  }}
+                  disabled={!newCatName.trim()}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  Add Category to Database
+                </Button>
+              </div>
+            </Card>
+
+            {/* Existing Categories List */}
+            <div className="lg:col-span-2 space-y-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100/80 border-b border-slate-200 font-bold text-slate-600 uppercase text-[11px] tracking-wider">
+                    <tr>
+                      <th className="p-4">Category / Account Tag</th>
+                      <th className="p-4">Description</th>
+                      <th className="p-4">Type</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white font-medium">
+                    {invoiceCategories?.map((cat) => (
+                      <tr key={cat.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="p-4 font-bold text-slate-900 flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                            <Tag className="w-4 h-4" />
+                          </div>
+                          <span>{cat.name}</span>
+                        </td>
+                        <td className="p-4 text-slate-600 max-w-sm">
+                          {cat.description || <span className="text-slate-400 italic">No description provided</span>}
+                        </td>
+                        <td className="p-4">
+                          {cat.is_default ? (
+                            <span className="px-2 py-1 rounded-md bg-blue-50 text-[#3D87D3] border border-blue-200/60 text-[11px] font-bold">
+                              System Default
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60 text-[11px] font-bold">
+                              Custom Admin
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right">
+                          <button
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to delete category "${cat.name}"?`)) {
+                                deleteInvoiceCategory(cat.id);
+                              }
+                            }}
+                            title="Remove Category"
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {(!invoiceCategories || invoiceCategories.length === 0) && (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-slate-400 font-medium italic">
+                          No invoice expense categories found. Add your first category above!
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <Card className="p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl border-none shadow-md flex items-center justify-between">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-emerald-400 border border-white/15">
+                    <DollarSign className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-sm text-white">Commercial Payment Terms Configuration</h5>
+                    <p className="text-xs text-slate-300">
+                      Contracts across Orbit inherit a default commercial maturity of <strong className="text-emerald-400">Net 30 Days</strong> (payment_terms_days = 30), customizable per client/supplier contract agreement.
+                    </p>
+                  </div>
+                </div>
+                <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl font-bold text-xs">
+                  Standardized (AADE Compliant)
+                </span>
+              </Card>
+            </div>
+          </div>
         </div>
       )}
 
