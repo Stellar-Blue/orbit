@@ -145,7 +145,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         .from('mcp_idempotency')
         .select('*')
         .eq('idempotency_key', args.idempotency_key)
-        .single();
+        .maybeSingle();
 
       if (existingIdem) {
         outcomeCode = 'IDEMPOTENT_REPLAY';
@@ -184,7 +184,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
       }
 
       case 'get_billing_status': {
-        const { data: contract, error: cErr } = await supabase.from('contracts').select('*, schedule:contract_schedules(*)').eq('id', args.contract_id).single();
+        const { data: contract, error: cErr } = await supabase.from('contracts').select('*, schedule:contract_schedules(*)').eq('id', args.contract_id).maybeSingle();
         if (cErr || !contract) {
           outcomeCode = 'CONTRACT_MISMATCH';
           errorDetails = McpErrors.contractMismatch(args.contract_id, 'Contract ID not found in database.');
@@ -219,7 +219,14 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         if (args.contract_id) queryBuilder = queryBuilder.eq('contract_id', args.contract_id);
         if (args.direction) queryBuilder = queryBuilder.eq('direction', args.direction);
         if (args.status) queryBuilder = queryBuilder.eq('status', args.status);
+        if (args.category) queryBuilder = queryBuilder.eq('category', args.category);
         if (args.invoice_number) queryBuilder = queryBuilder.ilike('invoice_number', `%${args.invoice_number}%`);
+        if (args.query) {
+          const cleanQ = String(args.query).replace(/[,%()]/g, ' ').trim();
+          if (cleanQ.length > 0) {
+            queryBuilder = queryBuilder.or(`invoice_number.ilike.%${cleanQ}%,notes.ilike.%${cleanQ}%,category.ilike.%${cleanQ}%`);
+          }
+        }
         const { data, error } = await queryBuilder.limit(30);
         if (error) throw error;
         responseData = { count: data?.length || 0, invoices: data || [] };
@@ -239,10 +246,10 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
       case 'create_invoice': {
         // Fetch existing invoices & target entity to perform strict server validation
         const { data: allInvoices } = await supabase.from('invoices').select('*');
-        const { data: entity } = await supabase.from('counterparties').select('*').eq('id', args.counterparty_id).single();
+        const { data: entity } = await supabase.from('counterparties').select('*').eq('id', args.counterparty_id).maybeSingle();
         let contract = null;
         if (args.contract_id) {
-          const { data: cnt } = await supabase.from('contracts').select('*').eq('id', args.contract_id).single();
+          const { data: cnt } = await supabase.from('contracts').select('*').eq('id', args.contract_id).maybeSingle();
           contract = cnt;
         }
 
@@ -260,8 +267,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
           gross_eur: Number((args.gross * (args.fx_rate || 1)).toFixed(2)),
           status: 'registered',
           missing_document: true,
-          created_by: userId,
-          created_via: 'mcp'
+          created_by: userId
         };
 
         const { data: newInv, error: insErr } = await supabase.from('invoices').insert([payload]).select().single();
@@ -331,7 +337,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
       }
 
       case 'record_payment': {
-        const { data: inv } = await supabase.from('invoices').select('*, payments:invoice_payments(*)').eq('id', args.invoice_id).single();
+        const { data: inv } = await supabase.from('invoices').select('*, payments:invoice_payments(*)').eq('id', args.invoice_id).maybeSingle();
         if (!inv) {
           outcomeCode = 'INTERNAL_ERROR';
           errorDetails = McpErrors.internalError('Target invoice ID not found when attempting payment settlement.');
@@ -376,7 +382,8 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
     }
   } catch (ex: any) {
     outcomeCode = 'INTERNAL_ERROR';
-    errorDetails = McpErrors.internalError(ex.message || String(ex));
+    const msg = ex.message ? `${ex.message} ${ex.details || ''} (Code: ${ex.code || 'UNKNOWN'})` : String(ex);
+    errorDetails = McpErrors.internalError(msg.trim());
   }
 
   const durationMs = Math.max(1, Date.now() - startTime);

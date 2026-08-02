@@ -170,13 +170,17 @@ export async function POST(request: Request) {
       if (!result.success) {
         return NextResponse.json({
           jsonrpc: '2.0',
-          id,
-          error: {
-            code: -32000,
-            message: result.error?.message || 'Tool execution validation failure',
-            data: result.error
+          id: id || 1,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result.error, null, 2)
+              }
+            ],
+            isError: true
           }
-        }, { status: 422, headers: CORS_HEADERS });
+        }, { headers: CORS_HEADERS });
       }
 
       return NextResponse.json({
