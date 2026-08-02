@@ -6,7 +6,7 @@ import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
-  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter, Receipt
+  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter, Receipt, ChevronRight
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 
@@ -278,92 +278,12 @@ export default function CompanySettingsPage() {
   const activeEmployees = profiles.filter(p => p.status === 'active' && p.employment_type !== 'contractor');
 
   return (
-    <div className="space-y-6 pb-16 animate-in fade-in duration-200">
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-6 text-sm font-medium">
-        <button
-          onClick={() => handleTabChange('remote')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'remote'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Globe className="w-4 h-4 text-blue-500" />
-          <span>Remote Work Quotas & Patterns</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('teams')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'teams'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Users className="w-4 h-4 text-emerald-500" />
-          <span>Company Departments & Teams ({teams.length})</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('leaves')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'leaves'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Calendar className="w-4 h-4 text-amber-500" />
-          <span>Leave Categories & Policies ({leaveTypes.length})</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('pricing')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'pricing'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Layers className="w-4 h-4 text-purple-500" />
-          <span>Modular Contract Pricing ({catalogItems.length})</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('attio')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'attio'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Webhook className="w-4 h-4 text-cyan-500" />
-          <span>Attio CRM & Webhooks</span>
-          <span className="ml-0.5 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 text-[#3D87D3] border border-blue-200/80 font-bold">Live</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('invoices')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'invoices'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Receipt className="w-4 h-4 text-emerald-600" />
-          <span>Invoice & Budget Categories ({invoiceCategories?.length || 0})</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('general')}
-          className={`pb-3 border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
-            selectedTab === 'general'
-              ? 'border-[#3D87D3] text-[#3D87D3] font-extrabold'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Building2 className="w-4 h-4 text-slate-400" />
-          <span>General Corporate Profile <span className="ml-1 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-normal">Soon</span></span>
-        </button>
-      </div>
-
-      {/* TAB 1: REMOTE WORK POLICY */}
-      {selectedTab === 'remote' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pb-16 animate-in fade-in duration-200">
+      {/* MAIN SETTINGS CONTENT AREA (Left Column - 9 cols on large screens) */}
+      <div className="lg:col-span-9 space-y-6">
+        {/* TAB 1: REMOTE WORK POLICY */}
+        {selectedTab === 'remote' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Main Configuration Card */}
           <Card 
             title="Remote Work Company Quota" 
@@ -2061,6 +1981,189 @@ export default function CompanySettingsPage() {
           </p>
         </Card>
       )}
+      </div>
+
+      {/* RIGHT SIDEBAR NAVIGATION PANEL (Right Side - 3 cols on large screens) */}
+      <div className="lg:col-span-3 lg:sticky lg:top-6 space-y-6">
+        {/* Navigation Card */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-6">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200/80">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#3D87D3]/10 flex items-center justify-center text-[#3D87D3]">
+                <Settings className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 leading-tight">Company Settings</h3>
+                <p className="text-[11px] text-slate-500">System Configurations</p>
+              </div>
+            </div>
+            {isAdmin ? (
+              <Badge variant="success" className="text-[10px] uppercase font-mono px-2 py-0.5">Admin Hub</Badge>
+            ) : (
+              <Badge variant="info" className="text-[10px] uppercase font-mono px-2 py-0.5">View Only</Badge>
+            )}
+          </div>
+
+          {/* Section: Workforce & Organization */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-mono font-extrabold uppercase tracking-wider text-slate-400 px-3 block mb-2">
+              Workforce Policies & Structure
+            </span>
+
+            <button
+              onClick={() => handleTabChange('remote')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'remote'
+                  ? 'bg-blue-50/70 border-blue-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'remote' ? 'bg-blue-500 text-white shadow-xs' : 'bg-blue-50 text-blue-600'}`}>
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Remote Work Quotas</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Patterns & compliance limits</div>
+                </div>
+              </div>
+              <ChevronRight className={`w-4 h-4 transition-transform ${selectedTab === 'remote' ? 'text-blue-600 translate-x-0.5' : 'text-slate-300'}`} />
+            </button>
+
+            <button
+              onClick={() => handleTabChange('teams')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'teams'
+                  ? 'bg-emerald-50/70 border-emerald-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'teams' ? 'bg-emerald-500 text-white shadow-xs' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Departments & Teams</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">{teams.length} registered departments</div>
+                </div>
+              </div>
+              <Badge variant="success" className="text-[10px] px-1.5 py-0">{teams.length}</Badge>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('leaves')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'leaves'
+                  ? 'bg-amber-50/70 border-amber-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'leaves' ? 'bg-amber-500 text-white shadow-xs' : 'bg-amber-50 text-amber-600'}`}>
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Leave Policies</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Vacation & sick allowances</div>
+                </div>
+              </div>
+              <Badge variant="warning" className="text-[10px] px-1.5 py-0">{leaveTypes.length}</Badge>
+            </button>
+          </div>
+
+          <div className="border-t border-slate-200/80 pt-4 space-y-1.5">
+            <span className="text-[11px] font-mono font-extrabold uppercase tracking-wider text-slate-400 px-3 block mb-2">
+              Commercials & Budgeting
+            </span>
+
+            <button
+              onClick={() => handleTabChange('pricing')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'pricing'
+                  ? 'bg-purple-50/70 border-purple-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'pricing' ? 'bg-purple-600 text-white shadow-xs' : 'bg-purple-50 text-purple-600'}`}>
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Contract Rate Sheet</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Modular contract pricing</div>
+                </div>
+              </div>
+              <Badge variant="info" className="text-[10px] px-1.5 py-0">{catalogItems.length}</Badge>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('invoices')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'invoices'
+                  ? 'bg-emerald-50/70 border-emerald-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'invoices' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <Receipt className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Invoice Categories</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Operating budget tags</div>
+                </div>
+              </div>
+              <Badge variant="success" className="text-[10px] px-1.5 py-0">{invoiceCategories?.length || 0}</Badge>
+            </button>
+          </div>
+
+          <div className="border-t border-slate-200/80 pt-4 space-y-1.5">
+            <span className="text-[11px] font-mono font-extrabold uppercase tracking-wider text-slate-400 px-3 block mb-2">
+              Integrations & System
+            </span>
+
+            <button
+              onClick={() => handleTabChange('attio')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'attio'
+                  ? 'bg-cyan-50/70 border-cyan-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'attio' ? 'bg-cyan-600 text-white shadow-xs' : 'bg-cyan-50 text-cyan-600'}`}>
+                  <Webhook className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Attio CRM Webhooks</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Bidirectional real-time sync</div>
+                </div>
+              </div>
+              <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-[#3D87D3] font-black uppercase">Live</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('general')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'general'
+                  ? 'bg-slate-100/80 border-slate-300 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-500 hover:text-slate-800 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'general' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Corporate Profile</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">HQ address & entity VAT</div>
+                </div>
+              </div>
+              <span className="px-1.5 py-0.5 text-[9px] rounded bg-slate-100 text-slate-500 uppercase font-bold">Soon</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
