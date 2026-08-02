@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseServerClient, getSupabaseAdminClient } from '@/lib/supabase/server';
 import { McpErrors } from '@/lib/mcp/errors';
 
 /**
@@ -51,9 +51,10 @@ export async function POST(request: Request) {
     // Generate secure short-lived authorization code (10 minutes validity)
     const code = `orb_code_${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
     
-    // Store in Supabase mcp_oauth_codes table (fallback gently in dev mock environments)
+    // Store in Supabase mcp_oauth_codes table via admin client
     try {
-      await supabase.from('mcp_oauth_codes').insert([{
+      const adminSupabase = await getSupabaseAdminClient();
+      await adminSupabase.from('mcp_oauth_codes').insert([{
         code,
         user_id: authenticatedUserId,
         client_id,

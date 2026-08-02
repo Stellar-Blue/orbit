@@ -46,3 +46,27 @@ export async function getSupabaseServerClient() {
     }
   );
 }
+
+/**
+ * Admin service role client for background jobs and headless OAuth / MCP execution.
+ * Bypasses RLS to allow authenticated OAuth AI operator tokens to query business tables cleanly.
+ */
+export async function getSupabaseAdminClient() {
+  assertNoDevAuthInProduction();
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dev-placeholder';
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321',
+    serviceKey,
+    {
+      cookies: {
+        getAll: () => [],
+        setAll: () => {},
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+}

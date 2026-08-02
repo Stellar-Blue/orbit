@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 /**
  * Orbit MCP OAuth 2.0 Token Exchange Endpoint (§3)
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       scope = body.scope || 'invoices.admin';
     }
 
-    const supabase = await getSupabaseServerClient();
+    const supabase = await getSupabaseAdminClient();
 
     // 1. Authorization Code Exchange
     if (grant_type === 'authorization_code') {

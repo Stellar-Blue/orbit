@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseServerClient, getSupabaseAdminClient } from '@/lib/supabase/server';
 import { executeMcpTool, MCP_TOOL_SCHEMAS } from '@/lib/mcp/engine';
 import { McpErrors } from '@/lib/mcp/errors';
 
@@ -108,14 +108,15 @@ export async function POST(request: Request) {
         }, { status: 400, headers: CORS_HEADERS });
       }
 
-      const supabase = await getSupabaseServerClient();
+      const authHeader = request.headers.get('authorization') || '';
+      const isBearer = authHeader.startsWith('Bearer ');
+      const supabase = isBearer ? await getSupabaseAdminClient() : await getSupabaseServerClient();
       
       // Authentication & Role verification via OAuth Bearer Token or Cookie Session (§3)
       let userId = '00000000-0000-0000-0000-000000000001'; // Fallback admin UI session in dev mode
       let isUserAdmin = true;
 
-      const authHeader = request.headers.get('authorization') || '';
-      if (authHeader.startsWith('Bearer ')) {
+      if (isBearer) {
         const token = authHeader.replace('Bearer ', '').trim();
         const { data: tokenRecord } = await supabase.from('mcp_oauth_tokens').select('*').eq('access_token', token).single();
         if (tokenRecord) {
