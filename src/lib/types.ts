@@ -412,8 +412,46 @@ export interface Invoice {
   missing_document: boolean;
   notes?: string | null;
   created_by?: string | null;
+  created_via?: 'ui' | 'mcp' | 'api';
   created_at?: string;
   documents?: InvoiceDocument[];
   payments?: InvoicePayment[];
   allocations?: InvoiceAllocation[];
 }
+
+// Orbit Invoice MCP Server & AI Operator Types (§2, §4, §5)
+export type McpErrorCode = 
+  | 'DUPLICATE_INVOICE'
+  | 'VALIDATION_ARITHMETIC'
+  | 'VALIDATION_DATES'
+  | 'UNKNOWN_COUNTERPARTY'
+  | 'CONTRACT_MISMATCH'
+  | 'ALLOCATION_OUT_OF_RANGE'
+  | 'CREDIT_TARGET_INVALID'
+  | 'DOCUMENT_TOO_LARGE'
+  | 'DOCUMENT_TYPE_INVALID'
+  | 'OVERPAYMENT'
+  | 'FORBIDDEN'
+  | 'RATE_LIMITED'
+  | 'IDEMPOTENT_REPLAY'
+  | 'INTERNAL_ERROR';
+
+export interface McpErrorResponse {
+  code: McpErrorCode;
+  field?: string;
+  message: string;
+  hint: string;
+  existing_record?: any;
+}
+
+export interface McpToolCall {
+  id: string;
+  tool_name: string;
+  user_id?: string | null;
+  duration_ms: number;
+  outcome_code: string;
+  idempotency_key?: string | null;
+  error_details?: McpErrorResponse | null;
+  created_at?: string;
+}
+
