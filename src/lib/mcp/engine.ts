@@ -62,14 +62,6 @@ export const MCP_TOOL_SCHEMAS = [
     }
   },
   {
-    name: 'list_inbox',
-    description: 'List pending invoice stubs requiring metadata enrichment or document association in the compliance inbox.',
-    inputSchema: {
-      type: 'object',
-      properties: {}
-    }
-  },
-  {
     name: 'get_invoice_document',
     description: 'Retrieve the attached PDF archive of an invoice as a base64 encoded string for review or compliance checking.',
     inputSchema: {
@@ -166,15 +158,16 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
     switch (toolName) {
       case 'search_counterparties': {
         let queryBuilder = supabase.from('counterparties').select('*');
-        if (args.afm) {
-          const norm = normalizeAfm(args.afm);
-          queryBuilder = queryBuilder.ilike('vat_number', `%${norm}%`);
+        if (args.afm || args.vat_number) {
+          const norm = normalizeAfm(args.afm || args.vat_number || '');
+          queryBuilder = queryBuilder.or(`vat_number.ilike.%${norm}%,afm.ilike.%${norm}%`);
         } else if (args.query) {
-          queryBuilder = queryBuilder.or(`legal_name.ilike.%${args.query}%,trade_name.ilike.%${args.query}%`).limit(10);
-        } else {
-          queryBuilder = queryBuilder.limit(20);
+          const cleanQ = String(args.query).replace(/[,%()]/g, ' ').trim();
+          if (cleanQ.length > 0) {
+            queryBuilder = queryBuilder.or(`legal_name.ilike.%${cleanQ}%,trade_name.ilike.%${cleanQ}%,vat_number.ilike.%${cleanQ}%,afm.ilike.%${cleanQ}%,website_domain.ilike.%${cleanQ}%`);
+          }
         }
-        const { data, error } = await queryBuilder;
+        const { data, error } = await queryBuilder.limit(50);
         if (error) throw error;
         responseData = { count: data?.length || 0, counterparties: data || [] };
         break;
@@ -230,13 +223,6 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         const { data, error } = await queryBuilder.limit(30);
         if (error) throw error;
         responseData = { count: data?.length || 0, invoices: data || [] };
-        break;
-      }
-
-      case 'list_inbox': {
-        const { data, error } = await supabase.from('invoices').select('*').eq('missing_document', true);
-        if (error) throw error;
-        responseData = { count: data?.length || 0, pending_stubs: data || [] };
         break;
       }
 
