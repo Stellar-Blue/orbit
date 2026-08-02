@@ -506,7 +506,7 @@ export default function CounterpartiesRegistryPage() {
                         <td className="p-4" onClick={e => e.stopPropagation()}>
                           {isLinked ? (
                             <a
-                              href={`https://app.attio.com/stellar-blue/companies/${cp.attio_link?.attio_record_id || cp.id}`}
+                              href={`https://app.attio.com/stellar-blue/company/${cp.attio_link?.attio_record_id || cp.id}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-extrabold bg-gradient-to-r from-blue-50 via-cyan-50 to-indigo-50 hover:from-blue-100 hover:to-cyan-100 text-blue-700 hover:text-blue-900 border border-blue-200/80 rounded-full transition-all shadow-2xs group/link cursor-pointer"
@@ -1051,7 +1051,7 @@ export default function CounterpartiesRegistryPage() {
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <a
-                              href={`https://app.attio.com/stellar-blue/companies/${selectedEntity.attio_link.attio_record_id}`}
+                              href={`https://app.attio.com/stellar-blue/company/${selectedEntity.attio_link.attio_record_id}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0"
