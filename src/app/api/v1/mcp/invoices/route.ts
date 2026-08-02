@@ -142,12 +142,11 @@ export async function POST(request: Request) {
         }
       }
 
-      // Check profile role in database & verify Entra/Orbit status is not offboarded
-      const { data: profile } = await supabase.from('profiles').select('role, status').eq('id', userId).single();
-      if (profile) {
-        if (profile.role !== 'admin' || profile.status === 'offboarded') {
-          isUserAdmin = false;
-        }
+      // Check role in user_roles database & verify profile status is not departed
+      const { data: profile } = await supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', userId).eq('role', 'admin').maybeSingle();
+      if (!roleRow || (profile && profile.status === 'departed')) {
+        isUserAdmin = false;
       }
 
       // Enforce that mapped user profile MUST hold admin role; otherwise return FORBIDDEN

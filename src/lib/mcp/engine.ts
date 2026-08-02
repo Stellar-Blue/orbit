@@ -184,7 +184,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
       }
 
       case 'get_billing_status': {
-        const { data: contract, error: cErr } = await supabase.from('contracts').select('*, schedule:contract_schedules(*)').eq('id', args.contract_id).maybeSingle();
+        const { data: contract, error: cErr } = await supabase.from('contracts').select('*, schedule:contract_schedule(*)').eq('id', args.contract_id).maybeSingle();
         if (cErr || !contract) {
           outcomeCode = 'CONTRACT_MISMATCH';
           errorDetails = McpErrors.contractMismatch(args.contract_id, 'Contract ID not found in database.');

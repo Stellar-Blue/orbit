@@ -39,7 +39,7 @@ CREATE POLICY "Admins can view their own MCP OAuth tokens"
   FOR SELECT
   USING (
     auth.uid() = user_id OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM user_roles WHERE profile_id = auth.uid() AND role = 'admin')
   );
 
 CREATE POLICY "Admins can delete their own MCP OAuth tokens"
@@ -47,5 +47,5 @@ CREATE POLICY "Admins can delete their own MCP OAuth tokens"
   FOR DELETE
   USING (
     auth.uid() = user_id OR
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM user_roles WHERE profile_id = auth.uid() AND role = 'admin')
   );

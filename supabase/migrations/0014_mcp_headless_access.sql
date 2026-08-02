@@ -13,8 +13,8 @@ CREATE POLICY policy_counterparties_headless_mcp ON counterparties FOR ALL TO an
 DROP POLICY IF EXISTS policy_contracts_headless_mcp ON contracts;
 CREATE POLICY policy_contracts_headless_mcp ON contracts FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS policy_contract_schedules_headless_mcp ON contract_schedules;
-CREATE POLICY policy_contract_schedules_headless_mcp ON contract_schedules FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS policy_contract_schedule_headless_mcp ON contract_schedule;
+CREATE POLICY policy_contract_schedule_headless_mcp ON contract_schedule FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
 -- 3. Invoices & Financial Archives
 DROP POLICY IF EXISTS policy_invoices_headless_mcp ON invoices;
@@ -45,6 +45,9 @@ CREATE POLICY policy_mcp_oauth_codes_headless_mcp ON mcp_oauth_codes FOR ALL TO 
 DROP POLICY IF EXISTS policy_mcp_oauth_tokens_headless_mcp ON mcp_oauth_tokens;
 CREATE POLICY policy_mcp_oauth_tokens_headless_mcp ON mcp_oauth_tokens FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
--- 5. Profiles (Role Checking for Bearer token validation)
+-- 5. Profiles & User Roles (Role Checking for Bearer token validation)
 DROP POLICY IF EXISTS policy_profiles_headless_mcp ON profiles;
 CREATE POLICY policy_profiles_headless_mcp ON profiles FOR SELECT TO anon, authenticated, service_role USING (true);
+
+DROP POLICY IF EXISTS policy_user_roles_headless_mcp ON user_roles;
+CREATE POLICY policy_user_roles_headless_mcp ON user_roles FOR SELECT TO anon, authenticated, service_role USING (true);

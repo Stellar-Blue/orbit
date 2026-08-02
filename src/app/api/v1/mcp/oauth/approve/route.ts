@@ -30,11 +30,10 @@ export async function POST(request: Request) {
     if (session?.user) {
       authenticatedUserId = session.user.id;
       email = session.user.email || 'admin@stellarblue.eu';
-      const { data: profile } = await supabase.from('profiles').select('role, email').eq('id', authenticatedUserId).single();
-      if (profile) {
-        if (profile.role !== 'admin') isAdmin = false;
-        if (profile.email) email = profile.email;
-      }
+      const { data: profile } = await supabase.from('profiles').select('work_email').eq('id', authenticatedUserId).maybeSingle();
+      if (profile?.work_email) email = profile.work_email;
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', authenticatedUserId).eq('role', 'admin').maybeSingle();
+      if (!roleRow) isAdmin = false;
     }
 
     // Strict role gating: standard employees cannot connect financial MCP operators

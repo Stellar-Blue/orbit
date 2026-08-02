@@ -75,9 +75,10 @@ export async function POST(request: Request) {
       }
 
       // Ensure target profile is active & holds corporate admin privileges
-      const { data: profile } = await supabase.from('profiles').select('role, status').eq('id', userId).single();
-      if (profile && (profile.role !== 'admin' || profile.status === 'offboarded')) {
-        return NextResponse.json({ error: 'access_denied', error_description: 'Mapped employee profile is offboarded or no longer holds admin role.' }, { status: 403 });
+      const { data: profile } = await supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', userId).eq('role', 'admin').maybeSingle();
+      if (!roleRow || (profile && profile.status === 'departed')) {
+        return NextResponse.json({ error: 'access_denied', error_description: 'Mapped employee profile is departed or no longer holds admin role.' }, { status: 403 });
       }
 
       // Generate access & refresh tokens (≤ 8h lifetime per §3)
@@ -125,9 +126,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'invalid_grant', error_description: 'Expired or invalid refresh token.' }, { status: 400 });
       }
 
-      // Enforce systemic revocation check: if employee disabled in Entra/Orbit, dead MCP session at next call
-      const { data: profile } = await supabase.from('profiles').select('role, status').eq('id', userId).single();
-      if (profile && (profile.role !== 'admin' || profile.status === 'offboarded')) {
+      // Enforce systemic revocation check: if employee disabled in directory, revoke MCP session at next call
+      const { data: profile } = await supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', userId).eq('role', 'admin').maybeSingle();
+      if (!roleRow || (profile && profile.status === 'departed')) {
         return NextResponse.json({ error: 'access_denied', error_description: 'Account access revoked in enterprise directory.' }, { status: 403 });
       }
 
