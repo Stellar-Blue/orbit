@@ -5,27 +5,97 @@ import { McpErrors } from '@/lib/mcp/errors';
 
 /**
  * Orbit Invoice MCP Server Endpoint (§2, §3)
- * Exposes JSON-RPC 2.0 / MCP tool discovery (tools/list) and invocation (tools/call) for Claude & AI Agents.
+ * Exposes full Model Context Protocol (MCP / JSON-RPC 2.0) capabilities including initialize, tools/list, and tools/call.
+ * Supported by Claude Desktop, Cowork, and Custom HTTP Connectors.
  */
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-Requested-With, MCP-Protocol-Version",
+  "Access-Control-Max-Age": "86400",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
+export async function GET() {
+  return NextResponse.json({
+    name: 'orbit-invoices-mcp',
+    status: 'Operational',
+    protocolVersion: '2024-11-05',
+    version: '1.0.0',
+    capabilities: {
+      tools: {
+        listChanged: false
+      },
+      resources: {},
+      prompts: {}
+    },
+    tools_count: MCP_TOOL_SCHEMAS.length,
+    documentation: 'Send POST requests adhering to the Model Context Protocol (JSON-RPC 2.0) structure.'
+  }, { headers: CORS_HEADERS });
+}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const method = body.method || body.action;
     const params = body.params || body.payload || {};
+    const id = body.id !== undefined ? body.id : null;
 
-    // 1. Tool Discovery Endpoint (tools/list)
+    // 1. MCP Initialization Handshake (Required by Claude prior to discovering tools)
+    if (method === 'initialize') {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        id: id || 1,
+        result: {
+          protocolVersion: body.params?.protocolVersion || '2024-11-05',
+          capabilities: {
+            tools: {
+              listChanged: false
+            },
+            resources: {},
+            prompts: {}
+          },
+          serverInfo: {
+            name: 'orbit-invoices-mcp',
+            version: '1.0.0'
+          }
+        }
+      }, { headers: CORS_HEADERS });
+    }
+
+    // 2. Post-initialization notification confirmation
+    if (method === 'notifications/initialized' || method === 'initialized' || method === 'ping') {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        id: id,
+        result: {}
+      }, { headers: CORS_HEADERS });
+    }
+
+    // 3. Tool Discovery Endpoint (tools/list)
     if (method === 'tools/list' || method === 'list_tools') {
       return NextResponse.json({
         jsonrpc: '2.0',
-        id: body.id || 1,
+        id: id || 1,
         result: {
           tools: MCP_TOOL_SCHEMAS
         }
-      });
+      }, { headers: CORS_HEADERS });
     }
 
-    // 2. Tool Execution Endpoint (tools/call)
+    // 4. Resource / Prompt Discovery stubs (preventing 404 disconnection errors when AI attempts to enumerate capabilities)
+    if (method === 'resources/list') {
+      return NextResponse.json({ jsonrpc: '2.0', id, result: { resources: [] } }, { headers: CORS_HEADERS });
+    }
+    if (method === 'prompts/list') {
+      return NextResponse.json({ jsonrpc: '2.0', id, result: { prompts: [] } }, { headers: CORS_HEADERS });
+    }
+
+    // 5. Tool Execution Endpoint (tools/call)
     if (method === 'tools/call' || method === 'call_tool') {
       const toolName = params.name || body.tool_name;
       const toolArgs = params.arguments || params.args || body.arguments || {};
@@ -33,9 +103,9 @@ export async function POST(request: Request) {
       if (!toolName) {
         return NextResponse.json({
           jsonrpc: '2.0',
-          id: body.id || null,
+          id,
           error: { code: -32602, message: 'Missing required tool name parameter in call' }
-        }, { status: 400 });
+        }, { status: 400, headers: CORS_HEADERS });
       }
 
       const supabase = await getSupabaseServerClient();
@@ -52,17 +122,17 @@ export async function POST(request: Request) {
           if (new Date(tokenRecord.expires_at) < new Date()) {
             return NextResponse.json({
               jsonrpc: '2.0',
-              id: body.id || null,
+              id,
               error: { code: -32002, message: 'OAuth Access Token has expired. Token lifetime is ≤ 8h. Please use refresh_token.' }
-            }, { status: 401 });
+            }, { status: 401, headers: CORS_HEADERS });
           }
           userId = tokenRecord.user_id;
         } else if (token !== 'mcp_token_dev' && !token.startsWith('mcp_access_')) {
           return NextResponse.json({
             jsonrpc: '2.0',
-            id: body.id || null,
+            id,
             error: { code: -32002, message: 'Invalid OAuth Bearer Token.' }
-          }, { status: 401 });
+          }, { status: 401, headers: CORS_HEADERS });
         }
       } else {
         const { data: { session } } = await supabase.auth.getSession();
@@ -84,13 +154,13 @@ export async function POST(request: Request) {
         const forbiddenErr = McpErrors.forbidden();
         return NextResponse.json({
           jsonrpc: '2.0',
-          id: body.id || null,
+          id,
           error: {
             code: -32001,
             message: forbiddenErr.message,
             data: forbiddenErr
           }
-        }, { status: 403 });
+        }, { status: 403, headers: CORS_HEADERS });
       }
 
       // Execute Tool with Audit logging and Idempotency guarantees
@@ -99,18 +169,18 @@ export async function POST(request: Request) {
       if (!result.success) {
         return NextResponse.json({
           jsonrpc: '2.0',
-          id: body.id || null,
+          id,
           error: {
             code: -32000,
             message: result.error?.message || 'Tool execution validation failure',
             data: result.error
           }
-        }, { status: 422 });
+        }, { status: 422, headers: CORS_HEADERS });
       }
 
       return NextResponse.json({
         jsonrpc: '2.0',
-        id: body.id || 1,
+        id: id || 1,
         result: {
           content: [
             {
@@ -120,35 +190,21 @@ export async function POST(request: Request) {
           ],
           isError: false
         }
-      });
+      }, { headers: CORS_HEADERS });
     }
 
+    // Default fallback for any unrecognized JSON-RPC calls (returns standard JSON-RPC error without breaking HTTP connection with 404)
     return NextResponse.json({
       jsonrpc: '2.0',
-      id: body.id || null,
-      error: { code: -32601, message: `Method not found: ${method}. Supported methods are 'tools/list' and 'tools/call'.` }
-    }, { status: 404 });
+      id: id,
+      error: { code: -32601, message: `Method not supported: ${method}. Supported capabilities: 'initialize', 'tools/list', and 'tools/call'.` }
+    }, { status: 200, headers: CORS_HEADERS });
 
   } catch (ex: any) {
     return NextResponse.json({
       jsonrpc: '2.0',
       id: null,
       error: { code: -32603, message: `Internal server error: ${ex.message || String(ex)}` }
-    }, { status: 500 });
+    }, { status: 500, headers: CORS_HEADERS });
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    name: 'Orbit Financial MCP Server',
-    status: 'Operational',
-    version: '1.0.0',
-    capabilities: {
-      tools: {
-        listChanged: false
-      }
-    },
-    tools_count: MCP_TOOL_SCHEMAS.length,
-    documentation: 'Send POST requests with standard Model Context Protocol (JSON-RPC 2.0) format.'
-  });
 }
