@@ -8,7 +8,7 @@ import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
-  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign
+  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy
 } from 'lucide-react';
 
 export default function CounterpartiesRegistryPage() {
@@ -25,6 +25,14 @@ export default function CounterpartiesRegistryPage() {
   const [dossierTab, setDossierTab] = useState<'profile' | 'invoices'>('profile');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyUuid = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   // New Entity Modal state
   const [showNewModal, setShowNewModal] = useState(false);
@@ -431,6 +439,7 @@ export default function CounterpartiesRegistryPage() {
               <thead>
                 <tr className="border-b border-slate-200/80 text-[11px] uppercase font-bold text-slate-500 bg-slate-50/50">
                   <th className="p-4 pl-6">Legal / Trade Name</th>
+                  <th className="p-4">Entity UUID</th>
                   <th className="p-4">Jurisdiction</th>
                   <th className="p-4">VAT (ΑΦΜ) / VIES Status</th>
                   <th className="p-4">Derived Relationship Role</th>
@@ -471,6 +480,21 @@ export default function CounterpartiesRegistryPage() {
                               </div>
                             </div>
                           </div>
+                        </td>
+                        <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={(e) => copyUuid(cp.id, e)}
+                            className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
+                            title="Click to copy full UUID for AI operator or script reference"
+                          >
+                            <span>{cp.id.slice(0, 8)}...{cp.id.slice(-4)}</span>
+                            {copiedId === cp.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            )}
+                          </button>
                         </td>
                         <td className="p-4 text-slate-600 font-medium">
                           <span className="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-xs text-slate-700">
@@ -823,6 +847,19 @@ export default function CounterpartiesRegistryPage() {
                   <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 flex-wrap">
                     <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {selectedEntity.country}</span>
                     <span className="font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">ΑΦΜ/VAT: {selectedEntity.vat_number || selectedEntity.afm || 'None'}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyUuid(selectedEntity.id)}
+                      className="font-mono bg-slate-800 hover:bg-slate-700 px-2.5 py-0.5 rounded border border-slate-600 text-blue-300 hover:text-blue-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Click to copy full UUID"
+                    >
+                      <span>UUID: {selectedEntity.id}</span>
+                      {copiedId === selectedEntity.id ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      )}
+                    </button>
                     {getRoleBadge(selectedEntity.derived_role)}
                   </div>
                 </div>
