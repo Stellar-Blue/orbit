@@ -10,7 +10,7 @@ export async function updateSession(request: NextRequest) {
   });
 
   // Resilient OAuth token interception: if Supabase redirects to site root / instead of /auth/callback with a code parameter, reroute to callback handler
-  if (request.nextUrl.searchParams.has('code') && !request.nextUrl.pathname.startsWith('/auth/callback')) {
+  if (request.nextUrl.pathname === '/' && request.nextUrl.searchParams.has('code')) {
     const callbackUrl = request.nextUrl.clone();
     callbackUrl.pathname = '/auth/callback';
     return NextResponse.redirect(callbackUrl);
@@ -50,12 +50,21 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/auth');
+  const isPublicOrApiRoute = 
+    request.nextUrl.pathname.startsWith('/login') || 
+    request.nextUrl.pathname.startsWith('/auth') ||
+    request.nextUrl.pathname.startsWith('/api/') ||
+    request.nextUrl.pathname.startsWith('/token') ||
+    request.nextUrl.pathname.startsWith('/oauth/token') ||
+    request.nextUrl.pathname.startsWith('/.well-known');
 
-  // If no authenticated session exists and not navigating to login/auth callback, redirect to /login
-  if (!user && !isAuthRoute) {
+  // If no authenticated session exists and not navigating to public/API routes, redirect to /login
+  if (!user && !isPublicOrApiRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
+    if (request.nextUrl.pathname.includes('authorize')) {
+      url.searchParams.set('next', request.nextUrl.pathname + request.nextUrl.search);
+    }
     return NextResponse.redirect(url);
   }
 

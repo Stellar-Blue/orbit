@@ -44,12 +44,17 @@ function LoginContent() {
   const handleMicrosoftLogin = async () => {
     setIsLoading(true);
     try {
+      const nextTarget = searchParams ? searchParams.get("next") : null;
+      const redirectTo = nextTarget 
+        ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextTarget)}`
+        : `${window.location.origin}/auth/callback`;
+
       const supabase = getSupabaseBrowserClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "azure",
         options: {
           scopes: "email profile offline_access",
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo,
         },
       });
 
@@ -65,7 +70,8 @@ function LoginContent() {
 
   const handleDevModeEnter = () => {
     setIsLoading(true);
-    router.push("/");
+    const nextTarget = searchParams ? searchParams.get("next") : null;
+    router.push(nextTarget || "/");
   };
 
   return (
