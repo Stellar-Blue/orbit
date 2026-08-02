@@ -14,6 +14,21 @@ export async function POST(request: Request) {
     let client_id = 'claude_ai';
     let scope = 'invoices.admin';
 
+    let client_secret = '';
+
+    // Parse Basic Auth header if present (standard for confidential OAuth clients)
+    const authHeader = request.headers.get('authorization') || '';
+    if (authHeader.startsWith('Basic ')) {
+      try {
+        const decoded = Buffer.from(authHeader.replace('Basic ', ''), 'base64').toString('utf-8');
+        const [id, secret] = decoded.split(':');
+        if (id) client_id = id;
+        if (secret) client_secret = secret;
+      } catch {
+        // Ignore malformed basic auth, fallback to body parameters
+      }
+    }
+
     // Parse either JSON body or application/x-www-form-urlencoded
     const contentType = request.headers.get('content-type') || '';
     if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -21,13 +36,15 @@ export async function POST(request: Request) {
       grant_type = String(formData.get('grant_type') || '');
       code = String(formData.get('code') || '');
       refresh_token = String(formData.get('refresh_token') || '');
-      client_id = String(formData.get('client_id') || 'claude_ai');
+      if (!client_id || client_id === 'claude_ai') client_id = String(formData.get('client_id') || 'claude_ai');
+      client_secret = client_secret || String(formData.get('client_secret') || '');
     } else {
       const body = await request.json().catch(() => ({}));
       grant_type = body.grant_type;
       code = body.code;
       refresh_token = body.refresh_token;
-      client_id = body.client_id || 'claude_ai';
+      if (!client_id || client_id === 'claude_ai') client_id = body.client_id || 'claude_ai';
+      client_secret = client_secret || body.client_secret || '';
       scope = body.scope || 'invoices.admin';
     }
 
