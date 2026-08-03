@@ -6,7 +6,7 @@ import { ContractLine, CatalogItem } from '@/lib/types';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
-  Sparkles, CheckCircle2, AlertCircle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3
+  Sparkles, CheckCircle2, AlertCircle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X
 } from 'lucide-react';
 
 interface ContractPricingBuilderProps {
@@ -47,7 +47,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       quantity: Number(l.quantity) || 1,
       unit_label: l.unit_label || 'unit',
       frequency: l.frequency || 'monthly',
-      note: l.note || ''
+      note: l.note || '',
+      monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {}
     }))
   );
 
@@ -57,6 +58,41 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('');
   const [showSchedulePreview, setShowSchedulePreview] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [expandedScheduleLineIdx, setExpandedScheduleLineIdx] = useState<number | null>(null);
+
+  // Generate ordered timeline periods (YYYY-MM) across the entire contract term
+  const termPeriods = useMemo(() => {
+    const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
+    const startObj = new Date(startDate || new Date());
+    const startYear = startObj.getFullYear();
+    const startMonth = startObj.getMonth();
+    const periods: string[] = [];
+
+    for (let i = 0; i < monthsCount; i++) {
+      const d = new Date(startYear, startMonth + i, 1);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      periods.push(`${yyyy}-${mm}`);
+    }
+    return periods;
+  }, [termYears, startDate]);
+
+  // Carry-forward calculation: find explicit quantity override or carry forward previous month's quantity
+  const getEffectiveQuantity = (line: Omit<ContractLine, 'id' | 'contract_id'>, periodIdx: number, allPeriods: string[]) => {
+    if (line.frequency === 'one_time') {
+      return Number(line.quantity) || 1;
+    }
+    const mq = line.monthly_quantities || {};
+    // Search backward from periodIdx to 0 for an explicit monthly override
+    for (let i = periodIdx; i >= 0; i--) {
+      const p = allPeriods[i];
+      if (mq[p] !== undefined && mq[p] !== null && !isNaN(Number(mq[p]))) {
+        return Number(mq[p]);
+      }
+    }
+    // Fall back to base initial quantity
+    return Number(line.quantity) || 0;
+  };
 
   // Snapshot catalog defaults into a new contract line item
   const handleAddCatalogItem = (itemId: string) => {
@@ -73,7 +109,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         quantity: 1,
         unit_label: item.unit_label,
         frequency: item.default_frequency,
-        note: ''
+        note: '',
+        monthly_quantities: {}
       }
     ]);
     setSelectedCatalogId('');
@@ -89,7 +126,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         quantity: 1,
         unit_label: 'flat',
         frequency: 'monthly',
-        note: 'Custom negotiated rate'
+        note: 'Custom negotiated rate',
+        monthly_quantities: {}
       }
     ]);
   };
@@ -100,6 +138,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
 
   const deleteLine = (index: number) => {
     setLines(prev => prev.filter((_, idx) => idx !== index));
+    if (expandedScheduleLineIdx === index) setExpandedScheduleLineIdx(null);
   };
 
   const applyTermSuggestion = (years: number, disc: number) => {
@@ -107,86 +146,96 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
     setDiscountPct(disc);
   };
 
-  // Calculations (Section 4 Rule Set)
+  // Calculations incorporating dynamic monthly quantity carry-forward schedules
   const totals = useMemo(() => {
-    let recurringGrossMonthly = 0;
+    let startingGrossMonthly = 0;
     let oneTimeTotal = 0;
+    let totalRecurringContractValue = 0;
+    const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
 
-    lines.forEach(line => {
-      const lineVal = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
-      if (line.frequency === 'one_time') {
-        oneTimeTotal += lineVal;
-      } else if (line.frequency === 'annual') {
-        recurringGrossMonthly += lineVal / 12;
-      } else if (line.frequency === 'quarterly') {
-        recurringGrossMonthly += lineVal / 3;
-      } else {
-        recurringGrossMonthly += lineVal;
-      }
+    termPeriods.forEach((period, pIdx) => {
+      lines.forEach(line => {
+        const effectiveQty = getEffectiveQuantity(line, pIdx, termPeriods);
+        const grossLineVal = (Number(line.unit_price) || 0) * effectiveQty;
+        const netLineVal = grossLineVal * discountMultiplier;
+
+        if (line.frequency === 'one_time') {
+          if (pIdx === 0) {
+            oneTimeTotal += (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+          }
+        } else if (line.frequency === 'annual') {
+          if (pIdx % 12 === 0) {
+            totalRecurringContractValue += netLineVal;
+          }
+          if (pIdx === 0) {
+            startingGrossMonthly += grossLineVal / 12;
+          }
+        } else if (line.frequency === 'quarterly') {
+          if (pIdx % 3 === 0) {
+            totalRecurringContractValue += netLineVal;
+          }
+          if (pIdx === 0) {
+            startingGrossMonthly += grossLineVal / 3;
+          }
+        } else {
+          // monthly
+          totalRecurringContractValue += netLineVal;
+          if (pIdx === 0) {
+            startingGrossMonthly += grossLineVal;
+          }
+        }
+      });
     });
 
-    const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
-    const netMonthlyMRR = recurringGrossMonthly * discountMultiplier;
+    const netMonthlyMRR = startingGrossMonthly * discountMultiplier;
     const netAnnual = netMonthlyMRR * 12;
-    const totalContractValue = (netAnnual * (Number(termYears) || 1)) + oneTimeTotal;
+    const totalContractValue = totalRecurringContractValue + oneTimeTotal;
 
     return {
-      recurringGrossMonthly,
-      discountAmount: recurringGrossMonthly - netMonthlyMRR,
+      recurringGrossMonthly: startingGrossMonthly,
+      discountAmount: startingGrossMonthly - netMonthlyMRR,
       netMonthlyMRR,
       netAnnual,
       oneTimeTotal,
       totalContractValue
     };
-  }, [lines, discountPct, termYears]);
+  }, [lines, discountPct, termYears, termPeriods]);
 
-  // Schedule generator (Section 5)
+  // Schedule generator reflecting monthly variable quantity carry-forwards
   const schedule = useMemo(() => {
-    const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
-    const startObj = new Date(startDate || new Date());
-    const startYear = startObj.getFullYear();
-    const startMonth = startObj.getMonth(); // 0-indexed
-
     const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
     const result: { period: string; amount: number }[] = [];
 
-    for (let i = 0; i < monthsCount; i++) {
-      const d = new Date(startYear, startMonth + i, 1);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const period = `${yyyy}-${mm}`;
-
+    termPeriods.forEach((period, i) => {
       let monthTotal = 0;
 
       lines.forEach(line => {
-        const grossLineVal = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+        const effectiveQty = getEffectiveQuantity(line, i, termPeriods);
+        const grossLineVal = (Number(line.unit_price) || 0) * effectiveQty;
         const netLineVal = grossLineVal * discountMultiplier;
 
         if (line.frequency === 'monthly') {
           monthTotal += netLineVal;
         } else if (line.frequency === 'quarterly') {
-          // Lands net quarterly fee every 3rd month (0, 3, 6, 9...)
           if (i % 3 === 0) {
             monthTotal += netLineVal;
           }
         } else if (line.frequency === 'annual') {
-          // Lands net annual fee in month 0 of each contract year (0, 12, 24...)
           if (i % 12 === 0) {
             monthTotal += netLineVal;
           }
         } else if (line.frequency === 'one_time') {
-          // Lands fully undiscounted once in month 0
           if (i === 0) {
-            monthTotal += grossLineVal;
+            monthTotal += (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
           }
         }
       });
 
       result.push({ period, amount: Number(monthTotal.toFixed(2)) });
-    }
+    });
 
     return result;
-  }, [lines, discountPct, termYears, startDate]);
+  }, [lines, discountPct, termPeriods]);
 
   const handleSaveClick = async () => {
     if (!onSave) return;
@@ -207,11 +256,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <Sparkles className="w-5 h-5 text-amber-400" />
-              <span className="text-xs font-mono text-amber-300/90 uppercase tracking-widest font-extrabold">Modular Pricing & Revenue Schedule</span>
+              <span className="text-xs font-mono text-amber-300/90 uppercase tracking-widest font-extrabold">Modular Pricing & Variable Revenue Projections</span>
             </div>
             <h3 className="text-xl font-extrabold tracking-tight text-white mt-1">Contract Term & Discount Calibration</h3>
-            <p className="text-xs text-slate-300 max-w-xl mt-0.5">
-              Select standard term presets or manually adjust discount brackets. MRR always equals net monthly rate regardless of billing frequency.
+            <p className="text-xs text-slate-300 max-w-2xl mt-0.5">
+              Configure term lengths and recurring discount brackets. For Optimization Engines and Per-Asset fees, customize month-by-month quantities with automatic carry-forward projecting into future periods.
             </p>
           </div>
 
@@ -361,7 +410,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
           <span className="text-sm font-extrabold text-slate-800 flex items-center">
             <Layers className="w-4 h-4 mr-2 text-slate-600" /> Contract Line Items ({lines.length})
           </span>
-          <span className="text-xs text-slate-500">Values snapped locally per deal</span>
+          <span className="text-xs text-slate-500">Values snapped locally per deal · Expand rows to program month-by-month projections</span>
         </div>
 
         {lines.length === 0 ? (
@@ -375,118 +424,286 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                   <th className="py-2.5 px-4">Item Name / Module</th>
                   <th className="py-2.5 px-3 w-40">Unit Rate (€)</th>
-                  <th className="py-2.5 px-3 w-24">Quantity</th>
+                  <th className="py-2.5 px-3 w-36">Base Qty / Mo Horizon</th>
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
-                  <th className="py-2.5 px-4 text-right w-44">Line Total</th>
+                  <th className="py-2.5 px-4 text-right w-48">Month 1 Rate / Projections</th>
                   {!readOnly && <th className="py-2.5 px-3 text-center w-14">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-sm">
                 {lines.map((line, idx) => {
-                  const lineGross = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+                  const baseQty = Number(line.quantity) || 0;
+                  const lineGross = (Number(line.unit_price) || 0) * baseQty;
                   const isOneTime = line.frequency === 'one_time';
                   const periodSuffix = line.frequency === 'monthly' ? '/ mo' : line.frequency === 'quarterly' ? '/ qtr' : line.frequency === 'annual' ? '/ year' : 'one-off';
                   const monthlyMrrEquiv = line.frequency === 'annual' ? lineGross / 12 : line.frequency === 'quarterly' ? lineGross / 3 : lineGross;
+                  const isExpanded = expandedScheduleLineIdx === idx;
+                  const overrideCount = Object.keys(line.monthly_quantities || {}).length;
 
                   return (
-                    <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-4 font-medium text-slate-900">
-                        {readOnly ? (
-                          <span>{line.name}</span>
-                        ) : (
-                          <input
-                            type="text"
-                            value={line.name}
-                            onChange={e => updateLine(idx, 'name', e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded px-2.5 py-1 text-sm font-medium focus:outline-none focus:border-blue-500"
-                            placeholder="Line description..."
-                          />
-                        )}
-                      </td>
-                      <td className="py-3 px-3">
-                        {readOnly ? (
-                          <span className="font-mono text-slate-700 font-medium">€{Number(line.unit_price).toLocaleString()} <span className="text-xs text-slate-500 font-normal">{periodSuffix}</span></span>
-                        ) : (
-                          <div className="flex items-center space-x-1">
+                    <React.Fragment key={idx}>
+                      <tr className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-4 font-medium text-slate-900 align-top">
+                          {readOnly ? (
+                            <span className="block mt-1 font-bold">{line.name}</span>
+                          ) : (
                             <input
-                              type="number"
-                              step="0.01"
-                              value={line.unit_price}
-                              onChange={e => updateLine(idx, 'unit_price', parseFloat(e.target.value) || 0)}
-                              className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-blue-500 min-w-[70px]"
+                              type="text"
+                              value={line.name}
+                              onChange={e => updateLine(idx, 'name', e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-sm font-medium focus:outline-none focus:border-blue-500"
+                              placeholder="Line description..."
                             />
-                            <span className="text-[11px] font-bold text-slate-500 uppercase whitespace-nowrap">{periodSuffix}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-3">
-                        {readOnly ? (
-                          <span className="font-mono text-slate-700">{Number(line.quantity).toLocaleString()}</span>
-                        ) : (
-                          <input
-                            type="number"
-                            step="1"
-                            min="0.01"
-                            value={line.quantity}
-                            onChange={e => updateLine(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-white border border-slate-300 rounded px-2.5 py-1 text-sm font-mono focus:outline-none focus:border-blue-500"
-                          />
-                        )}
-                      </td>
-                      <td className="py-3 px-3">
-                        {readOnly ? (
-                          <span className="text-slate-600">{line.unit_label}</span>
-                        ) : (
-                          <input
-                            type="text"
-                            value={line.unit_label}
-                            onChange={e => updateLine(idx, 'unit_label', e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded px-2.5 py-1 text-sm text-slate-700 focus:outline-none focus:border-blue-500"
-                          />
-                        )}
-                      </td>
-                      <td className="py-3 px-3">
-                        {readOnly ? (
-                          <Badge variant={isOneTime ? 'info' : 'success'}>{line.frequency}</Badge>
-                        ) : (
-                          <select
-                            value={line.frequency}
-                            onChange={e => updateLine(idx, 'frequency', e.target.value as any)}
-                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs font-semibold uppercase focus:outline-none focus:border-blue-500"
-                          >
-                            <option value="monthly">Monthly</option>
-                            <option value="quarterly">Quarterly</option>
-                            <option value="annual">Annual</option>
-                            <option value="one_time">One-time</option>
-                          </select>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-slate-900">
-                        {isOneTime ? (
-                          <div className="font-bold text-amber-600" title="One-time fee (undiscounted)">€{lineGross.toLocaleString()} (One-off)</div>
-                        ) : (
+                          )}
+                          {!isOneTime && (
+                            <span className="text-[11px] text-slate-400 font-normal mt-1 block">
+                              {overrideCount > 0 ? `✨ Dynamic: ${overrideCount} explicit month override(s)` : 'Fixed starting quantity (carries across all months)'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 align-top">
+                          {readOnly ? (
+                            <span className="font-mono text-slate-700 font-bold block mt-1">€{Number(line.unit_price).toLocaleString()} <span className="text-xs text-slate-500 font-normal">{periodSuffix}</span></span>
+                          ) : (
+                            <div className="flex items-center space-x-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.unit_price}
+                                onChange={e => updateLine(idx, 'unit_price', parseFloat(e.target.value) || 0)}
+                                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500 min-w-[70px]"
+                              />
+                              <span className="text-[11px] font-bold text-slate-500 uppercase whitespace-nowrap">{periodSuffix}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 align-top">
                           <div>
-                            <div className="font-bold">€{lineGross.toLocaleString()} {periodSuffix}</div>
-                            {line.frequency !== 'monthly' && (
-                              <div className="text-[11px] font-normal text-slate-500">€{monthlyMrrEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo MRR</div>
+                            {readOnly ? (
+                              <span className="font-mono font-bold text-slate-700 block mt-1">{baseQty.toLocaleString()}</span>
+                            ) : (
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={line.quantity}
+                                onChange={e => updateLine(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                                className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-sm font-mono font-bold focus:outline-none focus:border-blue-500"
+                                title="Default month 1 quantity"
+                              />
+                            )}
+                            {!isOneTime && (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedScheduleLineIdx(isExpanded ? null : idx)}
+                                className={`mt-2 w-full inline-flex items-center justify-center text-[11px] font-bold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                                  isExpanded 
+                                    ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20' 
+                                    : overrideCount > 0
+                                      ? 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200/80'
+                                }`}
+                              >
+                                <Calendar className="w-3 h-3 mr-1 shrink-0" />
+                                {overrideCount > 0 ? `${overrideCount} Mo Overrides` : 'Monthly Schedule'}
+                                {isExpanded ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+                              </button>
                             )}
                           </div>
-                        )}
-                      </td>
-                      {!readOnly && (
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => deleteLine(idx)}
-                            className="text-rose-500 hover:text-rose-700 transition-colors p-1 rounded-full hover:bg-rose-50 cursor-pointer"
-                            title="Remove line"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
                         </td>
+                        <td className="py-3 px-3 align-top">
+                          {readOnly ? (
+                            <span className="text-slate-600 font-medium block mt-1">{line.unit_label}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={line.unit_label}
+                              onChange={e => updateLine(idx, 'unit_label', e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-blue-500"
+                            />
+                          )}
+                        </td>
+                        <td className="py-3 px-3 align-top">
+                          {readOnly ? (
+                            <Badge variant={isOneTime ? 'info' : 'success'}>{line.frequency}</Badge>
+                          ) : (
+                            <select
+                              value={line.frequency}
+                              onChange={e => updateLine(idx, 'frequency', e.target.value as any)}
+                              className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-bold uppercase focus:outline-none focus:border-blue-500"
+                            >
+                              <option value="monthly">Monthly</option>
+                              <option value="quarterly">Quarterly</option>
+                              <option value="annual">Annual</option>
+                              <option value="one_time">One-time</option>
+                            </select>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-900 align-top">
+                          {isOneTime ? (
+                            <div className="font-bold text-amber-600 mt-1" title="One-time fee (undiscounted)">€{lineGross.toLocaleString()} (One-off)</div>
+                          ) : (
+                            <div>
+                              <div className="font-bold mt-1">€{lineGross.toLocaleString()} {periodSuffix}</div>
+                              <div className="text-[11px] font-normal text-slate-500">
+                                €{monthlyMrrEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo (Mo. 1 MRR)
+                              </div>
+                              {overrideCount > 0 && (
+                                <div className="text-[10px] font-semibold text-purple-600 mt-0.5">
+                                  Varies per monthly timeline
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        {!readOnly && (
+                          <td className="py-3 px-3 text-center align-top">
+                            <button
+                              type="button"
+                              onClick={() => deleteLine(idx)}
+                              className="text-rose-500 hover:text-rose-700 transition-colors p-1.5 mt-0.5 rounded-full hover:bg-rose-50 cursor-pointer"
+                              title="Remove line"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+
+                      {/* Expandable Month-by-Month Quantity Horizon & Carry-Forward Projection Grid */}
+                      {isExpanded && !isOneTime && (
+                        <tr>
+                          <td colSpan={readOnly ? 6 : 7} className="p-0 border-t border-b border-slate-700 bg-slate-900">
+                            <div className="p-5 text-slate-100 space-y-4 shadow-inner">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3.5">
+                                <div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs font-black uppercase tracking-wider text-purple-400 flex items-center">
+                                      <Calendar className="w-4 h-4 mr-1.5 text-purple-400" />
+                                      Monthly Quantity Timeline & Carry-Forward Projections
+                                    </span>
+                                    <span className="bg-purple-900/40 text-purple-300 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-purple-500/30">
+                                      {termYears} Year Horizon ({termPeriods.length} Mo)
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-300 mt-1">
+                                    Enter exact quantities for specific months. Unmodified future months automatically inherit from the previous month for effortless budgeting.
+                                  </p>
+                                </div>
+                                <div className="flex items-center space-x-2 shrink-0">
+                                  {!readOnly && overrideCount > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateLine(idx, 'monthly_quantities', {})}
+                                      className="text-xs font-bold bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-300 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-rose-600/50 transition-all flex items-center cursor-pointer"
+                                      title="Clear all manual monthly overrides and reset to base initial quantity"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                                      Reset All Overrides
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedScheduleLineIdx(null)}
+                                    className="text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition-all flex items-center cursor-pointer"
+                                  >
+                                    <X className="w-3.5 h-3.5 mr-1" /> Close Timeline
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Grid of Months */}
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
+                                {termPeriods.map((period, pIdx) => {
+                                  const hasOverride = line.monthly_quantities?.[period] !== undefined && line.monthly_quantities?.[period] !== null && !isNaN(Number(line.monthly_quantities[period]));
+                                  const effQty = getEffectiveQuantity(line, pIdx, termPeriods);
+                                  const periodGross = (Number(line.unit_price) || 0) * effQty;
+
+                                  return (
+                                    <div 
+                                      key={period} 
+                                      className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between ${
+                                        hasOverride 
+                                          ? 'bg-gradient-to-br from-purple-950/80 to-slate-900 border-purple-500/80 shadow-md shadow-purple-500/10' 
+                                          : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-800/90'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between text-xs mb-2">
+                                        <span className="font-mono font-extrabold text-slate-200 text-[11px]">{period}</span>
+                                        {hasOverride ? (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                            Overridden
+                                          </span>
+                                        ) : (
+                                          <span className="text-[9px] font-medium text-slate-400 flex items-center" title={pIdx === 0 ? "Default Starting Base Quantity" : "Inherited automatically from previous month"}>
+                                            {pIdx === 0 ? 'Base Qty' : '🔄 Inherited'}
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      <div className="relative flex items-center">
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          disabled={readOnly}
+                                          value={hasOverride ? line.monthly_quantities![period] : effQty}
+                                          onChange={e => {
+                                            const valStr = e.target.value;
+                                            const updatedMq = { ...(line.monthly_quantities || {}) };
+                                            if (valStr === '') {
+                                              delete updatedMq[period];
+                                            } else {
+                                              const parsed = parseFloat(valStr);
+                                              if (!isNaN(parsed)) updatedMq[period] = parsed;
+                                            }
+                                            updateLine(idx, 'monthly_quantities', updatedMq);
+                                          }}
+                                          placeholder={String(effQty)}
+                                          className={`w-full bg-slate-950 border rounded-lg pl-2 pr-6 py-1 text-xs font-mono font-bold focus:outline-none focus:ring-2 ${
+                                            hasOverride 
+                                              ? 'text-purple-200 border-purple-500/70 focus:ring-purple-400' 
+                                              : 'text-slate-300 border-slate-700 focus:ring-blue-400 opacity-70'
+                                          }`}
+                                        />
+                                        {hasOverride && !readOnly && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updatedMq = { ...(line.monthly_quantities || {}) };
+                                              delete updatedMq[period];
+                                              updateLine(idx, 'monthly_quantities', updatedMq);
+                                            }}
+                                            className="absolute right-1.5 text-slate-400 hover:text-rose-400 transition-colors p-0.5 cursor-pointer"
+                                            title="Clear override (inherit previous month's quantity)"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="mt-2 text-right border-t border-slate-700/50 pt-1.5 flex items-center justify-between text-[10px] font-mono text-slate-400">
+                                        <span>{line.unit_label || 'unit'}(s)</span>
+                                        <span className="font-bold text-slate-300">
+                                          €{periodGross.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800">
+                                <span>💡 Pro-tip: Edits automatically roll forward to all subsequent months until another manual override is encountered.</span>
+                                <span className="font-mono text-emerald-400 font-bold">
+                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + ((Number(line.unit_price) || 0) * getEffectiveQuantity(line, sIdx, termPeriods) * Math.max(0, 1 - (Number(discountPct) || 0) / 100)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </tr>
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -499,11 +716,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-[#132338] to-slate-900 text-white shadow-xl border border-slate-800">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 divide-y md:divide-y-0 md:divide-x divide-slate-700/60">
           <div className="pt-2 md:pt-0">
-            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Gross Monthly</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Starting Gross Mo</span>
             <span className="text-xl font-mono font-bold text-slate-200 mt-1 block">
               €{totals.recurringGrossMonthly.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Before discount</span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">Month 1 rate before disc.</span>
           </div>
           <div className="pt-3 md:pt-0 md:pl-6">
             <span className="text-[11px] font-bold text-amber-400 uppercase block tracking-wider">Discount ({discountPct}%)</span>
@@ -513,18 +730,18 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
             <span className="text-[10px] text-slate-400 block mt-0.5">Recurring lines only</span>
           </div>
           <div className="pt-3 md:pt-0 md:pl-6">
-            <span className="text-[11px] font-bold text-emerald-400 uppercase block tracking-wider">Net MRR</span>
+            <span className="text-[11px] font-bold text-emerald-400 uppercase block tracking-wider">Starting Net MRR</span>
             <span className="text-2xl font-mono font-black text-emerald-300 mt-1 block">
               €{totals.netMonthlyMRR.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className="text-[10px] text-slate-300 font-semibold block mt-0.5">Monthly Recurring Revenue</span>
+            <span className="text-[10px] text-slate-300 font-semibold block mt-0.5">Month 1 recurring rate</span>
           </div>
           <div className="pt-3 md:pt-0 md:pl-6">
-            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Net Annual Rate</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Starting Net Annual</span>
             <span className="text-xl font-mono font-bold text-slate-200 mt-1 block">
               €{totals.netAnnual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">MRR × 12 months</span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">Starting MRR × 12 months</span>
           </div>
           <div className="pt-3 md:pt-0 md:pl-6 col-span-2 md:col-span-1 bg-gradient-to-r from-blue-900/30 to-transparent p-3 rounded-xl md:bg-none md:p-0">
             <span className="text-xs font-black text-blue-400 uppercase block tracking-wider flex items-center">
@@ -534,7 +751,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
               €{totals.totalContractValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className="text-[10px] text-slate-300 block mt-0.5">
-              Includes €{totals.oneTimeTotal.toLocaleString()} in one-off fees
+              Exact cumulative scheduled revenue + €{totals.oneTimeTotal.toLocaleString()} one-off
             </span>
           </div>
         </div>
@@ -576,9 +793,9 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         {showSchedulePreview && (
           <div className="mt-6 pt-6 border-t border-slate-700 text-slate-200">
             <div className="text-xs font-extrabold text-slate-300 mb-3 flex items-center justify-between">
-              <span>Monthly Cash Landing Recognition ({termYears} Year Horizon)</span>
+              <span>Monthly Cash Landing & Revenue Recognition ({termYears} Year Horizon)</span>
               <span className="text-[11px] text-slate-400 font-normal">
-                Quarterly & Annual frequency lines land strictly on scheduled months
+                Reflects all variable monthly quantity projections and billing frequency anchors
               </span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-2 max-h-60 overflow-y-auto pr-1">
@@ -586,7 +803,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 <div key={row.period} className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/80 text-center">
                   <span className="text-[10px] font-mono text-slate-400 block">{row.period}</span>
                   <span className={`text-xs font-mono font-bold block mt-1 ${row.amount > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                    €{row.amount.toLocaleString()}
+                    €{row.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               ))}

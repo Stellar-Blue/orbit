@@ -332,6 +332,7 @@ export interface ContractLine {
   unit_label: string;
   frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time';
   note?: string | null;
+  monthly_quantities?: { [period: string]: number } | null;
 }
 
 export interface ContractSchedule {

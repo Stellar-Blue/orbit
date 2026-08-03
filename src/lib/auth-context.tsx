@@ -1144,7 +1144,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         quantity: l.quantity,
         unit_label: l.unit_label,
         frequency: l.frequency,
-        note: l.note || null
+        note: l.note || null,
+        monthly_quantities: l.monthly_quantities || null
       }));
       if (linesToInsert.length > 0) {
         await supabase.from('contract_lines').insert(linesToInsert);
