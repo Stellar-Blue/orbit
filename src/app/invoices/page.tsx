@@ -1294,6 +1294,99 @@ export default function InvoicesRegistryPage() {
               />
             </div>
 
+            {editingInvoiceId && (
+              <div className="pt-4 border-t border-slate-200/80">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-[#3D87D3]" />
+                      Attached Invoice Documents & Receipts
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">AADE digital vouchers and tax receipt attachments linked to this invoice</p>
+                  </div>
+                  <label className="inline-flex items-center gap-1.5 bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/20 hover:bg-[#3D87D3]/20 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Attach PDF / Receipt</span>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*,.doc,.docx"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleUploadDocument(editingInvoiceId, e.target.files[0]);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {(() => {
+                  const currentInv = invoices.find(i => i.id === editingInvoiceId);
+                  const docs = currentInv?.documents || [];
+                  if (docs.length === 0) {
+                    return (
+                      <div className="p-5 rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
+                        <FileText className="w-7 h-7 mx-auto text-slate-400" />
+                        <p className="font-extrabold text-slate-700">No PDF documents attached yet</p>
+                        <p className="text-[11px]">Click &ldquo;Attach PDF / Receipt&rdquo; above to upload digital receipts for this bill.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {docs.map((doc, idx) => (
+                        <div key={doc.id || idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs hover:bg-slate-100/70 transition-colors">
+                          <div className="flex items-center gap-3 truncate min-w-0">
+                            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
+                              <CheckCircle2 className="w-4 h-4" />
+                            </div>
+                            <div className="truncate min-w-0">
+                              <p className="font-extrabold text-slate-900 truncate">{doc.file_name}</p>
+                              <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+                                Path: {doc.storage_path || 'Supabase Enterprise Storage'} &bull; v{doc.version || 1}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewDoc({
+                                  name: doc.file_name,
+                                  url: doc.url,
+                                  storagePath: doc.storage_path,
+                                  subtitle: `Invoice #${currentInv?.invoice_number} · ${currentInv?.counterparty?.legal_name || 'Counterparty'}`
+                                });
+                              }}
+                              className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Preview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (doc.url && (doc.url.startsWith('http') || doc.url.startsWith('data:'))) {
+                                  const a = document.createElement('a');
+                                  a.href = doc.url;
+                                  a.download = doc.file_name || 'invoice_receipt.pdf';
+                                  a.click();
+                                } else {
+                                  alert(`Downloading ${doc.file_name}...`);
+                                }
+                              }}
+                              className="p-1.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg font-bold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
+                            >
+                              <Download className="w-3.5 h-3.5 text-blue-600" /> Download
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
               <Button onClick={() => setIsRegisterModalOpen(false)} variant="outline" className="px-5 py-2.5 text-xs font-bold">
                 Cancel
