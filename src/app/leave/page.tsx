@@ -180,6 +180,7 @@ export default function LeaveManagementPage() {
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportTargetYear, setExportTargetYear] = useState<number>(() => new Date().getFullYear() || 2026);
+  const [exportScope, setExportScope] = useState<string>('me');
 
   const exportYearBalance = useMemo(() => {
     return getEmployeeLeaveBalance(currentUser.id, selectedYear);
@@ -192,46 +193,118 @@ export default function LeaveManagementPage() {
   }, [leaveRequests, currentUser.id, selectedYear]);
 
   const handleConfirmExport = () => {
-    const targetBalance = getEmployeeLeaveBalance(currentUser.id, exportTargetYear);
-    const targetLeaves = leaveRequests.filter(r => 
-      r.profile_id === currentUser.id && r.start_date.startsWith(String(exportTargetYear))
-    ).sort((a, b) => b.start_date.localeCompare(a.start_date));
-
-    const wsData = [
-      ['STELLARBLUE ORBIT — OFFICIAL ANNUAL LEAVE & ALLOWANCE REPORT'],
-      [''],
-      ['Employee Name:', `${currentUser.first_name} ${currentUser.last_name}`],
-      ['Work Email:', currentUser.work_email],
-      ['Report Year:', String(exportTargetYear)],
-      ['Total Annual Allowance Quota:', `${targetBalance.entitlement + targetBalance.carryOver} working days`],
-      ['Consumed / Approved Leaves:', `${targetBalance.taken + targetBalance.reserved} working days`],
-      ['AVAILABLE / REMAINING LEAVES:', `${targetBalance.available} working days`],
-      [''],
-      ['START DATE', 'END DATE', 'LEAVE CATEGORY / TYPE', 'WORKING DAYS DEDUCTED', 'STATUS', 'ORIGIN', 'MEMO & REASON']
-    ];
-
-    if (targetLeaves.length === 0) {
-      wsData.push(['No recorded leaves for selected year', '', '', '', '', '', '']);
-    } else {
-      targetLeaves.forEach(req => {
-        const lt = leaveTypes.find(t => t.id === req.leave_type_id);
-        const effDays = getEffectiveDays(req);
-        wsData.push([
-          req.start_date,
-          req.end_date,
-          lt?.name_en || (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave'),
-          `${effDays}d`,
-          req.status.toUpperCase(),
-          req.origin.toUpperCase(),
-          req.note || 'Standard time off'
-        ]);
-      });
-    }
+    const targetLeaves = leaveRequests.filter(r => {
+      const startYr = new Date(r.start_date).getFullYear();
+      const endYr = new Date(r.end_date).getFullYear();
+      return startYr === exportTargetYear || endYr === exportTargetYear;
+    });
 
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(wb, ws, `Leave_Report_${exportTargetYear}`);
-    XLSX.writeFile(wb, `Leave_Report_${currentUser.last_name}_${exportTargetYear}.xlsx`);
+
+    if (exportScope === 'all') {
+      // Company-Wide Summary
+      const summaryData: (string | number)[][] = [
+        ['STELLARBLUE ORBIT — COMPANY-WIDE DEDUCTED LEAVE DAYS REPORT'],
+        ['Report Year:', String(exportTargetYear)],
+        ['Generated On:', new Date().toLocaleDateString('en-GB')],
+        [''],
+        ['Employee Name', 'Work Email', 'Employment Type', 'Total Allowance Quota', 'Regular Deducted (Days)', 'Mandatory Closure (Days)', 'Total Deducted Days', 'Remaining Available Balance']
+      ];
+
+      profiles.forEach(p => {
+        const bal = getEmployeeLeaveBalance(p.id, exportTargetYear);
+        const totalDeducted = bal.taken + bal.mandatory;
+        if (p.employment_type !== 'contractor' || totalDeducted > 0) {
+          summaryData.push([
+            `${p.first_name} ${p.last_name}`,
+            p.work_email || '',
+            p.employment_type?.replace('_', ' ').toUpperCase() || 'FULL TIME',
+            String(bal.entitlement + bal.carryOver),
+            String(bal.taken),
+            String(bal.mandatory),
+            String(totalDeducted),
+            String(bal.available)
+          ]);
+        }
+      });
+
+      // Detailed Deductions Ledger
+      const detailData: (string | number)[][] = [
+        ['STELLARBLUE ORBIT — DETAILED DEDUCTIONS LEDGER (ALL EMPLOYEES)'],
+        ['Report Year:', String(exportTargetYear)],
+        [''],
+        ['Employee Name', 'Work Email', 'Start Date', 'End Date', 'Leave Category / Type', 'Deducted Working Days', 'Status', 'Origin', 'Note / Reason']
+      ];
+
+      targetLeaves
+        .sort((a, b) => b.start_date.localeCompare(a.start_date))
+        .forEach(req => {
+          const emp = profiles.find(p => p.id === req.profile_id);
+          const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+          const catName = lt ? (lt.name_en || lt.name_el) : (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave');
+          detailData.push([
+            emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown Employee',
+            emp?.work_email || '',
+            req.start_date,
+            req.end_date,
+            catName,
+            Number(req.working_days || 0),
+            req.status.toUpperCase(),
+            req.origin.toUpperCase(),
+            req.note || 'Standard absence record'
+          ]);
+        });
+
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+      const wsDetail = XLSX.utils.aoa_to_sheet(detailData);
+      XLSX.utils.book_append_sheet(wb, wsSummary, `Summary_${exportTargetYear}`);
+      XLSX.utils.book_append_sheet(wb, wsDetail, `Detailed_Ledger_${exportTargetYear}`);
+      XLSX.writeFile(wb, `StellarBlue_Deducted_Leaves_Company_${exportTargetYear}.xlsx`);
+    } else {
+      const targetProfileId = exportScope === 'me' ? currentUser.id : exportScope;
+      const targetEmp = profiles.find(p => p.id === targetProfileId) || currentUser;
+      const targetBalance = getEmployeeLeaveBalance(targetProfileId, exportTargetYear);
+      const empLeaves = targetLeaves.filter(r => r.profile_id === targetProfileId);
+      const totalDeducted = targetBalance.taken + targetBalance.mandatory;
+
+      const wsData: (string | number)[][] = [
+        ['STELLARBLUE ORBIT — OFFICIAL ANNUAL LEAVE & DEDUCTIONS REPORT'],
+        [''],
+        ['Employee Name:', `${targetEmp.first_name} ${targetEmp.last_name}`],
+        ['Work Email:', targetEmp.work_email || ''],
+        ['Report Year:', String(exportTargetYear)],
+        ['Total Annual Allowance Quota:', `${targetBalance.entitlement + targetBalance.carryOver} working days`],
+        ['Regular Deducted Days:', `${targetBalance.taken} working days`],
+        ['Mandatory Closure Deducted Days:', `${targetBalance.mandatory} working days`],
+        ['TOTAL DEDUCTED LEAVE DAYS:', `${totalDeducted} working days`],
+        ['AVAILABLE / REMAINING LEAVES:', `${targetBalance.available} working days`],
+        [''],
+        ['START DATE', 'END DATE', 'LEAVE CATEGORY / TYPE', 'WORKING DAYS DEDUCTED', 'STATUS', 'ORIGIN', 'MEMO & REASON']
+      ];
+
+      if (empLeaves.length === 0) {
+        wsData.push(['No recorded leave deductions for selected year', '', '', '', '', '', '']);
+      } else {
+        empLeaves.forEach(req => {
+          const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+          const effDays = getEffectiveDays(req);
+          wsData.push([
+            req.start_date,
+            req.end_date,
+            lt?.name_en || (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave'),
+            `${effDays}d`,
+            req.status.toUpperCase(),
+            req.origin.toUpperCase(),
+            req.note || 'Standard time off'
+          ]);
+        });
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      XLSX.utils.book_append_sheet(wb, ws, `Leave_Report_${exportTargetYear}`);
+      XLSX.writeFile(wb, `Leave_Report_${targetEmp.last_name}_${exportTargetYear}.xlsx`);
+    }
+
     setIsExportModalOpen(false);
   };
 
@@ -988,6 +1061,26 @@ export default function LeaveManagementPage() {
               <option value={2024}>2024</option>
             </select>
           </div>
+
+          {isAdmin && (
+            <div>
+              <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Employee / Report Scope</label>
+              <select
+                value={exportScope}
+                onChange={e => setExportScope(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value="me">👤 My Personal Leave Report ({currentUser.last_name})</option>
+                <option value="all">🌟 All Employees (Company-Wide &amp; Detailed Ledger)</option>
+                {profiles
+                  .filter(p => p.id !== currentUser.id && (p.employment_type !== 'contractor' || p.status === 'active'))
+                  .sort((a, b) => a.last_name.localeCompare(b.last_name))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>👥 {p.last_name} {p.first_name} ({p.role})</option>
+                  ))}
+              </select>
+            </div>
+          )}
 
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-slate-600">
             <p className="font-semibold text-slate-800 flex items-center">

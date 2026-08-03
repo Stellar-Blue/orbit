@@ -6,9 +6,10 @@ import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, 
   Users, Filter, Edit3, ShieldAlert,
-  Briefcase, Plus, Search, Settings, Trash2, Tag, Sliders
+  Briefcase, Plus, Search, Settings, Trash2, Tag, Sliders, Download, FileSpreadsheet
 } from 'lucide-react';
 import { parseISO, format, eachDayOfInterval } from 'date-fns';
+import * as XLSX from 'xlsx';
 import { LeaveRequest, LeaveType } from '@/lib/types';
 
 export default function CompanyLeaveManagementPage() {
@@ -16,7 +17,7 @@ export default function CompanyLeaveManagementPage() {
     currentUser, profiles, leaveTypes, leaveRequests, mandatoryLeaves, publicHolidays, 
     updateLeaveRequestStatus, addMandatoryLeave, updateMandatoryLeave, deleteMandatoryLeave,
     editLeaveRequest, decideLeaveCancellation, splitAndAddLeaveRequest, deleteLeaveRequest,
-    addLeaveType, updateLeaveType, deleteLeaveType
+    addLeaveType, updateLeaveType, deleteLeaveType, getEmployeeLeaveBalance
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -87,6 +88,127 @@ export default function CompanyLeaveManagementPage() {
   const [catMinNotice, setCatMinNotice] = useState(7);
   const [catSortOrder, setCatSortOrder] = useState(100);
   const [catIsHidden, setCatIsHidden] = useState(false);
+
+  // Deducted Days Excel Export State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportYear, setExportYear] = useState(2026);
+  const [exportScope, setExportScope] = useState<'all' | string>('all');
+
+  const handleExportDeductedDays = () => {
+    const targetLeaves = leaveRequests.filter(r => {
+      const startYr = new Date(r.start_date).getFullYear();
+      const endYr = new Date(r.end_date).getFullYear();
+      return startYr === exportYear || endYr === exportYear;
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    if (exportScope === 'all') {
+      // Sheet 1: Company-Wide Summary
+      const summaryData: (string | number)[][] = [
+        ['STELLARBLUE ORBIT — COMPANY-WIDE DEDUCTED LEAVE DAYS REPORT'],
+        ['Report Year:', String(exportYear)],
+        ['Generated On:', new Date().toLocaleDateString('en-GB')],
+        [''],
+        ['Employee Name', 'Work Email', 'Employment Type', 'Total Allowance Quota', 'Regular Deducted (Days)', 'Mandatory Closure (Days)', 'Total Deducted Days', 'Remaining Available Balance']
+      ];
+
+      profiles.forEach(p => {
+        const bal = getEmployeeLeaveBalance(p.id, exportYear);
+        const totalDeducted = bal.taken + bal.mandatory;
+        if (p.employment_type !== 'contractor' || totalDeducted > 0) {
+          summaryData.push([
+            `${p.first_name} ${p.last_name}`,
+            p.work_email || '',
+            p.employment_type?.replace('_', ' ').toUpperCase() || 'FULL TIME',
+            String(bal.entitlement + bal.carryOver),
+            String(bal.taken),
+            String(bal.mandatory),
+            String(totalDeducted),
+            String(bal.available)
+          ]);
+        }
+      });
+
+      // Sheet 2: Detailed Deductions Ledger
+      const detailData: (string | number)[][] = [
+        ['STELLARBLUE ORBIT — DETAILED DEDUCTIONS LEDGER (ALL EMPLOYEES)'],
+        ['Report Year:', String(exportYear)],
+        [''],
+        ['Employee Name', 'Work Email', 'Start Date', 'End Date', 'Leave Category / Type', 'Deducted Working Days', 'Status', 'Origin', 'Note / Reason']
+      ];
+
+      targetLeaves
+        .sort((a, b) => b.start_date.localeCompare(a.start_date))
+        .forEach(req => {
+          const emp = profiles.find(p => p.id === req.profile_id);
+          const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+          const catName = lt ? (lt.name_en || lt.name_el) : (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave');
+          detailData.push([
+            emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown Employee',
+            emp?.work_email || '',
+            req.start_date,
+            req.end_date,
+            catName,
+            Number(req.working_days || 0),
+            req.status.toUpperCase(),
+            req.origin.toUpperCase(),
+            req.note || 'Standard absence record'
+          ]);
+        });
+
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+      const wsDetail = XLSX.utils.aoa_to_sheet(detailData);
+      XLSX.utils.book_append_sheet(wb, wsSummary, `Summary_${exportYear}`);
+      XLSX.utils.book_append_sheet(wb, wsDetail, `Detailed_Ledger_${exportYear}`);
+      XLSX.writeFile(wb, `StellarBlue_Deducted_Leaves_Company_${exportYear}.xlsx`);
+    } else {
+      // Single Employee Report
+      const emp = profiles.find(p => p.id === exportScope);
+      const bal = getEmployeeLeaveBalance(exportScope, exportYear);
+      const totalDeducted = bal.taken + bal.mandatory;
+      const empLeaves = targetLeaves.filter(r => r.profile_id === exportScope);
+
+      const empData: (string | number)[][] = [
+        ['STELLARBLUE ORBIT — EMPLOYEE DEDUCTED LEAVES REPORT'],
+        [''],
+        ['Employee Name:', emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'],
+        ['Work Email:', emp?.work_email || ''],
+        ['Report Year:', String(exportYear)],
+        ['Total Annual Allowance Quota:', `${bal.entitlement + bal.carryOver} working days`],
+        ['Regular Deducted Days:', `${bal.taken} working days`],
+        ['Mandatory Closure Deducted Days:', `${bal.mandatory} working days`],
+        ['TOTAL DEDUCTED LEAVE DAYS:', `${totalDeducted} working days`],
+        ['REMAINING AVAILABLE BALANCE:', `${bal.available} working days`],
+        [''],
+        ['START DATE', 'END DATE', 'LEAVE CATEGORY / TYPE', 'WORKING DAYS DEDUCTED', 'STATUS', 'ORIGIN', 'NOTE / REASON']
+      ];
+
+      if (empLeaves.length === 0) {
+        empData.push(['No leave deductions recorded for this employee in selected year', '', '', '', '', '', '']);
+      } else {
+        empLeaves.forEach(req => {
+          const lt = leaveTypes.find(t => t.id === req.leave_type_id);
+          const catName = lt ? (lt.name_en || lt.name_el) : (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave');
+          empData.push([
+            req.start_date,
+            req.end_date,
+            catName,
+            Number(req.working_days || 0),
+            req.status.toUpperCase(),
+            req.origin.toUpperCase(),
+            req.note || 'Standard absence record'
+          ]);
+        });
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(empData);
+      XLSX.utils.book_append_sheet(wb, ws, `Deducted_Report_${exportYear}`);
+      XLSX.writeFile(wb, `StellarBlue_Deducted_Leaves_${emp ? emp.last_name : 'Employee'}_${exportYear}.xlsx`);
+    }
+
+    setIsExportModalOpen(false);
+  };
 
   // Calculate working days excluding Greek holidays and weekends
   const calculateWorkingDays = (startStr: string, endStr: string, schedule?: string[]) => {
@@ -309,6 +431,13 @@ export default function CompanyLeaveManagementPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          <Button
+            onClick={() => setIsExportModalOpen(true)}
+            variant="outline"
+            className="text-emerald-700 border-emerald-300 hover:bg-emerald-50 font-extrabold text-xs px-4 py-2 shadow-sm flex items-center gap-2 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Export Deducted Days (XLSX)
+          </Button>
           {activeTab === 'categories' && (
             <Button
               onClick={openNewCategoryModal}
@@ -1116,6 +1245,64 @@ export default function CompanyLeaveManagementPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Deducted Days Export Modal */}
+      <Modal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} title="Export Deducted Leave Days (XLSX)">
+        <div className="space-y-4 pt-2 text-xs">
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 leading-relaxed font-medium">
+            <span className="font-bold flex items-center mb-1">
+              <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600 inline shrink-0" /> Official Payroll &amp; HR Leave Export
+            </span>
+            Export a complete Excel ledger of deducted working days (regular leave + mandatory company closures), either company-wide for all employees or per individual employee.
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-extrabold text-slate-700 uppercase tracking-wider text-[11px] mb-1.5">Target Year</label>
+              <select
+                value={exportYear}
+                onChange={e => setExportYear(Number(e.target.value))}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/40"
+              >
+                {[2024, 2025, 2026, 2027].map(yr => (
+                  <option key={yr} value={yr}>{yr} Report Cycle</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-extrabold text-slate-700 uppercase tracking-wider text-[11px] mb-1.5">Employee Scope</label>
+              <select
+                value={exportScope}
+                onChange={e => setExportScope(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/40"
+              >
+                <option value="all">🌟 All Employees (Company-Wide &amp; Ledger)</option>
+                {profiles
+                  .filter(p => p.employment_type !== 'contractor' || p.status === 'active')
+                  .sort((a, b) => a.last_name.localeCompare(b.last_name))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>{p.last_name} {p.first_name} ({p.role})</option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-end space-x-2">
+            <Button variant="outline" size="sm" onClick={() => setIsExportModalOpen(false)} className="cursor-pointer font-bold">
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleExportDeductedDays}
+              className="bg-emerald-600 hover:bg-emerald-500 font-black px-5 py-2 shadow-sm text-xs cursor-pointer flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" /> Generate &amp; Download XLSX
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
