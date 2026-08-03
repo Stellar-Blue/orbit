@@ -23,6 +23,43 @@ export interface ContractValuation {
 }
 
 /**
+ * Determines whether a pricing line item uses a variable quantity scheme (e.g. Per-Asset & Tiered Optimization Engines, Man-Days)
+ * versus a fixed/constant scheme (Flat ETRM Modules & Subscriptions).
+ * Flat ETRM Modules & Subscriptions do not need monthly schedules!
+ */
+export function isVariableQuantityPricingScheme(
+  line: Partial<ContractLine> & { name?: string; unit_label?: string; frequency?: string; catalog_item_id?: string | null },
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): boolean {
+  if (line.frequency === 'one_time') return false;
+
+  // 1) Explicit checks against Catalog Module definitions
+  if (line.catalog_item_id) {
+    const item = catalogItems.find(i => i.id === line.catalog_item_id);
+    if (item) {
+      const mod = catalogModules.find(m => m.id === item.module_id);
+      const modName = (mod?.name || '').toLowerCase();
+      if (modName.includes('flat') || modName.includes('subscription')) return false;
+      if (modName.includes('per-asset') || modName.includes('optimization') || modName.includes('engine') || modName.includes('man-day')) return true;
+    }
+  }
+
+  // 2) Fallback classification by unit label and item name
+  const uLabel = (line.unit_label || '').toLowerCase();
+  const name = (line.name || '').toLowerCase();
+  if (uLabel === 'flat' || name.includes('etrm platform') || name.includes('license') || name.includes('suite') || name.includes('subscription')) {
+    return false;
+  }
+  if (uLabel === 'mw' || uLabel === 'assets' || uLabel === 'man-days' || uLabel === 'mwh/h' || name.includes('man-day') || name.includes('optimization') || name.includes('forecast') || name.includes('dispatch') || name.includes('adhoc')) {
+    return true;
+  }
+
+  // Default to false (fixed quantity) unless explicitly variable
+  return false;
+}
+
+/**
  * Maps a Weighted Annual Recurring Revenue (WARR) figure to a Tier 1-10 classification.
  */
 export function getContractTier(weightedARR: number): ContractTierResult {
@@ -99,9 +136,11 @@ export function calculateContractValuation(
       periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
 
-    // Helper for monthly carry-forward
+    // Helper for monthly carry-forward (only evaluated for Variable Quantity Pricing Schemes!)
     const getEffectiveQty = (l: any, pIdx: number) => {
-      if (l.frequency === 'one_time') return Number(l.quantity) || 1;
+      if (l.frequency === 'one_time' || !isVariableQuantityPricingScheme(l, catalogModules, catalogItems)) {
+        return Number(l.quantity) || (l.frequency === 'one_time' ? 1 : 0);
+      }
       const mq = l.monthly_quantities || {};
       for (let i = pIdx; i >= 0; i--) {
         const p = periods[i];

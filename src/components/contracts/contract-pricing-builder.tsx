@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ContractLine, CatalogItem } from '@/lib/types';
-import { calculateContractValuation } from '@/lib/pricing-engine';
+import { calculateContractValuation, isVariableQuantityPricingScheme } from '@/lib/pricing-engine';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
@@ -80,8 +80,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
 
   // Carry-forward calculation: find explicit quantity override or carry forward previous month's quantity
   const getEffectiveQuantity = (line: Omit<ContractLine, 'id' | 'contract_id'>, periodIdx: number, allPeriods: string[]) => {
-    if (line.frequency === 'one_time') {
-      return Number(line.quantity) || 1;
+    if (line.frequency === 'one_time' || !isVariableQuantityPricingScheme(line, catalogModules, catalogItems)) {
+      return Number(line.quantity) || (line.frequency === 'one_time' ? 1 : 0);
     }
     const mq = line.monthly_quantities || {};
     // Search backward from periodIdx to 0 for an explicit monthly override
@@ -399,6 +399,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                   const baseQty = Number(line.quantity) || 0;
                   const lineGross = (Number(line.unit_price) || 0) * baseQty;
                   const isOneTime = line.frequency === 'one_time';
+                  const isVariableScheme = isVariableQuantityPricingScheme(line, catalogModules, catalogItems);
                   const periodSuffix = line.frequency === 'monthly' ? '/ mo' : line.frequency === 'quarterly' ? '/ qtr' : line.frequency === 'annual' ? '/ year' : 'one-off';
                   const monthlyMrrEquiv = line.frequency === 'annual' ? lineGross / 12 : line.frequency === 'quarterly' ? lineGross / 3 : lineGross;
                   const isExpanded = expandedScheduleLineIdx === idx;
@@ -420,8 +421,10 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                             />
                           )}
                           {!isOneTime && (
-                            <span className="text-[11px] text-slate-400 font-normal mt-1 block">
-                              {overrideCount > 0 ? `✨ Dynamic: ${overrideCount} explicit month override(s)` : 'Fixed starting quantity (carries across all months)'}
+                            <span className="text-[11px] font-normal mt-1 block text-slate-500">
+                              {isVariableScheme 
+                                ? (overrideCount > 0 ? `⚡ Dynamic Engine: ${overrideCount} monthly override(s)` : '⚡ Variable Engine: Expand schedule to program monthly usage') 
+                                : '🔒 Flat ETRM Module / Subscription (Constant quantity)'}
                             </span>
                           )}
                         </td>
@@ -456,7 +459,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                 title="Default month 1 quantity"
                               />
                             )}
-                            {!isOneTime && (
+                            {!isOneTime && isVariableScheme ? (
                               <button
                                 type="button"
                                 onClick={() => setExpandedScheduleLineIdx(isExpanded ? null : idx)}
@@ -472,6 +475,10 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                 {overrideCount > 0 ? `${overrideCount} Mo Overrides` : 'Monthly Schedule'}
                                 {isExpanded ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
                               </button>
+                            ) : !isOneTime && (
+                              <span className="mt-2 text-[10px] bg-slate-100 border border-slate-200 text-slate-500 font-semibold px-2 py-0.5 rounded-md block text-center uppercase tracking-wider" title="Flat ETRM Modules have constant quantity across the term">
+                                Constant Qty
+                              </span>
                             )}
                           </div>
                         </td>
@@ -535,7 +542,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                       </tr>
 
                       {/* Expandable Month-by-Month Quantity Horizon & Carry-Forward Projection Grid */}
-                      {isExpanded && !isOneTime && (
+                      {isExpanded && !isOneTime && isVariableScheme && (
                         <tr>
                           <td colSpan={readOnly ? 6 : 7} className="p-0 border-t border-b border-slate-700 bg-slate-900">
                             <div className="p-5 text-slate-100 space-y-4 shadow-inner">
