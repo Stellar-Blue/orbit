@@ -8,7 +8,7 @@ import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Copy, Users, Share2
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
@@ -27,6 +27,31 @@ export default function ContractsRegistryPage() {
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('kanban');
 
   const isAdmin = currentUser.role === 'admin';
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; contract: Contract } | null>(null);
+
+  const copyToClipboard = (text: string, label: string, id?: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    if (id) setCopiedId(id);
+    setCopyFeedback(label);
+    setTimeout(() => {
+      if (id) setCopiedId(null);
+      setCopyFeedback(null);
+    }, 2500);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleClickOutside, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleClickOutside, true);
+    };
+  }, []);
 
   // Sync initial selection from URL ID
   useEffect(() => {
@@ -308,7 +333,11 @@ export default function ContractsRegistryPage() {
                       <div 
                         key={c.id}
                         onClick={() => setSelectedContract(c)}
-                        className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-2xs group flex flex-col justify-between space-y-2"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 320), y: Math.min(e.clientY, window.innerHeight - 380), contract: c });
+                        }}
+                        className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-2xs group flex flex-col justify-between space-y-2 relative"
                       >
                         <div>
                           <div className="flex items-center justify-between text-[10px] mb-1">
@@ -336,6 +365,21 @@ export default function ContractsRegistryPage() {
                             {c.counterparty?.legal_name || 'Counterparty'}
                           </h4>
                           <p className="text-xs text-slate-500 mt-1">{c.product || c.type}</p>
+                          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={(e) => copyToClipboard(c.id, `Contract UUID (${c.id.slice(0, 8)}...)`, c.id, e)}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer shadow-2xs"
+                              title="Click to copy full Contract UUID · Right-click card for Fast Report"
+                            >
+                              <span>UUID: {c.id.slice(0, 8)}...{c.id.slice(-4)}</span>
+                              {copiedId === c.id ? (
+                                <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-slate-400 shrink-0" />
+                              )}
+                            </button>
+                          </div>
                         </div>
 
                         {c.value && (
@@ -370,6 +414,7 @@ export default function ContractsRegistryPage() {
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
                 <th className="p-3.5 pl-5">Reference & Counterparty</th>
+                <th className="p-3.5">Contract UUID</th>
                 <th className="p-3.5">Direction / Product</th>
                 <th className="p-3.5">Commercials</th>
                 <th className="p-3.5">Term Window</th>
@@ -382,10 +427,33 @@ export default function ContractsRegistryPage() {
               {filteredContracts.map(c => {
                 const isUrgent = c.notice_deadline?.startsWith('2026-07') || c.notice_deadline?.startsWith('2026-08');
                 return (
-                  <tr key={c.id} onClick={() => setSelectedContract(c)} className="hover:bg-slate-50 transition-colors cursor-pointer">
+                  <tr 
+                    key={c.id} 
+                    onClick={() => setSelectedContract(c)} 
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 320), y: Math.min(e.clientY, window.innerHeight - 380), contract: c });
+                    }}
+                    className="hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
                     <td className="p-3.5 pl-5 font-medium">
                       <div className="text-slate-800 font-bold">{c.counterparty?.legal_name}</div>
                       <div className="text-xs text-[#3D87D3] font-mono">{c.reference}</div>
+                    </td>
+                    <td className="p-3.5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={(e) => copyToClipboard(c.id, `Contract UUID (${c.id.slice(0, 8)}...)`, c.id, e)}
+                        className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
+                        title="Click to copy full Contract UUID · Right-click row for Fast Report"
+                      >
+                        <span>{c.id.slice(0, 8)}...{c.id.slice(-4)}</span>
+                        {copiedId === c.id ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        )}
+                      </button>
                     </td>
                     <td className="p-3.5">
                       <Badge variant={c.direction === 'revenue' ? 'success' : 'warning'}>{c.direction.toUpperCase()}</Badge>
@@ -1072,6 +1140,108 @@ export default function ContractsRegistryPage() {
             }
           }}
         />
+      )}
+
+      {/* RIGHT-CLICK CUSTOM CONTEXT MENU FOR CONTRACTS */}
+      {contextMenu && (
+        <div 
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 mb-1">
+            <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">⚡ Quick Copy Menu</div>
+            <div className="font-extrabold text-slate-800 truncate text-sm">{contextMenu.contract.reference} &mdash; {contextMenu.contract.counterparty?.legal_name || 'Contract'}</div>
+          </div>
+
+          <div className="py-1 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                copyToClipboard(contextMenu.contract.id, `Contract UUID (${contextMenu.contract.id.slice(0,8)}...)`, contextMenu.contract.id);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Copy className="w-3.5 h-3.5 text-[#3D87D3]" /> Copy Contract UUID
+              </span>
+              <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.contract.id.slice(0, 6)}...</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                copyToClipboard(contextMenu.contract.counterparty_id || 'N/A', `Counterparty UUID`, undefined);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Users className="w-3.5 h-3.5 text-blue-600" /> Copy Counterparty UUID
+              </span>
+              <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.contract.counterparty_id?.slice(0, 6) || 'None'}...</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const val = `€${contextMenu.contract.value?.toLocaleString() || '0'} / ${contextMenu.contract.billing_cadence || 'monthly'}`;
+                copyToClipboard(val, `Contract Value (${val})`, undefined);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Copy Value & Cadence
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700">€{contextMenu.contract.value?.toLocaleString() || 0}</span>
+            </button>
+          </div>
+
+          <div className="border-t border-slate-100 my-1 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                const c = contextMenu.contract;
+                const arr = c.billing_cadence === 'annual' ? (c.value || 0) : c.billing_cadence === 'quarterly' ? (c.value || 0) * 4 : (c.value || 0) * 12;
+                const report = [
+                  `📋 CONTRACT FAST REPORT: ${c.reference}`,
+                  `=========================================`,
+                  `• Counterparty: ${c.counterparty?.legal_name || 'Unmapped Entity'} (CP UUID: ${c.counterparty_id || 'N/A'})`,
+                  `• Contract UUID: ${c.id}`,
+                  `• Product & Type: ${c.product || c.type || 'Agreement'} (${c.direction.toUpperCase()})`,
+                  `• Status: ${c.status.toUpperCase()}`,
+                  `• Commercial Value: €${c.value?.toLocaleString() || '0'} / ${c.billing_cadence || 'month'} (Est. ARR: €${arr.toLocaleString()})`,
+                  `• Term Period: ${c.starts_on} to ${c.ends_on || 'Indefinite'}`,
+                  `• Notice Terms: ${c.notice_period_days || 30} days window (Deadline: ${c.notice_deadline || 'None'})`,
+                  `• Notes & Conditions: ${c.notes || 'Standard executive financial terms apply.'}`
+                ].join('\n');
+                copyToClipboard(report, `Contract Fast Report (${c.reference})`, undefined);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-800 hover:bg-emerald-50 hover:text-emerald-900 font-bold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2 text-emerald-700">
+                <Share2 className="w-4 h-4 text-emerald-600" /> Copy Fast Report (For Colleague)
+              </span>
+              <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase border border-emerald-200">Text</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST FEEDBACK FOR COPIED VALUES */}
+      {copyFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            <Check className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-slate-100">Copied to Clipboard!</div>
+            <div className="text-[11px] text-slate-400 font-mono truncate max-w-xs">{copyFeedback}</div>
+          </div>
+        </div>
       )}
     </div>
   );

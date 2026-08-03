@@ -10,7 +10,7 @@ import {
   Receipt, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
-  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye
+  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
@@ -23,6 +23,31 @@ export default function InvoicesRegistryPage() {
   const isAdmin = currentUser.role === 'admin';
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; invoice: Invoice } | null>(null);
+
+  const copyToClipboard = (text: string, label: string, id?: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    if (id) setCopiedId(id);
+    setCopyFeedback(label);
+    setTimeout(() => {
+      if (id) setCopiedId(null);
+      setCopyFeedback(null);
+    }, 2500);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleClickOutside, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleClickOutside, true);
+    };
+  }, []);
 
   // Navigation tabs within Financial Hub
   const [activeTab, setActiveTab] = useState<'register' | 'reconciliation' | 'cashflow' | 'accountant'>('register');
@@ -553,6 +578,7 @@ export default function InvoicesRegistryPage() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold text-[11px] uppercase tracking-wider">
                 <tr>
                   <th className="p-4">Dir & Entity</th>
+                  <th className="p-4">Invoice UUID</th>
                   <th className="p-4">Invoice # & MARK</th>
                   <th className="p-4">Linkage (Contract/Tag)</th>
                   <th className="p-4">Issue & Due Date</th>
@@ -572,6 +598,10 @@ export default function InvoicesRegistryPage() {
                     <tr 
                       key={inv.id} 
                       onClick={() => openInvoiceModal(inv)} 
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 340), y: Math.min(e.clientY, window.innerHeight - 380), invoice: inv });
+                      }}
                       className="hover:bg-slate-100/80 transition-colors cursor-pointer"
                     >
                       <td className="p-4">
@@ -586,6 +616,21 @@ export default function InvoicesRegistryPage() {
                             <span className="text-[11px] text-slate-500 font-normal">{inv.counterparty?.trade_name || inv.counterparty?.country || 'Greece'}</span>
                           </div>
                         </div>
+                      </td>
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => copyToClipboard(inv.id, `Invoice UUID (${inv.id.slice(0, 8)}...)`, inv.id, e)}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
+                          title="Click to copy full Invoice UUID · Right-click row for Fast Report"
+                        >
+                          <span>{inv.id.slice(0, 8)}...{inv.id.slice(-4)}</span>
+                          {copiedId === inv.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          )}
+                        </button>
                       </td>
                       <td className="p-4">
                         <span className="font-extrabold text-slate-900 text-sm block font-mono">{inv.invoice_number}</span>
@@ -1592,6 +1637,107 @@ export default function InvoicesRegistryPage() {
           storagePath={previewDoc.storagePath}
           subtitle={previewDoc.subtitle}
         />
+      )}
+
+      {/* RIGHT-CLICK CUSTOM CONTEXT MENU FOR INVOICES */}
+      {contextMenu && (
+        <div 
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 mb-1">
+            <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">⚡ Quick Copy Menu</div>
+            <div className="font-extrabold text-slate-800 truncate text-sm">INV: {contextMenu.invoice.invoice_number} &mdash; {contextMenu.invoice.counterparty?.legal_name || 'Entity'}</div>
+          </div>
+
+          <div className="py-1 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                copyToClipboard(contextMenu.invoice.id, `Invoice UUID (${contextMenu.invoice.id.slice(0,8)}...)`, contextMenu.invoice.id);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Copy className="w-3.5 h-3.5 text-[#3D87D3]" /> Copy Invoice UUID
+              </span>
+              <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.invoice.id.slice(0, 6)}...</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                copyToClipboard(contextMenu.invoice.counterparty_id || 'N/A', `Counterparty UUID`, undefined);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Users className="w-3.5 h-3.5 text-blue-600" /> Copy Counterparty UUID
+              </span>
+              <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.invoice.counterparty_id?.slice(0, 6) || 'None'}...</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const val = `€${contextMenu.invoice.gross_eur.toLocaleString() || '0'} (Net: €${contextMenu.invoice.net || '0'} + VAT: €${contextMenu.invoice.vat_amount || '0'})`;
+                copyToClipboard(val, `Invoice Gross (€${contextMenu.invoice.gross_eur.toLocaleString()})`, undefined);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Copy Gross & VAT Breakdown
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700">€{contextMenu.invoice.gross_eur.toLocaleString()}</span>
+            </button>
+          </div>
+
+          <div className="border-t border-slate-100 my-1 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                const inv = contextMenu.invoice;
+                const report = [
+                  `🧾 INVOICE FAST REPORT: ${inv.invoice_number}`,
+                  `=========================================`,
+                  `• Counterparty: ${inv.counterparty?.legal_name || 'Unmapped Entity'} (CP UUID: ${inv.counterparty_id || 'N/A'})`,
+                  `• Invoice UUID: ${inv.id}`,
+                  `• Invoice # & MARK: ${inv.invoice_number} (AADE MARK: ${inv.mark || 'Pending Sync'})`,
+                  `• Direction & Status: ${inv.direction.toUpperCase()} - ${inv.status.toUpperCase()}`,
+                  `• Financial Breakdown: Net €${(inv.net || 0).toLocaleString()} + VAT (${inv.vat_rate || '24%'}): €${(inv.vat_amount || 0).toLocaleString()} = Total Gross €${(inv.gross_eur || 0).toLocaleString()}`,
+                  `• Timelines: Issued on ${inv.issue_date} | Due by ${inv.due_date}`,
+                  `• Linked Contract UUID: ${inv.contract_id || 'Standalone / No contract linked'}`,
+                  `• Notes: ${inv.notes || 'No additional settlement caveats reported.'}`
+                ].join('\n');
+                copyToClipboard(report, `Invoice Fast Report (${inv.invoice_number})`, undefined);
+                setContextMenu(null);
+              }}
+              className="w-full px-3.5 py-2 text-left text-slate-800 hover:bg-emerald-50 hover:text-emerald-900 font-bold flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2 text-emerald-700">
+                <Share2 className="w-4 h-4 text-emerald-600" /> Copy Fast Report (For Colleague)
+              </span>
+              <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase border border-emerald-200">Text</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST FEEDBACK FOR COPIED VALUES */}
+      {copyFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            <Check className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-slate-100">Copied to Clipboard!</div>
+            <div className="text-[11px] text-slate-400 font-mono truncate max-w-xs">{copyFeedback}</div>
+          </div>
+        </div>
       )}
     </div>
   );
