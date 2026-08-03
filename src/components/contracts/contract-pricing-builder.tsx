@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ContractLine, CatalogItem } from '@/lib/types';
+import { calculateContractValuation } from '@/lib/pricing-engine';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
@@ -146,60 +147,19 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
     setDiscountPct(disc);
   };
 
-  // Calculations incorporating dynamic monthly quantity carry-forward schedules
+  // Calculations incorporating dynamic monthly quantity carry-forward schedules and Tier 1-10 weighting
   const totals = useMemo(() => {
-    let startingGrossMonthly = 0;
-    let oneTimeTotal = 0;
-    let totalRecurringContractValue = 0;
-    const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
-
-    termPeriods.forEach((period, pIdx) => {
-      lines.forEach(line => {
-        const effectiveQty = getEffectiveQuantity(line, pIdx, termPeriods);
-        const grossLineVal = (Number(line.unit_price) || 0) * effectiveQty;
-        const netLineVal = grossLineVal * discountMultiplier;
-
-        if (line.frequency === 'one_time') {
-          if (pIdx === 0) {
-            oneTimeTotal += (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
-          }
-        } else if (line.frequency === 'annual') {
-          if (pIdx % 12 === 0) {
-            totalRecurringContractValue += netLineVal;
-          }
-          if (pIdx === 0) {
-            startingGrossMonthly += grossLineVal / 12;
-          }
-        } else if (line.frequency === 'quarterly') {
-          if (pIdx % 3 === 0) {
-            totalRecurringContractValue += netLineVal;
-          }
-          if (pIdx === 0) {
-            startingGrossMonthly += grossLineVal / 3;
-          }
-        } else {
-          // monthly
-          totalRecurringContractValue += netLineVal;
-          if (pIdx === 0) {
-            startingGrossMonthly += grossLineVal;
-          }
-        }
-      });
-    });
-
-    const netMonthlyMRR = startingGrossMonthly * discountMultiplier;
-    const netAnnual = netMonthlyMRR * 12;
-    const totalContractValue = totalRecurringContractValue + oneTimeTotal;
-
+    const valuation = calculateContractValuation(lines as any, discountPct, termYears, startDate, catalogModules, catalogItems);
     return {
-      recurringGrossMonthly: startingGrossMonthly,
-      discountAmount: startingGrossMonthly - netMonthlyMRR,
-      netMonthlyMRR,
-      netAnnual,
-      oneTimeTotal,
-      totalContractValue
+      netMonthlyMRR: valuation.netMonthlyMRR,
+      netAnnual: valuation.netARR,
+      oneTimeTotal: valuation.oneTimeValue,
+      totalContractValue: valuation.totalContractValue,
+      tierInfo: valuation.tierInfo,
+      breakdown: valuation.breakdown,
+      weightedARR: valuation.weightedARR
     };
-  }, [lines, discountPct, termYears, termPeriods]);
+  }, [lines, discountPct, termYears, startDate, catalogModules, catalogItems]);
 
   // Schedule generator reflecting monthly variable quantity carry-forwards
   const schedule = useMemo(() => {
@@ -257,10 +217,13 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
             <div className="flex items-center space-x-2">
               <Sparkles className="w-5 h-5 text-amber-400" />
               <span className="text-xs font-mono text-amber-300/90 uppercase tracking-widest font-extrabold">Modular Pricing & Variable Revenue Projections</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-wide border shadow-sm ml-1 ${totals.tierInfo.badgeClass}`}>
+                {totals.tierInfo.label}
+              </span>
             </div>
             <h3 className="text-xl font-extrabold tracking-tight text-white mt-1">Contract Term & Discount Calibration</h3>
             <p className="text-xs text-slate-300 max-w-2xl mt-0.5">
-              Configure term lengths and recurring discount brackets. For Optimization Engines and Per-Asset fees, customize month-by-month quantities with automatic carry-forward projecting into future periods.
+              Configure term lengths and recurring discount brackets. One-time payments are kept strictly separate from ARR to reveal true valuation. Tier rating reflects weighted contributions (Flat Modules: 1.5x, Optimization/Man-Days: 1.2x).
             </p>
           </div>
 
@@ -716,42 +679,46 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-[#132338] to-slate-900 text-white shadow-xl border border-slate-800">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 divide-y md:divide-y-0 md:divide-x divide-slate-700/60">
           <div className="pt-2 md:pt-0">
-            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Starting Gross Mo</span>
-            <span className="text-xl font-mono font-bold text-slate-200 mt-1 block">
-              €{totals.recurringGrossMonthly.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Month 1 rate before disc.</span>
-          </div>
-          <div className="pt-3 md:pt-0 md:pl-6">
-            <span className="text-[11px] font-bold text-amber-400 uppercase block tracking-wider">Discount ({discountPct}%)</span>
-            <span className="text-xl font-mono font-bold text-amber-300 mt-1 block">
-              -€{totals.discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Starting Net MRR</span>
+            <span className="text-xl font-mono font-black text-slate-200 mt-1 block">
+              €{totals.netMonthlyMRR.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className="text-[10px] text-slate-400 block mt-0.5">Recurring lines only</span>
           </div>
           <div className="pt-3 md:pt-0 md:pl-6">
-            <span className="text-[11px] font-bold text-emerald-400 uppercase block tracking-wider">Starting Net MRR</span>
+            <span className="text-[11px] font-bold text-emerald-400 uppercase block tracking-wider">Net ARR (Recurring)</span>
             <span className="text-2xl font-mono font-black text-emerald-300 mt-1 block">
-              €{totals.netMonthlyMRR.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            <span className="text-[10px] text-slate-300 font-semibold block mt-0.5">Month 1 recurring rate</span>
-          </div>
-          <div className="pt-3 md:pt-0 md:pl-6">
-            <span className="text-[11px] font-bold text-slate-400 uppercase block tracking-wider">Starting Net Annual</span>
-            <span className="text-xl font-mono font-bold text-slate-200 mt-1 block">
               €{totals.netAnnual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Starting MRR × 12 months</span>
+            <span className="text-[10px] text-emerald-300/80 font-semibold block mt-0.5">Strictly excludes one-time payments</span>
+          </div>
+          <div className="pt-3 md:pt-0 md:pl-6">
+            <span className="text-[11px] font-bold text-amber-400 uppercase block tracking-wider">Additional Value (One-Off)</span>
+            <span className="text-xl font-mono font-bold text-amber-300 mt-1 block">
+              +€{totals.oneTimeTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span className="text-[10px] text-slate-300 block mt-0.5">Onboarding, setup & adhoc days</span>
+          </div>
+          <div className="pt-3 md:pt-0 md:pl-6">
+            <span className="text-[11px] font-bold text-purple-300 uppercase block tracking-wider">Contract Tier</span>
+            <div className="mt-1">
+              <span className={`px-2 py-0.5 rounded text-xs font-extrabold inline-block ${totals.tierInfo.badgeClass}`}>
+                {totals.tierInfo.label}
+              </span>
+            </div>
+            <span className="text-[9px] text-slate-400 block mt-1 leading-tight">
+              Flat: €{(totals.breakdown.flatModulesARR * 1.5).toLocaleString(undefined, { maximumFractionDigits: 0 })} (1.5x) · Engines: €{(totals.breakdown.perAssetEngineARR * 1.2).toLocaleString(undefined, { maximumFractionDigits: 0 })} (1.2x)
+            </span>
           </div>
           <div className="pt-3 md:pt-0 md:pl-6 col-span-2 md:col-span-1 bg-gradient-to-r from-blue-900/30 to-transparent p-3 rounded-xl md:bg-none md:p-0">
             <span className="text-xs font-black text-blue-400 uppercase block tracking-wider flex items-center">
-              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-blue-400 inline" /> TCV ({termYears} Yr)
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-blue-400 inline" /> Real Deal TCV ({termYears} Yr)
             </span>
             <span className="text-2xl font-mono font-black text-white mt-1 block">
               €{totals.totalContractValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className="text-[10px] text-slate-300 block mt-0.5">
-              Exact cumulative scheduled revenue + €{totals.oneTimeTotal.toLocaleString()} one-off
+              Scheduled ARR + Additional One-Time value
             </span>
           </div>
         </div>

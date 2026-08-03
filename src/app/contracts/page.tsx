@@ -13,9 +13,10 @@ import {
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+import { calculateContractValuation } from '@/lib/pricing-engine';
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   
@@ -382,11 +383,34 @@ export default function ContractsRegistryPage() {
                           </div>
                         </div>
 
-                        {c.value && (
-                          <div className="font-mono font-bold text-xs text-slate-800 bg-slate-50 p-2 rounded border border-slate-200">
-                            €{c.value.toLocaleString()} <span className="text-[10px] text-slate-500 font-sans font-normal">/ {c.billing_cadence}</span>
-                          </div>
-                        )}
+                        {(() => {
+                          const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                          return (
+                            <div className="space-y-2 mt-2">
+                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase">ARR (Recurring)</span>
+                                  <span className="font-mono font-black text-xs text-emerald-700">€{val.netARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</span>
+                                </div>
+                                {val.oneTimeValue > 0 && (
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-500 font-medium">One-off additional:</span>
+                                    <span className="font-mono font-bold text-amber-600">+€{val.oneTimeValue.toLocaleString()}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between border-t border-slate-200/80 pt-1 text-[11px]">
+                                  <span className="font-extrabold text-slate-700">Real Deal TCV:</span>
+                                  <span className="font-mono font-extrabold text-slate-900">€{val.totalContractValue.toLocaleString()}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-black inline-block border ${val.tierInfo.badgeClass}`}>
+                                  {val.tierInfo.label}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className={`pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] ${isUrgentNotice ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
                           <span className="flex items-center">
@@ -460,7 +484,23 @@ export default function ContractsRegistryPage() {
                       <div className="text-xs text-slate-500 mt-1">{c.product || c.type}</div>
                     </td>
                     <td className="p-3.5 font-mono font-semibold text-slate-800">
-                      €{c.value?.toLocaleString()} ({c.billing_cadence})
+                      {(() => {
+                        const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                        return (
+                          <div className="space-y-1">
+                            <div className="font-black text-emerald-700 text-xs">€{val.netARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr ARR</div>
+                            {val.oneTimeValue > 0 && (
+                              <div className="text-[11px] text-amber-600">+€{val.oneTimeValue.toLocaleString()} one-off</div>
+                            )}
+                            <div className="text-[11px] text-slate-500">TCV: €{val.totalContractValue.toLocaleString()}</div>
+                            <div className="pt-0.5">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${val.tierInfo.badgeClass}`}>
+                                {val.tierInfo.label}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-3.5 text-xs text-slate-500">
                       {c.starts_on} &rarr; {c.ends_on || 'Indefinite'}
@@ -512,32 +552,36 @@ export default function ContractsRegistryPage() {
                   Real-time aggregation of net monthly recurring rates and total contract valuation across active commercial agreements.
                 </p>
               </div>
-              <div className="flex items-center space-x-6 bg-slate-900/80 px-6 py-4 rounded-xl border border-slate-700/60">
+              <div className="flex flex-wrap items-center gap-6 bg-slate-900/90 px-6 py-4 rounded-xl border border-slate-700/60 shadow-lg">
                 <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Total Portfolio MRR</span>
-                  <span className="text-2xl font-mono font-black text-emerald-400 mt-0.5 block">
+                  <span className="text-[10px] font-bold uppercase text-emerald-400 block tracking-wider">Total Portfolio ARR</span>
+                  <span className="text-2xl font-mono font-black text-emerald-300 mt-0.5 block">
                     €{filteredContracts.reduce((acc, c) => {
-                      if (c.lines && c.lines.length > 0) {
-                        let gross = 0;
-                        c.lines.forEach(l => {
-                          const val = (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
-                          if (l.frequency === 'annual') gross += val / 12;
-                          else if (l.frequency === 'quarterly') gross += val / 3;
-                          else if (l.frequency === 'monthly') gross += val;
-                        });
-                        return acc + (gross * Math.max(0, 1 - (Number(c.discount_pct) || 0) / 100));
-                      }
-                      return acc + (c.direction === 'revenue' ? (c.value || 0) / 12 : 0);
+                      const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                      return acc + (c.direction === 'revenue' ? val.netARR : 0);
                     }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">Active contracts Net Rate</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Strictly excludes one-time payments</span>
                 </div>
-                <div className="border-l border-slate-700 pl-6">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Total Portfolio TCV</span>
-                  <span className="text-2xl font-mono font-black text-blue-400 mt-0.5 block">
-                    €{filteredContracts.reduce((acc, c) => acc + (c.value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="border-l border-slate-700/80 pl-6">
+                  <span className="text-[10px] font-bold uppercase text-amber-400 block tracking-wider">Additional One-Off Revenue</span>
+                  <span className="text-2xl font-mono font-black text-amber-300 mt-0.5 block">
+                    +€{filteredContracts.reduce((acc, c) => {
+                      const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                      return acc + (c.direction === 'revenue' ? val.oneTimeValue : 0);
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">Committed deal value</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Setup, implementation & workshops</span>
+                </div>
+                <div className="border-l border-slate-700/80 pl-6">
+                  <span className="text-[10px] font-bold uppercase text-blue-400 block tracking-wider">Total Portfolio TCV</span>
+                  <span className="text-2xl font-mono font-black text-white mt-0.5 block">
+                    €{filteredContracts.reduce((acc, c) => {
+                      const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                      return acc + (c.direction === 'revenue' ? val.totalContractValue : 0);
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Real committed deal valuation</span>
                 </div>
               </div>
             </div>
@@ -555,33 +599,30 @@ export default function ContractsRegistryPage() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                     <th className="py-3 px-5">Ref / Entity</th>
+                    <th className="py-3 px-4">Tier Rating</th>
                     <th className="py-3 px-4">Type</th>
                     <th className="py-3 px-4">Term & Start</th>
                     <th className="py-3 px-4">Discount</th>
-                    <th className="py-3 px-4 text-right">Net Monthly MRR</th>
-                    <th className="py-3 px-4 text-right">Total Contract Value (TCV)</th>
+                    <th className="py-3 px-4 text-right">Net ARR (Recurring)</th>
+                    <th className="py-3 px-4 text-right">One-Off Additions</th>
+                    <th className="py-3 px-4 text-right">Real Deal TCV</th>
                     <th className="py-3 px-5 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-sm">
                   {filteredContracts.map((c) => {
-                    let netMrr = (c.value || 0) / 12;
-                    if (c.lines && c.lines.length > 0) {
-                      let gross = 0;
-                      c.lines.forEach(l => {
-                        const val = (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
-                        if (l.frequency === 'annual') gross += val / 12;
-                        else if (l.frequency === 'quarterly') gross += val / 3;
-                        else if (l.frequency === 'monthly') gross += val;
-                      });
-                      netMrr = gross * Math.max(0, 1 - (Number(c.discount_pct) || 0) / 100);
-                    }
+                    const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
 
                     return (
                       <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3.5 px-5 font-semibold text-slate-800">
                           <div className="font-extrabold text-slate-900">{c.reference}</div>
                           <div className="text-xs text-slate-500 font-normal">{c.counterparty?.legal_name || 'Client Entity'}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black border inline-block ${val.tierInfo.badgeClass}`}>
+                            {val.tierInfo.label}
+                          </span>
                         </td>
                         <td className="py-3.5 px-4">
                           <Badge variant={c.direction === 'revenue' ? 'success' : 'warning'}>
@@ -596,10 +637,13 @@ export default function ContractsRegistryPage() {
                           {c.discount_pct ? `${c.discount_pct}% Off` : 'None (0%)'}
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-700">
-                          €{netMrr.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo
+                          €{val.netARR.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr
                         </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
-                          €{(c.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-amber-600">
+                          {val.oneTimeValue > 0 ? `+€${val.oneTimeValue.toLocaleString()}` : '€0.00'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900">
+                          €{val.totalContractValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td className="py-3.5 px-5 text-center flex items-center justify-center space-x-2">
                           <button
@@ -647,6 +691,38 @@ export default function ContractsRegistryPage() {
       >
         {selectedContract && (
           <div className="space-y-6 text-sm">
+            {(() => {
+              const dossierVal = calculateContractValuation(selectedContract.lines || [], selectedContract.discount_pct || 0, selectedContract.term_years || 1, selectedContract.service_start_date || selectedContract.starts_on, catalogModules, catalogItems, selectedContract.value || 0, selectedContract.billing_cadence);
+              return (
+                <div className="flex flex-wrap items-center justify-between p-3.5 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 gap-4 shadow-md">
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-wide border shadow-sm ${dossierVal.tierInfo.badgeClass}`}>
+                      {dossierVal.tierInfo.label}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      Weighted ARR: <strong className="text-slate-200 font-mono font-bold">€{dossierVal.weightedARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-6 font-mono text-xs">
+                    <div>
+                      <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Net ARR (Recurring):</span>
+                      <strong className="text-emerald-400 font-bold">€{dossierVal.netARR.toLocaleString()}/yr</strong>
+                    </div>
+                    {dossierVal.oneTimeValue > 0 && (
+                      <div>
+                        <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">One-Off Additions:</span>
+                        <strong className="text-amber-400 font-bold">+€{dossierVal.oneTimeValue.toLocaleString()}</strong>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Real Deal TCV:</span>
+                      <strong className="text-blue-400 font-black">€{dossierVal.totalContractValue.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Modal Internal Navigation */}
             <div className="flex items-center border-b border-slate-200 pb-2 space-x-6">
               <button

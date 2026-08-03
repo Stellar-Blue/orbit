@@ -10,6 +10,7 @@ import {
   CatalogModule, CatalogItem, ContractLine, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation
 } from './types';
+import { calculateContractValuation } from './pricing-engine';
 
 interface AppState {
   currentUser: Profile;
@@ -1368,10 +1369,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         let orbit_arr = 0;
         activeRevContracts.forEach(c => {
-          let val = c.value || 0;
-          if (c.billing_cadence === 'monthly') val = val * 12;
-          else if (c.billing_cadence === 'quarterly') val = val * 4;
-          orbit_arr += val;
+          const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+          orbit_arr += val.netARR;
         });
 
         const sortedRenewals = activeContracts
