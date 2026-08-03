@@ -108,6 +108,8 @@ interface AppState {
   saveCatalogItem: (item: Partial<CatalogItem> & { module_id: string; name: string; default_unit_price: number; unit_label: string; default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time' }) => Promise<boolean>;
   deleteCatalogItem: (id: string) => Promise<boolean>;
   addInvoice: (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>) => Promise<Invoice | null>;
+  updateInvoice: (id: string, updates: Partial<Invoice>) => Promise<boolean>;
+  deleteInvoice: (id: string) => Promise<boolean>;
   updateInvoiceStatus: (id: string, status: Invoice['status'], notes?: string) => Promise<boolean>;
   recordInvoicePayment: (invoiceId: string, paidOn: string, amount: number, bankRef?: string, note?: string) => Promise<boolean>;
   addInvoiceDocument: (invoiceId: string, doc: Omit<InvoiceDocument, 'id' | 'uploaded_at'>) => Promise<boolean>;
@@ -1867,6 +1869,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newInv;
   };
 
+  const updateInvoice = async (id: string, updates: Partial<Invoice>): Promise<boolean> => {
+    setInvoices(prev => prev.map(inv => {
+      if (inv.id !== id) return inv;
+      const updated = { ...inv, ...updates };
+      if (updates.counterparty_id) {
+        updated.counterparty = counterparties.find(c => c.id === updates.counterparty_id);
+      }
+      if (updates.contract_id !== undefined) {
+        updated.contract = contracts.find(c => c.id === updates.contract_id);
+      }
+      return updated;
+    }));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const payload: any = { ...updates };
+      delete payload.id;
+      delete payload.created_at;
+      delete payload.counterparty;
+      delete payload.contract;
+      delete payload.documents;
+      delete payload.payments;
+      delete payload.allocations;
+
+      const { error } = await supabase.from('invoices').update(payload).eq('id', id);
+      if (error) console.error("Supabase update invoice error:", error.message);
+    } catch (e) {
+      console.error("updateInvoice exception:", e);
+      return false;
+    }
+    return true;
+  };
+
+  const deleteInvoice = async (id: string): Promise<boolean> => {
+    setInvoices(prev => prev.filter(inv => inv.id !== id));
+    setInvoiceDocuments(prev => prev.filter(d => d.invoice_id !== id));
+    setInvoicePayments(prev => prev.filter(p => p.invoice_id !== id));
+    setInvoiceAllocations(prev => prev.filter(a => a.invoice_id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('invoices').delete().eq('id', id);
+      if (error) console.error("Supabase delete invoice error:", error.message);
+    } catch (e) {
+      console.error("deleteInvoice exception:", e);
+      return false;
+    }
+    return true;
+  };
+
   const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
     try {
@@ -2106,6 +2156,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteLeaveType,
       getEmployeeLeaveBalance,
       addInvoice,
+      updateInvoice,
+      deleteInvoice,
       updateInvoiceStatus,
       recordInvoicePayment,
       addInvoiceDocument,

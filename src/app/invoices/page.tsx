@@ -9,13 +9,13 @@ import {
   Receipt, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
-  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield
+  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2
 } from 'lucide-react';
 
 export default function InvoicesRegistryPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
-    addInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries
+    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -30,8 +30,9 @@ export default function InvoicesRegistryPage() {
   const [selectedCpId, setSelectedCpId] = useState<string>('all');
   const [selectedContractId, setSelectedContractId] = useState<string>('all');
 
-  // Modal State for Registering New Invoice
+  // Modal State for Registering / Editing Invoice
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [newDirection, setNewDirection] = useState<InvoiceDirection>('outgoing');
   const [newType, setNewType] = useState<InvoiceType>('invoice');
   const [newCpId, setNewCpId] = useState<string>('');
@@ -100,7 +101,7 @@ export default function InvoicesRegistryPage() {
     setNewInvNumber(num);
     setDuplicateWarning('');
     if (!num.trim() || !cpId) return;
-    const isDup = invoices.some(i => i.counterparty_id === cpId && i.direction === dir && i.invoice_number.trim().toLowerCase() === num.trim().toLowerCase());
+    const isDup = invoices.some(i => i.id !== editingInvoiceId && i.counterparty_id === cpId && i.direction === dir && i.invoice_number.trim().toLowerCase() === num.trim().toLowerCase());
     if (isDup) {
       setDuplicateWarning(`An ${dir === 'outgoing' ? 'issued (AR)' : 'incoming (AP)'} invoice with number "${num}" is already registered for this corporate entity!`);
     }
@@ -329,6 +330,23 @@ export default function InvoicesRegistryPage() {
         <div className="flex items-center gap-3">
           <Button 
             onClick={() => {
+              setEditingInvoiceId(null);
+              setNewDirection('outgoing');
+              setNewType('invoice');
+              setNewCpId('');
+              setNewContractId('');
+              setNewCatName('');
+              setNewInvNumber('');
+              setNewMark('');
+              setNewIssueDate(new Date().toISOString().split('T')[0]);
+              const d = new Date();
+              d.setDate(d.getDate() + 30);
+              setNewDueDate(d.toISOString().split('T')[0]);
+              setNewPeriodFrom(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
+              setNewPeriodTo(new Date().toISOString().split('T')[0]);
+              setNewNet(1000);
+              setNewVatRate('24%');
+              setNewNotes('');
               setDuplicateWarning('');
               setIsRegisterModalOpen(true);
             }} 
@@ -616,6 +634,44 @@ export default function InvoicesRegistryPage() {
                           ) : (
                             <span className="text-slate-400 font-semibold text-xs italic pr-2">Settled</span>
                           )}
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setEditingInvoiceId(inv.id);
+                              setNewDirection(inv.direction);
+                              setNewType(inv.type || 'invoice');
+                              setNewCpId(inv.counterparty_id || '');
+                              setNewContractId(inv.contract_id || '');
+                              setNewCatName(inv.category || '');
+                              setNewInvNumber(inv.invoice_number || '');
+                              setNewMark(inv.mark || '');
+                              setNewIssueDate(inv.issue_date || new Date().toISOString().split('T')[0]);
+                              setNewDueDate(inv.due_date || new Date().toISOString().split('T')[0]);
+                              setNewPeriodFrom(inv.period_from || '');
+                              setNewPeriodTo(inv.period_to || '');
+                              setNewNet(inv.net || 0);
+                              setNewVatRate((inv.vat_rate as any) || '24%');
+                              setNewNotes(inv.notes || '');
+                              setDuplicateWarning('');
+                              setIsRegisterModalOpen(true);
+                            }}
+                            className="p-1.5 h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-colors flex items-center justify-center"
+                            title="Edit Invoice Details"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={async () => {
+                              if (confirm(`Are you sure you want to delete invoice ${inv.invoice_number}? This action cannot be undone and will remove all linked document archives and payment records.`)) {
+                                await deleteInvoice(inv.id);
+                              }
+                            }}
+                            className="p-1.5 h-8 w-8 text-slate-500 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center justify-center"
+                            title="Delete Invoice Record"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -1057,9 +1113,9 @@ export default function InvoicesRegistryPage() {
         </div>
       )}
 
-      {/* REGISTRATION MODAL */}
+      {/* REGISTRATION / EDIT MODAL */}
       {isRegisterModalOpen && (
-        <Modal isOpen={true} title="Register Corporate Tax Invoice (Common Truth)" onClose={() => setIsRegisterModalOpen(false)}>
+        <Modal isOpen={true} title={editingInvoiceId ? "Edit Corporate Tax Invoice" : "Register Corporate Tax Invoice (Common Truth)"} onClose={() => { setIsRegisterModalOpen(false); setEditingInvoiceId(null); }}>
           <div className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
             {duplicateWarning && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold flex items-center gap-2 animate-bounce">
@@ -1246,9 +1302,38 @@ export default function InvoicesRegistryPage() {
                     return;
                   }
                   if (duplicateWarning) {
-                    if (!confirm('Warning: Possible duplicate invoice number detected! Are you certain you want to register this?')) {
+                    if (!confirm('Warning: Possible duplicate invoice number detected! Are you certain you want to proceed?')) {
                       return;
                     }
+                  }
+                  if (editingInvoiceId) {
+                    const res = await updateInvoice(editingInvoiceId, {
+                      direction: newDirection,
+                      counterparty_id: newCpId,
+                      contract_id: newContractId || null,
+                      type: newType,
+                      invoice_number: newInvNumber.trim(),
+                      mark: newMark.trim() || null,
+                      category: newCatName || (newContractId ? null : 'Other Operational'),
+                      issue_date: newIssueDate,
+                      due_date: newDueDate,
+                      period_from: newPeriodFrom || null,
+                      period_to: newPeriodTo || null,
+                      net: newNet,
+                      vat_amount: calculatedVat,
+                      vat_rate: newVatRate,
+                      gross: calculatedGross,
+                      gross_eur: calculatedGross,
+                      notes: newNotes.trim() || null
+                    });
+                    if (res) {
+                      setIsRegisterModalOpen(false);
+                      setEditingInvoiceId(null);
+                      setNewInvNumber('');
+                      setNewNotes('');
+                      alert('Invoice updated successfully!');
+                    }
+                    return;
                   }
                   const res = await addInvoice({
                     direction: newDirection,
@@ -1282,7 +1367,7 @@ export default function InvoicesRegistryPage() {
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/20"
               >
-                Save to Common Truth
+                {editingInvoiceId ? "Save Changes" : "Save to Common Truth"}
               </Button>
             </div>
           </div>
