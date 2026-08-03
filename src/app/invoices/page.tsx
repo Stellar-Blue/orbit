@@ -322,11 +322,22 @@ export default function InvoicesRegistryPage() {
     const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const path = `invoices/${invId}_${Date.now()}_${cleanName}`;
     try {
+      let documentUrl = '';
       const { error } = await supabase.storage.from('invoices').upload(path, file, { cacheControl: '3600', upsert: true });
-      if (error) {
-        console.warn('Storage fallback applied:', error.message);
+      if (!error) {
+        const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(path);
+        documentUrl = pubData?.publicUrl || '';
       }
-      await addInvoiceDocument(invId, { invoice_id: invId, storage_path: path, file_name: file.name, version: 1 });
+      if (error || !documentUrl) {
+        console.warn('Storage fallback applied or public URL unavailable -> using Data URL representation.');
+        documentUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve((e.target?.result as string) || '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+      }
+      await addInvoiceDocument(invId, { invoice_id: invId, storage_path: path, file_name: file.name, version: 1, url: documentUrl });
       alert('Invoice attachment successfully linked and archived!');
     } catch (err: any) {
       console.error('Document upload error:', err);

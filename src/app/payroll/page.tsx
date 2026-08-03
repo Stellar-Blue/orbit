@@ -404,17 +404,33 @@ export default function PayrollPage() {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, target: 'upload' | 'existing') => {
-    const files = e.target.files;
-    if (!files) return;
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve((e.target?.result as string) || '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
 
-    const newDocs: PaymentDocument[] = Array.from(files).map((f, i) => ({
-      id: `doc-${Date.now()}-${i}`,
-      name: f.name,
-      type: f.name.toLowerCase().includes('inv') ? 'invoice' : f.name.toLowerCase().includes('payslip') ? 'payslip' : 'receipt',
-      size: `${(f.size / 1024).toFixed(0)} KB`,
-      uploaded_at: new Date().toISOString().split('T')[0]
-    }));
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, target: 'upload' | 'existing') => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    const newDocs: PaymentDocument[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      const dataUrl = await readFileAsDataURL(f);
+      newDocs.push({
+        id: `doc-${Date.now()}-${i}`,
+        name: f.name,
+        type: f.name.toLowerCase().includes('inv') ? 'invoice' : f.name.toLowerCase().includes('payslip') ? 'payslip' : 'receipt',
+        size: `${(f.size / 1024).toFixed(0)} KB`,
+        uploaded_at: new Date().toISOString().split('T')[0],
+        url: dataUrl || undefined
+      });
+    }
 
     if (target === 'upload') {
       setUpDocs(prev => [...prev, ...newDocs]);
@@ -465,7 +481,19 @@ export default function PayrollPage() {
   };
 
   const handleDownloadDoc = (doc: PaymentDocument, profName?: string, bankRef?: string) => {
-    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${doc.uploaded_at}\nEmployee: ${profName || 'Staff'}\nBank Reference: ${bankRef || 'WIRE-TRANSFER'}\nStatus: Verified and Encrypted under RLS Vault`;
+    if (doc.url && (doc.url.startsWith('http://') || doc.url.startsWith('https://') || doc.url.startsWith('data:') || doc.url.startsWith('blob:'))) {
+      const link = document.createElement('a');
+      link.href = doc.url;
+      link.download = doc.name;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    // Fallback only if no actual file payload exists (e.g., sample mock records from seed script)
+    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${doc.uploaded_at}\nEmployee: ${profName || 'Staff'}\nBank Reference: ${bankRef || 'WIRE-TRANSFER'}\nStatus: Verified and Encrypted under RLS Vault (Demo Placeholder - Upload a file to retain binary archive)`;
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1565,6 +1593,7 @@ export default function PayrollPage() {
           isOpen={!!previewDoc}
           onClose={() => setPreviewDoc(null)}
           documentName={previewDoc.doc.name}
+          documentUrl={previewDoc.doc.url}
           storagePath={`payroll/${selectedPeriod}/${previewDoc.doc.name}`}
           uploadedAt={previewDoc.doc.uploaded_at}
           subtitle={`Payroll Receipt · ${previewDoc.profName} (${previewDoc.doc.type.replace('_', ' ')})`}
