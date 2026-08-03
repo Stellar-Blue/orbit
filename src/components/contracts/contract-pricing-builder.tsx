@@ -111,7 +111,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         unit_label: item.unit_label,
         frequency: item.default_frequency,
         note: '',
-        monthly_quantities: {}
+        monthly_quantities: {},
+        apply_discount: true
       }
     ]);
     setSelectedCatalogId('');
@@ -128,7 +129,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         unit_label: 'flat',
         frequency: 'monthly',
         note: 'Custom negotiated rate',
-        monthly_quantities: {}
+        monthly_quantities: {},
+        apply_discount: true
       }
     ]);
   };
@@ -172,7 +174,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       lines.forEach(line => {
         const effectiveQty = getEffectiveQuantity(line, i, termPeriods);
         const grossLineVal = (Number(line.unit_price) || 0) * effectiveQty;
-        const netLineVal = grossLineVal * discountMultiplier;
+        const lineMult = line.apply_discount !== false ? discountMultiplier : 1.0;
+        const netLineVal = grossLineVal * lineMult;
 
         if (line.frequency === 'monthly') {
           monthTotal += netLineVal;
@@ -186,7 +189,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
           }
         } else if (line.frequency === 'one_time') {
           if (i === 0) {
-            monthTotal += (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+            monthTotal += ((Number(line.unit_price) || 0) * (Number(line.quantity) || 0)) * lineMult;
           }
         }
       });
@@ -390,6 +393,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                   <th className="py-2.5 px-3 w-36">Base Qty / Mo Horizon</th>
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
+                  <th className="py-2.5 px-3 text-center w-32">Discount Applied</th>
                   <th className="py-2.5 px-4 text-right w-48">Month 1 Rate / Projections</th>
                   {!readOnly && <th className="py-2.5 px-3 text-center w-14">Action</th>}
                 </tr>
@@ -510,14 +514,51 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                             </select>
                           )}
                         </td>
+                        <td className="py-3 px-3 align-top text-center">
+                          {readOnly ? (
+                            <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full border ${
+                              line.apply_discount !== false && discountPct > 0
+                                ? 'bg-amber-50 text-amber-700 border-amber-300'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}>
+                              {line.apply_discount !== false ? `Yes (-${discountPct}%)` : 'No (Net Rate)'}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => updateLine(idx, 'apply_discount', line.apply_discount === false ? true : false)}
+                              className={`w-full text-xs font-bold px-2 py-1.5 rounded-lg border transition-all cursor-pointer inline-flex items-center justify-center space-x-1 ${
+                                line.apply_discount !== false
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-2xs'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200/80'
+                              }`}
+                              title={line.apply_discount !== false ? `Contract discount (-${discountPct}%) is applied to this line item. Click to exempt.` : 'No contract discount applied to this line item. Click to enable discount.'}
+                            >
+                              <Tag className={`w-3.5 h-3.5 mr-1 ${line.apply_discount !== false ? 'text-amber-600' : 'text-slate-400'}`} />
+                              <span>{line.apply_discount !== false ? `Yes (${discountPct > 0 ? `-${discountPct}%` : 'On'})` : 'No (Exempt)'}</span>
+                            </button>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-right font-mono text-slate-900 align-top">
                           {isOneTime ? (
-                            <div className="font-bold text-amber-600 mt-1" title="One-time fee (undiscounted)">€{lineGross.toLocaleString()} (One-off)</div>
+                            <div className="mt-1" title="One-time fee">
+                              <div className="font-bold text-amber-600">
+                                €{((lineGross * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off)
+                              </div>
+                              {line.apply_discount !== false && discountPct > 0 && (
+                                <div className="text-[10px] line-through text-slate-400">€{lineGross.toLocaleString()} gross</div>
+                              )}
+                            </div>
                           ) : (
                             <div>
-                              <div className="font-bold mt-1">€{lineGross.toLocaleString()} {periodSuffix}</div>
+                              <div className={`font-bold mt-1 ${line.apply_discount !== false && discountPct > 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
+                                €{((lineGross * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {periodSuffix}
+                              </div>
+                              {line.apply_discount !== false && discountPct > 0 && (
+                                <div className="text-[11px] text-slate-400 line-through">€{lineGross.toLocaleString()} gross</div>
+                              )}
                               <div className="text-[11px] font-normal text-slate-500">
-                                €{monthlyMrrEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo (Mo. 1 MRR)
+                                €{((monthlyMrrEquiv * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo ({line.apply_discount !== false && discountPct > 0 ? 'Net MRR' : 'Mo. 1 MRR'})
                               </div>
                               {overrideCount > 0 && (
                                 <div className="text-[10px] font-semibold text-purple-600 mt-0.5">
@@ -544,7 +585,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                       {/* Expandable Month-by-Month Quantity Horizon & Carry-Forward Projection Grid */}
                       {isExpanded && !isOneTime && isVariableScheme && (
                         <tr>
-                          <td colSpan={readOnly ? 6 : 7} className="p-0 border-t border-b border-slate-700 bg-slate-900">
+                          <td colSpan={readOnly ? 7 : 8} className="p-0 border-t border-b border-slate-700 bg-slate-900">
                             <div className="p-5 text-slate-100 space-y-4 shadow-inner">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3.5">
                                 <div>
@@ -666,7 +707,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800">
                                 <span>💡 Pro-tip: Edits automatically roll forward to all subsequent months until another manual override is encountered.</span>
                                 <span className="font-mono text-emerald-400 font-bold">
-                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + ((Number(line.unit_price) || 0) * getEffectiveQuantity(line, sIdx, termPeriods) * Math.max(0, 1 - (Number(discountPct) || 0) / 100)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + ((Number(line.unit_price) || 0) * getEffectiveQuantity(line, sIdx, termPeriods) * (line.apply_discount !== false ? Math.max(0, 1 - (Number(discountPct) || 0) / 100) : 1.0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
                             </div>

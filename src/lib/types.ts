@@ -333,6 +333,7 @@ export interface ContractLine {
   frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time';
   note?: string | null;
   monthly_quantities?: { [period: string]: number } | null;
+  apply_discount?: boolean;
 }
 
 export interface ContractSchedule {

@@ -119,7 +119,7 @@ export function calculateContractValuation(
   
   // If we have line items, calculate with full granularity
   if (lines && lines.length > 0) {
-    let startingGrossMonthly = 0;
+    let startingNetMonthly = 0;
     let oneTimeValue = 0;
     let flatModulesARR = 0;
     let perAssetEngineARR = 0;
@@ -156,27 +156,28 @@ export function calculateContractValuation(
       lines.forEach(l => {
         const effQty = getEffectiveQty(l, pIdx);
         const grossVal = (Number(l.unit_price) || 0) * effQty;
-        const netVal = grossVal * discountMultiplier;
+        const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
+        const netVal = grossVal * lineMult;
 
         if (l.frequency === 'one_time') {
           if (pIdx === 0) {
-            oneTimeValue += (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+            oneTimeValue += ((Number(l.unit_price) || 0) * (Number(l.quantity) || 0)) * lineMult;
           }
         } else if (l.frequency === 'annual') {
           if (pIdx % 12 === 0) scheduledRecurringValue += netVal;
-          if (pIdx === 0) startingGrossMonthly += grossVal / 12;
+          if (pIdx === 0) startingNetMonthly += (grossVal / 12) * lineMult;
         } else if (l.frequency === 'quarterly') {
           if (pIdx % 3 === 0) scheduledRecurringValue += netVal;
-          if (pIdx === 0) startingGrossMonthly += grossVal / 3;
+          if (pIdx === 0) startingNetMonthly += (grossVal / 3) * lineMult;
         } else {
           // monthly
           scheduledRecurringValue += netVal;
-          if (pIdx === 0) startingGrossMonthly += grossVal;
+          if (pIdx === 0) startingNetMonthly += grossVal * lineMult;
         }
       });
     });
 
-    const netMonthlyMRR = startingGrossMonthly * discountMultiplier;
+    const netMonthlyMRR = startingNetMonthly;
     const netARR = netMonthlyMRR * 12; // Strictly recurring, oneTimeValue excluded!
     const totalContractValue = scheduledRecurringValue + oneTimeValue;
 
@@ -189,7 +190,8 @@ export function calculateContractValuation(
       if (l.frequency === 'annual') grossLineMo /= 12;
       else if (l.frequency === 'quarterly') grossLineMo /= 3;
       
-      const netLineARR = grossLineMo * discountMultiplier * 12;
+      const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
+      const netLineARR = grossLineMo * lineMult * 12;
 
       // Determine Category & Weighting
       let category = 'fixed';
