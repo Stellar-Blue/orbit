@@ -668,7 +668,6 @@ export default function CompanySettingsPage() {
                             />
                           </div>
                         </div>
-                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mt-2">
                           <div>
                             <label className="block font-bold text-slate-700 mb-1">Ribbon Color</label>
