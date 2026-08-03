@@ -12,6 +12,7 @@ import {
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
+import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 export default function PayrollPage() {
   const { 
@@ -52,6 +53,7 @@ export default function PayrollPage() {
   // Existing Payment Documents Management Modal State
   const [selectedPaymentForDocs, setSelectedPaymentForDocs] = useState<PaymentRecord | null>(null);
   const [addMoreDocs, setAddMoreDocs] = useState<PaymentDocument[]>([]);
+  const [previewDoc, setPreviewDoc] = useState<{ doc: PaymentDocument; profName: string; bankRef?: string } | null>(null);
   
   // New dynamic payment type state
   const [isTypeOpen, setIsTypeOpen] = useState(false);
@@ -1276,6 +1278,13 @@ export default function PayrollPage() {
                           <Badge variant="neutral" className="capitalize text-[10px]">{doc.type.replace('_', ' ')}</Badge>
                           <button
                             type="button"
+                            onClick={() => setPreviewDoc({ doc, profName: `${prof?.first_name} ${prof?.last_name}`, bankRef: selectedPaymentForDocs.bank_reference })}
+                            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md font-semibold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-indigo-600" /> Preview
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleDownloadDoc(doc, `${prof?.first_name} ${prof?.last_name}`, selectedPaymentForDocs.bank_reference)}
                             className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
                           >
@@ -1358,6 +1367,18 @@ export default function PayrollPage() {
           </div>
         )}
       </Modal>
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={!!previewDoc}
+          onClose={() => setPreviewDoc(null)}
+          documentName={previewDoc.doc.name}
+          storagePath={`payroll/${selectedPeriod}/${previewDoc.doc.name}`}
+          uploadedAt={previewDoc.doc.uploaded_at}
+          subtitle={`Payroll Receipt · ${previewDoc.profName} (${previewDoc.doc.type.replace('_', ' ')})`}
+          onDownload={() => handleDownloadDoc(previewDoc.doc, previewDoc.profName, previewDoc.bankRef)}
+        />
+      )}
     </div>
   );
 }

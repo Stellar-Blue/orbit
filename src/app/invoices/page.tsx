@@ -9,8 +9,9 @@ import {
   Receipt, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
-  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2
+  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye
 } from 'lucide-react';
+import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 export default function InvoicesRegistryPage() {
   const { 
@@ -33,6 +34,7 @@ export default function InvoicesRegistryPage() {
   // Modal State for Registering / Editing Invoice
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ name: string; url?: string; storagePath?: string; subtitle?: string } | null>(null);
   const [newDirection, setNewDirection] = useState<InvoiceDirection>('outgoing');
   const [newType, setNewType] = useState<InvoiceType>('invoice');
   const [newCpId, setNewCpId] = useState<string>('');
@@ -582,21 +584,22 @@ export default function InvoicesRegistryPage() {
                       </td>
                       <td className="p-4 text-center">
                         {inv.documents && inv.documents.length > 0 ? (
-                          <a 
-                            href={inv.documents[0].url || '#'} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition-colors"
-                            onClick={(e) => {
-                              if (!inv.documents?.[0].url) {
-                                e.preventDefault();
-                                alert(`Document "${inv.documents?.[0].file_name}" stored at Supabase path: ${inv.documents?.[0].storage_path}`);
-                              }
-                            }}
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setPreviewDoc({
+                                name: inv.documents![0].file_name,
+                                url: inv.documents![0].url,
+                                storagePath: inv.documents![0].storage_path,
+                                subtitle: `Invoice #${inv.invoice_number} · ${inv.counterparty?.legal_name || 'Counterparty'}`
+                              });
+                            }} 
+                            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer shadow-2xs"
+                            title="Click to Preview or Download Document"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <Eye className="w-3.5 h-3.5 text-[#3D87D3]" />
                             <span>{inv.documents[0].file_name.slice(0, 15)}...</span>
-                          </a>
+                          </button>
                         ) : (
                           <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-3 py-1 rounded-lg hover:bg-rose-100 cursor-pointer transition-colors shadow-xs">
                             <Upload className="w-3.5 h-3.5" />
@@ -1451,6 +1454,17 @@ export default function InvoicesRegistryPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={!!previewDoc}
+          onClose={() => setPreviewDoc(null)}
+          documentName={previewDoc.name}
+          documentUrl={previewDoc.url}
+          storagePath={previewDoc.storagePath}
+          subtitle={previewDoc.subtitle}
+        />
       )}
     </div>
   );

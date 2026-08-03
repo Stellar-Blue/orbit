@@ -7,10 +7,11 @@ import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
+import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices } = useAuth();
@@ -27,7 +28,7 @@ export default function ContractsRegistryPage() {
   const [newRef, setNewRef] = useState('SB-2026-NEW');
   const [newDirection, setNewDirection] = useState<ContractDirection>('revenue');
   const [newType, setNewType] = useState('saas_subscription');
-  const [newValue, setNewValue] = useState(100000);
+  const [isPreviewingDoc, setIsPreviewingDoc] = useState(false);
   const [newNotice, setNewNotice] = useState(60);
   const [newStarts, setNewStarts] = useState('2026-08-01');
   const [newEnds, setNewEnds] = useState('2027-07-31');
@@ -138,7 +139,7 @@ export default function ContractsRegistryPage() {
       auto_renews: true,
       notice_period_days: Number(newNotice),
       notice_deadline: '2027-06-01',
-      value: Number(newValue),
+      value: 0, // Dynamically computed via Modular Pricing / Rate Sheet
       currency: 'EUR',
       billing_cadence: 'annual',
       vat_treatment: 'domestic_24',
@@ -778,23 +779,33 @@ export default function ContractsRegistryPage() {
                           </p>
                         </div>
                       </div>
-                      <Button 
-                        size="sm" 
-                        variant="secondary" 
-                        onClick={() => {
-                          if (selectedContract.document_url?.startsWith('data:')) {
-                            const a = document.createElement('a');
-                            a.href = selectedContract.document_url;
-                            a.download = selectedContract.document_name || 'contract_document.pdf';
-                            a.click();
-                          } else {
-                            alert(`Downloading ${selectedContract.document_name}...`);
-                          }
-                        }}
-                        className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs shrink-0 text-xs py-1 px-3"
-                      >
-                        <Download className="w-3.5 h-3.5 mr-1 text-blue-600" /> Download
-                      </Button>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <Button 
+                          size="sm" 
+                          variant="secondary" 
+                          onClick={() => setIsPreviewingDoc(true)}
+                          className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-3"
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Preview
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="secondary" 
+                          onClick={() => {
+                            if (selectedContract.document_url?.startsWith('data:')) {
+                              const a = document.createElement('a');
+                              a.href = selectedContract.document_url;
+                              a.download = selectedContract.document_name || 'contract_document.pdf';
+                              a.click();
+                            } else {
+                              alert(`Downloading ${selectedContract.document_name}...`);
+                            }
+                          }}
+                          className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs shrink-0 text-xs py-1 px-3"
+                        >
+                          <Download className="w-3.5 h-3.5 mr-1 text-blue-600" /> Download
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="p-6 rounded-xl bg-slate-50/70 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
@@ -970,12 +981,10 @@ export default function ContractsRegistryPage() {
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Contract Value (€)</label>
-              <input 
-                type="number" 
-                value={newValue} 
-                onChange={e => setNewValue(Number(e.target.value))} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono"
-              />
+              <div className="w-full bg-slate-100/80 border border-slate-200 rounded p-2 text-slate-500 font-medium text-xs flex items-center h-10 select-none" title="Value is computed automatically from line items in the Rate Sheet">
+                <Sparkles className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
+                <span className="italic">Dynamically calculated from Modular Pricing</span>
+              </div>
             </div>
           </div>
 
@@ -1018,6 +1027,28 @@ export default function ContractsRegistryPage() {
           </div>
         </form>
       </Modal>
+
+      {selectedContract && selectedContract.document_name && (
+        <DocumentPreviewModal
+          isOpen={isPreviewingDoc}
+          onClose={() => setIsPreviewingDoc(false)}
+          documentName={selectedContract.document_name}
+          documentUrl={selectedContract.document_url}
+          storagePath={`contracts/${selectedContract.reference}/${selectedContract.document_name}`}
+          uploadedAt={selectedContract.document_uploaded_at?.split('T')[0] || selectedContract.starts_on}
+          subtitle={`Signed Agreement · ${selectedContract.counterparty?.legal_name || 'Client Entity'}`}
+          onDownload={() => {
+            if (selectedContract.document_url?.startsWith('data:')) {
+              const a = document.createElement('a');
+              a.href = selectedContract.document_url;
+              a.download = selectedContract.document_name || 'contract_document.pdf';
+              a.click();
+            } else {
+              alert(`Downloading ${selectedContract.document_name}...`);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
