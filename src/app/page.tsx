@@ -614,10 +614,10 @@ export default function DashboardPage() {
                     const isSupplier = c.direction === 'cost';
                     const { noticeDeadlineStr, daysUntilNotice } = getContractNoticeStatus(c);
                     return (
-                      <div key={c.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 transition-colors flex items-center justify-between">
+                      <Link key={c.id} href={`/contracts/${c.id}`} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 transition-all hover:bg-slate-100/80 hover:shadow-2xs flex items-center justify-between group block">
                         <div>
                           <div className="flex items-center space-x-2">
-                            <span className="font-semibold text-sm text-slate-800">{c.counterparty?.legal_name}</span>
+                            <span className="font-semibold text-sm text-slate-800 group-hover:text-blue-600 transition-colors">{c.counterparty?.legal_name}</span>
                             <Badge variant={isSupplier ? 'warning' : 'success'}>{c.direction.toUpperCase()}</Badge>
                           </div>
                           <p className="text-xs text-slate-500 mt-1">{c.product || c.type} &bull; Ref: <span className="font-mono text-slate-600">{c.reference}</span></p>
@@ -629,7 +629,7 @@ export default function DashboardPage() {
                           </div>
                           <p className="text-[11px] text-rose-500 font-medium mt-0.5">{daysUntilNotice <= 0 ? 'Deadline passed!' : `In ${daysUntilNotice} days (${c.notice_period_days}-day window)`}</p>
                         </div>
-                      </div>
+                      </Link>
                     );
                   })}
                 </div>
@@ -749,7 +749,7 @@ export default function DashboardPage() {
                     filteredActionQueue.map(item => (
                       <tr key={`${item.contractId}::${item.periodKey}`} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3.5 px-4">
-                          <Link href={`/contracts`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
+                          <Link href={`/contracts/${item.contractId}`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
                             {item.counterpartyName}
                           </Link>
                           <span className="text-xs text-slate-500 font-mono">Ref: {item.reference}</span>
