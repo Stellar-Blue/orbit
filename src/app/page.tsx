@@ -16,7 +16,7 @@ import {
   ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
-import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod } from '@/lib/pricing-engine';
 
 interface DaySchedule {
   dateStr: string;
@@ -186,19 +186,42 @@ export default function DashboardPage() {
 
       if (periods.length === 0) return;
 
-      // Amount per period
-      const getAmt = (): number => {
-        const schedItem = (cnt.schedule || []).find(s => s.period === currentPeriodStr);
+      // Amount per period — respects line-item frequencies vs contract billing cadence.
+      // Annual lines only appear on the first/last period of the year;
+      // Quarterly lines only on the first/last period of the quarter.
+      const getAmt = (period: { from: string; to: string }): number => {
+        const cntLines = cnt.lines || [];
+        const startDateForCalc = cnt.service_start_date || cnt.starts_on || period.from;
+
+        // If we have structured line items, use the frequency-aware calculator
+        if (cntLines.length > 0) {
+          const amt = calculateInvoiceAmountForPeriod(
+            cntLines as any,
+            period.from,
+            period.to,
+            cnt.invoice_timing || 'start_of_period',
+            cadence,
+            startDateForCalc,
+            cnt.discount_pct || 0,
+            catalogModules || [],
+            catalogItems || []
+          );
+          if (amt > 0) return amt;
+        }
+
+        // Fallback to valuation-based estimate when no structured lines exist
+        const schedItem = (cnt.schedule || []).find(s => s.period === period.from.slice(0, 7));
         if (schedItem) return schedItem.amount;
         if (cadence === 'annual') return val.netARR || (cnt.value || 0);
         if (cadence === 'quarterly') return (val.netARR / 4) || ((cnt.value || 0) / 4);
         if (cadence === 'monthly') return val.netMonthlyMRR || ((cnt.value || 0) / 12);
         return val.totalContractValue || (cnt.value || 0);
       };
-      const expectedAmt = getAmt();
-      if (expectedAmt <= 0 && !cnt.value) return;
 
       periods.forEach(period => {
+        const expectedAmt = getAmt(period);
+        if (expectedAmt <= 0 && !cnt.value) return; // skip periods with no billable amount
+
         // Check if invoice already exists for this period
         const existingInv = (invoices || []).find(i => {
           if (i.contract_id !== cnt.id) return false;

@@ -319,3 +319,137 @@ export function getContractNoticeStatus(contract: {
     noticeDeadlineStr
   };
 }
+
+/**
+ * Calculates the correct invoice amount for a specific billing period,
+ * respecting each line item's individual frequency vs the contract's billing cadence.
+ *
+ * Rules:
+ *   - `one_time` line   → only on the very first invoice (period overlaps service_start_date)
+ *   - `annual` line     → only on the FIRST billing period of the calendar year (start_of_period)
+ *                         or the LAST billing period of the calendar year (end_of_period)
+ *   - `quarterly` line  → only on the FIRST billing period of the quarter (start_of_period)
+ *                         or the LAST billing period of the quarter (end_of_period)
+ *   - `monthly` line    → included in every billing period
+ *
+ * @param lines          Contract line items
+ * @param periodFrom     ISO date string of the billing period start (e.g. "2026-08-01")
+ * @param periodTo       ISO date string of the billing period end   (e.g. "2026-08-31")
+ * @param invoiceTiming  'start_of_period' | 'end_of_period' | 'upon_milestone'
+ * @param billingCadence Contract billing cadence (monthly | quarterly | annual | one_off | milestone)
+ * @param serviceStartDate ISO date of contract service start (to identify first invoice)
+ * @param discountPct    Discount percentage (0–100)
+ * @param catalogModules  Catalog modules for variable-qty detection
+ * @param catalogItems    Catalog items for variable-qty detection
+ */
+export function calculateInvoiceAmountForPeriod(
+  lines: Array<Partial<ContractLine> & { name: string; unit_price: number; quantity: number; frequency: string }>,
+  periodFrom: string,
+  periodTo: string,
+  invoiceTiming: string,
+  billingCadence: string,
+  serviceStartDate: string,
+  discountPct: number = 0,
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): number {
+  if (!lines || lines.length === 0) return 0;
+
+  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
+  const periodStart = new Date(periodFrom + 'T00:00:00');
+  const periodYear = periodStart.getFullYear();
+  const periodMonth = periodStart.getMonth(); // 0-indexed
+  const periodQuarter = Math.floor(periodMonth / 3); // 0-indexed
+
+  const isEndTiming = invoiceTiming === 'end_of_period';
+  const isFirstInvoice = serviceStartDate <= periodFrom;
+
+  // Determine if this billing period is the "annual trigger" period for a given year
+  const isAnnualTriggerPeriod = (): boolean => {
+    if (billingCadence === 'annual') return true;
+    if (billingCadence === 'quarterly') {
+      // First/last quarter of the year triggers annual line
+      return isEndTiming ? periodQuarter === 3 : periodQuarter === 0;
+    }
+    if (billingCadence === 'monthly') {
+      // First/last month of the year triggers annual line
+      return isEndTiming ? periodMonth === 11 : periodMonth === 0;
+    }
+    return true;
+  };
+
+  // Determine if this billing period is the "quarterly trigger" period
+  const isQuarterlyTriggerPeriod = (): boolean => {
+    if (billingCadence === 'annual' || billingCadence === 'quarterly') return true;
+    if (billingCadence === 'monthly') {
+      // First or last month within the current quarter
+      const monthInQuarter = periodMonth - periodQuarter * 3; // 0, 1, or 2
+      return isEndTiming ? monthInQuarter === 2 : monthInQuarter === 0;
+    }
+    return true;
+  };
+
+  // For annual billing cadence: annual line appears once per year but check start-date for partial year
+  // For quarterly: quarterly lines appear once per quarter
+  // We need to identify if this is the very first time we'd invoice this line
+  // (when service starts mid-year, first invoice is still the trigger)
+  const isFirstPeriodOfYear = (): boolean => {
+    const serviceStart = new Date(serviceStartDate + 'T00:00:00');
+    // If service started this year and this is that first period, it's the trigger
+    if (serviceStart.getFullYear() === periodYear && periodFrom <= serviceStartDate + 'Z') return true;
+    return isAnnualTriggerPeriod();
+  };
+
+  const isFirstPeriodOfQuarter = (): boolean => {
+    const serviceStart = new Date(serviceStartDate + 'T00:00:00');
+    const serviceQuarter = Math.floor(serviceStart.getMonth() / 3);
+    if (serviceStart.getFullYear() === periodYear && serviceQuarter === periodQuarter && periodFrom <= serviceStartDate + 'Z') return true;
+    return isQuarterlyTriggerPeriod();
+  };
+
+  let total = 0;
+
+  lines.forEach(l => {
+    const qty = Number(l.quantity) || 0;
+    const unitPrice = Number(l.unit_price) || 0;
+    const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
+    const grossLine = unitPrice * qty * lineMult;
+
+    switch (l.frequency) {
+      case 'one_time':
+        // Only on the very first billing period (service_start_date falls in or before this period)
+        if (isFirstInvoice) {
+          total += grossLine;
+        }
+        break;
+
+      case 'annual':
+        // Include only on the correct first/last billing period of the year
+        if (isFirstPeriodOfYear()) {
+          total += grossLine;
+        }
+        break;
+
+      case 'quarterly':
+        // Include only on the correct first/last billing period of the quarter
+        if (isFirstPeriodOfQuarter()) {
+          total += grossLine;
+        }
+        break;
+
+      case 'monthly':
+      default:
+        // Monthly lines appear on every billing period
+        if (billingCadence === 'annual') {
+          total += grossLine * 12;
+        } else if (billingCadence === 'quarterly') {
+          total += grossLine * 3;
+        } else {
+          total += grossLine;
+        }
+        break;
+    }
+  });
+
+  return total;
+}
