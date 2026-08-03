@@ -225,17 +225,26 @@ export default function DashboardPage() {
         // Check if invoice already exists for this period (checking reference_period first!)
         const existingInv = (invoices || []).find(i => {
           if (i.contract_id !== cnt.id) return false;
-          if (i.reference_period && (
-            i.reference_period.trim() === period.key ||
-            i.reference_period.trim().toLowerCase() === period.key.toLowerCase() ||
-            i.reference_period.trim().toLowerCase() === period.label.toLowerCase()
-          )) {
-            return true;
+          if (i.reference_period && i.reference_period.trim() !== '') {
+            return (
+              i.reference_period.trim() === period.key ||
+              i.reference_period.trim().toLowerCase() === period.key.toLowerCase() ||
+              i.reference_period.trim().toLowerCase() === period.label.toLowerCase()
+            );
           }
-          if (cadence === 'monthly') return (i.issue_date || '').startsWith(period.key) || (i.period_from || '').startsWith(period.key);
-          if (cadence === 'quarterly') return (i.period_from || '') >= period.from && (i.period_from || '') <= period.to;
-          if (cadence === 'annual') return (i.issue_date || '').startsWith(period.key) || (i.period_from || '').startsWith(period.key);
-          return true; // one_off/milestone: any invoice covers it
+          if (cadence === 'monthly') {
+            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key);
+            return (i.issue_date || '').startsWith(period.key);
+          }
+          if (cadence === 'quarterly') {
+            if (i.period_from && i.period_from.trim() !== '') return i.period_from >= period.from && i.period_from <= period.to;
+            return (i.issue_date || '') >= period.from && (i.issue_date || '') <= period.to;
+          }
+          if (cadence === 'annual') {
+            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key.slice(0, 4));
+            return (i.issue_date || '').startsWith(period.key.slice(0, 4));
+          }
+          return true; // one_off/milestone without explicit reference_period
         });
 
         const draftId = generatedDraftIds[`${cnt.id}::${period.key}`];

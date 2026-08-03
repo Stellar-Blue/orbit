@@ -1901,14 +1901,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         notes: inv.notes || null
       };
       const { error } = await supabase.from('invoices').insert([row]);
-      if (error) console.error("Supabase insert invoice error:", error.message);
-    } catch (e) {
+      if (error) {
+        console.error("Supabase insert invoice error:", error.message);
+        alert(`Database Error saving invoice: ${error.message}`);
+        setInvoices(prev => prev.filter(inv => inv.id !== id));
+        return null;
+      }
+    } catch (e: any) {
       console.error(e);
+      alert(`Error saving invoice: ${e.message || e}`);
+      setInvoices(prev => prev.filter(inv => inv.id !== id));
+      return null;
     }
     return newInv;
   };
 
   const updateInvoice = async (id: string, updates: Partial<Invoice>): Promise<boolean> => {
+    const previousInvoices = invoices;
     setInvoices(prev => prev.map(inv => {
       if (inv.id !== id) return inv;
       const updated = { ...inv, ...updates };
@@ -1932,9 +1941,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       delete payload.allocations;
 
       const { error } = await supabase.from('invoices').update(payload).eq('id', id);
-      if (error) console.error("Supabase update invoice error:", error.message);
-    } catch (e) {
+      if (error) {
+        console.error("Supabase update invoice error:", error.message);
+        alert(`Database Error updating invoice: ${error.message}`);
+        setInvoices(previousInvoices);
+        return false;
+      }
+    } catch (e: any) {
       console.error("updateInvoice exception:", e);
+      alert(`Error updating invoice: ${e.message || e}`);
+      setInvoices(previousInvoices);
       return false;
     }
     return true;
