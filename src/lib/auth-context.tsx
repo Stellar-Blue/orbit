@@ -1973,14 +1973,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
+    const previousInvoices = invoices;
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
     try {
       const supabase = getSupabaseBrowserClient();
       const updatePayload: any = { status };
       if (notes !== undefined) updatePayload.notes = notes;
-      await supabase.from('invoices').update(updatePayload).eq('id', id);
-    } catch (e) {
+      const { error } = await supabase.from('invoices').update(updatePayload).eq('id', id);
+      if (error) {
+        console.error("Supabase update invoice status error:", error.message);
+        alert(`Database Error updating status: ${error.message}`);
+        setInvoices(previousInvoices);
+        return false;
+      }
+    } catch (e: any) {
       console.error(e);
+      alert(`Error updating status: ${e.message || e}`);
+      setInvoices(previousInvoices);
+      return false;
     }
     return true;
   };

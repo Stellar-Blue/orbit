@@ -65,6 +65,7 @@ export default function InvoicesRegistryPage() {
   const [previewDoc, setPreviewDoc] = useState<{ name: string; url?: string; storagePath?: string; subtitle?: string } | null>(null);
   const [newDirection, setNewDirection] = useState<InvoiceDirection>('outgoing');
   const [newType, setNewType] = useState<InvoiceType>('invoice');
+  const [newStatus, setNewStatus] = useState<InvoiceStatus>('sent_received');
   const [newCpId, setNewCpId] = useState<string>('');
   const [newContractId, setNewContractId] = useState<string>('');
   const [newCatName, setNewCatName] = useState<string>('');
@@ -96,6 +97,7 @@ export default function InvoicesRegistryPage() {
     setEditingInvoiceId(inv.id);
     setNewDirection(inv.direction);
     setNewType(inv.type || 'invoice');
+    setNewStatus(inv.status || 'sent_received');
     setNewCpId(inv.counterparty_id || '');
     setNewContractId(inv.contract_id || '');
     setNewCatName(inv.category || '');
@@ -418,6 +420,7 @@ export default function InvoicesRegistryPage() {
               setEditingInvoiceId(null);
               setNewDirection('outgoing');
               setNewType('invoice');
+              setNewStatus('sent_received');
               setNewCpId('');
               setNewContractId('');
               setNewCatName('');
@@ -688,14 +691,32 @@ export default function InvoicesRegistryPage() {
                           Net: €{inv.net.toFixed(2)} + VAT {inv.vat_rate}
                         </span>
                       </td>
-                      <td className="p-4 text-center">
-                        {inv.status === 'draft' && <Badge variant="warning" className="px-2.5 py-1 font-extrabold bg-amber-100 text-amber-800 border border-amber-300">Draft</Badge>}
-                        {inv.status === 'paid' && <Badge variant="success" className="px-3 py-1 font-bold">Paid in Full</Badge>}
-                        {inv.status === 'partially_paid' && <Badge variant="warning" className="px-2.5 py-1 font-bold">Partial: €{paidAmount.toFixed(2)}</Badge>}
-                        {inv.status === 'registered' && <Badge variant="neutral" className="px-2.5 py-1 font-bold">Registered</Badge>}
-                        {inv.status === 'sent_received' && <Badge variant="info" className="px-2.5 py-1 font-bold">{inv.direction === 'outgoing' ? 'Sent' : 'Received'}</Badge>}
-                        {inv.status === 'disputed' && <Badge variant="error" className="px-2.5 py-1 font-bold">Disputed</Badge>}
-                        {inv.status === 'cancelled' && <Badge variant="neutral" className="px-2.5 py-1 text-slate-400 font-bold line-through">Cancelled</Badge>}
+                      <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                        <select
+                          value={inv.status}
+                          onChange={(e: any) => {
+                            updateInvoiceStatus(inv.id, e.target.value as InvoiceStatus);
+                          }}
+                          className={`text-xs font-extrabold px-2 py-1 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 cursor-pointer shadow-2xs transition-all ${
+                            inv.status === 'paid' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                            inv.status === 'draft' ? 'bg-amber-100 text-amber-900 border-amber-400' :
+                            inv.status === 'partially_paid' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                            inv.status === 'sent_received' ? 'bg-blue-50 text-blue-800 border-blue-300' :
+                            inv.status === 'disputed' ? 'bg-rose-50 text-rose-800 border-rose-300' :
+                            inv.status === 'cancelled' ? 'bg-slate-100 text-slate-500 border-slate-300 line-through' :
+                            'bg-slate-50 text-slate-700 border-slate-300'
+                          }`}
+                          title="Click to change invoice status"
+                        >
+                          <option value="draft">Draft</option>
+                          <option value="registered">Registered</option>
+                          <option value="sent_received">{inv.direction === 'outgoing' ? 'Sent' : 'Received'}</option>
+                          <option value="partially_paid">Partially Paid</option>
+                          <option value="paid">Paid in Full</option>
+                          <option value="disputed">Disputed</option>
+                          <option value="resolved">Resolved</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
                       </td>
                       <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
                         {inv.documents && inv.documents.length > 0 ? (
@@ -1228,7 +1249,7 @@ export default function InvoicesRegistryPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Direction</label>
                 <select
@@ -1252,6 +1273,24 @@ export default function InvoicesRegistryPage() {
                   <option value="credit_note">Credit Note (Negative Refund)</option>
                   <option value="proforma">Proforma (Non-tax estimate)</option>
                   <option value="debit_note">Debit Note</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Invoice Status</label>
+                <select
+                  value={newStatus}
+                  onChange={(e: any) => setNewStatus(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="registered">Registered</option>
+                  <option value="sent_received">Sent / Received</option>
+                  <option value="partially_paid">Partially Paid</option>
+                  <option value="paid">Paid in Full</option>
+                  <option value="disputed">Disputed</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="cancelled">Cancelled</option>
                 </select>
               </div>
             </div>
@@ -1554,6 +1593,7 @@ export default function InvoicesRegistryPage() {
                       vat_rate: newVatRate,
                       gross: calculatedGross,
                       gross_eur: calculatedGross,
+                      status: newStatus,
                       notes: newNotes.trim() || null
                     });
                     if (res) {
@@ -1585,7 +1625,7 @@ export default function InvoicesRegistryPage() {
                     vat_rate: newVatRate,
                     gross: calculatedGross,
                     gross_eur: calculatedGross,
-                    status: 'sent_received',
+                    status: newStatus,
                     missing_document: true,
                     notes: newNotes.trim() || null
                   });
