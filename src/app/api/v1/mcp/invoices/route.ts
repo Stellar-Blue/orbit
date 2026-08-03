@@ -143,11 +143,13 @@ export async function POST(request: Request) {
       }
 
       // Check role in user_roles database & verify profile status is not departed
-      const { data: profile } = await supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
-      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', userId).eq('role', 'admin').maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('id, status').or(`id.eq.${userId},auth_user_id.eq.${userId}`).maybeSingle();
+      const canonicalId = profile?.id || userId;
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', canonicalId).eq('role', 'admin').maybeSingle();
       if (!roleRow || (profile && profile.status === 'departed')) {
         isUserAdmin = false;
       }
+      userId = canonicalId;
 
       // Enforce that mapped user profile MUST hold admin role; otherwise return FORBIDDEN
       if (!isUserAdmin) {

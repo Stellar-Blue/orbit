@@ -427,7 +427,10 @@ export default function ContractsRegistryPage() {
                       if (c.lines && c.lines.length > 0) {
                         let gross = 0;
                         c.lines.forEach(l => {
-                          if (l.frequency !== 'one_time') gross += (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+                          const val = (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+                          if (l.frequency === 'annual') gross += val / 12;
+                          else if (l.frequency === 'quarterly') gross += val / 3;
+                          else if (l.frequency === 'monthly') gross += val;
                         });
                         return acc + (gross * Math.max(0, 1 - (Number(c.discount_pct) || 0) / 100));
                       }
@@ -473,7 +476,10 @@ export default function ContractsRegistryPage() {
                     if (c.lines && c.lines.length > 0) {
                       let gross = 0;
                       c.lines.forEach(l => {
-                        if (l.frequency !== 'one_time') gross += (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+                        const val = (Number(l.unit_price) || 0) * (Number(l.quantity) || 0);
+                        if (l.frequency === 'annual') gross += val / 12;
+                        else if (l.frequency === 'quarterly') gross += val / 3;
+                        else if (l.frequency === 'monthly') gross += val;
                       });
                       netMrr = gross * Math.max(0, 1 - (Number(c.discount_pct) || 0) / 100);
                     }

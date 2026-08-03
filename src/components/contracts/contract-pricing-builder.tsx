@@ -116,8 +116,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       const lineVal = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
       if (line.frequency === 'one_time') {
         oneTimeTotal += lineVal;
+      } else if (line.frequency === 'annual') {
+        recurringGrossMonthly += lineVal / 12;
+      } else if (line.frequency === 'quarterly') {
+        recurringGrossMonthly += lineVal / 3;
       } else {
-        // Unit prices are monthly rate sheet equivalents regardless of quarterly/annual payment cadence
         recurringGrossMonthly += lineVal;
       }
     });
@@ -156,25 +159,25 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       let monthTotal = 0;
 
       lines.forEach(line => {
-        const grossLineMonthly = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
-        const netLineMonthly = grossLineMonthly * discountMultiplier;
+        const grossLineVal = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+        const netLineVal = grossLineVal * discountMultiplier;
 
         if (line.frequency === 'monthly') {
-          monthTotal += netLineMonthly;
+          monthTotal += netLineVal;
         } else if (line.frequency === 'quarterly') {
-          // Lands 3x net monthly rate every 3rd month (0, 3, 6, 9...)
+          // Lands net quarterly fee every 3rd month (0, 3, 6, 9...)
           if (i % 3 === 0) {
-            monthTotal += netLineMonthly * 3;
+            monthTotal += netLineVal;
           }
         } else if (line.frequency === 'annual') {
-          // Lands 12x net monthly rate in month 0 of each contract year (0, 12, 24...)
+          // Lands net annual fee in month 0 of each contract year (0, 12, 24...)
           if (i % 12 === 0) {
-            monthTotal += netLineMonthly * 12;
+            monthTotal += netLineVal;
           }
         } else if (line.frequency === 'one_time') {
           // Lands fully undiscounted once in month 0
           if (i === 0) {
-            monthTotal += grossLineMonthly;
+            monthTotal += grossLineVal;
           }
         }
       });
@@ -371,11 +374,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                   <th className="py-2.5 px-4">Item Name / Module</th>
-                  <th className="py-2.5 px-3 w-32">Rate (€ / Mo)</th>
-                  <th className="py-2.5 px-3 w-28">Quantity</th>
+                  <th className="py-2.5 px-3 w-40">Unit Rate (€)</th>
+                  <th className="py-2.5 px-3 w-24">Quantity</th>
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
-                  <th className="py-2.5 px-4 text-right w-32">Monthly Rate</th>
+                  <th className="py-2.5 px-4 text-right w-44">Line Total</th>
                   {!readOnly && <th className="py-2.5 px-3 text-center w-14">Action</th>}
                 </tr>
               </thead>
@@ -383,6 +386,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 {lines.map((line, idx) => {
                   const lineGross = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
                   const isOneTime = line.frequency === 'one_time';
+                  const periodSuffix = line.frequency === 'monthly' ? '/ mo' : line.frequency === 'quarterly' ? '/ qtr' : line.frequency === 'annual' ? '/ year' : 'one-off';
+                  const monthlyMrrEquiv = line.frequency === 'annual' ? lineGross / 12 : line.frequency === 'quarterly' ? lineGross / 3 : lineGross;
 
                   return (
                     <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
@@ -401,15 +406,18 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                       </td>
                       <td className="py-3 px-3">
                         {readOnly ? (
-                          <span className="font-mono text-slate-700">€{Number(line.unit_price).toLocaleString()}</span>
+                          <span className="font-mono text-slate-700 font-medium">€{Number(line.unit_price).toLocaleString()} <span className="text-xs text-slate-500 font-normal">{periodSuffix}</span></span>
                         ) : (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={line.unit_price}
-                            onChange={e => updateLine(idx, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-white border border-slate-300 rounded px-2.5 py-1 text-sm font-mono focus:outline-none focus:border-blue-500"
-                          />
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={line.unit_price}
+                              onChange={e => updateLine(idx, 'unit_price', parseFloat(e.target.value) || 0)}
+                              className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-blue-500 min-w-[70px]"
+                            />
+                            <span className="text-[11px] font-bold text-slate-500 uppercase whitespace-nowrap">{periodSuffix}</span>
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-3">
@@ -454,11 +462,16 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                           </select>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                      <td className="py-3 px-4 text-right font-mono text-slate-900">
                         {isOneTime ? (
-                          <span className="text-amber-600" title="One-time fee (undiscounted)">€{lineGross.toLocaleString()} (One-off)</span>
+                          <div className="font-bold text-amber-600" title="One-time fee (undiscounted)">€{lineGross.toLocaleString()} (One-off)</div>
                         ) : (
-                          <span>€{lineGross.toLocaleString()}/mo</span>
+                          <div>
+                            <div className="font-bold">€{lineGross.toLocaleString()} {periodSuffix}</div>
+                            {line.frequency !== 'monthly' && (
+                              <div className="text-[11px] font-normal text-slate-500">€{monthlyMrrEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo MRR</div>
+                            )}
+                          </div>
                         )}
                       </td>
                       {!readOnly && (

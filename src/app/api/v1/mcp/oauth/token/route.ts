@@ -75,11 +75,13 @@ export async function POST(request: Request) {
       }
 
       // Ensure target profile is active & holds corporate admin privileges
-      const { data: profile } = await supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
-      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', userId).eq('role', 'admin').maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('id, status').or(`id.eq.${userId},auth_user_id.eq.${userId}`).maybeSingle();
+      const canonicalId = profile?.id || userId;
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', canonicalId).eq('role', 'admin').maybeSingle();
       if (!roleRow || (profile && profile.status === 'departed')) {
         return NextResponse.json({ error: 'access_denied', error_description: 'Mapped employee profile is departed or no longer holds admin role.' }, { status: 403 });
       }
+      userId = canonicalId;
 
       // Generate access & refresh tokens (≤ 8h lifetime per §3)
       const accessToken = `mcp_access_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
@@ -127,11 +129,13 @@ export async function POST(request: Request) {
       }
 
       // Enforce systemic revocation check: if employee disabled in directory, revoke MCP session at next call
-      const { data: profile } = await supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
-      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', userId).eq('role', 'admin').maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('id, status').or(`id.eq.${userId},auth_user_id.eq.${userId}`).maybeSingle();
+      const canonicalId = profile?.id || userId;
+      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', canonicalId).eq('role', 'admin').maybeSingle();
       if (!roleRow || (profile && profile.status === 'departed')) {
         return NextResponse.json({ error: 'access_denied', error_description: 'Account access revoked in enterprise directory.' }, { status: 403 });
       }
+      userId = canonicalId;
 
       const newAccessToken = `mcp_access_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
       const newRefreshToken = `mcp_refresh_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;

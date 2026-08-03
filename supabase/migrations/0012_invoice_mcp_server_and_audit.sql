@@ -39,9 +39,10 @@ CREATE POLICY "Admins can view all mcp tool calls"
     ON public.mcp_tool_calls
     FOR SELECT
     USING (EXISTS (
-        SELECT 1 FROM public.user_roles
-        WHERE profile_id = auth.uid() AND role = 'admin'
-    ));
+        SELECT 1 FROM user_roles ur
+        JOIN profiles p ON p.id = ur.profile_id
+        WHERE (p.auth_user_id = auth.uid() OR p.id = auth.uid()) AND ur.role = 'admin'
+    ) OR is_admin());
 
 CREATE POLICY "Authenticated sessions can record mcp tool calls"
     ON public.mcp_tool_calls
