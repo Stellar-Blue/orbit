@@ -59,6 +59,7 @@ interface AppState {
   deletePaymentRecord: (id: string) => Promise<void>;
   markAllPaidForPeriod: (period: string) => Promise<void>;
   addPaymentDocuments: (paymentId: string, docs: PaymentDocument[]) => void;
+  updatePaymentDocumentType: (paymentId: string, documentId: string, type: string) => void;
   deletePaymentDocument: (paymentId: string, documentId: string) => void;
   generateDraftMonth: (period: string) => Promise<void>;
   addPaymentType: (type: Omit<PaymentType, 'id' | 'sort_order'>) => Promise<void>;
@@ -911,6 +912,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPayments(prev => prev.map(p => {
       if (p.id === paymentId) {
         return { ...p, documents: (p.documents || []).filter(d => d.id !== documentId) };
+      }
+      return p;
+    }));
+  };
+
+  const updatePaymentDocumentType = (paymentId: string, documentId: string, type: string) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id === paymentId) {
+        return {
+          ...p,
+          documents: (p.documents || []).map(d => d.id === documentId ? { ...d, type } : d)
+        };
       }
       return p;
     }));
@@ -2115,6 +2128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deletePaymentRecord,
       markAllPaidForPeriod,
       addPaymentDocuments,
+      updatePaymentDocumentType,
       deletePaymentDocument,
       generateDraftMonth,
       addPaymentType,

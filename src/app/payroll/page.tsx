@@ -19,9 +19,14 @@ export default function PayrollPage() {
   const { 
     currentUser, profiles, paymentTypes, salaries, payments, 
     generateDraftMonth, addPaymentRecord, updatePaymentRecord, deletePaymentRecord, markAllPaidForPeriod,
-    addPaymentDocuments, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord 
+    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord 
   } = useAuth();
   
+  const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
+    if (!docs || docs.length === 0) return false;
+    return docs.some(d => d.type === 'receipt' || d.type === 'payslip' || d.name.toLowerCase().includes('receipt') || d.name.toLowerCase().includes('apodeixi'));
+  };
+
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -130,7 +135,7 @@ export default function PayrollPage() {
   const totalNet = periodPayments.reduce((acc, p) => acc + p.net, 0);
 
   // Missing receipts check
-  const paidMissingDocs = periodPayments.filter(p => p.status === 'paid' && (!p.documents || p.documents.length === 0));
+  const paidMissingDocs = periodPayments.filter(p => p.status === 'paid' && !hasPaymentReceipt(p.documents));
   const plannedPayments = periodPayments.filter(p => p.status === 'planned');
 
   // Filtered ledger rows
@@ -138,7 +143,7 @@ export default function PayrollPage() {
     return periodPayments.filter(p => {
       if (ledgerFilter === 'planned') return p.status === 'planned';
       if (ledgerFilter === 'paid') return p.status === 'paid';
-      if (ledgerFilter === 'missing_receipt') return p.status === 'paid' && (!p.documents || p.documents.length === 0);
+      if (ledgerFilter === 'missing_receipt') return p.status === 'paid' && !hasPaymentReceipt(p.documents);
       return true;
     });
   }, [periodPayments, ledgerFilter]);
@@ -674,7 +679,7 @@ export default function PayrollPage() {
                   displayedPayments.map(pay => {
                     const prof = profiles.find(p => p.id === pay.profile_id);
                     const pt = paymentTypes.find(type => type.id === pay.payment_type_id);
-                    const missingDoc = pay.status === 'paid' && (!pay.documents || pay.documents.length === 0);
+                    const missingDoc = pay.status === 'paid' && !hasPaymentReceipt(pay.documents);
 
                     return (
                       <tr 
@@ -721,9 +726,16 @@ export default function PayrollPage() {
                               }}
                               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer shadow-2xs ${missingDoc ? 'bg-amber-100 border-amber-300 text-amber-900 font-bold' : 'bg-slate-100 hover:bg-indigo-50 border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700'}`}
                             >
-                              <Paperclip className="w-3.5 h-3.5 text-[#3D87D3]" />
+                              <Paperclip className="w-3.5 h-3.5 text-[#3D87D3] shrink-0" />
                               {pay.documents && pay.documents.length > 0 ? (
-                                <span className="font-bold text-slate-900">{pay.documents.length} doc{pay.documents.length !== 1 ? 's' : ''}</span>
+                                <span className="font-bold text-slate-900 flex items-center gap-1">
+                                  {pay.documents.length} doc{pay.documents.length !== 1 ? 's' : ''}
+                                  {hasPaymentReceipt(pay.documents) ? (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-100 text-emerald-800 rounded border border-emerald-300">✓ Receipt</span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-200 text-amber-900 rounded border border-amber-400">No Receipt</span>
+                                  )}
+                                </span>
                               ) : (
                                 <span>{missingDoc ? '+ Attach Receipt' : 'Attach Docs'}</span>
                               )}
@@ -1229,11 +1241,12 @@ export default function PayrollPage() {
                         }}
                         className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[11px] font-semibold text-slate-700"
                       >
-                        <option value="payslip">Payslip</option>
-                        <option value="receipt">Bank Receipt</option>
-                        <option value="invoice">Invoice</option>
-                        <option value="tax_sheet">Tax Document</option>
-                        <option value="other">Other Attachment</option>
+                        <option value="receipt">⭐ Bank Receipt (Proof)</option>
+                        <option value="payslip">📄 Payslip (Analysis)</option>
+                        <option value="invoice">🧾 Contractor Invoice</option>
+                        <option value="tax_sheet">🏛️ Tax Declaration</option>
+                        <option value="timesheet">🕒 Timesheet Record</option>
+                        <option value="other">📎 Other Attachment</option>
                       </select>
                       <button 
                         type="button" 
@@ -1280,6 +1293,26 @@ export default function PayrollPage() {
               </Badge>
             </div>
 
+            <div className={`p-3 rounded-xl border flex items-center justify-between ${hasPaymentReceipt(selectedPaymentForDocs.documents) ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-300 text-amber-900'}`}>
+              <div className="flex items-center space-x-2.5">
+                {hasPaymentReceipt(selectedPaymentForDocs.documents) ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                )}
+                <div>
+                  <span className="font-bold block text-xs">
+                    {hasPaymentReceipt(selectedPaymentForDocs.documents) ? '✓ Official Settlement Receipt Attached' : '⚠️ Missing Settlement Receipt'}
+                  </span>
+                  <span className="text-[11px] font-medium opacity-90 block">
+                    {hasPaymentReceipt(selectedPaymentForDocs.documents) 
+                      ? 'This payment row satisfies audit compliance with a verified Bank Receipt or Payslip voucher.' 
+                      : 'You can attach multiple documents (invoices, timesheets, tax sheets), but at least one must be marked as "⭐ Bank Receipt (Proof)" or "📄 Payslip (Analysis)" for audit compliance.'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div>
               <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] mb-2.5 flex items-center">
                 <FolderOpen className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Attached Documents ({selectedPaymentForDocs.documents?.length || 0})
@@ -1295,7 +1328,7 @@ export default function PayrollPage() {
                     const prof = profiles.find(p => p.id === selectedPaymentForDocs.profile_id);
                     return (
                       <div key={doc.id} className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between hover:border-indigo-200 transition-all">
-                        <div className="flex items-center space-x-3 truncate max-w-[60%]">
+                        <div className="flex items-center space-x-3 truncate max-w-[50%]">
                           <div className="p-2 bg-indigo-50 text-[#3D87D3] rounded-lg shrink-0">
                             {doc.type === 'invoice' ? <FileSpreadsheet className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                           </div>
@@ -1307,7 +1340,30 @@ export default function PayrollPage() {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2 shrink-0">
-                          <Badge variant="neutral" className="capitalize text-[10px]">{doc.type.replace('_', ' ')}</Badge>
+                          <select
+                            value={doc.type || 'receipt'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updatePaymentDocumentType(selectedPaymentForDocs.id, doc.id, val);
+                              setSelectedPaymentForDocs(prev => prev ? {
+                                ...prev,
+                                documents: (prev.documents || []).map(d => d.id === doc.id ? { ...d, type: val } : d)
+                              } : null);
+                            }}
+                            className={`text-[11px] font-extrabold rounded-lg px-2.5 py-1 border cursor-pointer transition-colors shadow-2xs ${
+                              doc.type === 'receipt' || doc.type === 'payslip' 
+                                ? 'bg-emerald-100 border-emerald-300 text-emerald-900' 
+                                : 'bg-slate-100 border-slate-300 text-slate-700'
+                            }`}
+                            title="Change document category / mark as Receipt"
+                          >
+                            <option value="receipt">⭐ Bank Receipt (Proof)</option>
+                            <option value="payslip">📄 Payslip (Analysis)</option>
+                            <option value="invoice">🧾 Contractor Invoice</option>
+                            <option value="tax_sheet">🏛️ Tax Declaration</option>
+                            <option value="timesheet">🕒 Timesheet Record</option>
+                            <option value="other">📎 Other Attachment</option>
+                          </select>
                           <button
                             type="button"
                             onClick={() => setPreviewDoc({ doc, profName: `${prof?.first_name} ${prof?.last_name}`, bankRef: selectedPaymentForDocs.bank_reference })}
@@ -1374,11 +1430,12 @@ export default function PayrollPage() {
                           }}
                           className="bg-white border border-slate-300 rounded px-2 py-0.5 text-[11px] font-semibold text-slate-700"
                         >
-                          <option value="payslip">Payslip</option>
-                          <option value="receipt">Bank Receipt</option>
-                          <option value="invoice">Invoice</option>
-                          <option value="tax_sheet">Tax Document</option>
-                          <option value="other">Other</option>
+                          <option value="receipt">⭐ Bank Receipt (Proof)</option>
+                          <option value="payslip">📄 Payslip (Analysis)</option>
+                          <option value="invoice">🧾 Contractor Invoice</option>
+                          <option value="tax_sheet">🏛️ Tax Declaration</option>
+                          <option value="timesheet">🕒 Timesheet Record</option>
+                          <option value="other">📎 Other Attachment</option>
                         </select>
                         <button type="button" onClick={() => setAddMoreDocs(prev => prev.filter((_, i) => i !== idx))} className="text-rose-500 hover:text-rose-700 p-1">
                           <X className="w-3.5 h-3.5" />
