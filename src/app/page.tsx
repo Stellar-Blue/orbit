@@ -13,9 +13,10 @@ import {
   Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
   CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
   CalendarDays, ChevronLeft, ChevronRight, Search, Globe,
-  ShieldCheck, Building2, Info, X
+  ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
+import { calculateContractValuation } from '@/lib/pricing-engine';
 
 interface DaySchedule {
   dateStr: string;
@@ -45,7 +46,7 @@ interface DaySchedule {
 
 export default function DashboardPage() {
   const { 
-    currentUser, profiles, teams, contracts, leaveRequests, leaveTypes, 
+    currentUser, profiles, teams, contracts, invoices, addInvoice, catalogModules, catalogItems, leaveRequests, leaveTypes, 
     entitlements, salaries, remoteDays, remotePatterns, remotePolicies, 
     mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance 
   } = useAuth();
@@ -81,6 +82,159 @@ export default function DashboardPage() {
   // --- 3. EMPLOYEE LEAVE HELPER ---
   const myEntitlement = entitlements.find(e => e.profile_id === currentUser.id && e.year === 2026);
   const myLeavesTaken = getEmployeeLeaveBalance(currentUser.id, 2026).taken;
+
+  // --- 3.5. UNBILLED CONTRACT & INVOICING ACTION ENGINE ---
+  const [generatedDraftIds, setGeneratedDraftIds] = useState<Record<string, string>>({});
+  const currentPeriodStr = useMemo(() => format(new Date(), 'yyyy-MM'), []);
+  const currentQuarterStr = useMemo(() => `Q${Math.floor(new Date().getMonth() / 3) + 1} ${new Date().getFullYear()}`, []);
+
+  const pendingInvoicesQueue = useMemo(() => {
+    const results: Array<{
+      contractId: string;
+      reference: string;
+      counterpartyId: string;
+      counterpartyName: string;
+      direction: 'revenue' | 'cost';
+      cadence: string;
+      timing: string;
+      periodLabel: string;
+      expectedAmount: number;
+      currency: string;
+      dueDate: string;
+      status: 'unbilled' | 'draft_created' | 'billed';
+      invoiceId?: string;
+    }> = [];
+
+    (contracts || []).forEach(cnt => {
+      if (cnt.status !== 'active' && cnt.status !== 'in_negotiation') return;
+      
+      const val = calculateContractValuation(cnt.lines || [], cnt.discount_pct || 0, cnt.term_years || 1, cnt.service_start_date || cnt.starts_on, catalogModules || [], catalogItems || [], cnt.value || 0, cnt.billing_cadence);
+      
+      let expectedAmt = 0;
+      let periodLabel = currentPeriodStr;
+      
+      const schedItem = (cnt.schedule || []).find(s => s.period === currentPeriodStr);
+      if (schedItem) {
+        expectedAmt = schedItem.amount;
+      } else {
+        if (cnt.billing_cadence === 'annual') {
+          expectedAmt = val.netARR || (cnt.value || 0);
+          periodLabel = `${new Date().getFullYear()} Annual Term`;
+        } else if (cnt.billing_cadence === 'quarterly') {
+          expectedAmt = (val.netARR / 4) || ((cnt.value || 0) / 4);
+          periodLabel = currentQuarterStr;
+        } else if (cnt.billing_cadence === 'monthly') {
+          expectedAmt = val.netMonthlyMRR || ((cnt.value || 0) / 12);
+          periodLabel = `Monthly (${currentPeriodStr})`;
+        } else if (cnt.billing_cadence === 'one_off' || cnt.billing_cadence === 'milestone') {
+          expectedAmt = val.totalContractValue || (cnt.value || 0);
+          periodLabel = cnt.billing_cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement';
+        }
+      }
+
+      if (expectedAmt <= 0 && !cnt.value) return;
+
+      const existingInv = (invoices || []).find(i => {
+        if (i.contract_id === cnt.id) {
+          if (cnt.billing_cadence === 'monthly') return i.issue_date.startsWith(currentPeriodStr) || i.period_from?.startsWith(currentPeriodStr);
+          if (cnt.billing_cadence === 'quarterly') return i.issue_date.startsWith(currentPeriodStr.slice(0, 4));
+          if (cnt.billing_cadence === 'annual' || cnt.billing_cadence === 'one_off') return true;
+          return i.issue_date.startsWith(currentPeriodStr);
+        }
+        return false;
+      });
+
+      if (existingInv) {
+        results.push({
+          contractId: cnt.id,
+          reference: cnt.reference,
+          counterpartyId: cnt.counterparty_id,
+          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
+          direction: cnt.direction,
+          cadence: cnt.billing_cadence || 'monthly',
+          timing: cnt.invoice_timing || 'start_of_period',
+          periodLabel,
+          expectedAmount: Number(expectedAmt.toFixed(2)),
+          currency: cnt.currency || 'EUR',
+          dueDate: `${currentPeriodStr}-15`,
+          status: existingInv.status === 'draft' ? 'draft_created' : 'billed',
+          invoiceId: existingInv.id
+        });
+      } else if (generatedDraftIds[cnt.id]) {
+        results.push({
+          contractId: cnt.id,
+          reference: cnt.reference,
+          counterpartyId: cnt.counterparty_id,
+          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
+          direction: cnt.direction,
+          cadence: cnt.billing_cadence || 'monthly',
+          timing: cnt.invoice_timing || 'start_of_period',
+          periodLabel,
+          expectedAmount: Number(expectedAmt.toFixed(2)),
+          currency: cnt.currency || 'EUR',
+          dueDate: `${currentPeriodStr}-15`,
+          status: 'draft_created',
+          invoiceId: generatedDraftIds[cnt.id]
+        });
+      } else {
+        results.push({
+          contractId: cnt.id,
+          reference: cnt.reference,
+          counterpartyId: cnt.counterparty_id,
+          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
+          direction: cnt.direction,
+          cadence: cnt.billing_cadence || 'monthly',
+          timing: cnt.invoice_timing || 'start_of_period',
+          periodLabel,
+          expectedAmount: Number(expectedAmt.toFixed(2)),
+          currency: cnt.currency || 'EUR',
+          dueDate: `${currentPeriodStr}-15`,
+          status: 'unbilled'
+        });
+      }
+    });
+
+    return results.sort((a, b) => {
+      const statusScore = { unbilled: 0, draft_created: 1, billed: 2 };
+      if (statusScore[a.status] !== statusScore[b.status]) return statusScore[a.status] - statusScore[b.status];
+      if (a.direction !== b.direction) return a.direction === 'revenue' ? -1 : 1;
+      return b.expectedAmount - a.expectedAmount;
+    });
+  }, [contracts, invoices, currentPeriodStr, currentQuarterStr, catalogModules, catalogItems, generatedDraftIds]);
+
+  const handleQuickCreateInvoice = async (item: typeof pendingInvoicesQueue[0]) => {
+    if (!addInvoice) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dueStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+    
+    const newInv = await addInvoice({
+      direction: item.direction === 'revenue' ? 'outgoing' : 'incoming',
+      counterparty_id: item.counterpartyId,
+      contract_id: item.contractId,
+      type: 'invoice',
+      invoice_number: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      issue_date: todayStr,
+      due_date: dueStr,
+      period_from: todayStr,
+      period_to: dueStr,
+      currency: item.currency,
+      fx_rate: 1.0,
+      net: Number((item.expectedAmount / 1.24).toFixed(2)),
+      vat_rate: '24',
+      vat_amount: Number((item.expectedAmount - (item.expectedAmount / 1.24)).toFixed(2)),
+      gross: item.expectedAmount,
+      gross_eur: item.expectedAmount,
+      status: 'draft',
+      missing_document: false,
+      notes: `Auto-generated draft for contract ${item.reference} (${item.periodLabel} - ${item.timing})`,
+      created_via: 'ui'
+    });
+
+    if (newInv) {
+      setGeneratedDraftIds(prev => ({ ...prev, [item.contractId]: newInv.id }));
+      alert(`Draft invoice successfully generated for ${item.counterpartyName} (€${item.expectedAmount.toLocaleString()})!`);
+    }
+  };
 
   // --- 4. ORGANIZATIONAL OFFICE & REMOTE ROSTER STATE ---
   const [rosterDate, setRosterDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -379,6 +533,120 @@ export default function DashboardPage() {
               )}
             </Card>
           </div>
+
+          {/* Pending Contract Invoicing & Revenue Action Center */}
+          <Card 
+            title="Contract Invoicing & Revenue Action Center"
+            subtitle="Automated ledger monitoring across active commercial contracts to ensure timely billing in advance or arrears" 
+            action={
+              <div className="flex items-center space-x-3">
+                {pendingInvoicesQueue.filter(i => i.status === 'unbilled').length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                    {pendingInvoicesQueue.filter(i => i.status === 'unbilled').length} Action(s) Needed
+                  </span>
+                )}
+                <Link href="/invoices" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">
+                  Go to Invoice Ledger <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
+                </Link>
+              </div>
+            } 
+            className="border-slate-200/90 shadow-2xs"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse mt-2">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
+                    <th className="py-2.5 px-4">Contract / Counterparty</th>
+                    <th className="py-2.5 px-3">Direction</th>
+                    <th className="py-2.5 px-3">Invoicing Cadence & Timing</th>
+                    <th className="py-2.5 px-3">Billing Horizon</th>
+                    <th className="py-2.5 px-4 text-right">Expected Rate (€)</th>
+                    <th className="py-2.5 px-3 text-center">Billing Status</th>
+                    <th className="py-2.5 px-4 text-right">Action / Generation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-sm font-medium">
+                  {pendingInvoicesQueue.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
+                        No active contracts require invoicing attention at this time. All scheduled billing periods are settled!
+                      </td>
+                    </tr>
+                  ) : (
+                    pendingInvoicesQueue.slice(0, 6).map(item => (
+                      <tr key={item.contractId} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <Link href={`/contracts`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
+                            {item.counterpartyName}
+                          </Link>
+                          <span className="text-xs text-slate-500 font-mono">Ref: {item.reference}</span>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <Badge variant={item.direction === 'revenue' ? 'success' : 'warning'}>
+                            {item.direction === 'revenue' ? 'Revenue' : 'Spend'}
+                          </Badge>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <div className="font-bold text-slate-800 capitalize">{item.cadence}</div>
+                          <div className="text-xs text-slate-500">
+                            {item.timing === 'end_of_period' ? '⏳ Arrears (End of period)' : 
+                             item.timing === 'upon_milestone' ? '🎯 Upon Milestone' : 
+                             '🚀 In Advance (Start of period)'}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold">
+                            {item.periodLabel}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900">
+                          €{item.expectedAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3.5 px-3 text-center">
+                          {item.status === 'unbilled' ? (
+                            <span className="inline-flex items-center text-xs font-extrabold text-rose-700 bg-rose-100 px-2.5 py-1 rounded-full border border-rose-300">
+                              <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                              Unbilled
+                            </span>
+                          ) : item.status === 'draft_created' ? (
+                            <span className="inline-flex items-center text-xs font-extrabold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300">
+                              <Clock className="w-3.5 h-3.5 mr-1 text-amber-600" />
+                              Draft Created
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center text-xs font-extrabold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300">
+                              <CheckCircle className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                              Invoiced
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          {item.status === 'unbilled' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickCreateInvoice(item)}
+                              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm hover:shadow transition-all cursor-pointer"
+                            >
+                              <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                              <span>Create Draft</span>
+                            </button>
+                          ) : (
+                            <Link
+                              href="/invoices"
+                              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
+                            >
+                              <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+                              <span>View in Ledger &rarr;</span>
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </div>
       )}
 

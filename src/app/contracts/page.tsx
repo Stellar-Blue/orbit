@@ -192,6 +192,7 @@ export default function ContractsRegistryPage() {
       value: 0, // Dynamically computed via Modular Pricing / Rate Sheet
       currency: 'EUR',
       billing_cadence: 'annual',
+      invoice_timing: 'start_of_period',
       vat_treatment: 'domestic_24',
       owner_profile_id: currentUser.id,
       product: newDirection === 'revenue' ? 'Atlas ETRM & EMS' : 'Vendor Cloud Retainer',
@@ -1086,6 +1087,50 @@ export default function ContractsRegistryPage() {
                       onChange={e => setSelectedContract({ ...selectedContract, notice_deadline: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Invoicing Cadence / Frequency</label>
+                    <select
+                      value={selectedContract.billing_cadence || 'monthly'}
+                      onChange={e => setSelectedContract({ ...selectedContract, billing_cadence: e.target.value as any })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="annual">Annual</option>
+                      <option value="milestone">Milestone / Project-based</option>
+                      <option value="one_off">One-off / Single Billing</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Invoicing Timing (Within Period)</label>
+                    <select
+                      value={selectedContract.invoice_timing || 'start_of_period'}
+                      onChange={e => setSelectedContract({ ...selectedContract, invoice_timing: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    >
+                      <option value="start_of_period">Start of Period (In Advance / e.g. Start of Month/Quarter)</option>
+                      <option value="end_of_period">End of Period (In Arrears / e.g. End of Month/Quarter)</option>
+                      <option value="upon_milestone">Upon Milestone Completion / Delivery</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200/80 flex items-center space-x-3 text-xs text-blue-900 shadow-2xs">
+                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-extrabold flex items-center justify-center shrink-0 shadow-sm">
+                    ⚡
+                  </div>
+                  <div>
+                    <span className="font-bold block text-sm">
+                      Billing Rule: {selectedContract.billing_cadence ? selectedContract.billing_cadence.charAt(0).toUpperCase() + selectedContract.billing_cadence.slice(1) : 'Monthly'} — {
+                        selectedContract.invoice_timing === 'end_of_period' ? 'End of Period (Arrears / Post-service)' :
+                        selectedContract.invoice_timing === 'upon_milestone' ? 'Upon Milestone Completion' :
+                        'Start of Period (Invoiced in Advance)'
+                      }
+                    </span>
+                    <span className="text-[11px] text-blue-700 font-medium mt-0.5 block">
+                      Orbit utilizes this timing rule on the Home Dashboard to alert operations when draft invoices need to be issued.
+                    </span>
                   </div>
                 </div>
 

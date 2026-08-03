@@ -555,6 +555,7 @@ export default function InvoicesRegistryPage() {
                 className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
               >
                 <option value="all">Status: All Statuses</option>
+                <option value="draft">Draft</option>
                 <option value="registered">Registered</option>
                 <option value="sent_received">Sent / Received</option>
                 <option value="partially_paid">Partially Paid</option>
@@ -679,6 +680,7 @@ export default function InvoicesRegistryPage() {
                         </span>
                       </td>
                       <td className="p-4 text-center">
+                        {inv.status === 'draft' && <Badge variant="warning" className="px-2.5 py-1 font-extrabold bg-amber-100 text-amber-800 border border-amber-300">Draft</Badge>}
                         {inv.status === 'paid' && <Badge variant="success" className="px-3 py-1 font-bold">Paid in Full</Badge>}
                         {inv.status === 'partially_paid' && <Badge variant="warning" className="px-2.5 py-1 font-bold">Partial: €{paidAmount.toFixed(2)}</Badge>}
                         {inv.status === 'registered' && <Badge variant="neutral" className="px-2.5 py-1 font-bold">Registered</Badge>}

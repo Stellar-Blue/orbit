@@ -286,6 +286,7 @@ export interface Contract {
   value?: number;
   currency: string;
   billing_cadence: 'monthly' | 'quarterly' | 'annual' | 'milestone' | 'one_off';
+  invoice_timing?: 'start_of_period' | 'end_of_period' | 'upon_milestone' | string;
   vat_treatment: 'domestic_24' | 'intra_eu_reverse_charge' | 'non_eu';
   owner_profile_id?: string;
   owner_profile?: Profile;
@@ -345,7 +346,7 @@ export interface ContractSchedule {
 
 export type InvoiceDirection = 'outgoing' | 'incoming';
 export type InvoiceType = 'invoice' | 'credit_note' | 'proforma' | 'debit_note';
-export type InvoiceStatus = 'registered' | 'sent_received' | 'partially_paid' | 'paid' | 'disputed' | 'resolved' | 'cancelled';
+export type InvoiceStatus = 'draft' | 'registered' | 'sent_received' | 'partially_paid' | 'paid' | 'disputed' | 'resolved' | 'cancelled';
 
 export interface InvoiceCategory {
   id: string;
