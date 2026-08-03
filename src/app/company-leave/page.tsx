@@ -15,7 +15,7 @@ export default function CompanyLeaveManagementPage() {
   const { 
     currentUser, profiles, leaveTypes, leaveRequests, mandatoryLeaves, publicHolidays, 
     updateLeaveRequestStatus, addMandatoryLeave, updateMandatoryLeave, deleteMandatoryLeave,
-    editLeaveRequest, decideLeaveCancellation, splitAndAddLeaveRequest,
+    editLeaveRequest, decideLeaveCancellation, splitAndAddLeaveRequest, deleteLeaveRequest,
     addLeaveType, updateLeaveType, deleteLeaveType
   } = useAuth();
 
@@ -526,64 +526,80 @@ export default function CompanyLeaveManagementPage() {
                                 ΕΡΓΑΝΗ: <span className="text-slate-600 font-bold">{req.ergani_status}</span>
                               </div>
                             </td>
-                            <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                              {req.status === 'pending' && !isPendingCancel && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="primary"
-                                    onClick={() => updateLeaveRequestStatus(req.id, 'approved', 'Approved by Administration')}
-                                    className="bg-emerald-600 hover:bg-emerald-500 font-black px-3 py-1.5 shadow-2xs text-xs cursor-pointer"
-                                  >
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="danger"
-                                    onClick={() => setRejectModalTarget(req.id)}
-                                    className="font-black px-3 py-1.5 shadow-2xs text-xs cursor-pointer"
-                                  >
-                                    Reject
-                                  </Button>
-                                </>
-                              )}
+                            <td className="p-4 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end space-x-2">
+                                {req.status === 'pending' && !isPendingCancel && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="primary"
+                                      onClick={() => updateLeaveRequestStatus(req.id, 'approved', 'Approved by Administration')}
+                                      className="bg-emerald-600 hover:bg-emerald-500 font-black px-3 py-1.5 shadow-2xs text-xs cursor-pointer"
+                                    >
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="danger"
+                                      onClick={() => setRejectModalTarget(req.id)}
+                                      className="font-black px-3 py-1.5 shadow-2xs text-xs cursor-pointer"
+                                    >
+                                      Reject
+                                    </Button>
+                                  </>
+                                )}
 
-                              {isPendingCancel && (
-                                <div className="flex items-center justify-end space-x-2">
-                                  <Button
-                                    size="sm"
-                                    className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] py-1 px-2 cursor-pointer"
-                                    onClick={() => decideLeaveCancellation(req.id, true)}
-                                  >
-                                    Approve Cancellation
-                                  </Button>
+                                {isPendingCancel && (
+                                  <div className="flex items-center space-x-2">
+                                    <Button
+                                      size="sm"
+                                      className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] py-1 px-2 cursor-pointer"
+                                      onClick={() => decideLeaveCancellation(req.id, true)}
+                                    >
+                                      Approve Cancellation
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-[11px] py-1 px-2 text-slate-700 cursor-pointer"
+                                      onClick={() => decideLeaveCancellation(req.id, false)}
+                                    >
+                                      Keep Leave Active
+                                    </Button>
+                                  </div>
+                                )}
+
+                                {(req.status === 'approved' || req.status === 'taken') && !isPendingCancel && req.origin !== 'mandatory' && (
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-[11px] py-1 px-2 text-slate-700 cursor-pointer"
-                                    onClick={() => decideLeaveCancellation(req.id, false)}
+                                    onClick={() => {
+                                      setEditingLeave(req);
+                                      setEditStartDate(req.start_date);
+                                      setEditEndDate(req.end_date);
+                                      setEditNote(req.note || '');
+                                      setEditReason('');
+                                    }}
+                                    className="text-[11px] font-bold py-1 px-2.5 text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer flex items-center"
                                   >
-                                    Keep Leave Active
+                                    <Edit3 className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Modify / Cut Short
                                   </Button>
-                                </div>
-                              )}
+                                )}
 
-                              {(req.status === 'approved' || req.status === 'taken') && !isPendingCancel && req.origin !== 'mandatory' && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => {
-                                    setEditingLeave(req);
-                                    setEditStartDate(req.start_date);
-                                    setEditEndDate(req.end_date);
-                                    setEditNote(req.note || '');
-                                    setEditReason('');
+                                  onClick={async () => {
+                                    if (window.confirm("Are you sure you want to permanently delete this leave entry for this employee? This action cannot be undone.")) {
+                                      await deleteLeaveRequest(req.id);
+                                    }
                                   }}
-                                  className="text-[11px] font-bold py-1 px-2.5 text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer flex items-center ml-auto"
+                                  className="text-[11px] font-bold p-1.5 text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer flex items-center shrink-0"
+                                  title="Delete Leave Request"
                                 >
-                                  <Edit3 className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Modify / Cut Short
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
-                              )}
+                              </div>
                             </td>
                           </tr>
                         );

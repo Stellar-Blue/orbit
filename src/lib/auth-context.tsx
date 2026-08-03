@@ -88,6 +88,7 @@ interface AppState {
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
   requestLeaveCancellation: (id: string) => void;
   decideLeaveCancellation: (id: string, approve: boolean) => void;
+  deleteLeaveRequest: (id: string) => Promise<boolean>;
   splitAndAddLeaveRequest: (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => void;
   addTeam: (name: string, leadProfileId?: string) => Promise<boolean>;
   updateTeam: (id: string, name: string, leadProfileId?: string) => Promise<boolean>;
@@ -588,6 +589,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }));
     } catch (e: any) {
       console.error('Failed to decide leave cancellation:', e);
+    }
+  };
+
+  const deleteLeaveRequest = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('leave_requests').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete leave request:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setLeaveRequests(prev => prev.filter(r => r.id !== id));
+      return true;
+    } catch (e: any) {
+      console.error('Failed to delete leave request:', e);
+      return false;
     }
   };
 
@@ -2223,6 +2241,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,
+      deleteLeaveRequest,
       splitAndAddLeaveRequest,
       addTeam,
       updateTeam,

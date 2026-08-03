@@ -6,7 +6,7 @@ import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
   Users, ShieldCheck, FileText, Sparkles, Filter, Edit3, HelpCircle, ArrowRight, ShieldAlert,
-  BarChart3, CalendarDays, Briefcase, ChevronLeft, ChevronRight, Table, Download
+  BarChart3, CalendarDays, Briefcase, ChevronLeft, ChevronRight, Table, Download, Trash2
 } from 'lucide-react';
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -17,7 +17,7 @@ export default function LeaveManagementPage() {
     currentUser, profiles, leaveTypes, 
     leaveRequests, mandatoryLeaves, publicHolidays, 
     requestLeaveCancellation, splitAndAddLeaveRequest,
-    updateLeaveRequestStatus, getEmployeeLeaveBalance
+    updateLeaveRequestStatus, getEmployeeLeaveBalance, deleteLeaveRequest
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -872,6 +872,15 @@ export default function LeaveManagementPage() {
                             {req.status === 'approved' && isFuture && (
                               <Button size="sm" variant="outline" className="text-[11px] py-1 px-2 font-bold text-amber-700 border-amber-300 hover:bg-amber-50 cursor-pointer" onClick={() => requestLeaveCancellation(req.id)}>
                                 Request Cancellation
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button size="sm" variant="outline" className="text-[11px] py-1 px-2 font-bold text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer flex items-center ml-auto" onClick={async () => {
+                                if (window.confirm("Are you sure you want to permanently delete this leave entry?")) {
+                                  await deleteLeaveRequest(req.id);
+                                }
+                              }}>
+                                <Trash2 className="w-3 h-3 mr-1" /> Delete
                               </Button>
                             )}
                           </div>
