@@ -1888,6 +1888,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         due_date: inv.due_date,
         period_from: inv.period_from || null,
         period_to: inv.period_to || null,
+        reference_period: inv.reference_period || null,
         currency: inv.currency,
         fx_rate: inv.fx_rate,
         net: inv.net,

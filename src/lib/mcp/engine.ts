@@ -194,7 +194,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         
         const schedule = contract.schedule || [];
         const statusReport = schedule.map((s: any) => {
-          const matched = (invoices || []).filter((inv: any) => inv.period_from === s.period || inv.due_date.startsWith(s.period));
+          const matched = (invoices || []).filter((inv: any) => inv.reference_period === s.period || inv.period_from === s.period || inv.due_date.startsWith(s.period));
           const allocated = matched.reduce((sum: number, i: any) => sum + i.gross, 0);
           const isPaid = matched.some((inv: any) => inv.status === 'paid');
           let state = 'upcoming';

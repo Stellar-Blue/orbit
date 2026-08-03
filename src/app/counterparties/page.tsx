@@ -1017,7 +1017,12 @@ export default function CounterpartiesRegistryPage() {
                                   </td>
                                   <td className="p-3.5">
                                     <span className="font-bold text-slate-900 font-mono block">{inv.invoice_number}</span>
-                                    {inv.mark ? <span className="text-[10px] text-emerald-600 font-mono">MARK: {inv.mark}</span> : <span className="text-[10px] text-amber-600 italic">No MARK code</span>}
+                                    {inv.reference_period && (
+                                      <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-mono font-bold block w-fit my-0.5">
+                                        Ref: {inv.reference_period}
+                                      </span>
+                                    )}
+                                    {inv.mark ? <span className="text-[10px] text-emerald-600 font-mono block">MARK: {inv.mark}</span> : <span className="text-[10px] text-amber-600 italic block">No MARK code</span>}
                                   </td>
                                   <td className="p-3.5 text-slate-700">
                                     <span className="block">{inv.issue_date}</span>

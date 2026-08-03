@@ -78,6 +78,7 @@ export default function InvoicesRegistryPage() {
   });
   const [newPeriodFrom, setNewPeriodFrom] = useState<string>(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
   const [newPeriodTo, setNewPeriodTo] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [newReferencePeriod, setNewReferencePeriod] = useState<string>(new Date().toISOString().slice(0, 7));
   const [newNet, setNewNet] = useState<number>(1000);
   const [newVatRate, setNewVatRate] = useState<string>('24%');
   const [newNotes, setNewNotes] = useState<string>('');
@@ -104,6 +105,7 @@ export default function InvoicesRegistryPage() {
     setNewDueDate(inv.due_date || new Date().toISOString().split('T')[0]);
     setNewPeriodFrom(inv.period_from || '');
     setNewPeriodTo(inv.period_to || '');
+    setNewReferencePeriod(inv.reference_period || '');
     setNewNet(inv.net || 0);
     setNewVatRate((inv.vat_rate as any) || '24%');
     setNewNotes(inv.notes || '');
@@ -191,7 +193,8 @@ export default function InvoicesRegistryPage() {
         const markMatch = inv.mark?.toLowerCase().includes(q);
         const noteMatch = inv.notes?.toLowerCase().includes(q);
         const cpMatch = inv.counterparty?.legal_name.toLowerCase().includes(q) || inv.counterparty?.trade_name?.toLowerCase().includes(q);
-        if (!numMatch && !markMatch && !noteMatch && !cpMatch) return false;
+        const refMatch = inv.reference_period?.toLowerCase().includes(q);
+        if (!numMatch && !markMatch && !noteMatch && !cpMatch && !refMatch) return false;
       }
       return true;
     });
@@ -214,7 +217,7 @@ export default function InvoicesRegistryPage() {
       if (cnt.direction === 'revenue') {
         const sched = cnt.schedule?.find(s => s.period === currentMonthPeriod);
         if (sched) {
-          const hasAlloc = invoices.some(i => i.contract_id === cnt.id && i.status !== 'cancelled' && (i.allocations?.some(a => a.period === currentMonthPeriod) || i.issue_date.startsWith(currentMonthPeriod)));
+          const hasAlloc = invoices.some(i => i.contract_id === cnt.id && i.status !== 'cancelled' && (i.reference_period === currentMonthPeriod || i.allocations?.some(a => a.period === currentMonthPeriod) || i.issue_date.startsWith(currentMonthPeriod) || (i.period_from || '').startsWith(currentMonthPeriod)));
           if (!hasAlloc) {
             uninvoicedArAmount += sched.amount;
           }
@@ -426,6 +429,7 @@ export default function InvoicesRegistryPage() {
               setNewDueDate(d.toISOString().split('T')[0]);
               setNewPeriodFrom(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
               setNewPeriodTo(new Date().toISOString().split('T')[0]);
+              setNewReferencePeriod(new Date().toISOString().slice(0, 7));
               setNewNet(1000);
               setNewVatRate('24%');
               setNewNotes('');
@@ -664,6 +668,11 @@ export default function InvoicesRegistryPage() {
                           <div className="flex items-center gap-1.5 text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg w-fit border border-purple-100 font-bold text-[11px]">
                             <Tag className="w-3.5 h-3.5" />
                             <span>{inv.category || 'General Operating'}</span>
+                          </div>
+                        )}
+                        {inv.reference_period && (
+                          <div className="text-[10px] text-amber-800 font-mono bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60 font-black mt-1.5 w-fit shadow-2xs">
+                            Ref: {inv.reference_period}
                           </div>
                         )}
                       </td>
@@ -1375,6 +1384,38 @@ export default function InvoicesRegistryPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50/80 border border-slate-200/80 rounded-xl">
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">Reference Period</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 2026-08, 2026-Q3"
+                  value={newReferencePeriod}
+                  onChange={(e) => setNewReferencePeriod(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                />
+                <span className="text-[10px] text-slate-500 block mt-1 leading-tight">Used for contract schedules & missing invoice checks</span>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Period From</label>
+                <input
+                  type="date"
+                  value={newPeriodFrom}
+                  onChange={(e) => setNewPeriodFrom(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Period To</label>
+                <input
+                  type="date"
+                  value={newPeriodTo}
+                  onChange={(e) => setNewPeriodTo(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Notes & Description (Optional)</label>
               <textarea
@@ -1507,6 +1548,7 @@ export default function InvoicesRegistryPage() {
                       due_date: newDueDate,
                       period_from: newPeriodFrom || null,
                       period_to: newPeriodTo || null,
+                      reference_period: newReferencePeriod.trim() || null,
                       net: newNet,
                       vat_amount: calculatedVat,
                       vat_rate: newVatRate,
@@ -1535,6 +1577,7 @@ export default function InvoicesRegistryPage() {
                     due_date: newDueDate,
                     period_from: newPeriodFrom,
                     period_to: newPeriodTo,
+                    reference_period: newReferencePeriod.trim() || null,
                     currency: 'EUR',
                     fx_rate: 1.0,
                     net: newNet,
@@ -1721,6 +1764,7 @@ export default function InvoicesRegistryPage() {
                   `• Invoice UUID: ${inv.id}`,
                   `• Invoice # & MARK: ${inv.invoice_number} (AADE MARK: ${inv.mark || 'Pending Sync'})`,
                   `• Direction & Status: ${inv.direction.toUpperCase()} - ${inv.status.toUpperCase()}`,
+                  `• Reference Period: ${inv.reference_period || 'N/A / Standalone'} (Period: ${inv.period_from || 'N/A'} to ${inv.period_to || 'N/A'})`,
                   `• Financial Breakdown: Net €${(inv.net || 0).toLocaleString()} + VAT (${inv.vat_rate || '24%'}): €${(inv.vat_amount || 0).toLocaleString()} = Total Gross €${(inv.gross_eur || 0).toLocaleString()}`,
                   `• Timelines: Issued on ${inv.issue_date} | Due by ${inv.due_date}`,
                   `• Linked Contract UUID: ${inv.contract_id || 'Standalone / No contract linked'}`,

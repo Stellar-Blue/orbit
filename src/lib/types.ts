@@ -406,6 +406,7 @@ export interface Invoice {
   due_date: string;
   period_from?: string | null;
   period_to?: string | null;
+  reference_period?: string | null;
   currency: string;
   fx_rate: number;
   net: number;

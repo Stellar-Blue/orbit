@@ -222,12 +222,19 @@ export default function DashboardPage() {
         const expectedAmt = getAmt(period);
         if (expectedAmt <= 0 && !cnt.value) return; // skip periods with no billable amount
 
-        // Check if invoice already exists for this period
+        // Check if invoice already exists for this period (checking reference_period first!)
         const existingInv = (invoices || []).find(i => {
           if (i.contract_id !== cnt.id) return false;
+          if (i.reference_period && (
+            i.reference_period.trim() === period.key ||
+            i.reference_period.trim().toLowerCase() === period.key.toLowerCase() ||
+            i.reference_period.trim().toLowerCase() === period.label.toLowerCase()
+          )) {
+            return true;
+          }
           if (cadence === 'monthly') return (i.issue_date || '').startsWith(period.key) || (i.period_from || '').startsWith(period.key);
           if (cadence === 'quarterly') return (i.period_from || '') >= period.from && (i.period_from || '') <= period.to;
-          if (cadence === 'annual') return (i.issue_date || '').startsWith(period.key);
+          if (cadence === 'annual') return (i.issue_date || '').startsWith(period.key) || (i.period_from || '').startsWith(period.key);
           return true; // one_off/milestone: any invoice covers it
         });
 
@@ -285,6 +292,7 @@ export default function DashboardPage() {
       due_date: dueStr,
       period_from: item.periodFrom || todayStr,
       period_to: item.periodTo || dueStr,
+      reference_period: item.periodKey,
       currency: item.currency,
       fx_rate: 1.0,
       net: Number((item.expectedAmount / 1.24).toFixed(2)),
