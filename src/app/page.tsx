@@ -322,6 +322,41 @@ export default function DashboardPage() {
     }
   };
 
+  const [actionSearchQuery, setActionSearchQuery] = useState<string>('');
+  const [actionFilterStatus, setActionFilterStatus] = useState<string>('all');
+  const [actionFilterDirection, setActionFilterDirection] = useState<string>('all');
+  const [actionSortBy, setActionSortBy] = useState<'period' | 'amount_desc' | 'amount_asc' | 'counterparty'>('period');
+
+  const filteredActionQueue = useMemo(() => {
+    let list = [...pendingInvoicesQueue];
+    if (actionSearchQuery.trim()) {
+      const q = actionSearchQuery.toLowerCase();
+      list = list.filter(item => 
+        item.counterpartyName.toLowerCase().includes(q) ||
+        (item.reference || '').toLowerCase().includes(q) ||
+        item.periodLabel.toLowerCase().includes(q)
+      );
+    }
+    if (actionFilterStatus !== 'all') {
+      list = list.filter(item => item.status === actionFilterStatus);
+    }
+    if (actionFilterDirection !== 'all') {
+      list = list.filter(item => item.direction === actionFilterDirection);
+    }
+    list.sort((a, b) => {
+      if (actionSortBy === 'amount_desc') return b.expectedAmount - a.expectedAmount;
+      if (actionSortBy === 'amount_asc') return a.expectedAmount - b.expectedAmount;
+      if (actionSortBy === 'counterparty') return a.counterpartyName.localeCompare(b.counterpartyName);
+      // default 'period': unbilled first, then reverse chronological periodKey
+      if (a.status !== b.status) {
+        if (a.status === 'unbilled') return -1;
+        if (b.status === 'unbilled') return 1;
+      }
+      return b.periodKey.localeCompare(a.periodKey);
+    });
+    return list;
+  }, [pendingInvoicesQueue, actionSearchQuery, actionFilterStatus, actionFilterDirection, actionSortBy]);
+
   // --- 4. ORGANIZATIONAL OFFICE & REMOTE ROSTER STATE ---
   const [rosterDate, setRosterDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   
@@ -646,9 +681,53 @@ export default function DashboardPage() {
             } 
             className="border-slate-200/90 shadow-2xs"
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse mt-2">
-                <thead>
+            <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+                <input
+                  type="text"
+                  placeholder="Search counterparty, ref, or period..."
+                  value={actionSearchQuery}
+                  onChange={(e) => setActionSearchQuery(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 flex-1 min-w-[160px]"
+                />
+                <select
+                  value={actionFilterStatus}
+                  onChange={(e) => setActionFilterStatus(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="unbilled">Unbilled Only</option>
+                  <option value="draft_created">Draft Created</option>
+                  <option value="billed">Invoiced</option>
+                </select>
+                <select
+                  value={actionFilterDirection}
+                  onChange={(e) => setActionFilterDirection(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  <option value="all">All Directions</option>
+                  <option value="revenue">Revenue Only</option>
+                  <option value="cost">Spend Only</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Sort:</span>
+                <select
+                  value={actionSortBy}
+                  onChange={(e: any) => setActionSortBy(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  <option value="period">Urgency & Period</option>
+                  <option value="amount_desc">Amount (High to Low)</option>
+                  <option value="amount_asc">Amount (Low to High)</option>
+                  <option value="counterparty">Counterparty Name</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-slate-100 z-10 shadow-2xs">
                   <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                     <th className="py-2.5 px-4">Contract / Counterparty</th>
                     <th className="py-2.5 px-3">Direction</th>
@@ -660,14 +739,14 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-sm font-medium">
-                  {pendingInvoicesQueue.length === 0 ? (
+                  {filteredActionQueue.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
-                        No active contracts require invoicing attention at this time. All scheduled billing periods are settled!
+                        No active contracts match your filter criteria or require attention at this time!
                       </td>
                     </tr>
                   ) : (
-                    pendingInvoicesQueue.slice(0, 20).map(item => (
+                    filteredActionQueue.map(item => (
                       <tr key={`${item.contractId}::${item.periodKey}`} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3.5 px-4">
                           <Link href={`/contracts`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
