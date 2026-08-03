@@ -260,7 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const enrichedPayments = (paymentsRes.data || []).map((pay: any) => {
           const payment_type = loadedPaymentTypes.find(pt => pt.id === pay.payment_type_id);
-          return { ...pay, payment_type };
+          return { ...pay, documents: pay.documents || [], payment_type };
         });
         setPayments(enrichedPayments);
 
@@ -803,9 +803,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addPaymentRecord = async (pay: Omit<PaymentRecord, 'id'>) => {
-    const newPay: PaymentRecord = { ...pay, id: generateUUID() };
+    const newPay: PaymentRecord = { documents: [], ...pay, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
-    const { payment_type, documents, ...cleanPay } = newPay as any;
+    const { payment_type, ...cleanPay } = newPay as any;
     try {
       const { error } = await supabase.from('payments').insert(cleanPay);
       if (error) {
@@ -823,7 +823,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPayments(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     const supabase = getSupabaseBrowserClient();
     try {
-      const { payment_type, documents, ...cleanUpdates } = updates as any;
+      const { payment_type, ...cleanUpdates } = updates as any;
       await supabase.from('payments').update(cleanUpdates).eq('id', id);
     } catch (e) {
       console.error('Failed to update payment in database:', e);
@@ -899,34 +899,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addPaymentDocuments = (paymentId: string, docs: PaymentDocument[]) => {
+  const addPaymentDocuments = async (paymentId: string, docs: PaymentDocument[]) => {
+    let updatedDocs: PaymentDocument[] = [];
     setPayments(prev => prev.map(p => {
       if (p.id === paymentId) {
-        return { ...p, documents: [...(p.documents || []), ...docs] };
+        updatedDocs = [...(p.documents || []), ...docs];
+        return { ...p, documents: updatedDocs };
       }
       return p;
     }));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('payments').update({ documents: updatedDocs }).eq('id', paymentId);
+    } catch (e) {
+      console.error('Failed to persist added payment documents:', e);
+    }
   };
 
-  const deletePaymentDocument = (paymentId: string, documentId: string) => {
+  const deletePaymentDocument = async (paymentId: string, documentId: string) => {
+    let updatedDocs: PaymentDocument[] = [];
     setPayments(prev => prev.map(p => {
       if (p.id === paymentId) {
-        return { ...p, documents: (p.documents || []).filter(d => d.id !== documentId) };
+        updatedDocs = (p.documents || []).filter(d => d.id !== documentId);
+        return { ...p, documents: updatedDocs };
       }
       return p;
     }));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('payments').update({ documents: updatedDocs }).eq('id', paymentId);
+    } catch (e) {
+      console.error('Failed to delete payment document in database:', e);
+    }
   };
 
-  const updatePaymentDocumentType = (paymentId: string, documentId: string, type: string) => {
+  const updatePaymentDocumentType = async (paymentId: string, documentId: string, type: string) => {
+    let updatedDocs: PaymentDocument[] = [];
     setPayments(prev => prev.map(p => {
       if (p.id === paymentId) {
+        updatedDocs = (p.documents || []).map(d => d.id === documentId ? { ...d, type } : d);
         return {
           ...p,
-          documents: (p.documents || []).map(d => d.id === documentId ? { ...d, type } : d)
+          documents: updatedDocs
         };
       }
       return p;
     }));
+    const supabase = getSupabaseBrowserClient();
+    try {
+      await supabase.from('payments').update({ documents: updatedDocs }).eq('id', paymentId);
+    } catch (e) {
+      console.error('Failed to update payment document category in database:', e);
+    }
   };
 
   const generateDraftMonth = async (period: string) => {
@@ -1022,7 +1046,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const supabase = getSupabaseBrowserClient();
     try {
-      const cleanPays = newPays.map(({ payment_type, documents, ...p }: any) => p);
+      const cleanPays = newPays.map(({ payment_type, ...p }: any) => ({ ...p, documents: p.documents || [] }));
       if (cleanPays.length > 0) {
         const { error } = await supabase.from('payments').insert(cleanPays);
         if (error) {

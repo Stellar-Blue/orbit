@@ -8,7 +8,7 @@ import {
   DollarSign, Download, Plus, Sparkles, ShieldAlert, 
   Calendar, CheckCircle, RefreshCw, Layers, Sliders, TrendingUp,
   Upload, FileText, Trash2, FileCheck, Paperclip, ExternalLink, Eye, X, Check, FolderOpen, FileSpreadsheet,
-  AlertTriangle, Edit, CheckSquare, Users, ShieldCheck, PieChart, Archive
+  AlertTriangle, Edit, CheckSquare, Users, ShieldCheck, PieChart, Archive, Copy, Share2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -31,9 +31,49 @@ export default function PayrollPage() {
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [selectedPeriod, setSelectedPeriod] = useState<string>('2026-07');
+  const [endPeriod, setEndPeriod] = useState<string>('2026-07');
   const [tab, setTab] = useState<'ledger' | 'forecast' | 'payment_types'>('ledger');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'planned' | 'paid' | 'missing_receipt'>('all');
   const [personFilter, setPersonFilter] = useState<string>('all');
+
+  const periodLabel = selectedPeriod === endPeriod || !endPeriod ? selectedPeriod : `${selectedPeriod} to ${endPeriod}`;
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; payment: PaymentRecord } | null>(null);
+
+  const copyToClipboard = (text: string, label: string, id?: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    if (id) setCopiedId(id);
+    setCopyFeedback(label);
+    setTimeout(() => {
+      if (id) setCopiedId(null);
+      setCopyFeedback(null);
+    }, 2500);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleClickOutside, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleClickOutside, true);
+    };
+  }, []);
+
+  const getMonthsInRange = (start: string, end: string): string[] => {
+    let [y1, m1] = start.split('-').map(Number);
+    const [y2, m2] = end.split('-').map(Number);
+    const months: string[] = [];
+    while (y1 < y2 || (y1 === y2 && m1 <= m2)) {
+      months.push(`${y1}-${String(m1).padStart(2, '0')}`);
+      m1++;
+      if (m1 > 12) { m1 = 1; y1++; }
+    }
+    return months;
+  };
 
   // Upload New Payment State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -71,6 +111,7 @@ export default function PayrollPage() {
       if (target) {
         if (target.period && target.period !== selectedPeriod) {
           setSelectedPeriod(target.period);
+          setEndPeriod(target.period);
         }
         setSelectedPaymentForDocs(target);
       }
@@ -130,7 +171,12 @@ export default function PayrollPage() {
     );
   }
 
-  const periodPayments = payments.filter(p => p.period === selectedPeriod && (personFilter === 'all' || p.profile_id === personFilter));
+  const periodPayments = useMemo(() => {
+    const minP = selectedPeriod <= (endPeriod || selectedPeriod) ? selectedPeriod : (endPeriod || selectedPeriod);
+    const maxP = selectedPeriod <= (endPeriod || selectedPeriod) ? (endPeriod || selectedPeriod) : selectedPeriod;
+    return payments.filter(p => p.period >= minP && p.period <= maxP && (personFilter === 'all' || p.profile_id === personFilter));
+  }, [payments, selectedPeriod, endPeriod, personFilter]);
+
   const totalCost = periodPayments.reduce((acc, p) => acc + p.total_cost, 0);
   const totalNet = periodPayments.reduce((acc, p) => acc + p.net, 0);
 
@@ -149,13 +195,23 @@ export default function PayrollPage() {
   }, [periodPayments, ledgerFilter]);
 
   const handleGenerateDraft = async () => {
-    await generateDraftMonth(selectedPeriod);
+    const minP = selectedPeriod <= (endPeriod || selectedPeriod) ? selectedPeriod : (endPeriod || selectedPeriod);
+    const maxP = selectedPeriod <= (endPeriod || selectedPeriod) ? (endPeriod || selectedPeriod) : selectedPeriod;
+    const months = getMonthsInRange(minP, maxP);
+    for (const m of months) {
+      await generateDraftMonth(m);
+    }
   };
 
   const handleMarkAllPaid = async () => {
-    if (!confirm(`Are you sure you want to mark all ${plannedPayments.length} planned/draft rows in ${selectedPeriod} as PAID? Once marked paid, they lock for standard editing and become visible to employees in their self-service portal.`)) return;
-    await markAllPaidForPeriod(selectedPeriod);
-    alert(`All draft rows for ${selectedPeriod} marked as PAID!`);
+    const minP = selectedPeriod <= (endPeriod || selectedPeriod) ? selectedPeriod : (endPeriod || selectedPeriod);
+    const maxP = selectedPeriod <= (endPeriod || selectedPeriod) ? (endPeriod || selectedPeriod) : selectedPeriod;
+    const months = getMonthsInRange(minP, maxP);
+    if (!confirm(`Are you sure you want to mark all ${plannedPayments.length} planned/draft rows in period range (${periodLabel}) as PAID? Once marked paid, they lock for standard editing and become visible to employees in their self-service portal.`)) return;
+    for (const m of months) {
+      await markAllPaidForPeriod(m);
+    }
+    alert(`All draft rows for ${periodLabel} marked as PAID!`);
   };
 
   // One-click Accountant Package Export (XLSX + optional ZIP of receipts)
@@ -188,13 +244,13 @@ export default function PayrollPage() {
 
       const worksheet = XLSX.utils.json_to_sheet(data);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, `Payroll_${selectedPeriod}`);
-      XLSX.writeFile(workbook, `StellarBlue_Accountant_Package_${selectedPeriod}.xlsx`);
+      XLSX.utils.book_append_sheet(workbook, worksheet, `Payroll_${periodLabel.replace(/ /g, '_')}`);
+      XLSX.writeFile(workbook, `StellarBlue_Accountant_Package_${periodLabel.replace(/ /g, '_')}.xlsx`);
 
       // Generate ZIP of receipt documents if toggle is checked
       if (includeReceiptsZip) {
         const zip = new JSZip();
-        const receiptsFolder = zip.folder(`Receipts_${selectedPeriod}`);
+        const receiptsFolder = zip.folder(`Receipts_${periodLabel.replace(/ /g, '_')}`);
 
         let totalDocsAdded = 0;
         periodPayments.forEach(p => {
@@ -206,7 +262,7 @@ export default function PayrollPage() {
             p.documents.forEach((doc, i) => {
               // Naming convention: {ΑΦΜ}_{type}_{YYYY-MM}.pdf
               const suffix = p.documents!.length > 1 ? `_part${i + 1}` : '';
-              const filename = `${afm}_${pt?.code || 'pay'}_${selectedPeriod}${suffix}.pdf`;
+              const filename = `${afm}_${pt?.code || 'pay'}_${p.period}${suffix}.pdf`;
               
               // Generate verifiable mock content representing the stored receipt voucher
               const receiptContent = `STELLARBLUE SYSTEMS ORBIT — ACCOUNTANT RECEIPT ARCHIVE\nFile Name: ${filename}\nOriginal Upload: ${doc.name} (${doc.size})\nEmployee: ${prof?.first_name} ${prof?.last_name} (AFM: ${afm})\nPeriod: ${p.period}\nPayment Type: ${pt?.name_el} (${pt?.name_en})\nTotal Cost: €${p.total_cost} | Net Disbursed: €${p.net}\nBank Ref: ${p.bank_reference || 'WIRE-TRANSFER'}\nUploaded At: ${doc.uploaded_at}\nEncrypted & Stored in Private Supabase Vault under RLS`;
@@ -222,7 +278,7 @@ export default function PayrollPage() {
           const url = URL.createObjectURL(content);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `StellarBlue_Receipt_Bundle_${selectedPeriod}.zip`;
+          link.download = `StellarBlue_Receipt_Bundle_${periodLabel.replace(/ /g, '_')}.zip`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -506,20 +562,44 @@ export default function PayrollPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input 
-            type="month" 
-            value={selectedPeriod} 
-            onChange={e => setSelectedPeriod(e.target.value)} 
-            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-mono shadow-2xs font-bold"
-          />
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-2xs gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500 px-1">From:</span>
+            <input 
+              type="month" 
+              value={selectedPeriod} 
+              onChange={e => setSelectedPeriod(e.target.value)} 
+              className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
+            />
+            <span className="text-[11px] font-bold text-slate-500 px-1">To:</span>
+            <input 
+              type="month" 
+              value={endPeriod} 
+              onChange={e => setEndPeriod(e.target.value)} 
+              className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedPeriod !== endPeriod) {
+                  setEndPeriod(selectedPeriod);
+                } else {
+                  setEndPeriod(`${selectedPeriod.split('-')[0]}-12`);
+                }
+              }}
+              className="px-2 py-1 bg-blue-50 text-[#3D87D3] hover:bg-blue-100 rounded text-[11px] font-bold transition-colors cursor-pointer"
+              title="Click to toggle between single month and remainder of the year"
+            >
+              {selectedPeriod === endPeriod ? '+ Year Range' : '1 Month'}
+            </button>
+          </div>
           <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-bold">
             <Upload className="w-3.5 h-3.5 mr-1.5 text-white" /> Upload Payment
           </Button>
-          <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer font-semibold">
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft Month (&lt;5 min)
+          <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer font-semibold" title={`Generate drafts for period range: ${periodLabel}`}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft ({periodLabel})
           </Button>
           <Button variant="primary" size="sm" onClick={() => setIsExportOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 shadow-xs cursor-pointer font-semibold">
-            <Download className="w-4 h-4 mr-1.5" /> One-Click Accountant Bundle
+            <Download className="w-4 h-4 mr-1.5" /> Accountant Bundle
           </Button>
         </div>
       </div>
@@ -530,7 +610,7 @@ export default function PayrollPage() {
           <div className="flex items-center space-x-3">
             <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
             <div>
-              <h4 className="font-extrabold text-amber-950 text-sm">⚠️ Admin Checklist: {paidMissingDocs.length} Paid Payment(s) Missing Receipt Documents in {selectedPeriod}</h4>
+              <h4 className="font-extrabold text-amber-950 text-sm">⚠️ Admin Checklist: {paidMissingDocs.length} Paid Payment(s) Missing Receipt Documents in {periodLabel}</h4>
               <p className="text-xs text-amber-800 mt-0.5">
                 Paid rows require attached payslips or bank transfer receipts before transmitting to the accountant or locking for employee self-service viewing.
               </p>
@@ -549,13 +629,12 @@ export default function PayrollPage() {
               variant="primary" 
               size="sm" 
               onClick={() => {
-                // Quick bulk receipt attachment demonstration
-                if (confirm(`Bulk upload default receipt confirmations for all ${paidMissingDocs.length} pending paid payments in ${selectedPeriod}?`)) {
+                if (confirm(`Bulk upload default receipt confirmations for all ${paidMissingDocs.length} pending paid payments in ${periodLabel}?`)) {
                   paidMissingDocs.forEach(p => {
                     const prof = profiles.find(pr => pr.id === p.profile_id);
                     addPaymentDocuments(p.id, [{
                       id: `doc-auto-${Date.now()}-${p.id}`,
-                      name: `Bank_Transfer_Receipt_${prof?.last_name || 'Staff'}_${selectedPeriod}.pdf`,
+                      name: `Bank_Transfer_Receipt_${prof?.last_name || 'Staff'}_${p.period}.pdf`,
                       type: 'receipt',
                       size: '142 KB',
                       uploaded_at: new Date().toISOString().split('T')[0]
@@ -658,6 +737,8 @@ export default function PayrollPage() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
                   <th className="p-3.5 pl-5">Employee / Partner</th>
+                  <th className="p-3.5">Period</th>
+                  <th className="p-3.5">Payment UUID</th>
                   <th className="p-3.5">Payment Type</th>
                   <th className="p-3.5">Gross Amount</th>
                   <th className="p-3.5">Net Pay</th>
@@ -671,8 +752,8 @@ export default function PayrollPage() {
               <tbody className="divide-y divide-slate-200">
                 {displayedPayments.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-500 italic">
-                      No payment records found for {selectedPeriod} matching filter. Click <strong>&ldquo;Generate Draft Month&rdquo;</strong> above to instantiate planned rows!
+                    <td colSpan={11} className="p-8 text-center text-slate-500 italic">
+                      No payment records found for {periodLabel} matching filter. Click <strong>&ldquo;Generate Draft&rdquo;</strong> above to instantiate planned rows!
                     </td>
                   </tr>
                 ) : (
@@ -685,11 +766,33 @@ export default function PayrollPage() {
                       <tr 
                         key={pay.id} 
                         onClick={() => { setSelectedPaymentForDocs(pay); setAddMoreDocs([]); }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 340), y: Math.min(e.clientY, window.innerHeight - 380), payment: pay });
+                        }}
                         className={`hover:bg-slate-100/80 transition-colors cursor-pointer ${missingDoc ? 'bg-amber-50/30' : ''}`}
                       >
                         <td className="p-3.5 pl-5 font-bold text-slate-800">
                           {prof?.first_name} {prof?.last_name}
                           <span className="text-xs text-slate-500 font-normal block">{prof?.title} ({prof?.employment_type})</span>
+                        </td>
+                        <td className="p-3.5 font-mono text-xs font-bold text-indigo-700 bg-indigo-50/50 rounded">
+                          {pay.period}
+                        </td>
+                        <td className="p-3.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={(e) => copyToClipboard(pay.id, `Payment UUID (${pay.id.slice(0, 8)}...)`, pay.id, e)}
+                            className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
+                            title="Click to copy full Payment UUID · Right-click row for Fast Report"
+                          >
+                            <span>{pay.id.slice(0, 8)}...{pay.id.slice(-4)}</span>
+                            {copiedId === pay.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            )}
+                          </button>
                         </td>
                         <td className="p-3.5 text-xs text-[#3D87D3] font-medium">
                           {pt?.name_el || pay.payment_type?.name_el || 'Μισθός'}
@@ -1467,6 +1570,116 @@ export default function PayrollPage() {
           subtitle={`Payroll Receipt · ${previewDoc.profName} (${previewDoc.doc.type.replace('_', ' ')})`}
           onDownload={() => handleDownloadDoc(previewDoc.doc, previewDoc.profName, previewDoc.bankRef)}
         />
+      )}
+
+      {/* RIGHT-CLICK CUSTOM CONTEXT MENU FOR PAYROLL ROWS */}
+      {contextMenu && (
+        <div 
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(() => {
+            const pay = contextMenu.payment;
+            const prof = profiles.find(p => p.id === pay.profile_id);
+            const pt = paymentTypes.find(type => type.id === pay.payment_type_id);
+            return (
+              <>
+                <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 mb-1">
+                  <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">⚡ Quick Copy Menu</div>
+                  <div className="font-extrabold text-slate-800 truncate text-sm">{prof ? `${prof.first_name} ${prof.last_name}` : 'Employee'} &mdash; {pay.period}</div>
+                </div>
+
+                <div className="py-1 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      copyToClipboard(pay.id, `Payment UUID (${pay.id.slice(0,8)}...)`, pay.id);
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Copy className="w-3.5 h-3.5 text-[#3D87D3]" /> Copy Payment UUID
+                    </span>
+                    <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{pay.id.slice(0, 6)}...</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      copyToClipboard(pay.profile_id, `Employee UUID (${pay.profile_id.slice(0,8)}...)`, undefined);
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-blue-600" /> Copy Employee UUID
+                    </span>
+                    <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{pay.profile_id.slice(0, 6)}...</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = `€${pay.net.toLocaleString()} Net (Total Cost: €${pay.total_cost.toLocaleString()}) - Bank Ref: ${pay.bank_reference || 'Wire Transfer'}`;
+                      copyToClipboard(val, `Disbursement Info (€${pay.net.toLocaleString()})`, undefined);
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Copy Net Pay & Bank Ref
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-700">€{pay.net.toLocaleString()}</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-100 my-1 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const report = [
+                        `💶 PAYROLL DISBURSEMENT REPORT: ${pay.period}`,
+                        `=========================================`,
+                        `• Employee / Partner: ${prof ? `${prof.first_name} ${prof.last_name}` : 'Staff Member'} (Title: ${prof?.title || 'Team Member'}, Type: ${prof?.employment_type || 'regular'})`,
+                        `• Payment UUID: ${pay.id}`,
+                        `• Employee Profile UUID: ${pay.profile_id}`,
+                        `• Period: ${pay.period} | Scheduled Payment Date: ${pay.payment_date}`,
+                        `• Payment Category: ${pt?.name_el || 'Μισθός'} (${pt?.name_en || 'Salary'})`,
+                        `• Status: ${pay.status.toUpperCase()}`,
+                        `• Financial Breakdown: Gross €${(pay.gross || 0).toLocaleString()} | Employer EFKA: €${(pay.employer_contributions || 0).toLocaleString()} | Total Cost: €${(pay.total_cost || 0).toLocaleString()} | Net Payable: €${(pay.net || 0).toLocaleString()}`,
+                        `• Bank Ref & Note: ${pay.bank_reference || 'WIRE-TRANSFER'} / ${pay.note || 'Regular scheduled settlement'}`,
+                        `• Compliance & Receipts: ${pay.documents?.length || 0} document(s) verified in Supabase RLS vault`
+                      ].join('\n');
+                      copyToClipboard(report, `Payroll Fast Report (${pay.period})`, undefined);
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-slate-800 hover:bg-emerald-50 hover:text-emerald-900 font-bold flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2 text-emerald-700">
+                      <Share2 className="w-4 h-4 text-emerald-600" /> Copy Fast Report (For Colleague)
+                    </span>
+                    <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase border border-emerald-200">Text</span>
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* FLOATING TOAST FEEDBACK FOR COPIED VALUES */}
+      {copyFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            <Check className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-slate-100">Copied to Clipboard!</div>
+            <div className="text-[11px] text-slate-400 font-mono truncate max-w-xs">{copyFeedback}</div>
+          </div>
+        </div>
       )}
     </div>
   );
