@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, StatCard, Modal } from '@/components/ui/primitives';
 import { 
@@ -21,6 +22,9 @@ export default function PayrollPage() {
     addPaymentDocuments, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord 
   } = useAuth();
   
+  const params = useParams();
+  const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+
   const [selectedPeriod, setSelectedPeriod] = useState<string>('2026-07');
   const [tab, setTab] = useState<'ledger' | 'forecast' | 'payment_types'>('ledger');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'planned' | 'paid' | 'missing_receipt'>('all');
@@ -54,6 +58,30 @@ export default function PayrollPage() {
   const [selectedPaymentForDocs, setSelectedPaymentForDocs] = useState<PaymentRecord | null>(null);
   const [addMoreDocs, setAddMoreDocs] = useState<PaymentDocument[]>([]);
   const [previewDoc, setPreviewDoc] = useState<{ doc: PaymentDocument; profName: string; bankRef?: string } | null>(null);
+
+  // Sync initial selection from URL ID
+  useEffect(() => {
+    if (urlId && payments.length > 0 && !selectedPaymentForDocs && !editingPayment) {
+      const target = payments.find(p => p.id === urlId || p.bank_reference === urlId);
+      if (target) {
+        if (target.period && target.period !== selectedPeriod) {
+          setSelectedPeriod(target.period);
+        }
+        setSelectedPaymentForDocs(target);
+      }
+    }
+  }, [urlId, payments]);
+
+  // Sync address bar when payment is selected or closed
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const active = selectedPaymentForDocs || editingPayment;
+    if (active) {
+      window.history.pushState(null, '', `/payroll/${active.id}`);
+    } else if (window.location.pathname.startsWith('/payroll/')) {
+      window.history.pushState(null, '', '/payroll');
+    }
+  }, [selectedPaymentForDocs, editingPayment]);
   
   // New dynamic payment type state
   const [isTypeOpen, setIsTypeOpen] = useState(false);
@@ -649,7 +677,11 @@ export default function PayrollPage() {
                     const missingDoc = pay.status === 'paid' && (!pay.documents || pay.documents.length === 0);
 
                     return (
-                      <tr key={pay.id} className={`hover:bg-slate-50/80 transition-colors ${missingDoc ? 'bg-amber-50/30' : ''}`}>
+                      <tr 
+                        key={pay.id} 
+                        onClick={() => { setSelectedPaymentForDocs(pay); setAddMoreDocs([]); }}
+                        className={`hover:bg-slate-100/80 transition-colors cursor-pointer ${missingDoc ? 'bg-amber-50/30' : ''}`}
+                      >
                         <td className="p-3.5 pl-5 font-bold text-slate-800">
                           {prof?.first_name} {prof?.last_name}
                           <span className="text-xs text-slate-500 font-normal block">{prof?.title} ({prof?.employment_type})</span>
@@ -673,7 +705,7 @@ export default function PayrollPage() {
                             <span className="text-[10px] text-amber-700 font-bold block mt-1">⚠️ Missing Receipt</span>
                           )}
                         </td>
-                        <td className="p-3.5 text-right pr-5">
+                        <td className="p-3.5 text-right pr-5" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleOpenEditModal(pay)}

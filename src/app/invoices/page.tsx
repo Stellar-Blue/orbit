@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Invoice, InvoiceDirection, InvoiceType, InvoiceStatus, Contract, Counterparty } from '@/lib/types';
@@ -20,6 +21,8 @@ export default function InvoicesRegistryPage() {
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
+  const params = useParams();
+  const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   // Navigation tabs within Financial Hub
   const [activeTab, setActiveTab] = useState<'register' | 'reconciliation' | 'cashflow' | 'accountant'>('register');
@@ -62,6 +65,47 @@ export default function InvoicesRegistryPage() {
   const [payDate, setPayDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [payBankRef, setPayBankRef] = useState<string>('');
   const [payNote, setPayNote] = useState<string>('');
+
+  const openInvoiceModal = (inv: Invoice) => {
+    setEditingInvoiceId(inv.id);
+    setNewDirection(inv.direction);
+    setNewType(inv.type || 'invoice');
+    setNewCpId(inv.counterparty_id || '');
+    setNewContractId(inv.contract_id || '');
+    setNewCatName(inv.category || '');
+    setNewInvNumber(inv.invoice_number || '');
+    setNewMark(inv.mark || '');
+    setNewIssueDate(inv.issue_date || new Date().toISOString().split('T')[0]);
+    setNewDueDate(inv.due_date || new Date().toISOString().split('T')[0]);
+    setNewPeriodFrom(inv.period_from || '');
+    setNewPeriodTo(inv.period_to || '');
+    setNewNet(inv.net || 0);
+    setNewVatRate((inv.vat_rate as any) || '24%');
+    setNewNotes(inv.notes || '');
+    setDuplicateWarning('');
+    setIsRegisterModalOpen(true);
+  };
+
+  // Sync initial selection from URL ID
+  useEffect(() => {
+    if (urlId && invoices.length > 0 && !editingInvoiceId && !payingInvoice) {
+      const target = invoices.find(i => i.id === urlId || i.invoice_number.toLowerCase() === urlId.toLowerCase());
+      if (target) {
+        openInvoiceModal(target);
+      }
+    }
+  }, [urlId, invoices]);
+
+  // Sync address bar when invoice modal is opened or closed
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const activeId = editingInvoiceId || payingInvoice?.id;
+    if (activeId) {
+      window.history.pushState(null, '', `/invoices/${activeId}`);
+    } else if (window.location.pathname.startsWith('/invoices/')) {
+      window.history.pushState(null, '', '/invoices');
+    }
+  }, [editingInvoiceId, payingInvoice]);
 
   // MCP AI Operator Activity State (§4 Observability)
   const mcpLogs = useMemo(() => [
@@ -525,7 +569,11 @@ export default function InvoicesRegistryPage() {
                   const isOverdue = new Date(inv.due_date) < new Date() && inv.status !== 'paid' && inv.status !== 'cancelled';
 
                   return (
-                    <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr 
+                      key={inv.id} 
+                      onClick={() => openInvoiceModal(inv)} 
+                      className="hover:bg-slate-100/80 transition-colors cursor-pointer"
+                    >
                       <td className="p-4">
                         <div className="flex items-center gap-2.5">
                           <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-extrabold text-[10px] border ${
@@ -582,7 +630,7 @@ export default function InvoicesRegistryPage() {
                         {inv.status === 'disputed' && <Badge variant="error" className="px-2.5 py-1 font-bold">Disputed</Badge>}
                         {inv.status === 'cancelled' && <Badge variant="neutral" className="px-2.5 py-1 text-slate-400 font-bold line-through">Cancelled</Badge>}
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
                         {inv.documents && inv.documents.length > 0 ? (
                           <button 
                             type="button"
@@ -617,11 +665,12 @@ export default function InvoicesRegistryPage() {
                           </label>
                         )}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           {inv.status !== 'paid' && inv.status !== 'cancelled' ? (
                             <Button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setPayingInvoice(inv);
                                 setPayAmount(remaining);
                                 setPayDate(new Date().toISOString().split('T')[0]);
@@ -639,24 +688,9 @@ export default function InvoicesRegistryPage() {
                           )}
                           <Button
                             variant="outline"
-                            onClick={() => {
-                              setEditingInvoiceId(inv.id);
-                              setNewDirection(inv.direction);
-                              setNewType(inv.type || 'invoice');
-                              setNewCpId(inv.counterparty_id || '');
-                              setNewContractId(inv.contract_id || '');
-                              setNewCatName(inv.category || '');
-                              setNewInvNumber(inv.invoice_number || '');
-                              setNewMark(inv.mark || '');
-                              setNewIssueDate(inv.issue_date || new Date().toISOString().split('T')[0]);
-                              setNewDueDate(inv.due_date || new Date().toISOString().split('T')[0]);
-                              setNewPeriodFrom(inv.period_from || '');
-                              setNewPeriodTo(inv.period_to || '');
-                              setNewNet(inv.net || 0);
-                              setNewVatRate((inv.vat_rate as any) || '24%');
-                              setNewNotes(inv.notes || '');
-                              setDuplicateWarning('');
-                              setIsRegisterModalOpen(true);
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openInvoiceModal(inv);
                             }}
                             className="p-1.5 h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-colors flex items-center justify-center"
                             title="Edit Invoice Details"

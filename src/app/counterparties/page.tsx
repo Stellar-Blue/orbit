@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Counterparty, AttioLink, CounterpartyContact } from '@/lib/types';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
@@ -17,6 +18,8 @@ export default function CounterpartiesRegistryPage() {
     linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, 
     addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices
   } = useAuth();
+  const params = useParams();
+  const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [activeTab, setActiveTab] = useState<'registry' | 'queue'>('registry');
   const [search, setSearch] = useState('');
@@ -26,6 +29,26 @@ export default function CounterpartiesRegistryPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Sync initial selection from URL ID
+  useEffect(() => {
+    if (urlId && counterparties.length > 0 && !selectedEntity) {
+      const target = counterparties.find(c => c.id === urlId || c.vat_number === urlId || c.afm === urlId);
+      if (target) {
+        setSelectedEntity(target);
+      }
+    }
+  }, [urlId, counterparties]);
+
+  // Sync address bar when counterparty is selected or closed
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (selectedEntity) {
+      window.history.pushState(null, '', `/counterparties/${selectedEntity.id}`);
+    } else if (window.location.pathname.startsWith('/counterparties/')) {
+      window.history.pushState(null, '', '/counterparties');
+    }
+  }, [selectedEntity]);
 
   const copyUuid = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();

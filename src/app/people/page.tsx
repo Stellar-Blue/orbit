@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
@@ -13,10 +14,33 @@ import Papa from 'papaparse';
 
 export default function PeopleDirectoryPage() {
   const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile } = useAuth();
+  const params = useParams();
+  const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'sensitive' | 'compensation' | 'edit'>('overview');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   
+  // Sync initial selection from URL ID
+  useEffect(() => {
+    if (urlId && profiles.length > 0 && !selectedProfile) {
+      const target = profiles.find(p => p.id === urlId || p.work_email?.toLowerCase() === urlId.toLowerCase());
+      if (target) {
+        setSelectedProfile(target);
+      }
+    }
+  }, [urlId, profiles]);
+
+  // Sync address bar when profile is selected or closed
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (selectedProfile) {
+      window.history.pushState(null, '', `/people/${selectedProfile.id}`);
+    } else if (window.location.pathname.startsWith('/people/')) {
+      window.history.pushState(null, '', '/people');
+    }
+  }, [selectedProfile]);
+
   // Admin Add Person & Edit Person state
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editData, setEditData] = useState<any>(null);

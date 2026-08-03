@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
@@ -15,6 +16,9 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices } = useAuth();
+  const params = useParams();
+  const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
@@ -23,6 +27,26 @@ export default function ContractsRegistryPage() {
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('kanban');
 
   const isAdmin = currentUser.role === 'admin';
+
+  // Sync initial selection from URL ID
+  useEffect(() => {
+    if (urlId && contracts.length > 0 && !selectedContract) {
+      const target = contracts.find(c => c.id === urlId || c.reference === urlId);
+      if (target) {
+        setSelectedContract(target);
+      }
+    }
+  }, [urlId, contracts]);
+
+  // Sync address bar when contract is selected or closed
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (selectedContract) {
+      window.history.pushState(null, '', `/contracts/${selectedContract.id}`);
+    } else if (window.location.pathname.startsWith('/contracts/')) {
+      window.history.pushState(null, '', '/contracts');
+    }
+  }, [selectedContract]);
 
   // Form states for adding new contract
   const [newRef, setNewRef] = useState('SB-2026-NEW');
