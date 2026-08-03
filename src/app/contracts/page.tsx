@@ -81,7 +81,9 @@ export default function ContractsRegistryPage() {
   const [isPreviewingDoc, setIsPreviewingDoc] = useState(false);
   const [newNotice, setNewNotice] = useState(60);
   const [newStarts, setNewStarts] = useState('2026-08-01');
-  const [newEnds, setNewEnds] = useState('2027-07-31');
+  const [newEnds, setNewEnds] = useState('');
+  const [newBillingCadence, setNewBillingCadence] = useState<'monthly' | 'quarterly' | 'annual' | 'milestone' | 'one_off'>('monthly');
+  const [newInvoiceTiming, setNewInvoiceTiming] = useState<string>('start_of_period');
   const [newDocName, setNewDocName] = useState<string>('');
   const [newDocUrl, setNewDocUrl] = useState<string>('');
   const [isUploadingDoc, setIsUploadingDoc] = useState<boolean>(false);
@@ -185,14 +187,13 @@ export default function ContractsRegistryPage() {
       type: newType,
       status: 'active',
       starts_on: newStarts,
-      ends_on: newEnds,
-      auto_renews: true,
+      ends_on: newEnds || undefined,
+      auto_renews: !newEnds,
       notice_period_days: Number(newNotice),
-      notice_deadline: '2027-06-01',
-      value: 0, // Dynamically computed via Modular Pricing / Rate Sheet
+      value: 0,
       currency: 'EUR',
-      billing_cadence: 'annual',
-      invoice_timing: 'start_of_period',
+      billing_cadence: newBillingCadence,
+      invoice_timing: newInvoiceTiming,
       vat_treatment: 'domestic_24',
       owner_profile_id: currentUser.id,
       product: newDirection === 'revenue' ? 'Atlas ETRM & EMS' : 'Vendor Cloud Retainer',
@@ -203,6 +204,9 @@ export default function ContractsRegistryPage() {
     setNewDocName('');
     setNewDocUrl('');
     setNewCounterpartyId('');
+    setNewBillingCadence('monthly');
+    setNewInvoiceTiming('start_of_period');
+    setNewEnds('');
     setIsCreateOpen(false);
   };
 
@@ -1203,7 +1207,7 @@ export default function ContractsRegistryPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Starts On (YYYY-MM-DD)</label>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Starts On</label>
               <input 
                 type="date" 
                 value={newStarts} 
@@ -1211,6 +1215,48 @@ export default function ContractsRegistryPage() {
                 className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
               />
             </div>
+            <div>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Expiration Date <span className="text-slate-400 normal-case font-normal">(optional)</span></label>
+              <input 
+                type="date" 
+                value={newEnds} 
+                onChange={e => setNewEnds(e.target.value)} 
+                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
+                placeholder="Leave empty for auto-renewing"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Invoicing Cadence / Frequency</label>
+              <select
+                value={newBillingCadence}
+                onChange={e => setNewBillingCadence(e.target.value as any)}
+                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
+              >
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
+                <option value="one_off">One-off / Delivery</option>
+                <option value="milestone">Milestone-based</option>
+              </select>
+            </div>
+            <div>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Invoicing Timing (Within Period)</label>
+              <select
+                value={newInvoiceTiming}
+                onChange={e => setNewInvoiceTiming(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
+              >
+                <option value="start_of_period">Start of Period (In Advance)</option>
+                <option value="end_of_period">End of Period (Arrears)</option>
+                <option value="upon_milestone">Upon Milestone Completion</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Notice Period (Days)</label>
               <input 

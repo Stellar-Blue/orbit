@@ -98,6 +98,9 @@ export default function DashboardPage() {
       cadence: string;
       timing: string;
       periodLabel: string;
+      periodKey: string; // machine-comparable key e.g. "2026-01" or "2026-Q1"
+      periodFrom: string;
+      periodTo: string;
       expectedAmount: number;
       currency: string;
       dueDate: string;
@@ -105,99 +108,139 @@ export default function DashboardPage() {
       invoiceId?: string;
     }> = [];
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     (contracts || []).forEach(cnt => {
       if (cnt.status !== 'active' && cnt.status !== 'in_negotiation') return;
-      
+
       const val = calculateContractValuation(cnt.lines || [], cnt.discount_pct || 0, cnt.term_years || 1, cnt.service_start_date || cnt.starts_on, catalogModules || [], catalogItems || [], cnt.value || 0, cnt.billing_cadence);
-      
-      let expectedAmt = 0;
-      let periodLabel = currentPeriodStr;
-      
-      const schedItem = (cnt.schedule || []).find(s => s.period === currentPeriodStr);
-      if (schedItem) {
-        expectedAmt = schedItem.amount;
-      } else {
-        if (cnt.billing_cadence === 'annual') {
-          expectedAmt = val.netARR || (cnt.value || 0);
-          periodLabel = `${new Date().getFullYear()} Annual Term`;
-        } else if (cnt.billing_cadence === 'quarterly') {
-          expectedAmt = (val.netARR / 4) || ((cnt.value || 0) / 4);
-          periodLabel = currentQuarterStr;
-        } else if (cnt.billing_cadence === 'monthly') {
-          expectedAmt = val.netMonthlyMRR || ((cnt.value || 0) / 12);
-          periodLabel = `Monthly (${currentPeriodStr})`;
-        } else if (cnt.billing_cadence === 'one_off' || cnt.billing_cadence === 'milestone') {
-          expectedAmt = val.totalContractValue || (cnt.value || 0);
-          periodLabel = cnt.billing_cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement';
+
+      // Determine the start of billing periods to check
+      const startDateStr = cnt.service_start_date || cnt.starts_on;
+      if (!startDateStr) return;
+      const startDate = new Date(startDateStr + 'T00:00:00');
+
+      const cadence = cnt.billing_cadence || 'monthly';
+
+      // Helper: get period key + label + boundaries for a given cursor date
+      const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
+        if (cadence === 'monthly') {
+          const key = format(cursor, 'yyyy-MM');
+          const from = format(new Date(cursor.getFullYear(), cursor.getMonth(), 1), 'yyyy-MM-dd');
+          const to = format(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0), 'yyyy-MM-dd');
+          return { key, label: `Monthly (${key})`, from, to };
+        } else if (cadence === 'quarterly') {
+          const q = Math.floor(cursor.getMonth() / 3);
+          const year = cursor.getFullYear();
+          const key = `${year}-Q${q + 1}`;
+          const from = format(new Date(year, q * 3, 1), 'yyyy-MM-dd');
+          const to = format(new Date(year, q * 3 + 3, 0), 'yyyy-MM-dd');
+          return { key, label: `Q${q + 1} ${year}`, from, to };
+        } else if (cadence === 'annual') {
+          const year = cursor.getFullYear();
+          const key = `${year}`;
+          const from = format(new Date(year, 0, 1), 'yyyy-MM-dd');
+          const to = format(new Date(year, 11, 31), 'yyyy-MM-dd');
+          return { key, label: `${year} Annual Term`, from, to };
+        } else {
+          // one_off / milestone — single period from start date
+          const key = format(startDate, 'yyyy-MM-dd');
+          return { key, label: cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement', from: startDateStr, to: format(today, 'yyyy-MM-dd') };
         }
+      };
+
+      // Advance cursor to the next billing period boundary
+      const advanceCursor = (cursor: Date): Date => {
+        const next = new Date(cursor);
+        if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
+        else if (cadence === 'quarterly') next.setMonth(next.getMonth() + 3);
+        else if (cadence === 'annual') next.setFullYear(next.getFullYear() + 1);
+        else return new Date(today.getTime() + 1); // stop after one pass for one_off/milestone
+        return next;
+      };
+
+      // Collect all billing period keys that should have been invoiced by now
+      const periods: Array<ReturnType<typeof getPeriodInfo>> = [];
+      const seenKeys = new Set<string>();
+      let cursor = new Date(startDate);
+
+      // For end_of_period timing, a period is due when it has ended; for start_of_period it is due when it begins
+      const timingIsEnd = cnt.invoice_timing === 'end_of_period';
+
+      while (true) {
+        const info = getPeriodInfo(cursor);
+        if (seenKeys.has(info.key)) break; // safety guard
+        seenKeys.add(info.key);
+
+        // The invoice is due at start or end of this period
+        const dueAt = timingIsEnd ? new Date(info.to + 'T00:00:00') : new Date(info.from + 'T00:00:00');
+        if (dueAt > today) break; // not yet due
+
+        periods.push(info);
+
+        if (cadence === 'one_off' || cadence === 'milestone') break; // only one period ever
+        cursor = advanceCursor(cursor);
+        if (cursor > today && cursor.getTime() - today.getTime() > 366 * 86400000) break; // safety
       }
 
+      if (periods.length === 0) return;
+
+      // Amount per period
+      const getAmt = (): number => {
+        const schedItem = (cnt.schedule || []).find(s => s.period === currentPeriodStr);
+        if (schedItem) return schedItem.amount;
+        if (cadence === 'annual') return val.netARR || (cnt.value || 0);
+        if (cadence === 'quarterly') return (val.netARR / 4) || ((cnt.value || 0) / 4);
+        if (cadence === 'monthly') return val.netMonthlyMRR || ((cnt.value || 0) / 12);
+        return val.totalContractValue || (cnt.value || 0);
+      };
+      const expectedAmt = getAmt();
       if (expectedAmt <= 0 && !cnt.value) return;
 
-      const existingInv = (invoices || []).find(i => {
-        if (i.contract_id === cnt.id) {
-          if (cnt.billing_cadence === 'monthly') return i.issue_date.startsWith(currentPeriodStr) || i.period_from?.startsWith(currentPeriodStr);
-          if (cnt.billing_cadence === 'quarterly') return i.issue_date.startsWith(currentPeriodStr.slice(0, 4));
-          if (cnt.billing_cadence === 'annual' || cnt.billing_cadence === 'one_off') return true;
-          return i.issue_date.startsWith(currentPeriodStr);
-        }
-        return false;
-      });
+      periods.forEach(period => {
+        // Check if invoice already exists for this period
+        const existingInv = (invoices || []).find(i => {
+          if (i.contract_id !== cnt.id) return false;
+          if (cadence === 'monthly') return (i.issue_date || '').startsWith(period.key) || (i.period_from || '').startsWith(period.key);
+          if (cadence === 'quarterly') return (i.period_from || '') >= period.from && (i.period_from || '') <= period.to;
+          if (cadence === 'annual') return (i.issue_date || '').startsWith(period.key);
+          return true; // one_off/milestone: any invoice covers it
+        });
 
-      if (existingInv) {
+        const draftId = generatedDraftIds[`${cnt.id}::${period.key}`];
+        const status: 'unbilled' | 'draft_created' | 'billed' = existingInv
+          ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')
+          : draftId ? 'draft_created' : 'unbilled';
+
         results.push({
           contractId: cnt.id,
           reference: cnt.reference,
           counterpartyId: cnt.counterparty_id,
           counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
           direction: cnt.direction,
-          cadence: cnt.billing_cadence || 'monthly',
+          cadence,
           timing: cnt.invoice_timing || 'start_of_period',
-          periodLabel,
+          periodLabel: period.label,
+          periodKey: period.key,
+          periodFrom: period.from,
+          periodTo: period.to,
           expectedAmount: Number(expectedAmt.toFixed(2)),
           currency: cnt.currency || 'EUR',
-          dueDate: `${currentPeriodStr}-15`,
-          status: existingInv.status === 'draft' ? 'draft_created' : 'billed',
-          invoiceId: existingInv.id
+          dueDate: period.from,
+          status,
+          invoiceId: existingInv?.id || draftId
         });
-      } else if (generatedDraftIds[cnt.id]) {
-        results.push({
-          contractId: cnt.id,
-          reference: cnt.reference,
-          counterpartyId: cnt.counterparty_id,
-          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
-          direction: cnt.direction,
-          cadence: cnt.billing_cadence || 'monthly',
-          timing: cnt.invoice_timing || 'start_of_period',
-          periodLabel,
-          expectedAmount: Number(expectedAmt.toFixed(2)),
-          currency: cnt.currency || 'EUR',
-          dueDate: `${currentPeriodStr}-15`,
-          status: 'draft_created',
-          invoiceId: generatedDraftIds[cnt.id]
-        });
-      } else {
-        results.push({
-          contractId: cnt.id,
-          reference: cnt.reference,
-          counterpartyId: cnt.counterparty_id,
-          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
-          direction: cnt.direction,
-          cadence: cnt.billing_cadence || 'monthly',
-          timing: cnt.invoice_timing || 'start_of_period',
-          periodLabel,
-          expectedAmount: Number(expectedAmt.toFixed(2)),
-          currency: cnt.currency || 'EUR',
-          dueDate: `${currentPeriodStr}-15`,
-          status: 'unbilled'
-        });
-      }
+      });
     });
 
     return results.sort((a, b) => {
       const statusScore = { unbilled: 0, draft_created: 1, billed: 2 };
       if (statusScore[a.status] !== statusScore[b.status]) return statusScore[a.status] - statusScore[b.status];
       if (a.direction !== b.direction) return a.direction === 'revenue' ? -1 : 1;
+      // Sort by period ascending so oldest unbilled shows first
+      if (a.periodKey < b.periodKey) return -1;
+      if (a.periodKey > b.periodKey) return 1;
       return b.expectedAmount - a.expectedAmount;
     });
   }, [contracts, invoices, currentPeriodStr, currentQuarterStr, catalogModules, catalogItems, generatedDraftIds]);
@@ -206,17 +249,19 @@ export default function DashboardPage() {
     if (!addInvoice) return;
     const todayStr = new Date().toISOString().split('T')[0];
     const dueStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+    const year = (item.periodFrom || todayStr).slice(0, 4);
+    const invNumber = `INV-${year}-${Math.floor(1000 + Math.random() * 9000)}`;
     
     const newInv = await addInvoice({
       direction: item.direction === 'revenue' ? 'outgoing' : 'incoming',
       counterparty_id: item.counterpartyId,
       contract_id: item.contractId,
       type: 'invoice',
-      invoice_number: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      invoice_number: invNumber,
       issue_date: todayStr,
       due_date: dueStr,
-      period_from: todayStr,
-      period_to: dueStr,
+      period_from: item.periodFrom || todayStr,
+      period_to: item.periodTo || dueStr,
       currency: item.currency,
       fx_rate: 1.0,
       net: Number((item.expectedAmount / 1.24).toFixed(2)),
@@ -231,8 +276,9 @@ export default function DashboardPage() {
     });
 
     if (newInv) {
-      setGeneratedDraftIds(prev => ({ ...prev, [item.contractId]: newInv.id }));
-      alert(`Draft invoice successfully generated for ${item.counterpartyName} (€${item.expectedAmount.toLocaleString()})!`);
+      const compositeKey = `${item.contractId}::${item.periodKey}`;
+      setGeneratedDraftIds(prev => ({ ...prev, [compositeKey]: newInv.id }));
+      alert(`Draft invoice #${invNumber} generated for ${item.counterpartyName} — period ${item.periodLabel} (€${item.expectedAmount.toLocaleString()})!`);
     }
   };
 
@@ -581,8 +627,8 @@ export default function DashboardPage() {
                       </td>
                     </tr>
                   ) : (
-                    pendingInvoicesQueue.slice(0, 6).map(item => (
-                      <tr key={item.contractId} className="hover:bg-slate-50/80 transition-colors">
+                    pendingInvoicesQueue.slice(0, 20).map(item => (
+                      <tr key={`${item.contractId}::${item.periodKey}`} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3.5 px-4">
                           <Link href={`/contracts`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
                             {item.counterpartyName}
