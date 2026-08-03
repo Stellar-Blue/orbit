@@ -13,7 +13,7 @@ import {
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
-import { calculateContractValuation } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
@@ -167,7 +167,7 @@ export default function ContractsRegistryPage() {
 
   const revenueTotal = contracts.filter(c => c.direction === 'revenue' && c.status === 'active').reduce((acc, c) => acc + (c.value || 0), 0);
   const costTotal = contracts.filter(c => c.direction === 'cost' && c.status === 'active').reduce((acc, c) => acc + (c.value || 0), 0);
-  const urgentAlerts = contracts.filter(c => c.status === 'expiring' || c.notice_deadline?.startsWith('2026-07') || c.notice_deadline?.startsWith('2026-08')).length;
+  const urgentAlerts = contracts.filter(c => getContractNoticeStatus(c).isUrgent).length;
 
   const handleCreateContract = (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,7 +330,7 @@ export default function ContractsRegistryPage() {
                 <div className="space-y-3">
                   {colContracts.map(c => {
                     const isRevenue = c.direction === 'revenue';
-                    const isUrgentNotice = c.notice_deadline?.startsWith('2026-07') || c.notice_deadline?.startsWith('2026-08');
+                    const { isUrgent: isUrgentNotice, noticeDeadlineStr: cardDeadlineStr } = getContractNoticeStatus(c);
                     return (
                       <div 
                         key={c.id}
@@ -415,7 +415,7 @@ export default function ContractsRegistryPage() {
 
                         <div className={`pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] ${isUrgentNotice ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
                           <span className="flex items-center">
-                            <Clock className="w-3 h-3 mr-1" /> Notice: {c.notice_deadline}
+                            <Clock className="w-3 h-3 mr-1" /> Notice: {cardDeadlineStr}
                           </span>
                           {isUrgentNotice && <span className="text-[10px] bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 text-rose-700">URGENT</span>}
                         </div>
@@ -450,7 +450,7 @@ export default function ContractsRegistryPage() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filteredContracts.map(c => {
-                const isUrgent = c.notice_deadline?.startsWith('2026-07') || c.notice_deadline?.startsWith('2026-08');
+                const { isUrgent, noticeDeadlineStr: tableDeadlineStr } = getContractNoticeStatus(c);
                 return (
                   <tr 
                     key={c.id} 
@@ -508,7 +508,7 @@ export default function ContractsRegistryPage() {
                     </td>
                     <td className="p-3.5 text-xs">
                       <span className={`inline-flex items-center font-bold ${isUrgent ? 'text-rose-600' : 'text-slate-700'}`}>
-                        <Clock className="w-3.5 h-3.5 mr-1.5 shrink-0" /> {c.notice_deadline} ({c.notice_period_days}d window)
+                        <Clock className="w-3.5 h-3.5 mr-1.5 shrink-0" /> {tableDeadlineStr} ({c.notice_period_days || 30}d window)
                       </span>
                     </td>
                     <td className="p-3.5">

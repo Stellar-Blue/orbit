@@ -16,7 +16,7 @@ import {
   ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
-import { calculateContractValuation } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 
 interface DaySchedule {
   dateStr: string;
@@ -76,7 +76,7 @@ export default function DashboardPage() {
     return acc + sal.gross_amount + employerCont;
   }, 0);
 
-  const urgentContracts = contracts.filter(c => c.status === 'active' || c.status === 'expiring').slice(0, 3);
+  const urgentContracts = contracts.filter(c => getContractNoticeStatus(c).isUrgent).slice(0, 5);
   const pendingLeaves = leaveRequests.filter(r => r.status === 'pending');
 
   // --- 3. EMPLOYEE LEAVE HELPER ---
@@ -474,37 +474,45 @@ export default function DashboardPage() {
             />
             <StatCard 
               title="Contract Notice Alerts" 
-              value="2 Urgent"
-              subtitle="Notice closing within 60 days"
-              icon={<AlertTriangle className="w-5 h-5 text-rose-500" />}
+              value={urgentContracts.length > 0 ? `${urgentContracts.length} Urgent` : "0 Urgent"}
+              subtitle={urgentContracts.length > 0 ? "Notice closing within 60 days" : "All renewals secure!"}
+              icon={<AlertTriangle className={`w-5 h-5 ${urgentContracts.length > 0 ? 'text-rose-500' : 'text-slate-400'}`} />}
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card title="Contract Notice Windows & Renewal Alerts" subtitle="Alert engine protecting against auto-renewing notice lapses" action={<Link href="/contracts" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">View All <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
-              <div className="space-y-3 mt-1">
-                {urgentContracts.map(c => {
-                  const isSupplier = c.direction === 'cost';
-                  return (
-                    <div key={c.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 transition-colors flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-semibold text-sm text-slate-800">{c.counterparty?.legal_name}</span>
-                          <Badge variant={isSupplier ? 'warning' : 'success'}>{c.direction.toUpperCase()}</Badge>
+              {urgentContracts.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
+                  <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
+                  No contract notice deadlines closing within the next 60 days. All commercial renewals are secure!
+                </div>
+              ) : (
+                <div className="space-y-3 mt-1">
+                  {urgentContracts.map(c => {
+                    const isSupplier = c.direction === 'cost';
+                    const { noticeDeadlineStr, daysUntilNotice } = getContractNoticeStatus(c);
+                    return (
+                      <div key={c.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 transition-colors flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-semibold text-sm text-slate-800">{c.counterparty?.legal_name}</span>
+                            <Badge variant={isSupplier ? 'warning' : 'success'}>{c.direction.toUpperCase()}</Badge>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">{c.product || c.type} &bull; Ref: <span className="font-mono text-slate-600">{c.reference}</span></p>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">{c.product || c.type} &bull; Ref: <span className="font-mono text-slate-600">{c.reference}</span></p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-bold text-rose-600 flex items-center justify-end">
-                          <Clock className="w-3.5 h-3.5 mr-1 text-rose-600" />
-                          Notice: {c.notice_deadline}
+                        <div className="text-right">
+                          <div className="text-xs font-bold text-rose-600 flex items-center justify-end">
+                            <Clock className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                            Notice: {noticeDeadlineStr}
+                          </div>
+                          <p className="text-[11px] text-rose-500 font-medium mt-0.5">{daysUntilNotice <= 0 ? 'Deadline passed!' : `In ${daysUntilNotice} days (${c.notice_period_days}-day window)`}</p>
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{c.notice_period_days}-day notice window</p>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </Card>
 
             <Card title="Founder Approval Queue (Leave Requests)" subtitle="Single-step approval routing to founders queue" action={<Link href="/leave" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Manage Queue <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">

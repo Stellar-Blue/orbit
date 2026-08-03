@@ -278,3 +278,44 @@ export function calculateContractValuation(
     breakdown: { flatModulesARR: 0, perAssetEngineARR: 0, fixedRateARR: netARR }
   };
 }
+
+export function getContractNoticeStatus(contract: {
+  status?: string;
+  ends_on?: string;
+  notice_period_days?: number;
+  notice_deadline?: string;
+}) {
+  let deadlineDate: Date | null = null;
+  let noticeDeadlineStr = contract.notice_deadline || 'Indefinite';
+
+  if (contract.ends_on) {
+    const endsDate = new Date(contract.ends_on + 'T00:00:00');
+    if (!isNaN(endsDate.getTime())) {
+      const days = Number(contract.notice_period_days) || 30;
+      deadlineDate = new Date(endsDate.getTime() - days * 86400000);
+      noticeDeadlineStr = deadlineDate.toISOString().split('T')[0];
+    }
+  } else if (contract.notice_deadline && contract.notice_deadline !== 'Indefinite') {
+    deadlineDate = new Date(contract.notice_deadline + 'T00:00:00');
+    if (!isNaN(deadlineDate.getTime())) {
+      noticeDeadlineStr = contract.notice_deadline;
+    }
+  }
+
+  if (!deadlineDate || isNaN(deadlineDate.getTime())) {
+    return { isUrgent: false, daysUntilNotice: Infinity, noticeDeadlineStr: 'Indefinite' };
+  }
+
+  const today = new Date();
+  const diffTime = deadlineDate.setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0);
+  const daysUntilNotice = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  const isUrgent = (contract.status === 'active' || contract.status === 'expiring' || contract.status === 'in_negotiation') &&
+                   daysUntilNotice <= 60 && daysUntilNotice >= -30;
+
+  return {
+    isUrgent,
+    daysUntilNotice,
+    noticeDeadlineStr
+  };
+}

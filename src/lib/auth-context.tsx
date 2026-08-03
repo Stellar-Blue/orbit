@@ -1064,7 +1064,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addContract = async (cnt: Omit<Contract, 'id'>) => {
     const newCnt: Contract = { ...cnt, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, notice_deadline, lines, schedule, ...cleanCnt } = newCnt as any;
+    const { counterparty, owner_profile, lines, schedule, ...cleanCnt } = newCnt as any;
     try {
       const { error, data } = await supabase.from('contracts').insert(cleanCnt).select().single();
       if (error) {
@@ -1081,7 +1081,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateContract = async (updated: Contract) => {
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, notice_deadline, lines, schedule, ...cleanCnt } = updated as any;
+    const { counterparty, owner_profile, lines, schedule, ...cleanCnt } = updated as any;
     try {
       const { error, data } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id).select().single();
       if (error) {
