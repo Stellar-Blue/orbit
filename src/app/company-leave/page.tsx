@@ -85,6 +85,8 @@ export default function CompanyLeaveManagementPage() {
   const [catRequiresDoc, setCatRequiresDoc] = useState(false);
   const [catRequiresApp, setCatRequiresApp] = useState(true);
   const [catMinNotice, setCatMinNotice] = useState(7);
+  const [catSortOrder, setCatSortOrder] = useState(100);
+  const [catIsHidden, setCatIsHidden] = useState(false);
 
   // Calculate working days excluding Greek holidays and weekends
   const calculateWorkingDays = (startStr: string, endStr: string, schedule?: string[]) => {
@@ -219,7 +221,9 @@ export default function CompanyLeaveManagementPage() {
       requires_document: catRequiresDoc,
       requires_approval: catRequiresApp,
       min_notice_days: Number(catMinNotice) >= 0 ? Number(catMinNotice) : 7,
-      allow_retroactive: Number(catMinNotice) === 0
+      allow_retroactive: Number(catMinNotice) === 0,
+      sort_order: Number(catSortOrder) || 100,
+      is_hidden: catIsHidden
     };
 
     if (catEditingId) {
@@ -242,6 +246,8 @@ export default function CompanyLeaveManagementPage() {
     setCatRequiresDoc(false);
     setCatRequiresApp(true);
     setCatMinNotice(3);
+    setCatSortOrder((leaveTypes.length + 1) * 10);
+    setCatIsHidden(false);
     setIsCategoryModalOpen(true);
   };
 
@@ -255,6 +261,8 @@ export default function CompanyLeaveManagementPage() {
     setCatRequiresDoc(!!lt.requires_document);
     setCatRequiresApp(lt.requires_approval !== false);
     setCatMinNotice(lt.min_notice_days ?? 7);
+    setCatSortOrder(lt.sort_order ?? 100);
+    setCatIsHidden(!!lt.is_hidden);
     setIsCategoryModalOpen(true);
   };
 
@@ -656,15 +664,25 @@ export default function CompanyLeaveManagementPage() {
                             <span className="font-mono text-[11px] font-extrabold text-slate-400">Code: #{lt.code}</span>
                           </div>
                         </div>
-                        {isSystemDefault ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase tracking-wider shrink-0">
-                            Core Type
+                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                          {isSystemDefault ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase tracking-wider shrink-0">
+                              Core Type
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider shrink-0">
+                              Custom
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wider shrink-0 font-mono">
+                            Order: {lt.sort_order ?? 100}
                           </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider shrink-0">
-                            Custom
-                          </span>
-                        )}
+                          {lt.is_hidden && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 uppercase tracking-wider shrink-0">
+                              Hidden
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 mt-4 text-xs font-semibold text-slate-600 bg-slate-50 p-3.5 rounded-xl border border-slate-200/60">
@@ -880,7 +898,7 @@ export default function CompanyLeaveManagementPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Category Code</label>
               <input 
@@ -893,7 +911,18 @@ export default function CompanyLeaveManagementPage() {
               />
             </div>
             <div>
-              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Badge &amp; Calendar Color</label>
+              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Display Order</label>
+              <input 
+                type="number" 
+                value={catSortOrder} 
+                onChange={e => setCatSortOrder(Number(e.target.value))} 
+                placeholder="10" 
+                required 
+                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" 
+              />
+            </div>
+            <div>
+              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Badge &amp; Color</label>
               <div className="flex items-center space-x-2">
                 <input 
                   type="color" 
@@ -935,6 +964,19 @@ export default function CompanyLeaveManagementPage() {
               <div>
                 <span className="font-bold text-slate-900 block text-sm">Requires Founder / Admin Approval</span>
                 <span className="text-[11px] text-slate-500 block">If unchecked, employee applications enter directly as approved records.</span>
+              </div>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer pt-2 border-t border-slate-200">
+              <input 
+                type="checkbox" 
+                checked={catIsHidden} 
+                onChange={e => setCatIsHidden(e.target.checked)} 
+                className="w-4 h-4 rounded text-[#3D87D3] focus:ring-[#3D87D3] cursor-pointer" 
+              />
+              <div>
+                <span className="font-bold text-slate-900 block text-sm">Hide from New Leave Requests (Archive / Disable)</span>
+                <span className="text-[11px] text-slate-500 block">If checked, employees cannot pick this category for new requests, but existing leave records under this category remain visible as usual.</span>
               </div>
             </label>
           </div>
@@ -989,11 +1031,11 @@ export default function CompanyLeaveManagementPage() {
           <div>
             <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Leave Category / Type</label>
             <select
-              value={addEmpLeaveTypeId || (leaveTypes[0]?.id || '')}
+              value={addEmpLeaveTypeId || (leaveTypes.find(t => !t.is_hidden)?.id || leaveTypes[0]?.id || '')}
               onChange={e => setAddEmpLeaveTypeId(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
             >
-              {leaveTypes.map(lt => (
+              {leaveTypes.filter(lt => !lt.is_hidden || lt.id === addEmpLeaveTypeId).map(lt => (
                 <option key={lt.id} value={lt.id}>
                   {lt.name_en} ({lt.name_el})
                 </option>

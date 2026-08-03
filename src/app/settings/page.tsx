@@ -135,6 +135,8 @@ export default function CompanySettingsPage() {
   const [newLeaveCountsAgainstBalance, setNewLeaveCountsAgainstBalance] = useState(false);
   const [newLeaveRequiresDocument, setNewLeaveRequiresDocument] = useState(false);
   const [newLeaveRequiresApproval, setNewLeaveRequiresApproval] = useState(true);
+  const [newLeaveSortOrder, setNewLeaveSortOrder] = useState(100);
+  const [newLeaveIsHidden, setNewLeaveIsHidden] = useState(false);
   const [isSubmittingLeaveType, setIsSubmittingLeaveType] = useState(false);
 
   const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
@@ -144,6 +146,8 @@ export default function CompanySettingsPage() {
   const [editLeaveCountsAgainstBalance, setEditLeaveCountsAgainstBalance] = useState(false);
   const [editLeaveRequiresDocument, setEditLeaveRequiresDocument] = useState(false);
   const [editLeaveRequiresApproval, setEditLeaveRequiresApproval] = useState(true);
+  const [editLeaveSortOrder, setEditLeaveSortOrder] = useState(100);
+  const [editLeaveIsHidden, setEditLeaveIsHidden] = useState(false);
 
   useEffect(() => {
     if (activeCompanyPolicy) {
@@ -231,7 +235,9 @@ export default function CompanySettingsPage() {
       colour: newLeaveColor,
       counts_against_balance: newLeaveCountsAgainstBalance,
       requires_document: newLeaveRequiresDocument,
-      requires_approval: newLeaveRequiresApproval
+      requires_approval: newLeaveRequiresApproval,
+      sort_order: Number(newLeaveSortOrder) || 100,
+      is_hidden: newLeaveIsHidden
     });
     setIsSubmittingLeaveType(false);
     if (success) {
@@ -243,6 +249,8 @@ export default function CompanySettingsPage() {
       setNewLeaveCountsAgainstBalance(false);
       setNewLeaveRequiresDocument(false);
       setNewLeaveRequiresApproval(true);
+      setNewLeaveSortOrder((leaveTypes.length + 2) * 10);
+      setNewLeaveIsHidden(false);
     }
   };
 
@@ -257,7 +265,9 @@ export default function CompanySettingsPage() {
       colour: editLeaveColor,
       counts_against_balance: editLeaveCountsAgainstBalance,
       requires_document: editLeaveRequiresDocument,
-      requires_approval: editLeaveRequiresApproval
+      requires_approval: editLeaveRequiresApproval,
+      sort_order: Number(editLeaveSortOrder) || 100,
+      is_hidden: editLeaveIsHidden
     });
     if (success) {
       setEditingLeaveId(null);
@@ -658,16 +668,28 @@ export default function CompanySettingsPage() {
                             />
                           </div>
                         </div>
-                        <div className="text-xs">
-                          <label className="block font-bold text-slate-700 mb-1">Ribbon Color</label>
-                          <div className="flex items-center space-x-3">
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mt-2">
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Ribbon Color</label>
+                            <div className="flex items-center space-x-3">
+                              <input
+                                type="color"
+                                value={editLeaveColor}
+                                onChange={(e) => setEditLeaveColor(e.target.value)}
+                                className="w-9 h-9 p-0.5 rounded-lg border border-slate-300 bg-white cursor-pointer"
+                              />
+                              <span className="font-mono font-bold uppercase text-slate-700">{editLeaveColor}</span>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Sort Order</label>
                             <input
-                              type="color"
-                              value={editLeaveColor}
-                              onChange={(e) => setEditLeaveColor(e.target.value)}
-                              className="w-9 h-9 p-0.5 rounded-lg border border-slate-300 bg-white cursor-pointer"
+                              type="number"
+                              value={editLeaveSortOrder}
+                              onChange={(e) => setEditLeaveSortOrder(Number(e.target.value))}
+                              className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-900"
                             />
-                            <span className="font-mono font-bold uppercase text-slate-700">{editLeaveColor}</span>
                           </div>
                         </div>
                         <div className="space-y-2 pt-2 border-t border-slate-200 text-xs font-bold text-slate-700">
@@ -698,6 +720,15 @@ export default function CompanySettingsPage() {
                             />
                             <span>Requires Manager / Founder Approval (Not Auto-approved)</span>
                           </label>
+                          <label className="flex items-center space-x-2 cursor-pointer text-amber-800 pt-1">
+                            <input
+                              type="checkbox"
+                              checked={editLeaveIsHidden}
+                              onChange={(e) => setEditLeaveIsHidden(e.target.checked)}
+                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                            />
+                            <span>Hide Category from New Leave Requests (Archival / Disable)</span>
+                          </label>
                         </div>
                         <div className="flex justify-end space-x-2 pt-1">
                           <Button size="sm" variant="outline" onClick={() => setEditingLeaveId(null)}>Cancel</Button>
@@ -720,6 +751,14 @@ export default function CompanySettingsPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                            Order: {t.sort_order ?? 100}
+                          </span>
+                          {t.is_hidden && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                              👁️ Hidden from New Requests
+                            </span>
+                          )}
                           <span className={`px-2 py-0.5 rounded-full border ${t.counts_against_balance ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
                             {t.counts_against_balance ? '⚖️ Deducted from Balance' : '🔓 Uncapped (Not Deducted)'}
                           </span>
@@ -743,6 +782,8 @@ export default function CompanySettingsPage() {
                             setEditLeaveCountsAgainstBalance(t.counts_against_balance);
                             setEditLeaveRequiresDocument(t.requires_document);
                             setEditLeaveRequiresApproval(t.requires_approval);
+                            setEditLeaveSortOrder(t.sort_order ?? 100);
+                            setEditLeaveIsHidden(!!t.is_hidden);
                           }}
                           className="text-xs py-1.5 font-bold border-slate-300 hover:bg-slate-50 cursor-pointer"
                         >
@@ -809,28 +850,41 @@ export default function CompanySettingsPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block font-bold uppercase text-slate-700 mb-1">Calendar & Ribbon Color</label>
-                  <div className="flex items-center space-x-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold uppercase text-slate-700 mb-1">Display Sort Order</label>
                     <input
-                      type="color"
-                      value={newLeaveColor}
-                      onChange={(e) => setNewLeaveColor(e.target.value)}
-                      className="w-10 h-10 p-0.5 rounded-xl border border-slate-300 bg-white cursor-pointer shadow-2xs"
+                      type="number"
+                      placeholder="e.g., 10, 20"
+                      value={newLeaveSortOrder}
+                      onChange={(e) => setNewLeaveSortOrder(Number(e.target.value))}
+                      required
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold font-mono text-slate-900 shadow-2xs"
                     />
-                    <span className="font-mono font-bold uppercase text-slate-700">{newLeaveColor}</span>
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    {['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b'].map(c => (
-                      <button
-                        type="button"
-                        key={c}
-                        onClick={() => setNewLeaveColor(c)}
-                        className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${newLeaveColor === c ? 'scale-125 border-slate-900 shadow-sm' : 'border-white hover:scale-110'}`}
-                        style={{ backgroundColor: c }}
+                  <div>
+                    <label className="block font-bold uppercase text-slate-700 mb-1">Calendar Color</label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="color"
+                        value={newLeaveColor}
+                        onChange={(e) => setNewLeaveColor(e.target.value)}
+                        className="w-10 h-10 p-0.5 rounded-xl border border-slate-300 bg-white cursor-pointer shadow-2xs shrink-0"
                       />
-                    ))}
+                      <span className="font-mono font-bold uppercase text-slate-700">{newLeaveColor}</span>
+                    </div>
                   </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  {['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b'].map(c => (
+                    <button
+                      type="button"
+                      key={c}
+                      onClick={() => setNewLeaveColor(c)}
+                      className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${newLeaveColor === c ? 'scale-125 border-slate-900 shadow-sm' : 'border-white hover:scale-110'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
                 </div>
 
                 <div className="space-y-2.5 pt-2 border-t border-slate-200 font-bold text-slate-700">
@@ -860,6 +914,15 @@ export default function CompanySettingsPage() {
                       className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
                     />
                     <span>Require Founder / Manager Approval Sign-off</span>
+                  </label>
+                  <label className="flex items-start space-x-2.5 cursor-pointer text-amber-800 pt-1 border-t border-slate-100">
+                    <input
+                      type="checkbox"
+                      checked={newLeaveIsHidden}
+                      onChange={(e) => setNewLeaveIsHidden(e.target.checked)}
+                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                    />
+                    <span>Hide from New Leave Requests (Archived / Disabled)</span>
                   </label>
                 </div>
 

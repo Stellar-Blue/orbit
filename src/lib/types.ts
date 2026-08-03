@@ -109,6 +109,8 @@ export interface LeaveType {
   colour: string;
   min_notice_days?: number;
   allow_retroactive?: boolean;
+  sort_order?: number;
+  is_hidden?: boolean;
 }
 
 export interface LeaveEntitlement {

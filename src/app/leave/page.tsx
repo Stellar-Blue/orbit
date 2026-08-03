@@ -63,7 +63,7 @@ export default function LeaveManagementPage() {
 
   // New Leave Request State (< 30s filing)
   const [isRequestOpen, setIsRequestOpen] = useState(false);
-  const [reqType, setReqType] = useState(leaveTypes[0]?.id || 'lt-annual');
+  const [reqType, setReqType] = useState(() => leaveTypes.find(lt => !lt.is_hidden)?.id || leaveTypes[0]?.id || 'lt-annual');
   const [startDate, setStartDate] = useState('2026-09-14');
   const [endDate, setEndDate] = useState('2026-09-18');
   const [note, setNote] = useState('');
@@ -754,6 +754,7 @@ export default function LeaveManagementPage() {
                               <span className="w-3 h-3 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: lt.colour || '#3D87D3' }} />
                               <h4 className="font-extrabold text-slate-900 text-sm">{lt.name_el}</h4>
                               <span className="text-xs text-slate-500 font-bold">({lt.name_en})</span>
+                              {lt.is_hidden && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">Hidden from New Requests</span>}
                             </div>
                             <p className="text-[11px] text-slate-500 font-medium">
                               Min Notice: <strong className="text-slate-800 font-bold">{lt.min_notice_days}d prior</strong> &bull; Quota Rule: <strong className="text-slate-800 font-bold">{lt.counts_against_balance ? 'Deducted from Allowance' : 'No Balance Deduction'}</strong>{lt.requires_document && <span className="text-amber-700 font-bold"> &bull; Doc Required</span>}
@@ -887,7 +888,7 @@ export default function LeaveManagementPage() {
               onChange={e => setReqType(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded p-2.5 text-slate-800 font-medium text-sm"
             >
-              {leaveTypes.map(lt => <option key={lt.id} value={lt.id}>{lt.name_el} ({lt.name_en})</option>)}
+              {leaveTypes.filter(lt => !lt.is_hidden || lt.id === reqType).map(lt => <option key={lt.id} value={lt.id}>{lt.name_el} ({lt.name_en})</option>)}
             </select>
           </div>
 

@@ -192,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('payment_types').select('*').order('sort_order', { ascending: true }),
           supabase.from('salary_history').select('*'),
           supabase.from('payments').select('*'),
-          supabase.from('leave_types').select('*'),
+          supabase.from('leave_types').select('*').order('sort_order', { ascending: true }),
           supabase.from('leave_entitlements').select('*'),
           supabase.from('mandatory_leaves').select('*'),
           supabase.from('leave_requests').select('*'),
@@ -224,7 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const loadedSalaries: SalaryRecord[] = salariesRes.data || [];
         setSalaries(loadedSalaries);
 
-        const loadedLeaveTypes: LeaveType[] = leaveTypesRes.data || [];
+        const loadedLeaveTypes: LeaveType[] = ((leaveTypesRes.data || []) as LeaveType[]).sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
         setLeaveTypes(loadedLeaveTypes);
 
         const loadedEntitlements: LeaveEntitlement[] = entitlementsRes.data || [];
@@ -1631,7 +1631,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
       const created = (data as LeaveType) || fullPayload;
-      setLeaveTypes(prev => [...prev, created]);
+      setLeaveTypes(prev => [...prev, created].sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100)));
       return true;
     } catch (e: any) {
       console.error("Exception adding leave type:", e);
@@ -1649,7 +1649,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         alert(`Database Error: ${error.message}`);
         return false;
       }
-      setLeaveTypes(prev => prev.map(t => t.id === id ? { ...t, ...payload } : t));
+      setLeaveTypes(prev => prev.map(t => t.id === id ? { ...t, ...payload } : t).sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100)));
       return true;
     } catch (e: any) {
       console.error("Exception updating leave type:", e);
