@@ -473,7 +473,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addLeaveRequest = async (req: Omit<LeaveRequest, 'id'>) => {
-    const newReq: LeaveRequest = { ...req, id: generateUUID() };
+    let finalTypeId = req.leave_type_id;
+    if (finalTypeId === 'lt-annual' || !leaveTypes.some(lt => lt.id === finalTypeId)) {
+      const validLt = leaveTypes.find(t => !t.is_hidden && (t.code === 'annual' || (t.name_en && t.name_en.toLowerCase().includes('annual')))) || leaveTypes.find(t => !t.is_hidden) || leaveTypes[0];
+      if (validLt) finalTypeId = validLt.id;
+    }
+    const newReq: LeaveRequest = { ...req, leave_type_id: finalTypeId, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
     const { leave_type, ...cleanReq } = newReq as any;
     try {
@@ -710,7 +715,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 
   const addMandatoryLeave = async (ml: Omit<MandatoryLeave, 'id'>) => {
-    const newMl: MandatoryLeave = { ...ml, id: generateUUID() };
+    let finalTypeId = ml.leave_type_id;
+    if (finalTypeId === 'lt-annual' || !leaveTypes.some(lt => lt.id === finalTypeId)) {
+      const validLt = leaveTypes.find(t => !t.is_hidden && (t.code === 'annual' || (t.name_en && t.name_en.toLowerCase().includes('annual')))) || leaveTypes.find(t => !t.is_hidden) || leaveTypes[0];
+      if (validLt) finalTypeId = validLt.id;
+    }
+    const newMl: MandatoryLeave = { ...ml, leave_type_id: finalTypeId, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
     try {
       const { error } = await supabase.from('mandatory_leaves').insert(newMl);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -67,6 +67,13 @@ export default function LeaveManagementPage() {
   const [startDate, setStartDate] = useState('2026-09-14');
   const [endDate, setEndDate] = useState('2026-09-18');
   const [note, setNote] = useState('');
+
+  useEffect(() => {
+    if (leaveTypes.length > 0 && (!reqType || reqType === 'lt-annual' || !leaveTypes.some(lt => lt.id === reqType))) {
+      const valid = leaveTypes.find(lt => !lt.is_hidden && (lt.code === 'annual' || (lt.name_en && lt.name_en.toLowerCase().includes('annual')))) || leaveTypes.find(lt => !lt.is_hidden) || leaveTypes[0];
+      if (valid) setReqType(valid.id);
+    }
+  }, [leaveTypes, reqType]);
 
   // Calculate working days excluding Greek holidays and weekends for an individual schedule
   const calculateWorkingDays = (startStr: string, endStr: string, schedule: string[], targetProfileId: string = currentUser.id) => {
@@ -152,7 +159,7 @@ export default function LeaveManagementPage() {
     // Year-boundary automatic splitting or standard submission (§5)
     splitAndAddLeaveRequest({
       profile_id: currentUser.id,
-      leave_type_id: reqType,
+      leave_type_id: selectedLeaveType?.id || reqType,
       start_date: startDate,
       end_date: endDate,
       half_day_start: false,
