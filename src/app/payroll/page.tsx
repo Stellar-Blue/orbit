@@ -23,8 +23,8 @@ export default function PayrollPage() {
   } = useAuth();
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
-    if (!docs || docs.length === 0) return false;
-    return docs.some(d => d.type === 'receipt' || d.type === 'payslip' || d.name.toLowerCase().includes('receipt') || d.name.toLowerCase().includes('apodeixi'));
+    if (!docs || !Array.isArray(docs) || docs.length === 0) return false;
+    return docs.some(d => d && (d.type === 'receipt' || d.type === 'payslip' || (d.name || '').toLowerCase().includes('receipt') || (d.name || '').toLowerCase().includes('apodeixi')));
   };
 
   const params = useParams();
@@ -123,8 +123,10 @@ export default function PayrollPage() {
     if (typeof window === 'undefined') return;
     const active = selectedPaymentForDocs || editingPayment;
     if (active) {
-      window.history.pushState(null, '', `/payroll/${active.id}`);
-    } else if (window.location.pathname.startsWith('/payroll/')) {
+      if (window.location.pathname !== `/payroll/${active.id}`) {
+        window.history.pushState(null, '', `/payroll/${active.id}`);
+      }
+    } else if (window.location.pathname !== '/payroll' && window.location.pathname.startsWith('/payroll/')) {
       window.history.pushState(null, '', '/payroll');
     }
   }, [selectedPaymentForDocs, editingPayment]);
@@ -174,15 +176,15 @@ export default function PayrollPage() {
   const periodPayments = useMemo(() => {
     const minP = selectedPeriod <= (endPeriod || selectedPeriod) ? selectedPeriod : (endPeriod || selectedPeriod);
     const maxP = selectedPeriod <= (endPeriod || selectedPeriod) ? (endPeriod || selectedPeriod) : selectedPeriod;
-    return payments.filter(p => p.period >= minP && p.period <= maxP && (personFilter === 'all' || p.profile_id === personFilter));
+    return (payments || []).filter(p => p && p.period >= minP && p.period <= maxP && (personFilter === 'all' || p.profile_id === personFilter));
   }, [payments, selectedPeriod, endPeriod, personFilter]);
 
-  const totalCost = periodPayments.reduce((acc, p) => acc + p.total_cost, 0);
-  const totalNet = periodPayments.reduce((acc, p) => acc + p.net, 0);
+  const totalCost = periodPayments.reduce((acc, p) => acc + (Number(p?.total_cost) || 0), 0);
+  const totalNet = periodPayments.reduce((acc, p) => acc + (Number(p?.net) || 0), 0);
 
   // Missing receipts check
-  const paidMissingDocs = periodPayments.filter(p => p.status === 'paid' && !hasPaymentReceipt(p.documents));
-  const plannedPayments = periodPayments.filter(p => p.status === 'planned');
+  const paidMissingDocs = periodPayments.filter(p => p?.status === 'paid' && !hasPaymentReceipt(p?.documents));
+  const plannedPayments = periodPayments.filter(p => p?.status === 'planned');
 
   // Filtered ledger rows
   const displayedPayments = useMemo(() => {
@@ -924,8 +926,8 @@ export default function PayrollPage() {
                         <span className="font-mono font-bold text-[#3D87D3] text-sm">&times;{mult}</span>
                       </div>
                       <div>
-                        <span className="text-xs text-slate-400 font-medium block">Gross Base ({sal.basis.replace('_', ' ')})</span>
-                        <span className="font-mono font-bold text-slate-800 text-sm">€{sal.gross_amount.toLocaleString()}</span>
+                        <span className="text-xs text-slate-400 font-medium block">Gross Base ({(sal.basis || 'monthly_gross').replace('_', ' ')})</span>
+                        <span className="font-mono font-bold text-slate-800 text-sm">€{(sal.gross_amount || 0).toLocaleString()}</span>
                       </div>
                       <div className="bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/80">
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">Fully-Loaded Cost</span>
