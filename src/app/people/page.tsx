@@ -7,13 +7,13 @@ import { Profile, EmploymentType } from '@/lib/types';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { 
   Users, Search, Filter, Download, Lock, ShieldAlert, 
-  Mail, Calendar, Briefcase, Plus, Edit2, Check 
+  Mail, Calendar, Briefcase, Plus, Edit2, Check, Trash2 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
 export default function PeopleDirectoryPage() {
-  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile } = useAuth();
+  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -100,6 +100,24 @@ export default function PeopleDirectoryPage() {
     updateProfile(editData);
     setSelectedProfile(editData);
     setActiveTab('overview');
+  };
+
+  const handleDeleteProfile = async (target: Profile) => {
+    if (target.id === currentUser.id) {
+      alert('You cannot delete your own profile.');
+      return;
+    }
+    if (target.role === 'admin' && profiles.filter(p => p.role === 'admin').length <= 1) {
+      alert('Refusing to delete the last admin of the organization. Promote another user to admin first.');
+      return;
+    }
+    if (!confirm(`PERMANENTLY DELETE "${target.first_name} ${target.last_name}" from Orbit?\n\nThis will erase their profile, leave requests, salary history, payments, remote days, entitlements and all linked records. This action CANNOT be undone.`)) return;
+    const ok = await deleteProfile(target.id);
+    if (ok) {
+      setSelectedProfile(null);
+      setActiveTab('overview');
+      setEditData(null);
+    }
   };
 
   // Filters
@@ -409,6 +427,12 @@ export default function PeopleDirectoryPage() {
                       <span className="text-slate-500 uppercase font-semibold block">Start Date</span>
                       <span className="text-slate-700 font-medium">{selectedProfile.start_date}</span>
                     </div>
+                    <div>
+                      <span className="text-slate-500 uppercase font-semibold block">Role Permission</span>
+                      <Badge variant={selectedProfile.role === 'admin' ? 'warning' : 'neutral'} className="mt-0.5">
+                        {selectedProfile.role === 'admin' ? 'ADMIN' : 'EMPLOYEE'}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -565,9 +589,24 @@ export default function PeopleDirectoryPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex justify-end space-x-3 pt-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('overview')}>Cancel</Button>
-                  <Button type="submit" variant="primary" size="sm"><Check className="w-4 h-4 mr-1.5" /> Save Profile Changes</Button>
+                <div className="flex items-center justify-between pt-2">
+                  {selectedProfile.id !== currentUser.id ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteProfile(selectedProfile)}
+                      className="border-rose-300 text-rose-600 hover:bg-rose-50 hover:border-rose-400 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1.5" /> Delete Person
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex space-x-3">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('overview')}>Cancel</Button>
+                    <Button type="submit" variant="primary" size="sm"><Check className="w-4 h-4 mr-1.5" /> Save Profile Changes</Button>
+                  </div>
                 </div>
               </form>
             )}

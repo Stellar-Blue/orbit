@@ -50,6 +50,7 @@ interface AppState {
   switchUser: (profileId: string) => void;
   updateProfile: (profile: Profile) => void;
   addProfile: (profile: Profile) => void;
+  deleteProfile: (profileId: string) => Promise<boolean>;
   addLeaveRequest: (req: Omit<LeaveRequest, 'id'>) => void;
   updateLeaveRequestStatus: (id: string, status: LeaveRequest['status'], rejectionReason?: string) => void;
   addMandatoryLeave: (ml: Omit<MandatoryLeave, 'id'>) => void;
@@ -442,12 +443,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         alert(`Database Error: ${error.message}`);
         return;
       }
+      if (role) {
+        const { error: roleError } = await supabase.from('user_roles').upsert(
+          { profile_id: updated.id, role },
+          { onConflict: 'profile_id' }
+        );
+        if (roleError) {
+          console.error('Failed to update user role in database:', roleError);
+          alert(`Role Error: ${roleError.message}`);
+          return;
+        }
+      }
       if (sensitive) {
         await supabase.from('profile_sensitive').upsert({ ...sensitive, profile_id: updated.id });
       }
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
     } catch (e: any) {
       console.error('Failed to update profile in database:', e);
+    }
+  };
+
+  const deleteProfile = async (profileId: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { data, error } = await supabase.rpc('admin_delete_profile', { target_profile_id: profileId });
+      if (error) {
+        console.error('Failed to delete profile:', error);
+        alert(`Delete Error: ${error.message}`);
+        return false;
+      }
+      if (data === false) {
+        alert('Profile not found.');
+        return false;
+      }
+      setProfiles(prev => prev.filter(p => p.id !== profileId));
+      setLeaveRequests(prev => prev.filter(r => r.profile_id !== profileId && r.decided_by !== profileId));
+      setSalaries(prev => prev.filter(s => s.profile_id !== profileId));
+      setPayments(prev => prev.filter(p => p.profile_id !== profileId));
+      setEntitlements(prev => prev.filter(e => e.profile_id !== profileId));
+      setRemoteDays(prev => prev.filter(d => d.profile_id !== profileId));
+      setRemotePatterns(prev => prev.filter(p => p.profile_id !== profileId));
+      return true;
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error('Failed to delete profile:', e);
+      alert(`Delete Error: ${errMsg}`);
+      return false;
     }
   };
 
@@ -2219,6 +2260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       switchUser,
       updateProfile,
       addProfile,
+      deleteProfile,
       addLeaveRequest,
       updateLeaveRequestStatus,
       addMandatoryLeave,
