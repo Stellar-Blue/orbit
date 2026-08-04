@@ -303,6 +303,7 @@ export interface Contract {
   service_start_date?: string;
   payment_terms_days?: number;
   lines?: ContractLine[];
+  groups?: ContractLineGroup[];
   schedule?: ContractSchedule[];
 }
 
@@ -329,6 +330,7 @@ export interface ContractLine {
   id: string;
   contract_id: string;
   catalog_item_id?: string | null;
+  group_id?: string | null;
   name: string;
   unit_price: number;
   quantity: number;
@@ -338,6 +340,15 @@ export interface ContractLine {
   monthly_quantities?: { [period: string]: number } | null;
   apply_discount?: boolean;
   min_monthly_charge?: number | null;
+}
+
+export interface ContractLineGroup {
+  id: string;
+  contract_id: string;
+  name: string;
+  min_monthly_charge?: number | null;
+  sort_order?: number;
+  created_at?: string;
 }
 
 export interface ContractSchedule {

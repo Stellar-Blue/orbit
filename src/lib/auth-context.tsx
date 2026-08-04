@@ -7,7 +7,7 @@ import {
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
-  CatalogModule, CatalogItem, ContractLine, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
+  CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
@@ -105,7 +105,7 @@ interface AppState {
     mandatory: number;
     available: number;
   };
-  saveContractPricing: (contractId: string, lines: Omit<ContractLine, 'id' | 'contract_id'>[], schedules: { period: string; amount: number }[], discount_pct: number, term_years: number, service_start_date: string, calculatedValue: number) => Promise<boolean>;
+  saveContractPricing: (contractId: string, lines: Omit<ContractLine, 'id' | 'contract_id'>[], schedules: { period: string; amount: number }[], discount_pct: number, term_years: number, service_start_date: string, calculatedValue: number, groups?: Omit<ContractLineGroup, 'contract_id'>[]) => Promise<boolean>;
   saveCatalogModule: (module: Partial<CatalogModule> & { name: string }) => Promise<boolean>;
   deleteCatalogModule: (id: string) => Promise<boolean>;
   saveCatalogItem: (item: Partial<CatalogItem> & { module_id: string; name: string; default_unit_price: number; unit_label: string; default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time' }) => Promise<boolean>;
@@ -184,7 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
           holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
-          catalogModulesRes, catalogItemsRes, contractLinesRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes
+          catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -206,6 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('catalog_modules').select('*').order('sort_order', { ascending: true }),
           supabase.from('catalog_items').select('*'),
           supabase.from('contract_lines').select('*'),
+          supabase.from('contract_line_groups').select('*'),
           supabase.from('contract_schedule').select('*').order('period', { ascending: true }),
           supabase.from('attio_links').select('*'),
           supabase.from('counterparty_contacts').select('*'),
@@ -302,8 +303,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const counterparty = enrichedCounterparties.find(c => c.id === cnt.counterparty_id);
           const owner_profile = loadedProfiles.find(p => p.id === cnt.owner_profile_id);
           const lines = loadedContractLines.filter(l => l.contract_id === cnt.id);
+          const groups = (contractLineGroupsRes?.data || []).filter((g: ContractLineGroup) => g.contract_id === cnt.id);
           const schedule = loadedContractSchedules.filter(s => s.contract_id === cnt.id);
-          return { ...cnt, counterparty, owner_profile, lines, schedule };
+          return { ...cnt, counterparty, owner_profile, lines, groups, schedule };
         });
         setContracts(enrichedContracts);
 
@@ -1128,6 +1130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const supabase = getSupabaseBrowserClient();
     try {
       await supabase.from('contract_lines').delete().eq('contract_id', id);
+      await supabase.from('contract_line_groups').delete().eq('contract_id', id);
       await supabase.from('contract_schedule').delete().eq('contract_id', id);
       const { error } = await supabase.from('contracts').delete().eq('id', id);
       if (error) {
@@ -1152,7 +1155,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     discount_pct: number, 
     term_years: number, 
     service_start_date: string, 
-    calculatedValue: number
+    calculatedValue: number,
+    groups: Omit<ContractLineGroup, 'contract_id'>[] = []
   ): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
@@ -1164,10 +1168,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }).eq('id', contractId);
 
       await supabase.from('contract_lines').delete().eq('contract_id', contractId);
+      await supabase.from('contract_line_groups').delete().eq('contract_id', contractId);
+
+      const groupsToInsert = groups.map(g => ({
+        id: g.id,
+        contract_id: contractId,
+        name: g.name,
+        min_monthly_charge: (g.min_monthly_charge && Number(g.min_monthly_charge) > 0) ? Number(g.min_monthly_charge) : null,
+        sort_order: g.sort_order || 0
+      }));
+      if (groupsToInsert.length > 0) {
+        await supabase.from('contract_line_groups').insert(groupsToInsert);
+      }
+
       const linesToInsert = lines.map(l => ({
         id: generateUUID(),
         contract_id: contractId,
         catalog_item_id: l.catalog_item_id || null,
+        group_id: l.group_id || null,
         name: l.name,
         unit_price: l.unit_price,
         quantity: l.quantity,
@@ -1176,7 +1194,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         note: l.note || null,
         monthly_quantities: l.monthly_quantities || null,
         apply_discount: l.apply_discount !== false,
-        min_monthly_charge: l.min_monthly_charge || null
+        min_monthly_charge: null
       }));
       if (linesToInsert.length > 0) {
         await supabase.from('contract_lines').insert(linesToInsert);
@@ -1203,6 +1221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const finalLines = linesToInsert;
+      const finalGroups = groupsToInsert.map(g => ({ ...g, contract_id: contractId }));
       const finalSchedule = [...historicalSched, ...schedsToInsert].sort((a, b) => a.period.localeCompare(b.period));
 
       setContractLines(prev => [...prev.filter(l => l.contract_id !== contractId), ...finalLines]);
@@ -1214,6 +1233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         service_start_date,
         value: calculatedValue,
         lines: finalLines,
+        groups: finalGroups,
         schedule: finalSchedule
       } : c));
       return true;

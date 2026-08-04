@@ -1,4 +1,4 @@
-import { Contract, ContractLine, CatalogModule, CatalogItem } from '@/lib/types';
+import { Contract, ContractLine, ContractLineGroup, CatalogModule, CatalogItem } from '@/lib/types';
 
 export interface ContractTierResult {
   tier: number;
@@ -81,6 +81,161 @@ export function calculateLineGrossAmount(
 }
 
 /**
+ * Computes the proportional scaling ratio for a group-level monthly floor.
+ * When the group's combined monthly-equivalent gross is below the floor,
+ * every line in the group scales up proportionally so the combined amount
+ * reaches the floor (returned ratio > 1). Returns 1 when no floor is set,
+ * the total already exceeds the floor, or the total is empty.
+ */
+export function calculateGroupFloorRatio(
+  floor: number | null | undefined,
+  monthlyEquivTotal: number
+): number {
+  const f = Number(floor) || 0;
+  if (f <= 0 || monthlyEquivTotal <= 0 || monthlyEquivTotal >= f) return 1;
+  return f / monthlyEquivTotal;
+}
+
+/**
+ * Builds a lookup map of group_id -> min_monthly_charge for groups that
+ * actually carry an active (positive) floor.
+ */
+export function buildGroupFloorMap(
+  groups: Array<Partial<ContractLineGroup>> = []
+): Map<string, number> {
+  const map = new Map<string, number>();
+  groups.forEach(g => {
+    const f = Number(g.min_monthly_charge) || 0;
+    if (g.id && f > 0) map.set(g.id, f);
+  });
+  return map;
+}
+
+/**
+ * Monthly carry-forward helper shared by the valuation, schedule builder and
+ * invoice calculator: returns the effective quantity for a line at a given
+ * period index (only evaluated for Variable Quantity Pricing Schemes).
+ */
+function getEffectiveQuantityForPeriod(
+  l: Partial<ContractLine>,
+  pIdx: number,
+  periods: string[],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): number {
+  if (l.frequency === 'one_time' || !isVariableQuantityPricingScheme(l, catalogModules, catalogItems)) {
+    return Number(l.quantity) || (l.frequency === 'one_time' ? 1 : 0);
+  }
+  const mq = l.monthly_quantities || {};
+  for (let i = pIdx; i >= 0; i--) {
+    const p = periods[i];
+    if (mq[p] !== undefined && mq[p] !== null && !isNaN(Number(mq[p]))) {
+      return Number(mq[p]);
+    }
+  }
+  return Number(l.quantity) || 0;
+}
+
+/**
+ * Computes per-group floor scaling ratios for a single period: each group's
+ * combined monthly-equivalent gross is compared against its floor, and lines
+ * in floored groups scale proportionally (ratio > 1) so the group total
+ * reaches the floor.
+ */
+function computeGroupFloorRatiosForPeriod(
+  lines: Array<Partial<ContractLine>>,
+  periods: string[],
+  pIdx: number,
+  groupFloors: Map<string, number>,
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): Map<string, number> {
+  const ratios = new Map<string, number>();
+  if (groupFloors.size === 0) return ratios;
+
+  const equivByGroup = new Map<string, number>();
+  lines.forEach(l => {
+    if (l.frequency === 'one_time' || !l.group_id) return;
+    const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
+    const { gross: grossVal } = calculateLineGrossAmount(l, effQty);
+    const equiv = l.frequency === 'annual' ? grossVal / 12 : l.frequency === 'quarterly' ? grossVal / 3 : grossVal;
+    equivByGroup.set(l.group_id, (equivByGroup.get(l.group_id) || 0) + equiv);
+  });
+
+  equivByGroup.forEach((equiv, gid) => {
+    const ratio = calculateGroupFloorRatio(groupFloors.get(gid), equiv);
+    if (ratio !== 1) ratios.set(gid, ratio);
+  });
+
+  return ratios;
+}
+
+export interface ContractPeriodAmount {
+  period: string;
+  amount: number;
+}
+
+/**
+ * Builds the month-by-month revenue schedule across the contract term,
+ * respecting billing frequency anchors, monthly quantity carry-forwards and
+ * group-level monthly floors (a floor applies to the COMBINED total of the
+ * group's line items, distributed proportionally across them).
+ */
+export function calculatePeriodAmounts(
+  lines: Array<Partial<ContractLine>>,
+  discountPct: number = 0,
+  termYears: number = 1,
+  startDate: string = new Date().toISOString().split('T')[0],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = [],
+  groups: Array<Partial<ContractLineGroup>> = []
+): ContractPeriodAmount[] {
+  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
+  const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
+  const startObj = new Date(startDate || new Date());
+  const startYear = startObj.getFullYear();
+  const startMonth = startObj.getMonth();
+  const periods: string[] = [];
+  for (let i = 0; i < monthsCount; i++) {
+    const d = new Date(startYear, startMonth + i, 1);
+    periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  const groupFloors = buildGroupFloorMap(groups);
+  const result: ContractPeriodAmount[] = [];
+
+  periods.forEach((period, pIdx) => {
+    const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
+    let monthTotal = 0;
+
+    lines.forEach(l => {
+      const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
+      let { gross: grossVal } = calculateLineGrossAmount(l, effQty);
+      if (l.group_id && l.frequency !== 'one_time') {
+        const ratio = groupRatios.get(l.group_id);
+        if (ratio) grossVal *= ratio;
+      }
+      const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
+      const netVal = grossVal * lineMult;
+
+      if (l.frequency === 'monthly') {
+        monthTotal += netVal;
+      } else if (l.frequency === 'quarterly') {
+        if (pIdx % 3 === 0) monthTotal += netVal;
+      } else if (l.frequency === 'annual') {
+        if (pIdx % 12 === 0) monthTotal += netVal;
+      } else if (l.frequency === 'one_time') {
+        if (pIdx === 0) monthTotal += netVal;
+      }
+    });
+
+    result.push({ period, amount: Number(monthTotal.toFixed(2)) });
+  });
+
+  return result;
+}
+
+/**
  * Maps a Weighted Annual Recurring Revenue (WARR) figure to a Tier 1-10 classification.
  */
 export function getContractTier(weightedARR: number): ContractTierResult {
@@ -134,7 +289,8 @@ export function calculateContractValuation(
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
   fallbackContractValue: number = 0,
-  fallbackCadence: string = 'monthly'
+  fallbackCadence: string = 'monthly',
+  groups: Array<Partial<ContractLineGroup>> = []
 ): ContractValuation {
   const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   
@@ -157,26 +313,18 @@ export function calculateContractValuation(
       periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
 
-    // Helper for monthly carry-forward (only evaluated for Variable Quantity Pricing Schemes!)
-    const getEffectiveQty = (l: any, pIdx: number) => {
-      if (l.frequency === 'one_time' || !isVariableQuantityPricingScheme(l, catalogModules, catalogItems)) {
-        return Number(l.quantity) || (l.frequency === 'one_time' ? 1 : 0);
-      }
-      const mq = l.monthly_quantities || {};
-      for (let i = pIdx; i >= 0; i--) {
-        const p = periods[i];
-        if (mq[p] !== undefined && mq[p] !== null && !isNaN(Number(mq[p]))) {
-          return Number(mq[p]);
-        }
-      }
-      return Number(l.quantity) || 0;
-    };
+    const groupFloors = buildGroupFloorMap(groups);
 
     let scheduledRecurringValue = 0;
     periods.forEach((period, pIdx) => {
+      const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
       lines.forEach(l => {
-        const effQty = getEffectiveQty(l, pIdx);
-        const { gross: grossVal } = calculateLineGrossAmount(l as any, effQty);
+        const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
+        let { gross: grossVal } = calculateLineGrossAmount(l as any, effQty);
+        if (l.group_id && l.frequency !== 'one_time') {
+          const ratio = groupRatios.get(l.group_id);
+          if (ratio) grossVal *= ratio;
+        }
         const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
         const netVal = grossVal * lineMult;
 
@@ -202,12 +350,34 @@ export function calculateContractValuation(
     const netARR = netMonthlyMRR * 12; // Strictly recurring, oneTimeValue excluded!
     const totalContractValue = scheduledRecurringValue + oneTimeValue;
 
+    // Group floors on base (month 1) quantities for Tier scoring
+    const tierRatios = new Map<string, number>();
+    if (groupFloors.size > 0) {
+      const equivByGroup = new Map<string, number>();
+      lines.forEach(l => {
+        if (l.frequency === 'one_time' || !l.group_id) return;
+        const baseQty = Number(l.quantity) || 0;
+        let { gross: g } = calculateLineGrossAmount(l as any, baseQty);
+        if (l.frequency === 'annual') g /= 12;
+        else if (l.frequency === 'quarterly') g /= 3;
+        equivByGroup.set(l.group_id, (equivByGroup.get(l.group_id) || 0) + g);
+      });
+      equivByGroup.forEach((equiv, gid) => {
+        const ratio = calculateGroupFloorRatio(groupFloors.get(gid), equiv);
+        if (ratio !== 1) tierRatios.set(gid, ratio);
+      });
+    }
+
     // Calculate weighted ARR contribution across items for Tier scoring
     lines.forEach(l => {
       if (l.frequency === 'one_time') return; // One-time fees do not contribute to ARR tiering
       
       const baseQty = Number(l.quantity) || 0;
       let { gross: grossLineMo } = calculateLineGrossAmount(l as any, baseQty);
+      if (l.group_id) {
+        const ratio = tierRatios.get(l.group_id);
+        if (ratio) grossLineMo *= ratio;
+      }
       if (l.frequency === 'annual') grossLineMo /= 12;
       else if (l.frequency === 'quarterly') grossLineMo /= 3;
       
@@ -362,6 +532,9 @@ export function getContractNoticeStatus(contract: {
  * @param discountPct    Discount percentage (0–100)
  * @param catalogModules  Catalog modules for variable-qty detection
  * @param catalogItems    Catalog items for variable-qty detection
+ * @param groups          Contract line groups; any active min_monthly_charge is enforced on
+ *                        the COMBINED monthly-equivalent total of the group's line items
+ *                        (distributed proportionally across the group's lines).
  */
 export function calculateInvoiceAmountForPeriod(
   lines: Array<Partial<ContractLine> & { name: string; unit_price: number; quantity: number; frequency: string }>,
@@ -372,7 +545,8 @@ export function calculateInvoiceAmountForPeriod(
   serviceStartDate: string,
   discountPct: number = 0,
   catalogModules: CatalogModule[] = [],
-  catalogItems: CatalogItem[] = []
+  catalogItems: CatalogItem[] = [],
+  groups: Array<Partial<ContractLineGroup>> = []
 ): number {
   if (!lines || lines.length === 0) return 0;
 
@@ -428,33 +602,35 @@ export function calculateInvoiceAmountForPeriod(
     return isQuarterlyTriggerPeriod();
   };
 
-  let total = 0;
-
-  lines.forEach(l => {
+  // Compute raw per-line invoice contributions plus monthly-equivalent amounts
+  // (monthly-equiv is used to enforce group floors at the group level).
+  const groupFloors = buildGroupFloorMap(groups);
+  const lineCalcs = lines.map(l => {
     const qty = Number(l.quantity) || 0;
     const { gross: baseGross } = calculateLineGrossAmount(l as any, qty);
     const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
     const grossLine = baseGross * lineMult;
 
+    let amount = 0;
     switch (l.frequency) {
       case 'one_time':
         // Only on the very first billing period (service_start_date falls in or before this period)
         if (isFirstInvoice) {
-          total += grossLine;
+          amount = grossLine;
         }
         break;
 
       case 'annual':
         // Include only on the correct first/last billing period of the year
         if (isFirstPeriodOfYear()) {
-          total += grossLine;
+          amount = grossLine;
         }
         break;
 
       case 'quarterly':
         // Include only on the correct first/last billing period of the quarter
         if (isFirstPeriodOfQuarter()) {
-          total += grossLine;
+          amount = grossLine;
         }
         break;
 
@@ -462,14 +638,45 @@ export function calculateInvoiceAmountForPeriod(
       default:
         // Monthly lines appear on every billing period
         if (billingCadence === 'annual') {
-          total += grossLine * 12;
+          amount = grossLine * 12;
         } else if (billingCadence === 'quarterly') {
-          total += grossLine * 3;
+          amount = grossLine * 3;
         } else {
-          total += grossLine;
+          amount = grossLine;
         }
         break;
     }
+
+    const equiv = l.frequency === 'annual' ? grossLine / 12
+      : l.frequency === 'quarterly' ? grossLine / 3
+      : l.frequency === 'monthly' ? grossLine : 0;
+
+    return { line: l, amount, equiv };
+  });
+
+  // Group floors: scale included amounts proportionally so each group's combined
+  // monthly-equivalent total reaches its floor.
+  const groupRatios = new Map<string, number>();
+  if (groupFloors.size > 0) {
+    const equivByGroup = new Map<string, number>();
+    lineCalcs.forEach(c => {
+      if (c.line.frequency === 'one_time' || !c.line.group_id) return;
+      equivByGroup.set(c.line.group_id, (equivByGroup.get(c.line.group_id) || 0) + c.equiv);
+    });
+    equivByGroup.forEach((equiv, gid) => {
+      const ratio = calculateGroupFloorRatio(groupFloors.get(gid), equiv);
+      if (ratio !== 1) groupRatios.set(gid, ratio);
+    });
+  }
+
+  let total = 0;
+  lineCalcs.forEach(c => {
+    let amount = c.amount;
+    if (c.line.group_id && c.line.frequency !== 'one_time') {
+      const ratio = groupRatios.get(c.line.group_id);
+      if (ratio) amount *= ratio;
+    }
+    total += amount;
   });
 
   return total;

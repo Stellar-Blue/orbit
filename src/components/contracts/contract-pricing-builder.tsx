@@ -2,17 +2,18 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { ContractLine, CatalogItem } from '@/lib/types';
-import { calculateContractValuation, isVariableQuantityPricingScheme, calculateLineGrossAmount } from '@/lib/pricing-engine';
+import { ContractLine, ContractLineGroup, CatalogItem } from '@/lib/types';
+import { calculateContractValuation, isVariableQuantityPricingScheme, calculateLineGrossAmount, calculatePeriodAmounts, calculateGroupFloorRatio } from '@/lib/pricing-engine';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
-  Sparkles, CheckCircle2, AlertCircle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X
+  Sparkles, CheckCircle2, AlertCircle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X, FolderPlus, Folder, ShieldCheck
 } from 'lucide-react';
 
 interface ContractPricingBuilderProps {
   contractId?: string;
   initialLines?: ContractLine[];
+  initialGroups?: ContractLineGroup[];
   initialDiscountPct?: number;
   initialTermYears?: number;
   initialStartDate?: string;
@@ -22,15 +23,22 @@ interface ContractPricingBuilderProps {
     discountPct: number, 
     termYears: number, 
     startDate: string,
-    totalContractValue: number
+    totalContractValue: number,
+    groups: Omit<ContractLineGroup, 'contract_id'>[]
   ) => Promise<void> | void;
   onCancel?: () => void;
   readOnly?: boolean;
 }
 
+const generateGroupId = (): string => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `grp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   contractId,
   initialLines = [],
+  initialGroups = [],
   initialDiscountPct = 0,
   initialTermYears = 1,
   initialStartDate = new Date().toISOString().split('T')[0],
@@ -40,9 +48,20 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
 }) => {
   const { catalogModules, catalogItems } = useAuth();
 
+  const [groups, setGroups] = useState<ContractLineGroup[]>(
+    initialGroups.map((g, i) => ({
+      id: g.id,
+      contract_id: g.contract_id,
+      name: g.name,
+      min_monthly_charge: g.min_monthly_charge ? Number(g.min_monthly_charge) : null,
+      sort_order: g.sort_order ?? i
+    }))
+  );
+
   const [lines, setLines] = useState<Omit<ContractLine, 'id' | 'contract_id'>[]>(
     initialLines.map(l => ({
       catalog_item_id: l.catalog_item_id,
+      group_id: l.group_id || null,
       name: l.name,
       unit_price: Number(l.unit_price) || 0,
       quantity: Number(l.quantity) || 1,
@@ -51,7 +70,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       note: l.note || '',
       monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {},
       apply_discount: l.apply_discount !== false,
-      min_monthly_charge: l.min_monthly_charge ? Number(l.min_monthly_charge) : null
+      min_monthly_charge: null
     }))
   );
 
@@ -107,6 +126,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       ...prev,
       {
         catalog_item_id: item.id,
+        group_id: null,
         name: item.name,
         unit_price: Number(item.default_unit_price),
         quantity: 1,
@@ -126,6 +146,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       ...prev,
       {
         catalog_item_id: null,
+        group_id: null,
         name: 'Custom Fee / Engine Service',
         unit_price: 1000,
         quantity: 1,
@@ -148,6 +169,46 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
     if (expandedScheduleLineIdx === index) setExpandedScheduleLineIdx(null);
   };
 
+  const addGroup = () => {
+    setGroups(prev => [
+      ...prev,
+      {
+        id: generateGroupId(),
+        contract_id: contractId || '',
+        name: `Group ${prev.length + 1}`,
+        min_monthly_charge: null,
+        sort_order: prev.length
+      }
+    ]);
+  };
+
+  const updateGroup = (index: number, field: keyof ContractLineGroup, value: string | number | boolean | null) => {
+    setGroups(prev => prev.map((g, idx) => idx === index ? { ...g, [field]: value } : g));
+  };
+
+  const deleteGroup = (groupId: string) => {
+    setGroups(prev => prev.filter(g => g.id !== groupId));
+    setLines(prev => prev.map(l => l.group_id === groupId ? { ...l, group_id: null } : l));
+    if (expandedScheduleLineIdx !== null) {
+      setExpandedScheduleLineIdx(null);
+    }
+  };
+
+  // Group floor scaling ratio for a single period (combined monthly-equivalent total of the group)
+  const getGroupFloorRatio = (groupId: string | null | undefined, pIdx: number): number => {
+    if (!groupId) return 1;
+    const group = groups.find(g => g.id === groupId);
+    const floor = group?.min_monthly_charge;
+    let equiv = 0;
+    lines.forEach(l => {
+      if (l.group_id !== groupId || l.frequency === 'one_time') return;
+      const effQty = getEffectiveQuantity(l, pIdx, termPeriods);
+      const { gross: g } = calculateLineGrossAmount(l, effQty);
+      equiv += l.frequency === 'annual' ? g / 12 : l.frequency === 'quarterly' ? g / 3 : g;
+    });
+    return calculateGroupFloorRatio(floor, equiv);
+  };
+
   const applyTermSuggestion = (years: number, disc: number) => {
     setTermYears(years);
     setDiscountPct(disc);
@@ -155,7 +216,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
 
   // Calculations incorporating dynamic monthly quantity carry-forward schedules and Tier 1-10 weighting
   const totals = useMemo(() => {
-    const valuation = calculateContractValuation(lines as any, discountPct, termYears, startDate, catalogModules, catalogItems);
+    const valuation = calculateContractValuation(lines, discountPct, termYears, startDate, catalogModules, catalogItems, 0, 'monthly', groups);
     return {
       netMonthlyMRR: valuation.netMonthlyMRR,
       netAnnual: valuation.netARR,
@@ -165,50 +226,18 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       breakdown: valuation.breakdown,
       weightedARR: valuation.weightedARR
     };
-  }, [lines, discountPct, termYears, startDate, catalogModules, catalogItems]);
+  }, [lines, discountPct, termYears, startDate, catalogModules, catalogItems, groups]);
 
-  // Schedule generator reflecting monthly variable quantity carry-forwards
+  // Schedule generator reflecting monthly variable quantity carry-forwards and group-level floors
   const schedule = useMemo(() => {
-    const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
-    const result: { period: string; amount: number }[] = [];
-
-    termPeriods.forEach((period, i) => {
-      let monthTotal = 0;
-
-      lines.forEach(line => {
-        const effectiveQty = getEffectiveQuantity(line, i, termPeriods);
-        const { gross: grossLineVal } = calculateLineGrossAmount(line as any, effectiveQty);
-        const lineMult = line.apply_discount !== false ? discountMultiplier : 1.0;
-        const netLineVal = grossLineVal * lineMult;
-
-        if (line.frequency === 'monthly') {
-          monthTotal += netLineVal;
-        } else if (line.frequency === 'quarterly') {
-          if (i % 3 === 0) {
-            monthTotal += netLineVal;
-          }
-        } else if (line.frequency === 'annual') {
-          if (i % 12 === 0) {
-            monthTotal += netLineVal;
-          }
-        } else if (line.frequency === 'one_time') {
-          if (i === 0) {
-            monthTotal += ((Number(line.unit_price) || 0) * (Number(line.quantity) || 0)) * lineMult;
-          }
-        }
-      });
-
-      result.push({ period, amount: Number(monthTotal.toFixed(2)) });
-    });
-
-    return result;
-  }, [lines, discountPct, termPeriods]);
+    return calculatePeriodAmounts(lines, discountPct, termYears, startDate, catalogModules, catalogItems, groups);
+  }, [lines, discountPct, termYears, startDate, catalogModules, catalogItems, groups]);
 
   const handleSaveClick = async () => {
     if (!onSave) return;
     setIsSaving(true);
     try {
-      await onSave(lines, schedule, discountPct, termYears, startDate, totals.totalContractValue);
+      await onSave(lines, schedule, discountPct, termYears, startDate, totals.totalContractValue, groups);
     } finally {
       setIsSaving(false);
     }
@@ -374,6 +403,109 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         </div>
       )}
 
+      {/* Pricing Groups Manager */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-center justify-between">
+          <span className="text-sm font-extrabold text-slate-800 flex items-center">
+            <Folder className="w-4 h-4 mr-2 text-indigo-600" /> Pricing Groups ({groups.length})
+            <span className="ml-3 hidden sm:inline text-[11px] font-semibold text-slate-500">Floor price / mo applies to the COMBINED total of the group&apos;s line items, not per line</span>
+          </span>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addGroup}
+              className="shrink-0 cursor-pointer bg-white border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+            >
+              <FolderPlus className="w-4 h-4 mr-1" /> Add Group
+            </Button>
+          )}
+        </div>
+
+        {groups.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400 bg-indigo-50/30">
+            No pricing groups yet. Groups bundle line items under a shared <strong>floor price / mo</strong> — when the group&apos;s combined monthly total falls below the floor, it is raised proportionally across the group&apos;s lines.
+            {!readOnly && <span className="block mt-1 text-indigo-600 font-semibold">Click &quot;Add Group&quot; to start bundling.</span>}
+          </div>
+        ) : (
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {groups.map((group, gIdx) => {
+              const memberCount = lines.filter(l => l.group_id === group.id && l.frequency !== 'one_time').length;
+              const ratio = getGroupFloorRatio(group.id, 0);
+              const floorApplied = ratio > 1;
+              return (
+                <div key={group.id} className={`p-3.5 rounded-xl border transition-all ${floorApplied ? 'bg-amber-50 border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    {readOnly ? (
+                      <span className="font-extrabold text-slate-800 text-sm mt-0.5">{group.name}</span>
+                    ) : (
+                      <input
+                        type="text"
+                        value={group.name}
+                        onChange={e => updateGroup(gIdx, 'name', e.target.value)}
+                        className="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                        placeholder="Group name..."
+                      />
+                    )}
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => deleteGroup(group.id)}
+                        className="text-rose-500 hover:text-rose-700 transition-colors p-1 rounded hover:bg-rose-50 cursor-pointer shrink-0"
+                        title="Delete group (lines become ungrouped)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      {readOnly ? (
+                        <span className="font-mono font-bold text-slate-700 text-sm block">
+                          {group.min_monthly_charge && Number(group.min_monthly_charge) > 0 ? `€${Number(group.min_monthly_charge).toLocaleString()} / mo` : 'No Floor'}
+                        </span>
+                      ) : (
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Floor / mo</span>
+                          <input
+                            type="number"
+                            step="1"
+                            min="0"
+                            value={group.min_monthly_charge ?? ''}
+                            onChange={e => updateGroup(gIdx, 'min_monthly_charge', e.target.value ? parseFloat(e.target.value) : null)}
+                            placeholder="0 (None)"
+                            className="flex-1 min-w-[80px] bg-white border border-slate-300 rounded-lg px-2 py-1 text-sm font-mono focus:outline-none focus:border-indigo-500"
+                          />
+                          <span className="text-[10px] font-bold text-slate-500">€</span>
+                        </div>
+                      )}
+                    </div>
+                    <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${memberCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                      {memberCount} line{memberCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {floorApplied && (
+                    <div className="mt-2 flex items-center text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg px-2 py-1">
+                      <ShieldCheck className="w-3 h-3 mr-1.5 shrink-0" />
+                      Floor active — month-1 combined €{(() => {
+                        let equiv = 0;
+                        lines.forEach(l => {
+                          if (l.group_id !== group.id || l.frequency === 'one_time') return;
+                          const { gross: g } = calculateLineGrossAmount(l as any, Number(l.quantity) || 0);
+                          equiv += l.frequency === 'annual' ? g / 12 : l.frequency === 'quarterly' ? g / 3 : g;
+                        });
+                        return equiv.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                      })()} raised to €{Number(group.min_monthly_charge).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Contract Lines Matrix */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
@@ -394,7 +526,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                   <th className="py-2.5 px-4">Item Name / Module</th>
                   <th className="py-2.5 px-3 w-40">Unit Rate (€)</th>
-                  <th className="py-2.5 px-3 w-36">Min Charge / Mo (€)</th>
+                  <th className="py-2.5 px-3 w-40">Pricing Group (Floor / Mo)</th>
                   <th className="py-2.5 px-3 w-36">Base Qty / Mo Horizon</th>
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
@@ -407,10 +539,13 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 {lines.map((line, idx) => {
                   const baseQty = Number(line.quantity) || 0;
                   const { gross: lineGross, minChargeApplied } = calculateLineGrossAmount(line as any, baseQty);
+                  const groupFloorRatio = getGroupFloorRatio(line.group_id, 0);
+                  const groupMinApplied = groupFloorRatio > 1;
+                  const scaledLineGross = lineGross * groupFloorRatio;
                   const isOneTime = line.frequency === 'one_time';
                   const isVariableScheme = isVariableQuantityPricingScheme(line, catalogModules, catalogItems);
                   const periodSuffix = line.frequency === 'monthly' ? '/ mo' : line.frequency === 'quarterly' ? '/ qtr' : line.frequency === 'annual' ? '/ year' : 'one-off';
-                  const monthlyMrrEquiv = line.frequency === 'annual' ? lineGross / 12 : line.frequency === 'quarterly' ? lineGross / 3 : lineGross;
+                  const monthlyMrrEquiv = line.frequency === 'annual' ? scaledLineGross / 12 : line.frequency === 'quarterly' ? scaledLineGross / 3 : scaledLineGross;
                   const isExpanded = expandedScheduleLineIdx === idx;
                   const overrideCount = Object.keys(line.monthly_quantities || {}).length;
 
@@ -459,25 +594,29 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               N/A (One-off)
                             </span>
                           ) : readOnly ? (
-                            <span className="font-mono text-slate-700 font-bold block mt-1">
-                              {line.min_monthly_charge && Number(line.min_monthly_charge) > 0 ? `€${Number(line.min_monthly_charge).toLocaleString()} / mo` : 'No Min'}
+                            <span className={`font-bold block mt-1 ${line.group_id ? 'text-indigo-700' : 'text-slate-500'}`}>
+                              {line.group_id ? (groups.find(g => g.id === line.group_id)?.name || 'Group') : 'Ungrouped'}
+                              {line.group_id && groups.find(g => g.id === line.group_id)?.min_monthly_charge ? ` · Floor €${Number(groups.find(g => g.id === line.group_id)?.min_monthly_charge).toLocaleString()}/mo` : ''}
                             </span>
                           ) : (
-                            <div>
-                              <div className="flex items-center space-x-1">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  min="0"
-                                  value={line.min_monthly_charge ?? ''}
-                                  onChange={e => updateLine(idx, 'min_monthly_charge', e.target.value ? parseFloat(e.target.value) : null)}
-                                  placeholder="0 (None)"
-                                  className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500 min-w-[70px]"
-                                />
-                                <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap">/ MO</span>
-                              </div>
-                              <span className="text-[10px] text-slate-400 font-normal block mt-1">Floor price / mo</span>
-                            </div>
+                            <select
+                              value={line.group_id || ''}
+                              onChange={e => updateLine(idx, 'group_id', e.target.value || null)}
+                              className={`w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-bold uppercase focus:outline-none focus:border-indigo-500 ${line.group_id ? 'text-indigo-700 border-indigo-300 bg-indigo-50/50' : 'text-slate-600'}`}
+                            >
+                              <option value="">— Ungrouped —</option>
+                              {groups.map(g => (
+                                <option key={g.id} value={g.id}>
+                                  {g.name}{g.min_monthly_charge && Number(g.min_monthly_charge) > 0 ? ` (Floor €${Number(g.min_monthly_charge).toLocaleString()}/mo)` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {!isOneTime && !line.group_id && !readOnly && (
+                            <span className="text-[10px] text-slate-400 font-normal block mt-1">Not covered by a floor</span>
+                          )}
+                          {!isOneTime && line.group_id && (
+                            <span className="text-[10px] text-indigo-400 font-normal block mt-1">Floor applies to group total</span>
                           )}
                         </td>
                         <td className="py-3 px-3 align-top">
@@ -575,7 +714,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                           {isOneTime ? (
                             <div className="mt-1" title="One-time fee">
                               <div className="font-bold text-amber-600">
-                                €{((lineGross * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off)
+                                €{(lineGross * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off)
                               </div>
                               {line.apply_discount !== false && discountPct > 0 && (
                                 <div className="text-[10px] line-through text-slate-400">€{lineGross.toLocaleString()} gross</div>
@@ -584,18 +723,23 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                           ) : (
                             <div>
                               <div className={`font-bold mt-1 ${line.apply_discount !== false && discountPct > 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
-                                €{((lineGross * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {periodSuffix}
+                                €{(scaledLineGross * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {periodSuffix}
                               </div>
                               {line.apply_discount !== false && discountPct > 0 && (
-                                <div className="text-[11px] text-slate-400 line-through">€{lineGross.toLocaleString()} gross</div>
+                                <div className="text-[11px] text-slate-400 line-through">€{scaledLineGross.toLocaleString()} gross</div>
                               )}
                               <div className="text-[11px] font-normal text-slate-500">
-                                €{((monthlyMrrEquiv * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo ({line.apply_discount !== false && discountPct > 0 ? 'Net MRR' : 'Mo. 1 MRR'})
+                                €{(monthlyMrrEquiv * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo ({line.apply_discount !== false && discountPct > 0 ? 'Net MRR' : 'Mo. 1 MRR'})
                               </div>
                                 {overrideCount > 0 && (
                                   <div className="text-[10px] font-semibold text-purple-600 mt-0.5">
                                     Varies per monthly timeline
                                   </div>
+                                )}
+                                {groupMinApplied && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 mt-1" title="Group floor raised this line's share so the group's combined monthly total meets the floor">
+                                    ⚡ Group Floor Applied
+                                  </span>
                                 )}
                                 {minChargeApplied && (
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 mt-1" title="Minimum monthly fee floor applied">
@@ -667,6 +811,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                   const hasOverride = line.monthly_quantities?.[period] !== undefined && line.monthly_quantities?.[period] !== null && !isNaN(Number(line.monthly_quantities[period]));
                                   const effQty = getEffectiveQuantity(line, pIdx, termPeriods);
                                   const { gross: periodGross, minChargeApplied: periodMin } = calculateLineGrossAmount(line as any, effQty);
+                                  const periodRatio = getGroupFloorRatio(line.group_id, pIdx);
+                                  const periodScaled = periodGross * periodRatio;
 
                                   return (
                                     <div 
@@ -733,7 +879,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                       <div className="mt-2 text-right border-t border-slate-700/50 pt-1.5 flex items-center justify-between text-[10px] font-mono text-slate-400">
                                         <span>{line.unit_label || 'unit'}(s)</span>
                                         <span className="font-bold text-slate-300">
-                                          €{periodGross.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                          €{periodScaled.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                          {periodRatio > 1 && <span className="block text-[9px] text-amber-400 font-normal">Group Floor</span>}
                                           {periodMin && <span className="block text-[9px] text-amber-400 font-normal">Min Floor</span>}
                                         </span>
                                       </div>
@@ -745,7 +892,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800">
                                 <span>💡 Pro-tip: Edits automatically roll forward to all subsequent months until another manual override is encountered.</span>
                                 <span className="font-mono text-emerald-400 font-bold">
-                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + (calculateLineGrossAmount(line as any, getEffectiveQuantity(line, sIdx, termPeriods)).gross * (line.apply_discount !== false ? Math.max(0, 1 - (Number(discountPct) || 0) / 100) : 1.0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + (calculateLineGrossAmount(line as any, getEffectiveQuantity(line, sIdx, termPeriods)).gross * getGroupFloorRatio(line.group_id, sIdx) * (line.apply_discount !== false ? Math.max(0, 1 - (Number(discountPct) || 0) / 100) : 1.0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
                             </div>

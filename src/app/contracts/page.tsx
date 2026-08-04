@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { Contract, ContractDirection, ContractStatus } from '@/lib/types';
+import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
@@ -866,23 +866,26 @@ export default function ContractsRegistryPage() {
                 <ContractPricingBuilder
                   contractId={selectedContract.id}
                   initialLines={selectedContract.lines || []}
+                  initialGroups={selectedContract.groups || []}
                   initialDiscountPct={selectedContract.discount_pct || 0}
                   initialTermYears={selectedContract.term_years || 1}
                   initialStartDate={selectedContract.service_start_date || selectedContract.starts_on}
-                  onSave={async (lines, schedule, discountPct, termYears, startDate, tcv) => {
+                  onSave={async (lines, schedule, discountPct, termYears, startDate, tcv, groups) => {
                     await saveContractPricing(
                       selectedContract.id,
-                      lines as any,
-                      schedule as any,
+                      lines,
+                      schedule,
                       discountPct,
                       termYears,
                       startDate,
-                      tcv
+                      tcv,
+                      groups
                     );
                     setSelectedContract({
                       ...selectedContract,
-                      lines: lines as any,
-                      schedule: schedule as any,
+                      lines: lines as unknown as ContractLine[],
+                      groups: groups as unknown as ContractLineGroup[],
+                      schedule: schedule as unknown as ContractSchedule[],
                       discount_pct: discountPct,
                       term_years: termYears,
                       service_start_date: startDate,

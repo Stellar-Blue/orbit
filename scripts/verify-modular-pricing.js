@@ -26,18 +26,52 @@ function assert(condition, testName, details = "") {
 // Core Calculation Engine (Mirrors Section 4 & Section 5 logic)
 // -----------------------------------------------------------------------------
 
-function calculatePricing(lines, discountPct = 0, termYears = 1, startDate = "2026-08-01", existingSchedule = null, currentMonth = "2026-10") {
+function grossOf(line) {
+  let val = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+  if (line.min_monthly_charge && Number(line.min_monthly_charge) > 0 && line.frequency !== 'one_time') {
+    let minAmt = Number(line.min_monthly_charge);
+    if (line.frequency === 'quarterly') minAmt *= 3;
+    if (line.frequency === 'annual') minAmt *= 12;
+    if (val < minAmt) val = minAmt;
+  }
+  return val;
+}
+
+function monthlyEquivOf(line, val) {
+  if (line.frequency === 'quarterly') return val / 3;
+  if (line.frequency === 'annual') return val / 12;
+  return val;
+}
+
+function computeGroupRatios(lines, groups) {
+  const groupFloors = new Map();
+  (groups || []).forEach(g => {
+    if (g && g.id && Number(g.min_monthly_charge) > 0) groupFloors.set(g.id, Number(g.min_monthly_charge));
+  });
+  const ratios = new Map();
+  if (groupFloors.size === 0) return ratios;
+  const equivByGroup = new Map();
+  lines.forEach(line => {
+    if (!line.group_id || line.frequency === 'one_time') return;
+    const equiv = monthlyEquivOf(line, grossOf(line));
+    equivByGroup.set(line.group_id, (equivByGroup.get(line.group_id) || 0) + equiv);
+  });
+  equivByGroup.forEach((equiv, gid) => {
+    const floor = groupFloors.get(gid);
+    if (floor && equiv > 0 && equiv < floor) ratios.set(gid, floor / equiv);
+  });
+  return ratios;
+}
+
+function calculatePricing(lines, discountPct = 0, termYears = 1, startDate = "2026-08-01", existingSchedule = null, currentMonth = "2026-10", groups = []) {
+  const ratios = computeGroupRatios(lines, groups);
   let recurringGrossMonthly = 0;
   let oneTimeTotal = 0;
 
   lines.forEach(line => {
-    let val = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
-    if (line.min_monthly_charge && Number(line.min_monthly_charge) > 0 && line.frequency !== 'one_time') {
-      let minAmt = Number(line.min_monthly_charge);
-      if (line.frequency === 'quarterly') minAmt *= 3;
-      if (line.frequency === 'annual') minAmt *= 12;
-      if (val < minAmt) val = minAmt;
-    }
+    let val = grossOf(line);
+    const ratio = (line.group_id && line.frequency !== 'one_time') ? (ratios.get(line.group_id) || 1) : 1;
+    val *= ratio;
     if (line.frequency === 'one_time') {
       oneTimeTotal += val;
     } else {
@@ -73,14 +107,11 @@ function calculatePricing(lines, discountPct = 0, termYears = 1, startDate = "20
     }
 
     let monthTotal = 0;
+    const periodRatios = computeGroupRatios(lines, groups);
     lines.forEach(line => {
-      let gross = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
-      if (line.min_monthly_charge && Number(line.min_monthly_charge) > 0 && line.frequency !== 'one_time') {
-        let minAmt = Number(line.min_monthly_charge);
-        if (line.frequency === 'quarterly') minAmt *= 3;
-        if (line.frequency === 'annual') minAmt *= 12;
-        if (gross < minAmt) gross = minAmt;
-      }
+      let gross = grossOf(line);
+      const ratio = (line.group_id && line.frequency !== 'one_time') ? (periodRatios.get(line.group_id) || 1) : 1;
+      gross *= ratio;
       const net = gross * discountMultiplier;
 
       if (line.frequency === 'monthly') {
@@ -222,12 +253,46 @@ assert(
   `MRR: €${t6.netMonthlyMRR}/mo | Month 1 Cash: €${t6Month0.toLocaleString()} | Month 2 Cash: €${t6Month1} | TCV: €${t6.tcv.toLocaleString()}`
 );
 
-// Test 7: Minimum charge per month (€50/MW * 5 MW = €250/mo, but min charge is €500/mo -> €500/mo).
-const t7 = calculatePricing([{ unit_price: 50, quantity: 5, frequency: 'monthly', min_monthly_charge: 500 }], 0, 1);
+// Test 7: Group-level floor — two lines (€100/mo + €150/mo) bundled in a group with a
+// €500/mo floor → the COMBINED €250/mo is raised proportionally to the €500 floor (€200 + €300).
+const t7Groups = [{ id: 'grp-1', min_monthly_charge: 500 }];
+const t7 = calculatePricing(
+  [
+    { unit_price: 100, quantity: 1, frequency: 'monthly', group_id: 'grp-1' },
+    { unit_price: 150, quantity: 1, frequency: 'monthly', group_id: 'grp-1' }
+  ],
+  0,
+  1,
+  "2026-08-01",
+  null,
+  "2026-10",
+  t7Groups
+);
 assert(
   t7.netMonthlyMRR === 500 && t7.tcv === 6000,
-  "Test 7: Minimum charge floor overrides computed sub-minimum amount (€50 * 5 = €250 -> bumped to €500 min floor)",
+  "Test 7: Group floor applies to the COMBINED group total (€100 + €150 = €250/mo -> raised to €500/mo floor, distributed proportionally)",
   `Computed Net MRR: €${t7.netMonthlyMRR}/mo | TCV: €${t7.tcv.toLocaleString()}`
+);
+
+// Test 8: Group floor never discounts into individual lines — a single line above the
+// floor stays untouched, and the floor only binds on the group's combined total.
+const t8Groups = [{ id: 'grp-2', min_monthly_charge: 300 }];
+const t8 = calculatePricing(
+  [
+    { unit_price: 100, quantity: 1, frequency: 'monthly', group_id: 'grp-2' },
+    { unit_price: 350, quantity: 1, frequency: 'monthly', group_id: 'grp-2' }
+  ],
+  0,
+  1,
+  "2026-08-01",
+  null,
+  "2026-10",
+  t8Groups
+);
+assert(
+  t8.netMonthlyMRR === 450 && t8.tcv === 5400,
+  "Test 8: Group floor does not alter a group whose combined total already exceeds the floor (€100 + €350 = €450/mo >= €300 floor)",
+  `Computed Net MRR: €${t8.netMonthlyMRR}/mo | TCV: €${t8.tcv.toLocaleString()}`
 );
 
 console.log("\n================================================================");
