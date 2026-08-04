@@ -2,6 +2,11 @@
 -- Description: Allow admins to manage user roles (user_roles) and delete people profiles
 -- via a guarded stored procedure. Protects against admin lockout (last admin / self-demotion).
 
+-- 0. Orbit manages a single role per user profile; make profile_id unique so
+--    role updates can upsert cleanly (onConflict: profile_id).
+ALTER TABLE user_roles
+ADD CONSTRAINT uq_user_roles_profile_id UNIQUE (profile_id);
+
 -- 1. Admin policy on user_roles (insert/update/delete roles)
 DROP POLICY IF EXISTS policy_user_roles_admin ON user_roles;
 CREATE POLICY policy_user_roles_admin ON user_roles

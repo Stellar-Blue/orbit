@@ -444,10 +444,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       if (role) {
-        const { error: roleError } = await supabase.from('user_roles').upsert(
-          { profile_id: updated.id, role },
-          { onConflict: 'profile_id' }
-        );
+        const { error: roleError } = await supabase.from('user_roles')
+          .update({ role })
+          .eq('profile_id', updated.id);
         if (roleError) {
           console.error('Failed to update user role in database:', roleError);
           alert(`Role Error: ${roleError.message}`);
