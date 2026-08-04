@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ContractLine, CatalogItem } from '@/lib/types';
-import { calculateContractValuation, isVariableQuantityPricingScheme } from '@/lib/pricing-engine';
+import { calculateContractValuation, isVariableQuantityPricingScheme, calculateLineGrossAmount } from '@/lib/pricing-engine';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
@@ -49,7 +49,9 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       unit_label: l.unit_label || 'unit',
       frequency: l.frequency || 'monthly',
       note: l.note || '',
-      monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {}
+      monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {},
+      apply_discount: l.apply_discount !== false,
+      min_monthly_charge: l.min_monthly_charge ? Number(l.min_monthly_charge) : null
     }))
   );
 
@@ -112,7 +114,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         frequency: item.default_frequency,
         note: '',
         monthly_quantities: {},
-        apply_discount: true
+        apply_discount: true,
+        min_monthly_charge: null
       }
     ]);
     setSelectedCatalogId('');
@@ -130,7 +133,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         frequency: 'monthly',
         note: 'Custom negotiated rate',
         monthly_quantities: {},
-        apply_discount: true
+        apply_discount: true,
+        min_monthly_charge: null
       }
     ]);
   };
@@ -173,7 +177,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
 
       lines.forEach(line => {
         const effectiveQty = getEffectiveQuantity(line, i, termPeriods);
-        const grossLineVal = (Number(line.unit_price) || 0) * effectiveQty;
+        const { gross: grossLineVal } = calculateLineGrossAmount(line as any, effectiveQty);
         const lineMult = line.apply_discount !== false ? discountMultiplier : 1.0;
         const netLineVal = grossLineVal * lineMult;
 
@@ -390,6 +394,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                   <th className="py-2.5 px-4">Item Name / Module</th>
                   <th className="py-2.5 px-3 w-40">Unit Rate (€)</th>
+                  <th className="py-2.5 px-3 w-36">Min Charge / Mo (€)</th>
                   <th className="py-2.5 px-3 w-36">Base Qty / Mo Horizon</th>
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
@@ -401,7 +406,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
               <tbody className="divide-y divide-slate-200 text-sm">
                 {lines.map((line, idx) => {
                   const baseQty = Number(line.quantity) || 0;
-                  const lineGross = (Number(line.unit_price) || 0) * baseQty;
+                  const { gross: lineGross, minChargeApplied } = calculateLineGrossAmount(line as any, baseQty);
                   const isOneTime = line.frequency === 'one_time';
                   const isVariableScheme = isVariableQuantityPricingScheme(line, catalogModules, catalogItems);
                   const periodSuffix = line.frequency === 'monthly' ? '/ mo' : line.frequency === 'quarterly' ? '/ qtr' : line.frequency === 'annual' ? '/ year' : 'one-off';
@@ -445,6 +450,33 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                 className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500 min-w-[70px]"
                               />
                               <span className="text-[11px] font-bold text-slate-500 uppercase whitespace-nowrap">{periodSuffix}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 align-top">
+                          {isOneTime ? (
+                            <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded block text-center mt-1">
+                              N/A (One-off)
+                            </span>
+                          ) : readOnly ? (
+                            <span className="font-mono text-slate-700 font-bold block mt-1">
+                              {line.min_monthly_charge && Number(line.min_monthly_charge) > 0 ? `€${Number(line.min_monthly_charge).toLocaleString()} / mo` : 'No Min'}
+                            </span>
+                          ) : (
+                            <div>
+                              <div className="flex items-center space-x-1">
+                                <input
+                                  type="number"
+                                  step="1"
+                                  min="0"
+                                  value={line.min_monthly_charge ?? ''}
+                                  onChange={e => updateLine(idx, 'min_monthly_charge', e.target.value ? parseFloat(e.target.value) : null)}
+                                  placeholder="0 (None)"
+                                  className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500 min-w-[70px]"
+                                />
+                                <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap">/ MO</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-normal block mt-1">Floor price / mo</span>
                             </div>
                           )}
                         </td>
@@ -560,11 +592,16 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               <div className="text-[11px] font-normal text-slate-500">
                                 €{((monthlyMrrEquiv * (line.apply_discount !== false ? Math.max(0, 1 - discountPct / 100) : 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo ({line.apply_discount !== false && discountPct > 0 ? 'Net MRR' : 'Mo. 1 MRR'})
                               </div>
-                              {overrideCount > 0 && (
-                                <div className="text-[10px] font-semibold text-purple-600 mt-0.5">
-                                  Varies per monthly timeline
-                                </div>
-                              )}
+                                {overrideCount > 0 && (
+                                  <div className="text-[10px] font-semibold text-purple-600 mt-0.5">
+                                    Varies per monthly timeline
+                                  </div>
+                                )}
+                                {minChargeApplied && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 mt-1" title="Minimum monthly fee floor applied">
+                                    ⚡ Min Charge Applied
+                                  </span>
+                                )}
                             </div>
                           )}
                         </td>
@@ -629,7 +666,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                 {termPeriods.map((period, pIdx) => {
                                   const hasOverride = line.monthly_quantities?.[period] !== undefined && line.monthly_quantities?.[period] !== null && !isNaN(Number(line.monthly_quantities[period]));
                                   const effQty = getEffectiveQuantity(line, pIdx, termPeriods);
-                                  const periodGross = (Number(line.unit_price) || 0) * effQty;
+                                  const { gross: periodGross, minChargeApplied: periodMin } = calculateLineGrossAmount(line as any, effQty);
 
                                   return (
                                     <div 
@@ -697,6 +734,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                         <span>{line.unit_label || 'unit'}(s)</span>
                                         <span className="font-bold text-slate-300">
                                           €{periodGross.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                          {periodMin && <span className="block text-[9px] text-amber-400 font-normal">Min Floor</span>}
                                         </span>
                                       </div>
                                     </div>
@@ -707,7 +745,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800">
                                 <span>💡 Pro-tip: Edits automatically roll forward to all subsequent months until another manual override is encountered.</span>
                                 <span className="font-mono text-emerald-400 font-bold">
-                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + ((Number(line.unit_price) || 0) * getEffectiveQuantity(line, sIdx, termPeriods) * (line.apply_discount !== false ? Math.max(0, 1 - (Number(discountPct) || 0) / 100) : 1.0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  Line TCV Contribution: €{schedule.reduce((acc, r, sIdx) => acc + (calculateLineGrossAmount(line as any, getEffectiveQuantity(line, sIdx, termPeriods)).gross * (line.apply_discount !== false ? Math.max(0, 1 - (Number(discountPct) || 0) / 100) : 1.0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
                             </div>

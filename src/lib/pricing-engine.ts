@@ -60,6 +60,27 @@ export function isVariableQuantityPricingScheme(
 }
 
 /**
+ * Calculates the gross line item amount for a given quantity and frequency,
+ * enforcing any configured minimum monthly charge.
+ */
+export function calculateLineGrossAmount(
+  line: { unit_price?: number; frequency?: string; min_monthly_charge?: number | null },
+  qty: number
+): { gross: number; minChargeApplied: boolean } {
+  const baseGross = (Number(line.unit_price) || 0) * qty;
+  if (line.min_monthly_charge && Number(line.min_monthly_charge) > 0 && line.frequency !== 'one_time') {
+    let minTarget = Number(line.min_monthly_charge);
+    if (line.frequency === 'quarterly') minTarget *= 3;
+    else if (line.frequency === 'annual') minTarget *= 12;
+
+    if (baseGross < minTarget) {
+      return { gross: minTarget, minChargeApplied: true };
+    }
+  }
+  return { gross: baseGross, minChargeApplied: false };
+}
+
+/**
  * Maps a Weighted Annual Recurring Revenue (WARR) figure to a Tier 1-10 classification.
  */
 export function getContractTier(weightedARR: number): ContractTierResult {
@@ -155,7 +176,7 @@ export function calculateContractValuation(
     periods.forEach((period, pIdx) => {
       lines.forEach(l => {
         const effQty = getEffectiveQty(l, pIdx);
-        const grossVal = (Number(l.unit_price) || 0) * effQty;
+        const { gross: grossVal } = calculateLineGrossAmount(l as any, effQty);
         const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
         const netVal = grossVal * lineMult;
 
@@ -186,7 +207,7 @@ export function calculateContractValuation(
       if (l.frequency === 'one_time') return; // One-time fees do not contribute to ARR tiering
       
       const baseQty = Number(l.quantity) || 0;
-      let grossLineMo = (Number(l.unit_price) || 0) * baseQty;
+      let { gross: grossLineMo } = calculateLineGrossAmount(l as any, baseQty);
       if (l.frequency === 'annual') grossLineMo /= 12;
       else if (l.frequency === 'quarterly') grossLineMo /= 3;
       
@@ -411,9 +432,9 @@ export function calculateInvoiceAmountForPeriod(
 
   lines.forEach(l => {
     const qty = Number(l.quantity) || 0;
-    const unitPrice = Number(l.unit_price) || 0;
+    const { gross: baseGross } = calculateLineGrossAmount(l as any, qty);
     const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
-    const grossLine = unitPrice * qty * lineMult;
+    const grossLine = baseGross * lineMult;
 
     switch (l.frequency) {
       case 'one_time':

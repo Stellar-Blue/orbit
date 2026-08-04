@@ -31,7 +31,13 @@ function calculatePricing(lines, discountPct = 0, termYears = 1, startDate = "20
   let oneTimeTotal = 0;
 
   lines.forEach(line => {
-    const val = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+    let val = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+    if (line.min_monthly_charge && Number(line.min_monthly_charge) > 0 && line.frequency !== 'one_time') {
+      let minAmt = Number(line.min_monthly_charge);
+      if (line.frequency === 'quarterly') minAmt *= 3;
+      if (line.frequency === 'annual') minAmt *= 12;
+      if (val < minAmt) val = minAmt;
+    }
     if (line.frequency === 'one_time') {
       oneTimeTotal += val;
     } else {
@@ -68,7 +74,13 @@ function calculatePricing(lines, discountPct = 0, termYears = 1, startDate = "20
 
     let monthTotal = 0;
     lines.forEach(line => {
-      const gross = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+      let gross = (Number(line.unit_price) || 0) * (Number(line.quantity) || 0);
+      if (line.min_monthly_charge && Number(line.min_monthly_charge) > 0 && line.frequency !== 'one_time') {
+        let minAmt = Number(line.min_monthly_charge);
+        if (line.frequency === 'quarterly') minAmt *= 3;
+        if (line.frequency === 'annual') minAmt *= 12;
+        if (gross < minAmt) gross = minAmt;
+      }
       const net = gross * discountMultiplier;
 
       if (line.frequency === 'monthly') {
@@ -208,6 +220,14 @@ assert(
   t6.oneTimeTotal === 20000 && t6.netMonthlyMRR === 900 && t6.tcv === 30800 && t6Month0 === 20900 && t6Month1 === 900,
   "Test 6: One-time €20,000 implementation fee lands exclusively in Month 1 and is exempt from the 10% recurring discount",
   `MRR: €${t6.netMonthlyMRR}/mo | Month 1 Cash: €${t6Month0.toLocaleString()} | Month 2 Cash: €${t6Month1} | TCV: €${t6.tcv.toLocaleString()}`
+);
+
+// Test 7: Minimum charge per month (€50/MW * 5 MW = €250/mo, but min charge is €500/mo -> €500/mo).
+const t7 = calculatePricing([{ unit_price: 50, quantity: 5, frequency: 'monthly', min_monthly_charge: 500 }], 0, 1);
+assert(
+  t7.netMonthlyMRR === 500 && t7.tcv === 6000,
+  "Test 7: Minimum charge floor overrides computed sub-minimum amount (€50 * 5 = €250 -> bumped to €500 min floor)",
+  `Computed Net MRR: €${t7.netMonthlyMRR}/mo | TCV: €${t7.tcv.toLocaleString()}`
 );
 
 console.log("\n================================================================");

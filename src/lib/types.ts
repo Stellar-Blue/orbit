@@ -337,6 +337,7 @@ export interface ContractLine {
   note?: string | null;
   monthly_quantities?: { [period: string]: number } | null;
   apply_discount?: boolean;
+  min_monthly_charge?: number | null;
 }
 
 export interface ContractSchedule {
