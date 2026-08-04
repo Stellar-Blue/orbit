@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -15,6 +16,8 @@ import { CounterpartyPicker } from '@/components/counterparties/counterparty-pic
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 
+const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
+
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
   const params = useParams();
@@ -25,7 +28,7 @@ export default function ContractsRegistryPage() {
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices'>('general');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('table');
 
   const isAdmin = currentUser.role === 'admin';
 
@@ -437,109 +440,19 @@ export default function ContractsRegistryPage() {
           })}
         </div>
       ) : (
-        /* TABLE LIST VIEW */
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
-                <th className="p-3.5 pl-5">Reference & Counterparty</th>
-                <th className="p-3.5">Contract UUID</th>
-                <th className="p-3.5">Direction / Product</th>
-                <th className="p-3.5">Commercials</th>
-                <th className="p-3.5">Term Window</th>
-                <th className="p-3.5">Notice Deadline Alert</th>
-                <th className="p-3.5">Status</th>
-                {isAdmin && <th className="p-3.5 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredContracts.map(c => {
-                const { isUrgent, noticeDeadlineStr: tableDeadlineStr } = getContractNoticeStatus(c);
-                return (
-                  <tr 
-                    key={c.id} 
-                    onClick={() => setSelectedContract(c)} 
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 320), y: Math.min(e.clientY, window.innerHeight - 380), contract: c });
-                    }}
-                    className="hover:bg-slate-50 transition-colors cursor-pointer"
-                  >
-                    <td className="p-3.5 pl-5 font-medium">
-                      <div className="text-slate-800 font-bold">{c.counterparty?.legal_name}</div>
-                      <div className="text-xs text-[#3D87D3] font-mono">{c.reference}</div>
-                    </td>
-                    <td className="p-3.5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={(e) => copyToClipboard(c.id, `Contract UUID (${c.id.slice(0, 8)}...)`, c.id, e)}
-                        className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
-                        title="Click to copy full Contract UUID · Right-click row for Fast Report"
-                      >
-                        <span>{c.id.slice(0, 8)}...{c.id.slice(-4)}</span>
-                        {copiedId === c.id ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="p-3.5">
-                      <Badge variant={c.direction === 'revenue' ? 'success' : 'warning'}>{c.direction.toUpperCase()}</Badge>
-                      <div className="text-xs text-slate-500 mt-1">{c.product || c.type}</div>
-                    </td>
-                    <td className="p-3.5 font-mono font-semibold text-slate-800">
-                      {(() => {
-                        const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
-                        return (
-                          <div className="space-y-1">
-                            <div className="font-black text-emerald-700 text-xs">€{val.netARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr ARR</div>
-                            {val.oneTimeValue > 0 && (
-                              <div className="text-[11px] text-amber-600">+€{val.oneTimeValue.toLocaleString()} one-off</div>
-                            )}
-                            <div className="text-[11px] text-slate-500">TCV: €{val.totalContractValue.toLocaleString()}</div>
-                            <div className="pt-0.5">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${val.tierInfo.badgeClass}`}>
-                                {val.tierInfo.label}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-3.5 text-xs text-slate-500">
-                      {c.starts_on} &rarr; {c.ends_on || 'Indefinite'}
-                    </td>
-                    <td className="p-3.5 text-xs">
-                      <span className={`inline-flex items-center font-bold ${isUrgent ? 'text-rose-600' : 'text-slate-700'}`}>
-                        <Clock className="w-3.5 h-3.5 mr-1.5 shrink-0" /> {tableDeadlineStr} ({c.notice_period_days || 30}d window)
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      <Badge variant={c.status === 'active' ? 'success' : 'error'}>{c.status.toUpperCase()}</Badge>
-                    </td>
-                    {isAdmin && (
-                      <td className="p-3.5 text-right" onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
-                              await deleteContract(c.id);
-                            }
-                          }}
-                          className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50 cursor-pointer"
-                          title="Delete Contract"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        /* TABLE LIST VIEW (AG GRID) */
+        <ContractsGrid
+          contracts={filteredContracts}
+          catalogModules={catalogModules}
+          catalogItems={catalogItems}
+          isAdmin={isAdmin}
+          onSelect={setSelectedContract}
+          onDelete={(c) => {
+            if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
+              deleteContract(c.id);
+            }
+          }}
+        />
       )}
 
       {/* VIEW 3: EXECUTIVE REVENUE SCHEDULE & MRR LANDING */}
