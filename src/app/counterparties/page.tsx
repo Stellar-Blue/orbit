@@ -5,7 +5,8 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Counterparty, AttioLink, CounterpartyContact } from '@/lib/types';
+import { Counterparty, AttioLink, CounterpartyContact, Contract } from '@/lib/types';
+import { calculateContractValuation } from '@/lib/pricing-engine';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { TierOverrideForm } from '@/components/counterparties/tier-override-form';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
@@ -214,14 +215,15 @@ export default function CounterpartiesRegistryPage() {
     }
   };
 
+  const getContractVal = (c: Contract) => calculateContractValuation(
+    c.lines || [], c.discount_pct || 0, c.term_years || 1,
+    c.service_start_date || c.starts_on, catalogModules, catalogItems,
+    c.value || 0, c.billing_cadence
+  );
+
   const getContractArr = (cpId: string) => {
     const cpContracts = contracts.filter(c => c.counterparty_id === cpId && c.status === 'active' && c.direction === 'revenue');
-    return cpContracts.reduce((sum, c) => {
-      let val = c.value || 0;
-      if (c.billing_cadence === 'monthly') val = val * 12;
-      else if (c.billing_cadence === 'quarterly') val = val * 4;
-      return sum + val;
-    }, 0);
+    return cpContracts.reduce((sum, c) => sum + getContractVal(c).netARR, 0);
   };
 
   const getContractCount = (cpId: string) => {
@@ -1130,8 +1132,20 @@ export default function CounterpartiesRegistryPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-mono font-bold text-slate-900">€{(cnt.value || 0).toLocaleString()}</div>
-                              <div className="text-[11px] text-slate-400 font-mono">{cnt.billing_cadence}</div>
+                              {(() => {
+                                const val = getContractVal(cnt);
+                                return val.netARR > 0 ? (
+                                  <>
+                                    <div className="font-mono font-bold text-slate-900">€{val.netARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}<span className="text-[11px] text-slate-400">/yr</span></div>
+                                    <div className="text-[11px] text-slate-400 font-mono">{cnt.billing_cadence} · ARR</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="font-mono font-bold text-slate-900">€{(val.oneTimeValue || cnt.value || 0).toLocaleString()}<span className="text-[11px] text-slate-400">/yr</span></div>
+                                    <div className="text-[11px] text-slate-400 font-mono">one-off</div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </Link>
                         ))

@@ -3,6 +3,7 @@
   "plugin": [
     "opencode-caveman"
   ],
+  "lsp": true,
   "mcp": {
     "supabase": {
       "type": "remote",
