@@ -3,14 +3,34 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays } from 'lucide-react';
 import { IntegrationSettings } from '@/lib/integrations/types';
+
+interface OutlookSettings {
+  enabled: boolean;
+  leave_label: string;
+  remote_label: string;
+  half_day_label: string;
+  horizon_days: number;
+}
+
+const DEFAULT_OUTLOOK: OutlookSettings = {
+  enabled: true,
+  leave_label: 'Out of office',
+  remote_label: 'Working remotely',
+  half_day_label: 'Out of office (afternoon)',
+  horizon_days: 60,
+};
 
 export function IntegrationsSettings() {
   const { profiles, integrationSettings, integrationExceptions, integrationLastReconciledAt, refreshIntegrationState } = useAuth();
   const [settings, setSettings] = useState<IntegrationSettings>(integrationSettings);
+  const [outlook, setOutlook] = useState<OutlookSettings>(DEFAULT_OUTLOOK);
+  const [outlookLoaded, setOutlookLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<'none' | 'saved' | 'error'>('none');
+  const [savingOutlook, setSavingOutlook] = useState(false);
+  const [outlookMsg, setOutlookMsg] = useState<'none' | 'saved' | 'error'>('none');
   const [exemptions, setExemptions] = useState<Array<{
     id: string;
     profile_id: string;
@@ -41,6 +61,27 @@ export function IntegrationsSettings() {
     const t = setTimeout(() => {
       loadExemptions();
       refreshIntegrationState();
+      (async () => {
+        try {
+          const res = await fetch('/api/integrations/settings');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.outlook) {
+              setOutlook({
+                enabled: data.outlook.enabled ?? true,
+                leave_label: data.outlook.leaveLabel,
+                remote_label: data.outlook.remoteLabel,
+                half_day_label: data.outlook.halfDayLabel,
+                horizon_days: data.outlook.horizonDays,
+              });
+            }
+          }
+        } catch (e) {
+          console.error('load outlook settings error:', e);
+        } finally {
+          setOutlookLoaded(true);
+        }
+      })();
     }, 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,6 +104,33 @@ export function IntegrationsSettings() {
     } finally {
       setSaving(false);
       setTimeout(() => setSaveMsg('none'), 3000);
+    }
+  };
+
+  const handleSaveOutlook = async () => {
+    setSavingOutlook(true);
+    setOutlookMsg('none');
+    try {
+      const res = await fetch('/api/integrations/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'm365',
+          outlook: {
+            leave_label: outlook.leave_label,
+            remote_label: outlook.remote_label,
+            half_day_label: outlook.half_day_label,
+            enabled: outlook.enabled,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      setOutlookMsg('saved');
+    } catch {
+      setOutlookMsg('error');
+    } finally {
+      setSavingOutlook(false);
+      setTimeout(() => setOutlookMsg('none'), 3000);
     }
   };
 
@@ -163,6 +231,68 @@ export function IntegrationsSettings() {
           {field('half_day_label', 'Half-day leave text', 'Shown for half-day leave')}
           {field('remote_label', 'Remote status text', 'Shown on remote days')}
           {field('remote_emoji', 'Remote emoji', 'Slack emoji, e.g. :house:')}
+        </div>
+      </Card>
+
+      {/* Outlook calendar mirroring */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-blue-500" />
+            <h4 className="font-bold text-slate-900 text-sm">Outlook Calendar Mirroring</h4>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={outlook.enabled}
+              onChange={e => setOutlook(prev => ({ ...prev, enabled: e.target.checked }))}
+              className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
+            />
+            Mirroring {outlook.enabled ? 'enabled' : 'disabled'}
+          </label>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Approved leave becomes an all-day <strong>Out of office</strong> event (show-as <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">oof</code>) so scheduling assistants mark the person unavailable;
+          remote days become <strong>Working remotely</strong> events. Only Orbit-created events (marked with an open extended property) are ever touched. Sync runs every night + immediately on approval/cancellation/edit.
+        </p>
+        {outlookMsg === 'saved' && <div className="mb-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5" /> Outlook settings saved — applies from the next sync.</div>}
+        {outlookMsg === 'error' && <div className="mb-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Failed to save Outlook settings.</div>}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Leave event subject</label>
+            <input
+              type="text"
+              value={outlook.leave_label}
+              onChange={e => setOutlook(prev => ({ ...prev, leave_label: e.target.value }))}
+              className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Remote event subject</label>
+            <input
+              type="text"
+              value={outlook.remote_label}
+              onChange={e => setOutlook(prev => ({ ...prev, remote_label: e.target.value }))}
+              className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Half-day subject</label>
+            <input
+              type="text"
+              value={outlook.half_day_label}
+              onChange={e => setOutlook(prev => ({ ...prev, half_day_label: e.target.value }))}
+              className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-4">
+          <span className="text-[10px] text-slate-400 font-mono mr-auto">
+            {outlookLoaded ? `Horizon: ${outlook.horizon_days} days · Athens timezone` : 'Loading…'}
+          </span>
+          <Button size="sm" variant="primary" onClick={handleSaveOutlook} disabled={savingOutlook} className="bg-[#3D87D3] text-white cursor-pointer">
+            {savingOutlook ? 'Saving…' : 'Save Outlook Settings'}
+          </Button>
         </div>
       </Card>
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { athensToday, computeDayState, deliverSlackOutbox, enqueueOutbox, getAdminClient, getSlackSettings } from '@/lib/integrations/server';
+import { syncOutlookForProfile } from '@/lib/integrations/outlook';
 import { GATED_EMPLOYMENT_TYPES } from '@/lib/integrations/types';
 
 export async function GET(request: NextRequest) {
@@ -45,7 +46,19 @@ export async function GET(request: NextRequest) {
   // 2. Drain the outbox (morning set + any immediate ops that queued up)
   const summary = await deliverSlackOutbox(admin, 100);
 
-  // 3. Reconciliation checkpoint
+  // 3. Outlook calendar mirroring (leave + remote events, next 60 days per settings)
+  const outlookSummary = { ok: 0, skipped: 0, errors: [] as string[] };
+  for (const profile of (profiles || []) as { id: string }[]) {
+    const r = await syncOutlookForProfile(admin, profile.id);
+    if (r.ok) outlookSummary.ok += 1;
+    else if (r.skipped && r.skipped !== 'no_credentials' && r.skipped !== 'disabled') {
+      outlookSummary.errors.push(`${profile.id}:${r.skipped}`);
+    } else {
+      outlookSummary.skipped += 1;
+    }
+  }
+
+  // 4. Reconciliation checkpoint
   await admin.from('integration_settings').upsert({
     provider: 'slack',
     key: 'last_reconciled_at',
@@ -63,5 +76,6 @@ export async function GET(request: NextRequest) {
     remoteDaysToday: remoteCount,
     enqueued,
     delivery: summary,
+    outlook: outlookSummary,
   });
 }

@@ -21,7 +21,11 @@ export async function enqueueStatusSync(profileId: string, date: string, orbitId
     console.error('enqueueStatusSync error:', e);
   }
   try {
-    await fetch('/api/integrations/deliver', { method: 'POST' });
+    await fetch('/api/integrations/deliver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_id: profileId }),
+    });
   } catch (e) {
     console.error('deliverStatusSync error:', e);
   }
