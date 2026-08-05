@@ -82,7 +82,7 @@ interface GraphEventPayload {
 }
 
 type GraphResult =
-  | { ok: true; event?: Record<string, unknown> }
+  | { ok: true; event?: Record<string, unknown>; status?: number; code?: string }
   | { ok: false; status: number; code?: string; message?: string; retryAfter?: number };
 
 async function graphRequest(
@@ -416,8 +416,8 @@ async function syncWorkPlan(
   profileId: string,
   today: string,
   horizonEnd: string
-): Promise<{ created: number; updated: number; deleted: number; skipped?: string }> {
-  const summary = { created: 0, updated: 0, deleted: 0 };
+): Promise<{ created: number; updated: number; deleted: number; unchanged: number; skipped?: string }> {
+  const summary = { created: 0, updated: 0, deleted: 0, unchanged: 0 };
 
   // Remote rules (recurrences): Orbit remote patterns + ad-hoc remote days (one-day rules)
   const { data: patterns } = await admin
@@ -488,9 +488,21 @@ async function syncWorkPlan(
 
   const existingRefs = await loadWorkPlanRefs(admin, profileId);
 
+  // Office days: every work_schedule weekday that is NOT a remote-pattern day is an office day.
+  // Orbit ensures the plan shows `office` explicitly so the calendar reads at a glance.
+  const { data: profRow } = await admin.from('profiles').select('work_schedule').eq('id', profileId).maybeSingle();
+  const workSchedule: string[] = profRow?.work_schedule || [];
+  const patternWeekdays = new Set(Array.from(desiredRules.values()).map(r => r.weekday));
+  const desiredOffice = new Map<string, string>(); // graph weekday -> marker
+  for (const day of workSchedule) {
+    const wd = graphWeekday(day);
+    if (!wd || patternWeekdays.has(wd)) continue;
+    desiredOffice.set(wd, `wprec:off:${wd}`);
+  }
+
   // Reconcile remote rules against the user's EXISTING work plan.
   // The plan has one recurring rule per weekday; Orbit flips the matching rule to `remote`
-  // (never creating overlapping segments — Graph rejects those), and reverts to `unspecified`
+  // (never creating overlapping segments — Graph rejects those), and reverts to `office`
   // when the Orbit pattern no longer calls for remote that day.
   const existingRules = await wpListRecurrences(token, mailboxEmail);
   if (!existingRules.ok) {
@@ -565,6 +577,60 @@ async function syncWorkPlan(
     summary.created += 1;
   }
 
+  // Office rules: flip/ensure `office` for every non-remote work-schedule weekday
+  for (const [wd, marker] of desiredOffice) {
+    const ref = existingRefs.get(marker);
+    const existing = rulesByWeekday.get(wd);
+    if (ref?.external_id && !ref.deleted_at) {
+      if (existing && String(existing.id) === ref.external_id && existing.workLocationType === 'office') {
+        summary.unchanged += 1;
+        continue;
+      }
+      const target = existing && String(existing.id) === ref.external_id ? existing : undefined;
+      const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...(target || {}), workLocationType: 'office' });
+      if (!res.ok) {
+        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+        summary.updated += 1;
+        continue;
+      }
+      summary.updated += 1;
+      continue;
+    }
+    if (existing) {
+      if (existing.workLocationType === 'office') continue;
+      const res = await wpUpdateRecurrence(token, mailboxEmail, String(existing.id), { ...existing, workLocationType: 'office' });
+      if (!res.ok) {
+        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+        continue;
+      }
+      await admin.from('external_refs').insert({
+        provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: profileId,
+        external_id: String(existing.id), marker,
+      });
+      summary.updated += 1;
+      continue;
+    }
+    // Weekday has no plan rule at all — create an office rule
+    const res = await wpCreateRecurrence(token, mailboxEmail, {
+      start: { dateTime: `${today}T08:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
+      end: { dateTime: `${today}T17:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
+      workLocationType: 'office',
+      recurrence: {
+        pattern: { type: 'weekly', interval: 1, daysOfWeek: [wd] },
+        range: { type: 'noEnd', startDate: today, recurrenceTimeZone: ATHENS_TIMEZONE },
+      },
+    });
+    if (!res.ok) {
+      if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+      continue;
+    }
+    await admin.from('external_refs').insert({
+      provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: profileId,
+      external_id: String(res.event?.id), marker,
+    });
+    summary.created += 1;
+  }
+
   // Time-off: create or PUT
   for (const t of desiredTimeOff.values()) {
     const ref = existingRefs.get(t.marker);
@@ -592,9 +658,31 @@ async function syncWorkPlan(
   }
 
   // Stale work plan artifacts
+  const desiredOfficeMarkers = new Set(desiredOffice.values());
   for (const ref of existingRefs.values()) {
-    if (desiredRules.has(ref.marker) || desiredTimeOff.has(ref.marker)) continue;
+    if (desiredRules.has(ref.marker) || desiredTimeOff.has(ref.marker) || desiredOfficeMarkers.has(ref.marker)) continue;
     if (!ref.external_id || ref.deleted_at) continue;
+
+    if (ref.marker.startsWith('wprec:off:')) {
+      // Office rule no longer desired (weekday became remote or left the work schedule) — revert to unspecified
+      const wd = ref.marker.replace('wprec:off:', '');
+      const existing = rulesByWeekday.get(wd);
+      const gone = (res2: GraphResult) => !res2.ok && !isForbidden(res2) && !isGone(res2);
+      if (existing && String(existing.id) === ref.external_id) {
+        const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...existing, workLocationType: 'unspecified' });
+        if (gone(res)) {
+          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+        }
+      } else {
+        const res = await wpDeleteRecurrence(token, mailboxEmail, ref.external_id);
+        if (gone(res)) {
+          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+        }
+      }
+      await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
+      summary.deleted += 1;
+      continue;
+    }
 
     // Legacy remote-day calendar events (replaced by work plan rules) — delete as events
     if (ref.marker.startsWith('remote:day:') || ref.marker.startsWith('remote:pat:')) {
@@ -618,13 +706,14 @@ async function syncWorkPlan(
       const wd = patternWeekday.get(patternId);
       const existing = wd ? rulesByWeekday.get(wd) : undefined;
       if (existing && String(existing.id) === ref.external_id) {
-        const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...existing, workLocationType: 'unspecified' });
-        if (!res.ok && !isForbidden(res)) {
+        const revertTo = wd && desiredOffice.has(wd) ? 'office' : 'unspecified';
+        const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...existing, workLocationType: revertTo });
+        if (!res.ok && !isForbidden(res) && !isGone(res)) {
           return { ...summary, skipped: `graph_error:${res.code || res.status}` };
         }
       } else {
         const res = await wpDeleteRecurrence(token, mailboxEmail, ref.external_id);
-        if (!res.ok && !isForbidden(res)) {
+        if (!res.ok && !isForbidden(res) && !isGone(res)) {
           return { ...summary, skipped: `graph_error:${res.code || res.status}` };
         }
       }
@@ -634,7 +723,7 @@ async function syncWorkPlan(
     }
 
     const res = await wpDeleteOccurrence(token, mailboxEmail, ref.external_id);
-    if (!res.ok && !isForbidden(res)) {
+    if (!res.ok && !isForbidden(res) && !isGone(res)) {
       return { ...summary, skipped: `graph_error:${res.code || res.status}` };
     }
     await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
@@ -659,6 +748,10 @@ async function loadWorkPlanRefs(admin: SupabaseClient, profileId: string): Promi
 
 function isForbidden(r: { status: number; code?: string }): boolean {
   return r.status === 403 || r.code === 'Authorization_RequestDenied' || r.code === 'AuthenticationError';
+}
+
+function isGone(r: { status: number; code?: string }): boolean {
+  return r.status === 404 || r.code === 'ErrorItemNotFound' || r.code === 'ResourceNotFound' || r.code === 'Request_ResourceNotFound';
 }
 
 function eventDrifted(event: Record<string, unknown> | undefined, ev: DesiredEvent): boolean {

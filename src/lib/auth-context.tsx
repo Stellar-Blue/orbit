@@ -2108,6 +2108,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         mode: pe.mode,
         valid_from: validFrom
       }));
+      // Replace semantics: drop pattern weekdays that were removed in the editor,
+      // otherwise stale rows keep the old weekday remote in the Outlook work plan
+      const existingWeekdays = remotePatterns.filter(rp => rp.profile_id === profileId).map(rp => rp.weekday);
+      const removedWeekdays = existingWeekdays.filter(w => !patternEntries.some(pe => pe.weekday === w));
+      if (removedWeekdays.length > 0) {
+        await supabase.from('remote_patterns').delete().eq('profile_id', profileId).in('weekday', removedWeekdays);
+      }
       const { error, data } = await supabase.from('remote_patterns').upsert(payload, { onConflict: 'profile_id,weekday' }).select();
       if (error) {
         console.error("Failed to persist remote pattern in Supabase:", error);
@@ -2155,9 +2162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
         return [newDay, ...filtered];
       });
-      if (newDay.date === athensTodayStr()) {
-        syncSlackStatus(newDay.profile_id, newDay.date);
-      }
+      syncSlackStatus(newDay.profile_id, newDay.date);
     } catch (e: any) {
       console.error("Exception saving remote day:", e);
     }
