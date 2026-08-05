@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
-  validateModelConfig, simulateConfig, tierLabel, DEFAULT_CLIENT_MODEL_CONFIG, METRIC_LABELS,
+  validateModelConfig, simulateConfig, tierLabel, DEFAULT_CLIENT_MODEL_CONFIG, METRIC_LABELS, METRIC_DESCRIPTIONS,
   type TierModelConfig, type MetricConfig, type TierConfig, type TierDataContext
 } from '@/lib/tiering-engine';
 import { Button, Badge } from '@/components/ui/primitives';
@@ -181,8 +181,13 @@ export const TieringSettings: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <input type="checkbox" checked={metric.enabled} onChange={e => updateMetric(key, { enabled: e.target.checked })}
                       className="accent-indigo-600 w-4 h-4 cursor-pointer" />
-                    <span className={`font-bold text-sm flex-1 ${metric.enabled ? 'text-slate-800' : 'text-slate-400'}`}>{METRIC_LABELS[key] || key}</span>
-                    <span className="text-[10px] uppercase text-slate-400 font-bold">Weight</span>
+                    <span className={`font-bold text-sm flex-1 ${metric.enabled ? 'text-slate-800' : 'text-slate-400'}`}>
+                      {METRIC_LABELS[key] || key}
+                      <span className="block text-[11px] font-normal text-slate-500 mt-0.5 leading-snug max-w-xl">
+                        {METRIC_DESCRIPTIONS[key] || ''}
+                      </span>
+                    </span>
+                    <span className="text-[10px] uppercase text-slate-400 font-bold shrink-0">Weight</span>
                     <input type="number" min="1" value={metric.weight}
                       onChange={e => updateMetric(key, { weight: Math.max(0, num(e.target.value, 1)) })}
                       className="w-16 bg-white border border-slate-300 rounded px-2 py-1 text-xs font-mono text-right focus:outline-none focus:border-indigo-500" />

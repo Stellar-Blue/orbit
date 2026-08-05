@@ -104,6 +104,19 @@ export const METRIC_LABELS: Record<string, string> = {
   supplier_spend_annual: 'Supplier Spend (Annual)'
 };
 
+export const METRIC_DESCRIPTIONS: Record<string, string> = {
+  active_arr: 'Current annualized recurring value across active revenue contracts (post-discount). The primary signal — what this counterparty is worth per year right now.',
+  committed_remaining: 'Sum of scheduled value from today to each active contract\u2019s end. Distinguishes a large one-year deal from a large five-year one.',
+  tenure_months: 'Months since the counterparty\u2019s earliest contract started. Rewards durable relationships without dominating the score.',
+  product_breadth: 'Number of distinct products/module groups under contract (Atlas ETRM, EMS, \u2026). Multi-product clients are structurally stickier and strategically weightier.',
+  active_contracts: 'Count of active contracts in the model\u2019s direction.',
+  lifetime_invoiced: 'Total invoiced across all time (net of credit notes). Needs accumulated invoice history to be meaningful.',
+  payment_behavior: 'Share of invoiced amount paid within terms over the trailing 12 months (AR: do they pay us on time). Requires ~12 months of invoice history.',
+  growth_yoy: 'ARR now vs 12 months ago, as a percentage. Requires historical revenue schedule data.',
+  avg_contract_term: 'Weighted average committed term of active contracts, weighted by ARR (months).',
+  supplier_spend_annual: '(Supplier model) Annualized cost-direction committed spend.'
+};
+
 export const MODEL_DIRECTION: Record<TierModel, 'revenue' | 'cost'> = {
   client: 'revenue',
   supplier: 'cost'
