@@ -268,6 +268,71 @@ export interface Counterparty {
   contacts?: CounterpartyContact[];
   // Derived helper field in UI
   derived_role?: 'client' | 'supplier' | 'both' | 'none yet';
+  // Computed tiering state (enriched client-side)
+  tier?: CounterpartyTierState;
+}
+
+export type TierModel = 'client' | 'supplier';
+
+export interface CounterpartyTierState {
+  tier_index: number | null;
+  tier_count: number;
+  score: number | null;
+  breakdown: Record<string, unknown>;
+  computed_at?: string;
+  label: string;
+  color: string;
+  overridden: boolean;
+  override_tier_index?: number | null;
+  override_reason?: string;
+  override_expires_on?: string;
+}
+
+export interface TierModelVersion {
+  id: string;
+  model: TierModel;
+  tier_count: number;
+  config: Record<string, unknown>;
+  created_by?: string | null;
+  created_at?: string;
+  active: boolean;
+}
+
+export interface CounterpartyTierRow {
+  counterparty_id: string;
+  model: TierModel;
+  tier_index: number | null;
+  tier_count: number;
+  score: number | null;
+  breakdown: Record<string, unknown>;
+  model_version_id?: string | null;
+  computed_at?: string;
+}
+
+export interface CounterpartyTierHistoryRow {
+  id: string;
+  counterparty_id: string;
+  model: TierModel;
+  old_tier_index: number | null;
+  new_tier_index: number | null;
+  old_tier_count: number | null;
+  new_tier_count: number | null;
+  old_score: number | null;
+  new_score: number | null;
+  cause: 'data_change' | 'config_change' | 'override';
+  model_version_id?: string | null;
+  changed_at?: string;
+}
+
+export interface CounterpartyTierOverride {
+  id: string;
+  counterparty_id: string;
+  model: TierModel;
+  tier_index: number | null;
+  reason: string;
+  expires_on?: string | null;
+  created_by?: string | null;
+  created_at?: string;
 }
 
 export interface Contract {

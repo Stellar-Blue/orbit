@@ -9,6 +9,7 @@ import {
   Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter, Receipt, ChevronRight
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
+import { TieringSettings } from '@/components/settings/tiering-settings';
 
 export default function CompanySettingsPage() {
   const { 
@@ -20,7 +21,7 @@ export default function CompanySettingsPage() {
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'general'>('remote');
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
   const [attioApiKey, setAttioApiKey] = useState('attio_live_key_5572910a9c8d7e6f_stellarblue');
@@ -67,7 +68,7 @@ export default function CompanySettingsPage() {
     }
   };
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
@@ -76,7 +77,7 @@ export default function CompanySettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
-    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'invoices', 'general'].includes(savedTab)) {
+    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'invoices', 'tiering', 'general'].includes(savedTab)) {
       setSelectedTab(savedTab);
     }
     const savedApiKey = localStorage.getItem('orbit_attio_api_key');
@@ -1889,6 +1890,10 @@ export default function CompanySettingsPage() {
       )}
 
       {/* TAB 6: INVOICE & BUDGET CATEGORIES */}
+      {selectedTab === 'tiering' && (
+        <TieringSettings />
+      )}
+
       {selectedTab === 'invoices' && (
         <div className="space-y-8 animate-fadeIn">
           <div className="flex items-center justify-between">
@@ -2202,6 +2207,26 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-[#3D87D3] font-black uppercase">Live</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('tiering')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'tiering'
+                  ? 'bg-indigo-50/70 border-indigo-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'tiering' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-indigo-50 text-indigo-600'}`}>
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Counterparty Tiering</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configurable scoring model & simulation</div>
+                </div>
+              </div>
+              <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-100 text-indigo-700 font-black uppercase">Model</span>
             </button>
 
             <button

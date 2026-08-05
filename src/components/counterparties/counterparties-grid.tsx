@@ -5,9 +5,8 @@ import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Counterparty, Contract, CatalogModule, CatalogItem } from '@/lib/types';
-import { calculateCounterpartyValuation } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
-import { Copy, Check, MapPin, ShieldCheck, RefreshCw, ExternalLink, Unlink, Trash2, Search } from 'lucide-react';
+import { Copy, Check, MapPin, ShieldCheck, RefreshCw, ExternalLink, Unlink, Trash2, Search, Pin } from 'lucide-react';
 
 interface CpRow {
   cp: Counterparty;
@@ -22,18 +21,11 @@ interface CpRow {
   arr: number;
   attioLinked: boolean;
   attioId: string;
-  portfolioTier: string;
-  portfolioTierClass: string;
-  portfolioARR: number;
-  portfolioTCV: number;
-  portfolioContracts: number;
+  tierLabel: string;
 }
 
 interface CounterpartiesGridProps {
   counterparties: Counterparty[];
-  contracts: Contract[];
-  catalogModules: CatalogModule[];
-  catalogItems: CatalogItem[];
   isAdmin: boolean;
   onOpen: (cp: Counterparty) => void;
   onDelete: (cp: Counterparty) => void;
@@ -50,9 +42,6 @@ const roleBadge = (role: string | undefined) => {
 
 export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
   counterparties,
-  contracts,
-  catalogModules,
-  catalogItems,
   isAdmin,
   onOpen,
   onDelete,
@@ -71,8 +60,6 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
 
   const rowData = useMemo<CpRow[]>(() => {
     return counterparties.map(cp => {
-      const cpContracts = contracts.filter(c => c.counterparty_id === cp.id);
-      const portfolio = calculateCounterpartyValuation(cpContracts, catalogModules, catalogItems);
       return {
         cp,
         name: cp.legal_name,
@@ -86,14 +73,10 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
         arr: getContractArr(cp.id),
         attioLinked: cp.attio_link?.link_status === 'linked',
         attioId: cp.attio_link?.attio_record_id || cp.id,
-        portfolioTier: portfolio.tierInfo.label,
-        portfolioTierClass: portfolio.tierInfo.badgeClass,
-        portfolioARR: portfolio.totalNetARR,
-        portfolioTCV: portfolio.totalContractValue,
-        portfolioContracts: portfolio.contractCount
+        tierLabel: cp.tier?.label || 'Unrated'
       };
     });
-  }, [counterparties, contracts, catalogModules, catalogItems, getContractCount, getContractArr]);
+  }, [counterparties, getContractCount, getContractArr]);
 
   const columnDefs = useMemo<ColDef<CpRow>[]>(() => [
     {
@@ -170,17 +153,23 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
       )
     },
     {
-      headerName: 'Portfolio Tier (Counterparty)', field: 'portfolioTier', width: 250, sortable: true, ...excelSetFilter(),
-      cellRenderer: (p: ICellRendererParams<CpRow, string>) => (
-        <div className="space-y-1">
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-block ${p.data?.portfolioTierClass || ''}`}>
-            {p.value}
-          </span>
-          <div className="text-[10px] text-slate-500 font-mono">
-            {p.data?.portfolioContracts} contract{p.data?.portfolioContracts === 1 ? '' : 's'} · €{(p.data?.portfolioARR || 0).toLocaleString()}/yr ARR
+      headerName: 'Client Tier', field: 'tierLabel', width: 200, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<CpRow, string>) => {
+        const tier = p.data?.cp.tier;
+        if (!tier) return <span className="text-slate-400 text-xs">—</span>;
+        return (
+          <div className="space-y-1" title={tier.overridden ? `Pinned: ${tier.override_reason || 'Override'}` : undefined}>
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border"
+              style={{ color: tier.color, borderColor: `${tier.color}55`, backgroundColor: `${tier.color}14` }}>
+              {tier.overridden && <Pin className="w-2.5 h-2.5 shrink-0" />}
+              {tier.label}
+            </span>
+            <div className="text-[10px] text-slate-500 font-mono">
+              {tier.score !== null ? `Score ${tier.score}/100` : 'Unrated'} {tier.overridden && `· computed ${tier.tier_index === null ? 'Unrated' : `Tier ${tier.tier_index + 1}`}`}
+            </div>
           </div>
-        </div>
-      )
+        );
+      }
     },
     {
       headerName: 'Attio CRM', field: 'attioLinked', width: 140, sortable: true,

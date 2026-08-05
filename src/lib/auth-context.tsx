@@ -7,10 +7,12 @@ import {
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
+  CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
+import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 
 interface AppState {
   currentUser: Profile;
@@ -35,6 +37,10 @@ interface AppState {
   catalogItems: CatalogItem[];
   contractLines: ContractLine[];
   contractSchedules: ContractSchedule[];
+  tierModelVersions: TierModelVersion[];
+  tierStates: CounterpartyTierRow[];
+  tierHistory: CounterpartyTierHistoryRow[];
+  tierOverrides: CounterpartyTierOverride[];
   invoices: Invoice[];
   invoiceCategories: InvoiceCategory[];
   invoiceDocuments: InvoiceDocument[];
@@ -79,6 +85,9 @@ interface AppState {
   reconcileAttio: () => Promise<void>;
   reassignContracts: (fromCpId: string, contractIds: string[], toCpId: string) => Promise<boolean>;
   addCounterpartyContact: (contact: Partial<CounterpartyContact>) => Promise<boolean>;
+  recomputeTiers: (model: 'client' | 'supplier', cause: 'data_change' | 'config_change' | 'override') => Promise<{ ok: boolean; changes: CounterpartyTierHistoryRow[]; error?: string }>;
+  applyTierModelConfig: (model: 'client' | 'supplier', config: Record<string, unknown>, tierCount: number) => Promise<{ ok: boolean; changes: CounterpartyTierHistoryRow[]; error?: string }>;
+  setTierOverride: (counterpartyId: string, model: 'client' | 'supplier', tierIndex: number | null, reason: string, expiresOn?: string) => Promise<boolean>;
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
   saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<boolean>;
   updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
@@ -161,6 +170,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
   const [contractSchedules, setContractSchedules] = useState<ContractSchedule[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [tierModelVersions, setTierModelVersions] = useState<TierModelVersion[]>([]);
+  const [tierStates, setTierStates] = useState<CounterpartyTierRow[]>([]);
+  const [tierHistory, setTierHistory] = useState<CounterpartyTierHistoryRow[]>([]);
+  const [tierOverrides, setTierOverrides] = useState<CounterpartyTierOverride[]>([]);
   const [invoiceCategories, setInvoiceCategories] = useState<InvoiceCategory[]>([]);
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
@@ -185,7 +198,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
           holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
-          catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes
+          catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
+          tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -211,12 +225,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('contract_schedule').select('*').order('period', { ascending: true }),
           supabase.from('attio_links').select('*'),
           supabase.from('counterparty_contacts').select('*'),
-          supabase.from('attio_events').select('*')
+          supabase.from('attio_events').select('*'),
+          supabase.from('tier_model_versions').select('*'),
+          supabase.from('counterparty_tiers').select('*'),
+          supabase.from('counterparty_tier_history').select('*').order('changed_at', { ascending: false }).limit(300),
+          supabase.from('counterparty_tier_overrides').select('*')
         ]);
 
         const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
         const loadedContacts: CounterpartyContact[] = (cpContactsRes.data || []) as CounterpartyContact[];
         setAttioEvents((attioEventsRes.data || []) as AttioEvent[]);
+
+        const loadedTierVersions: TierModelVersion[] = (tierModelVersionsRes?.data || []) as TierModelVersion[];
+        const loadedTierStates: CounterpartyTierRow[] = (counterpartyTiersRes?.data || []) as CounterpartyTierRow[];
+        const loadedTierHistory: CounterpartyTierHistoryRow[] = (tierHistoryRes?.data || []) as CounterpartyTierHistoryRow[];
+        const loadedTierOverrides: CounterpartyTierOverride[] = (tierOverridesRes?.data || []) as CounterpartyTierOverride[];
+        setTierModelVersions(loadedTierVersions);
+        setTierStates(loadedTierStates);
+        setTierHistory(loadedTierHistory);
+        setTierOverrides(loadedTierOverrides);
 
         const loadedTeams: Team[] = teamsRes.data || [];
         setTeams(loadedTeams);
@@ -296,7 +323,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (hasRevenue && hasCost) derived_role = 'both';
           else if (hasRevenue) derived_role = 'client';
           else if (hasCost) derived_role = 'supplier';
-          return { ...cp, attio_link, contacts, derived_role };
+          const tier = attachTierToCounterparty(cp, loadedTierVersions, loadedTierStates, loadedTierOverrides);
+          return { ...cp, attio_link, contacts, derived_role, tier };
         });
         setCounterparties(enrichedCounterparties);
 
@@ -1448,6 +1476,203 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  function attachTierToCounterparty(
+    cp: Counterparty,
+    versions: TierModelVersion[],
+    states: CounterpartyTierRow[],
+    overrides: CounterpartyTierOverride[]
+  ): Counterparty['tier'] {
+    const clientVersion = versions.find(v => v.model === 'client' && v.active);
+    const state = states.find(t => t.counterparty_id === cp.id && t.model === 'client');
+    if (!state) {
+      return {
+        tier_index: null, tier_count: clientVersion?.tier_count || 4, score: null,
+        breakdown: {}, label: 'Unrated', color: '#94a3b8',
+        overridden: false
+      };
+    }
+    const config = (clientVersion?.config || {}) as unknown as { tiers?: Array<{ color?: string }> };
+    const tierColor = config.tiers?.[state.tier_index ?? -1]?.color || (state.tier_index === null ? '#94a3b8' : '#64748b');
+    const today = new Date().toISOString().split('T')[0];
+    const override = overrides.find(o => o.counterparty_id === cp.id && o.model === 'client' && (!o.expires_on || o.expires_on >= today));
+    const displayIndex = override ? override.tier_index : state.tier_index;
+    return {
+      tier_index: state.tier_index,
+      tier_count: state.tier_count,
+      score: state.score,
+      breakdown: state.breakdown || {},
+      computed_at: state.computed_at,
+      label: tierLabel(displayIndex, state.tier_count),
+      color: override ? (config.tiers?.[override.tier_index ?? -1]?.color || tierColor) : tierColor,
+      overridden: !!override,
+      override_tier_index: override?.tier_index,
+      override_reason: override?.reason,
+      override_expires_on: override?.expires_on || undefined
+    };
+  };
+
+  const recomputeTiers = async (
+    model: TierModel,
+    cause: 'data_change' | 'config_change' | 'override'
+  ): Promise<{ ok: boolean; changes: CounterpartyTierHistoryRow[]; error?: string }> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const activeVersion = tierModelVersions.find(v => v.model === model && v.active);
+      if (!activeVersion) return { ok: false, changes: [], error: 'No active model configuration found.' };
+      const config = activeVersion.config as unknown as TierModelConfig;
+      const ctx: TierDataContext = {
+        contracts, invoices, schedule: contractSchedules,
+        catalogModules, catalogItems
+      };
+
+      const today = new Date().toISOString().split('T')[0];
+      const activeOverrides = tierOverrides.filter(o => o.model === model && (!o.expires_on || o.expires_on >= today));
+
+      const currentMap = new Map<string, { tier_index: number | null; tier_count: number; score: number | null }>();
+      tierStates.filter(t => t.model === model).forEach(t => currentMap.set(t.counterparty_id, { tier_index: t.tier_index, tier_count: t.tier_count, score: t.score }));
+
+      const newStates: CounterpartyTierRow[] = counterparties.map(cp => {
+        const result = scoreCounterparty(model, cp.id, config, ctx);
+        const override = activeOverrides.find(o => o.counterparty_id === cp.id);
+        const tierIndex = override ? override.tier_index : result.tierIndex;
+        return {
+          counterparty_id: cp.id,
+          model,
+          tier_index: tierIndex,
+          tier_count: config.tiers.length,
+          score: result.score,
+          breakdown: result.breakdown as unknown as Record<string, unknown>,
+          model_version_id: activeVersion.id
+        };
+      });
+
+      const deltas = buildHistoryDeltas(
+        model,
+        newStates.map(s => ({ counterparty_id: s.counterparty_id, tier_index: s.tier_index, tier_count: s.tier_count, score: s.score })),
+        currentMap,
+        cause
+      );
+
+      const rowsToInsert = newStates.map(s => ({ ...s, breakdown: JSON.stringify(s.breakdown) }));
+      const { error: upsertError } = await supabase.from('counterparty_tiers').upsert(rowsToInsert, { onConflict: 'counterparty_id,model' });
+      if (upsertError) throw upsertError;
+
+      const historyRows = deltas.map(d => ({ ...d, id: generateUUID() }));
+      if (historyRows.length > 0) {
+        const { error: historyError } = await supabase.from('counterparty_tier_history').insert(historyRows);
+        if (historyError) throw historyError;
+      }
+
+      setTierStates(newStates);
+      if (historyRows.length > 0) setTierHistory(prev => [...historyRows, ...prev].slice(0, 300));
+      setCounterparties(prev => prev.map(cp => {
+        const state = newStates.find(s => s.counterparty_id === cp.id);
+        if (!state) return cp;
+        return { ...cp, tier: attachTierToCounterparty(cp, tierModelVersions, newStates, tierOverrides) };
+      }));
+
+      // Persist tier label on the Attio link and push to CRM (best-effort, silent)
+      try {
+        const linked = counterparties.filter(cp => cp.attio_link?.attio_record_id && cp.attio_link.link_status === 'linked');
+        if (linked.length > 0) {
+          const syncRecords: Array<{ record_id: string; tier_label: string }> = [];
+          for (const cp of linked) {
+            const state = newStates.find(s => s.counterparty_id === cp.id);
+            const label = tierLabel(state?.tier_index ?? null, state?.tier_count ?? config.tiers.length);
+            syncRecords.push({ record_id: cp.attio_link!.attio_record_id!, tier_label: label });
+            await supabase.from('attio_links').update({ orbit_tier: label, last_outbound_at: new Date().toISOString() })
+              .eq('counterparty_id', cp.id);
+          }
+          const apiToken = typeof window !== 'undefined' ? localStorage.getItem('orbit_attio_api_key') || '' : '';
+          if (apiToken) {
+            fetch('/api/v1/attio/sync-tiers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: apiToken, records: syncRecords, tierCount: config.tiers.length })
+            }).catch(err => console.warn('[tier-sync] Attio push failed:', err));
+          }
+        }
+      } catch (syncErr) {
+        console.warn('[tier-sync] Attio link update failed:', syncErr);
+      }
+
+      return { ok: true, changes: historyRows };
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error('recomputeTiers error:', e);
+      return { ok: false, changes: [], error: errMsg || 'Recompute failed' };
+    }
+  };
+
+  const applyTierModelConfig = async (
+    model: TierModel,
+    config: Record<string, unknown>,
+    tierCount: number
+  ): Promise<{ ok: boolean; changes: CounterpartyTierHistoryRow[]; error?: string }> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const versionId = generateUUID();
+      const { error: deactivateError } = await supabase.from('tier_model_versions')
+        .update({ active: false }).eq('model', model).eq('active', true);
+      if (deactivateError) throw deactivateError;
+
+      const { error: insertError } = await supabase.from('tier_model_versions').insert({
+        id: versionId, model, tier_count: tierCount, config: JSON.stringify(config),
+        created_by: currentUser?.id || null, active: true
+      });
+      if (insertError) throw insertError;
+
+      setTierModelVersions(prev => [
+        ...prev.map(v => v.model === model ? { ...v, active: false } : v),
+        { id: versionId, model, tier_count: tierCount, config, active: true, created_by: currentUser?.id }
+      ]);
+
+      const result = await recomputeTiers(model, 'config_change');
+      return result;
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error('applyTierModelConfig error:', e);
+      return { ok: false, changes: [], error: errMsg || 'Failed to apply configuration' };
+    }
+  };
+
+  const setTierOverride = async (
+    counterpartyId: string,
+    model: TierModel,
+    tierIndex: number | null,
+    reason: string,
+    expiresOn?: string
+  ): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      if (tierIndex === null || reason.trim() === '') {
+        const { error } = await supabase.from('counterparty_tier_overrides')
+          .delete().eq('counterparty_id', counterpartyId).eq('model', model);
+        if (error) throw error;
+        setTierOverrides(prev => prev.filter(o => !(o.counterparty_id === counterpartyId && o.model === model)));
+      } else {
+        const overrideRow: CounterpartyTierOverride = {
+          id: generateUUID(), counterparty_id: counterpartyId, model,
+          tier_index: tierIndex, reason: reason.trim(), expires_on: expiresOn || null,
+          created_by: currentUser?.id || null
+        };
+        const { error } = await supabase.from('counterparty_tier_overrides').upsert(
+          { ...overrideRow, expires_on: overrideRow.expires_on || undefined },
+          { onConflict: 'id' }
+        );
+        if (error) throw error;
+        setTierOverrides(prev => [...prev.filter(o => !(o.counterparty_id === counterpartyId && o.model === model)), overrideRow]);
+      }
+      const recompute = await recomputeTiers(model, 'override');
+      return recompute.ok;
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error('setTierOverride error:', e);
+      alert(`Override error: ${errMsg}`);
+      return false;
+    }
+  };
+
   const reconcileAttio = async (): Promise<void> => {
     const supabase = getSupabaseBrowserClient();
     try {
@@ -2249,6 +2474,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       catalogItems,
       contractLines,
       contractSchedules,
+      tierModelVersions,
+      tierStates,
+      tierHistory,
+      tierOverrides,
       invoices,
       invoiceCategories,
       invoiceDocuments,
@@ -2286,6 +2515,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       linkToAttio,
       processAttioReviewEvent,
       reconcileAttio,
+      recomputeTiers,
+      applyTierModelConfig,
+      setTierOverride,
       reassignContracts,
       addCounterpartyContact,
       saveContractPricing,

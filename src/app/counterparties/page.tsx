@@ -1,18 +1,19 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Counterparty, AttioLink, CounterpartyContact } from '@/lib/types';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
+import { TierOverrideForm } from '@/components/counterparties/tier-override-form';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import type { AttioSyncCompany } from '@/components/counterparties/attio-companies-grid';
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
-  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy
+  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers
 } from 'lucide-react';
 
 const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
@@ -22,7 +23,8 @@ export default function CounterpartiesRegistryPage() {
   const { 
     counterparties, contracts, attioEvents, addCounterparty, updateCounterparty, 
     linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, 
-    addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices, catalogModules, catalogItems
+    addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices, catalogModules, catalogItems,
+    tierStates, recomputeTiers
   } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -34,6 +36,7 @@ export default function CounterpartiesRegistryPage() {
   const [dossierTab, setDossierTab] = useState<'profile' | 'invoices'>('profile');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
+  const [isTierRecomputing, setIsTierRecomputing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Sync initial selection from URL ID
@@ -96,6 +99,27 @@ export default function CounterpartiesRegistryPage() {
   const [importingRecordId, setImportingRecordId] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === 'admin';
+
+  const handleRecomputeTiers = async () => {
+    setIsTierRecomputing(true);
+    const result = await recomputeTiers('client', 'data_change');
+    setIsTierRecomputing(false);
+    alert(result.ok
+      ? (result.changes.length > 0
+        ? `Tiers recomputed — ${result.changes.length} counterparty tier change(s) recorded (data_change).`
+        : 'Tiers recomputed — no changes (stable).')
+      : `Recompute failed: ${result.error || 'Unknown error'}`);
+  };
+
+  // One-time tier recompute on first load (ensures every counterparty has a tier with live data)
+  const tierInitRef = useRef(false);
+  useEffect(() => {
+    if (isAdmin && counterparties.length > 0 && tierStates.length === 0 && !tierInitRef.current) {
+      tierInitRef.current = true;
+      recomputeTiers('client', 'data_change');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counterparties.length, tierStates.length, isAdmin]);
 
   // KPIs
   const totalEntities = counterparties.filter(c => c.status !== 'archived').length;
@@ -312,6 +336,18 @@ export default function CounterpartiesRegistryPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={handleRecomputeTiers}
+              disabled={isTierRecomputing}
+              className="bg-white hover:bg-slate-50 border-indigo-200 text-indigo-700 shadow-sm"
+            >
+              <Layers className={`w-4 h-4 mr-2 text-indigo-500 ${isTierRecomputing ? 'animate-pulse' : ''}`} />
+              {isTierRecomputing ? "Recomputing Tiers..." : "Recompute Client Tiers"}
+            </Button>
+          )}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleReconcile}
               disabled={isReconciling}
               className="bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-sm"
@@ -455,9 +491,6 @@ export default function CounterpartiesRegistryPage() {
 
           <CounterpartiesGrid
             counterparties={filteredRegistry}
-            contracts={contracts}
-            catalogModules={catalogModules}
-            catalogItems={catalogItems}
             isAdmin={isAdmin}
             onOpen={(cp) => openDossier(cp)}
             onDelete={async (cp) => {
@@ -724,6 +757,63 @@ export default function CounterpartiesRegistryPage() {
                 )}
               </div>
             </div>
+
+            {/* Client Tier panel (configurable tiering model) */}
+            {(() => {
+              const tier = selectedEntity.tier;
+              if (!tier) return null;
+              const breakdown = (tier.breakdown || {}) as unknown as Array<{
+                key: string; label: string; value: number | null; points: number | null;
+                weight: number; contribution: number | null; notApplicable: boolean;
+              }>;
+              return (
+                <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Client Tier</span>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-black border"
+                        style={{ color: tier.color, borderColor: `${tier.color}55`, backgroundColor: `${tier.color}14` }}>
+                        {tier.overridden && <Pin className="w-3.5 h-3.5 shrink-0" />}
+                        {tier.label}
+                      </span>
+                      {tier.score !== null && (
+                        <span className="font-mono text-xs text-slate-600">Score <strong className="text-slate-900">{tier.score}</strong>/100</span>
+                      )}
+                      {tier.overridden && (
+                        <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1" title={tier.override_reason || 'Manual override'}>
+                          <Pin className="w-3 h-3 inline mr-1" />
+                          Pinned{tier.override_reason ? ` — ${tier.override_reason}` : ''}
+                          {tier.override_expires_on ? ` · expires ${tier.override_expires_on}` : ''}
+                          {tier.tier_index !== null && <span className="text-slate-500 ml-1">(computed {tier.tier_index === null ? 'Unrated' : `Tier ${tier.tier_index + 1}`})</span>}
+                        </span>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <TierOverrideForm counterpartyId={selectedEntity.id} tierCount={tier.tier_count} currentOverride={tier} />
+                    )}
+                  </div>
+                  {breakdown.length > 0 && (
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {breakdown.map(m => (
+                        <div key={m.key} className={`p-2.5 rounded-xl border text-[11px] ${m.notApplicable ? 'bg-slate-50 border-slate-200' : 'bg-slate-50/60 border-slate-200'}`}>
+                          <div className="font-bold text-slate-700">{m.label}</div>
+                          {m.notApplicable ? (
+                            <div className="text-[10px] text-slate-400 italic mt-0.5">Not scored — insufficient data</div>
+                          ) : (
+                            <div className="font-mono text-slate-600 mt-0.5">
+                              {m.value !== null ? m.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'} →
+                              <strong className="text-indigo-700"> {m.points}pts</strong>
+                              <span className="text-slate-400"> · w{m.weight}</span>
+                              {m.contribution !== null && <span className="block text-emerald-700 font-bold">+{m.contribution.toFixed(1)}</span>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Dossier Tabs */}
             <div className="flex items-center border-b border-slate-200 pb-2 space-x-6">

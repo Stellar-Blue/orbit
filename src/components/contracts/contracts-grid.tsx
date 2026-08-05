@@ -23,6 +23,8 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 
 interface ContractRow {
   contract: Contract;
   counterparty: string;
+  cpTierLabel: string;
+  cpTierColor: string;
   reference: string;
   uuid: string;
   direction: string;
@@ -89,6 +91,8 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
       return {
         contract: c,
         counterparty: c.counterparty?.legal_name || '—',
+        cpTierLabel: c.counterparty?.tier?.label || 'Unrated',
+        cpTierColor: c.counterparty?.tier?.color || '#94a3b8',
         reference: c.reference,
         uuid: c.id,
         direction: c.direction,
@@ -158,6 +162,15 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         ...excelSetFilter(['draft', 'in_negotiation', 'active', 'expiring', 'expired', 'terminated']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <Badge variant={STATUS_VARIANT[p.value || ''] || 'neutral'} className="text-[10px]">{String(p.value || '').toUpperCase().replace('_', ' ')}</Badge>
+        )
+      },
+      {
+        headerName: 'Counterparty Tier', field: 'cpTierLabel', width: 140, sortable: true, ...excelSetFilter(),
+        cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border"
+            style={{ color: p.data?.cpTierColor || '#94a3b8', borderColor: `${p.data?.cpTierColor || '#94a3b8'}55`, backgroundColor: `${p.data?.cpTierColor || '#94a3b8'}14` }}>
+            {p.value}
+          </span>
         )
       },
       { headerName: 'Owner', field: 'owner', width: 130, sortable: true, ...excelSetFilter() },
