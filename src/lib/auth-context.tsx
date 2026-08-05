@@ -621,6 +621,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const savedReq = (data && data[0]) ? { ...data[0], leave_type: leaveTypes.find(lt => lt.id === data[0].leave_type_id) } : newReq;
       setLeaveRequests(prev => [savedReq, ...prev]);
+      if (savedReq.status === 'approved') {
+        // Admin-created approved leave (e.g. admin_entry) mirrors immediately
+        syncSlackStatus(savedReq.profile_id, athensTodayStr(), savedReq.id);
+      }
     } catch (e: any) {
       console.error('Failed to insert leave request into database:', e);
     }
@@ -736,6 +740,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteLeaveRequest = async (id: string): Promise<boolean> => {
+    const target = leaveRequests.find(r => r.id === id);
     const supabase = getSupabaseBrowserClient();
     try {
       const { error } = await supabase.from('leave_requests').delete().eq('id', id);
@@ -745,6 +750,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
       setLeaveRequests(prev => prev.filter(r => r.id !== id));
+      if (target && (target.status === 'approved' || target.status === 'in_progress' || target.status === 'taken')) {
+        syncSlackStatus(target.profile_id, athensTodayStr(), id);
+      }
       return true;
     } catch (e: any) {
       console.error('Failed to delete leave request:', e);
@@ -2110,6 +2118,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const filtered = prev.filter(p => p.profile_id !== profileId || !patternEntries.some(pe => pe.weekday === p.weekday));
           return [...filtered, ...(data as RemotePattern[])];
         });
+        // Pattern change alters future remote events — resync immediately
+        syncSlackStatus(profileId, athensTodayStr());
         return true;
       }
     } catch (e: any) {
@@ -2198,10 +2208,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const filtered = prev.filter(r => !(r.profile_id === profileId && affectedDates.has(r.date)));
         return [...(toUpsert as RemoteDay[]), ...filtered];
       });
-      const today = athensTodayStr();
-      for (const d of toUpsert) {
-        if (d.date === today) syncSlackStatus(profileId, d.date);
-      }
+      // Any change (add, remove-to-office, edit) — sync now; Outlook horizon + today's Slack status
+      syncSlackStatus(profileId, athensTodayStr());
       return true;
     } catch (e: any) {
       console.error("Bulk add remote days error:", e);
