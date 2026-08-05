@@ -47,24 +47,20 @@ export function athensEndOfDayUnix(dateStr: string): number {
 // ---------- Vault (encrypted secrets) ----------
 
 export async function setVaultSecret(admin: SupabaseClient, name: string, secret: string): Promise<string | null> {
-  const existing = await admin.from('vault.decrypted_secrets').select('id').eq('name', name).maybeSingle();
-  if (existing.data?.id) {
-    const { error } = await admin.rpc('vault.update_secret', { secret_id: existing.data.id, new_secret: secret });
-    return error ? null : existing.data.id;
-  }
-  const { data, error } = await admin.rpc('vault.create_secret', { new_name: name, new_secret: secret });
+  // vault schema is not exposed via PostgREST — use the public SECURITY DEFINER wrappers
+  const { data, error } = await admin.rpc('vault_set_secret', { p_name: name, p_secret: secret });
   if (error) return null;
   return data as string;
 }
 
 export async function getVaultSecret(admin: SupabaseClient, name: string): Promise<string | null> {
-  const { data } = await admin.from('vault.decrypted_secrets').select('decrypted_secret').eq('name', name).maybeSingle();
-  return (data?.decrypted_secret as string | undefined) || null;
+  const { data, error } = await admin.rpc('vault_get_secret', { p_name: name });
+  if (error) return null;
+  return (data as string | null) || null;
 }
 
 export async function deleteVaultSecret(admin: SupabaseClient, name: string): Promise<void> {
-  const { data } = await admin.from('vault.decrypted_secrets').select('id').eq('name', name).maybeSingle();
-  if (data?.id) await admin.from('vault.decrypted_secrets').delete().eq('id', data.id);
+  await admin.rpc('vault_delete_secret', { p_name: name });
 }
 
 export function slackTokenSecretName(profileId: string): string {
