@@ -1,16 +1,20 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Counterparty, AttioLink, CounterpartyContact } from '@/lib/types';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
+import type { AttioSyncCompany } from '@/components/counterparties/attio-companies-grid';
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
   Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy
 } from 'lucide-react';
+
+const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
 
 export default function CounterpartiesRegistryPage() {
   const { 
@@ -85,17 +89,7 @@ export default function CounterpartiesRegistryPage() {
   const [contactPhone, setContactPhone] = useState("");
 
   // Attio CRM Inbound Sync state
-  const [attioSyncCompanies, setAttioSyncCompanies] = useState<Array<{
-    attio_record_id: string;
-    legal_name: string;
-    relationship_status: string;
-    country_code: string;
-    vat_number: string;
-    domain: string;
-    suggested_role: 'client' | 'supplier' | 'both';
-    estimated_arr: number;
-    email?: string;
-  }> | null>(null);
+  const [attioSyncCompanies, setAttioSyncCompanies] = useState<AttioSyncCompany[] | null>(null);
   const [fetchingAttioSync, setFetchingAttioSync] = useState(false);
   const [importingRecordId, setImportingRecordId] = useState<string | null>(null);
 
@@ -675,68 +669,19 @@ export default function CounterpartiesRegistryPage() {
             {attioSyncCompanies && (
               <div className="space-y-3 animate-in fade-in duration-300">
                 <div className="flex items-center justify-between text-xs text-indigo-200 font-medium px-1">
-                  <span>Found <strong>{attioSyncCompanies.length}</strong> qualifying corporate entities in Attio CRM matching sync criteria:</span>
-                  <span className="font-mono text-[11px] text-slate-300">Ready for 1-click Orbit import</span>
+                  <span>
+                    Found <strong>{attioSyncCompanies.length}</strong> companies in Attio CRM ·{" "}
+                    <strong>{attioSyncCompanies.filter(c => c.qualified !== false).length}</strong> match your Relationship Type sync criteria
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-300">Not-yet-imported companies surface first</span>
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[500px] overflow-y-auto pr-1">
-                  {attioSyncCompanies.map((comp) => {
-                    const existingCp = isCompanyImported(comp);
-                    const isImporting = importingRecordId === comp.attio_record_id;
 
-                    return (
-                      <div key={comp.attio_record_id} className="p-4 rounded-xl bg-slate-800/80 border border-slate-700 hover:border-indigo-400/60 transition-all shadow-md flex flex-col justify-between gap-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="space-y-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-bold text-sm text-white truncate">{comp.legal_name}</h5>
-                              <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
-                                {comp.relationship_status}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-300 font-mono">
-                              <span>VAT: <strong className="text-white">{comp.vat_number}</strong></span>
-                              <span>•</span>
-                              <span>Country: <strong className="text-cyan-300">{comp.country_code}</strong></span>
-                              <span>•</span>
-                              <span>Est. ARR: <strong className="text-emerald-400">€{comp.estimated_arr.toLocaleString()}</strong></span>
-                            </div>
-                            {comp.domain && (
-                              <div className="text-xs text-slate-400 flex items-center gap-1">
-                                <Globe className="w-3 h-3 text-slate-500" />
-                                <span className="underline decoration-slate-600">{comp.domain}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="shrink-0">
-                            {existingCp ? (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl font-bold text-xs">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                <span>Imported in Orbit</span>
-                              </span>
-                            ) : (
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={isImporting}
-                                onClick={() => handleImportCompany(comp)}
-                                className="bg-[#3D87D3] hover:bg-blue-600 text-white font-bold shadow-md shadow-blue-500/25 px-3.5 py-1.5 cursor-pointer text-xs shrink-0"
-                              >
-                                {isImporting ? (
-                                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                                ) : (
-                                  <Plus className="w-3.5 h-3.5 mr-1" />
-                                )}
-                                {isImporting ? "Importing..." : "Import to Orbit"}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <AttioCompaniesGrid
+                  companies={attioSyncCompanies}
+                  importingRecordId={importingRecordId}
+                  isImported={isCompanyImported}
+                  onImport={handleImportCompany}
+                />
               </div>
             )}
           </div>

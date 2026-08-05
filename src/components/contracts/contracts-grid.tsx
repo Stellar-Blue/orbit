@@ -2,38 +2,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
+import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
+import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, Trash2, Search } from 'lucide-react';
 
-// Full AG Grid Enterprise license (set in .env.local as NEXT_PUBLIC_AG_GRID_LICENSE_KEY).
-// Without a key the grid falls back to community features (sorting/filtering still work).
-const AG_GRID_LICENSE_KEY = process.env.NEXT_PUBLIC_AG_GRID_LICENSE_KEY?.trim() || '';
-
-if (AG_GRID_LICENSE_KEY) {
-  ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
-  LicenseManager.setLicenseKey(AG_GRID_LICENSE_KEY);
-} else {
-  ModuleRegistry.registerModules([AllCommunityModule]);
-}
-
-const gridTheme = themeQuartz.withParams({
-  backgroundColor: '#ffffff',
-  foregroundColor: '#1e293b',
-  headerBackgroundColor: '#f8fafc',
-  headerTextColor: '#64748b',
-  borderColor: '#e2e8f0',
-  accentColor: '#3D87D3',
-  oddRowBackgroundColor: '#fafbfc',
-  rowHoverColor: '#f1f5f9',
-  fontSize: 12,
-  headerFontSize: 11,
-  fontFamily: 'inherit',
-  wrapperBorderRadius: 0
-});
+const gridTheme = orbitGridTheme;
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   draft: 'neutral',
@@ -43,16 +19,6 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 
   expired: 'error',
   terminated: 'neutral'
 };
-
-// Excel-style filters (checkbox set filters with search / Select All / Blanks) are an
-// AG Grid Enterprise feature: they activate with the license key, and fall back to
-// text filters while the key is missing.
-const HAS_AG_GRID_LICENSE = !!AG_GRID_LICENSE_KEY;
-
-const excelSetFilter = (values?: string[]): Pick<ColDef, 'filter' | 'filterParams'> =>
-  HAS_AG_GRID_LICENSE
-    ? { filter: 'agSetColumnFilter', filterParams: { values, excelMode: 'windows' } }
-    : { filter: 'agTextColumnFilter', filterParams: undefined };
 
 const eurFormatter = (value: number) =>
   value == null || isNaN(value) ? '' : `€${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
