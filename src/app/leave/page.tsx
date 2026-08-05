@@ -12,6 +12,7 @@ import {
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest } from '@/lib/types';
+import { DateRangePicker } from '@/components/leave/date-range-picker';
 
 const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
 
@@ -937,26 +938,14 @@ export default function LeaveManagementPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Start Date</label>
-              <input 
-                type="date" 
-                value={startDate} 
-                min={isAdmin || minNoticeDays === 0 ? undefined : earliestValidDate}
-                onChange={e => setStartDate(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">End Date</label>
-              <input 
-                type="date" 
-                value={endDate} 
-                onChange={e => setEndDate(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono"
-              />
-            </div>
+          <div>
+            <label className="block font-semibold uppercase text-slate-500 mb-1">Leave Period (Start → End)</label>
+            <DateRangePicker
+              start={startDate}
+              end={endDate}
+              minDate={isAdmin ? undefined : earliestValidDate}
+              onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
+            />
           </div>
 
           <div className="p-3.5 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex items-center justify-between text-xs text-slate-800 font-medium">

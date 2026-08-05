@@ -7,6 +7,7 @@ interface DateRangePickerProps {
   start: string;
   end: string;
   onChange: (start: string, end: string) => void;
+  minDate?: string;
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -21,7 +22,7 @@ function toStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, onChange }) => {
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, onChange, minDate }) => {
   const anchor = toDate(start) || toDate(end) || new Date();
   const [viewYear, setViewYear] = useState(anchor.getUTCFullYear());
   const [viewMonth, setViewMonth] = useState(anchor.getUTCMonth());
@@ -51,6 +52,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
 
   const handleDay = (d: Date) => {
     const str = toStr(d);
+    if (minDate && str < minDate) return;
     if (pendingStart === null) {
       setPendingStart(str);
       onChange(str, str);
@@ -95,17 +97,21 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
           const isEnd = endDate && str === toStr(endDate);
           const range = inRange(d);
           const isToday = str === toStr(new Date());
+          const isDisabled = !!minDate && str < minDate;
           return (
             <button
               key={str}
               type="button"
               onClick={() => handleDay(d)}
-              className={`h-8 text-xs rounded-lg font-semibold transition-colors cursor-pointer relative ${
-                isStart || isEnd
-                  ? 'bg-[#3D87D3] text-white font-black shadow-sm'
-                  : range
-                    ? 'bg-[#3D87D3]/15 text-[#3D87D3]'
-                    : 'text-slate-700 hover:bg-slate-100'
+              disabled={isDisabled}
+              className={`h-8 text-xs rounded-lg font-semibold transition-colors relative ${
+                isDisabled
+                  ? 'text-slate-300 cursor-not-allowed'
+                  : isStart || isEnd
+                    ? 'bg-[#3D87D3] text-white font-black shadow-sm cursor-pointer'
+                    : range
+                      ? 'bg-[#3D87D3]/15 text-[#3D87D3] cursor-pointer'
+                      : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
               } ${isToday && !isStart && !isEnd ? 'ring-1 ring-[#3D87D3]/50' : ''}`}
             >
               {d.getUTCDate()}
