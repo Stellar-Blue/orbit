@@ -67,7 +67,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
   const columnDefs = useMemo<ColDef<AttioCompanyRow>[]>(() => {
     const defs: ColDef<AttioCompanyRow>[] = [
       {
-        headerName: 'Company', field: 'legalName', minWidth: 240, sortable: true, filter: 'agTextColumnFilter', pinned: 'left',
+        headerName: 'Company', field: 'legalName', minWidth: 240, sortable: true, ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<AttioCompanyRow, string>) => (
           <div>
             <div className="font-bold text-slate-800">{p.value}</div>
@@ -96,7 +96,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
       },
       { headerName: 'Country', field: 'country', width: 100, sortable: true, ...excelSetFilter() },
       {
-        headerName: 'VAT / Tax ID', field: 'vat', width: 150, sortable: true, filter: 'agTextColumnFilter',
+        headerName: 'VAT / Tax ID', field: 'vat', width: 150, sortable: true, ...excelSetFilter(),
         cellClass: 'font-mono text-slate-700'
       },
       {

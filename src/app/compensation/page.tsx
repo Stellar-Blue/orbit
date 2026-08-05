@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { 
@@ -9,6 +10,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
+
+const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
 
 export default function MyCompensationPage() {
   const { currentUser, salaries, payments, paymentTypes } = useAuth();
@@ -298,78 +301,12 @@ export default function MyCompensationPage() {
           </div>
         </div>
 
-        <Card className="shadow-xs border-slate-200/90 overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase font-extrabold tracking-wider text-[11px]">
-                <tr>
-                  <th className="p-4 pl-5">Period</th>
-                  <th className="p-4">Payment Type & Memo</th>
-                  <th className="p-4">Gross Earnings</th>
-                  <th className="p-4">Net Disbursed</th>
-                  <th className="p-4">Payment Date & Bank Ref</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4 text-right pr-5">Voucher / Receipt</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white font-medium">
-                {filteredPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">
-                      No confirmed paid disbursements found for selected timeframe.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredPayments.map((record, index) => (
-                    <tr key={index} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-4 pl-5 font-mono font-extrabold text-slate-900 text-sm">
-                        {record.period}
-                      </td>
-                      <td className="p-4 text-slate-800 font-semibold">
-                        <span className="block text-sm text-[#3D87D3] font-bold">
-                          {record.payment_type?.name_el || (isContractor ? 'Partner Retainer' : 'Regular Monthly Salary')}
-                        </span>
-                        <span className="text-xs text-slate-500 font-normal">{record.note || record.payment_type?.name_en || 'Standard disbursement'}</span>
-                      </td>
-                      <td className="p-4 font-mono font-bold text-slate-700 text-sm">
-                        €{record.gross.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="p-4 font-mono font-extrabold text-emerald-700 text-sm bg-emerald-50/20">
-                        €{record.net.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="p-4 font-mono text-xs">
-                        <span className="text-slate-800 font-semibold block">{record.payment_date || `${record.period}-28`}</span>
-                        <span className="text-[10px] text-slate-400 uppercase tracking-tight">{record.bank_reference || 'WIRE-TRANSFER'}</span>
-                      </td>
-                      <td className="p-4">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-extrabold shadow-2xs">
-                          <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600" /> PAID
-                        </span>
-                      </td>
-                      <td className="p-4 text-right pr-5 flex items-center justify-end space-x-2">
-                        {record.documents && record.documents.length > 0 ? (
-                          <button
-                            onClick={() => setSelectedPaymentForDocs(record)}
-                            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#3D87D3]/10 hover:bg-[#3D87D3]/20 text-[#3D87D3] font-bold text-xs border border-[#3D87D3]/20 shadow-2xs transition-all cursor-pointer"
-                          >
-                            <Paperclip className="w-3.5 h-3.5 mr-1 text-[#3D87D3]" /> {record.documents.length} Receipt{record.documents.length > 1 ? 's' : ''}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleDownloadPayslip(record)}
-                            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs border border-slate-300/80 shadow-2xs transition-all cursor-pointer"
-                          >
-                            <Download className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Statement
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <CompensationGrid
+          payments={filteredPayments}
+          isContractor={isContractor}
+          onOpenDocs={(record) => setSelectedPaymentForDocs(record)}
+          onDownloadPayslip={(record) => handleDownloadPayslip(record)}
+        />
       </div>
 
       {/* MY COMPENSATION HISTORY MODAL */}

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
+const CounterpartiesGrid = dynamic(() => import('@/components/counterparties/counterparties-grid').then(m => m.CounterpartiesGrid), { ssr: false });
 
 export default function CounterpartiesRegistryPage() {
   const { 
@@ -451,154 +452,18 @@ export default function CounterpartiesRegistryPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200/80 text-[11px] uppercase font-bold text-slate-500 bg-slate-50/50">
-                  <th className="p-4 pl-6">Legal / Trade Name</th>
-                  <th className="p-4">Entity UUID</th>
-                  <th className="p-4">Jurisdiction</th>
-                  <th className="p-4">VAT (ΑΦΜ) / VIES Status</th>
-                  <th className="p-4">Derived Relationship Role</th>
-                  <th className="p-4">Active Agreements & ARR</th>
-                  <th className="p-4">Attio CRM Status</th>
-                  <th className="p-4 pr-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {filteredRegistry.length > 0 ? (
-                  filteredRegistry.map(cp => {
-                    const activeCount = getContractCount(cp.id);
-                    const arr = getContractArr(cp.id);
-                    const isLinked = cp.attio_link?.link_status === 'linked';
-
-                    return (
-                      <tr 
-                        key={cp.id} 
-                        onClick={() => openDossier(cp)}
-                        className="hover:bg-blue-50/30 transition-colors cursor-pointer group"
-                      >
-                        <td className="p-4 pl-6 font-medium text-slate-900">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[#3D87D3] font-bold text-xs shrink-0 group-hover:bg-[#3D87D3] group-hover:text-white transition-all">
-                              {cp.legal_name.slice(0, 2).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-bold text-slate-800 group-hover:text-[#3D87D3] transition-colors flex items-center gap-1.5">
-                                {cp.legal_name}
-                                {cp.is_internal && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">INTERNAL JV</span>}
-                              </div>
-                              <div className="text-xs text-slate-500 flex items-center gap-1">
-                                {cp.trade_name && cp.trade_name !== cp.legal_name ? (
-                                  <span>Trade: <strong className="text-slate-700 font-normal">{cp.trade_name}</strong></span>
-                                ) : (
-                                  <span>{cp.website_domain || "No domain registered"}</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={(e) => copyUuid(cp.id, e)}
-                            className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
-                            title="Click to copy full UUID for AI operator or script reference"
-                          >
-                            <span>{cp.id.slice(0, 8)}...{cp.id.slice(-4)}</span>
-                            {copiedId === cp.id ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            )}
-                          </button>
-                        </td>
-                        <td className="p-4 text-slate-600 font-medium">
-                          <span className="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-xs text-slate-700">
-                            <MapPin className="w-3 h-3 text-slate-500" />
-                            {cp.country}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          {cp.vat_number || cp.afm ? (
-                            <div className="flex items-center gap-1.5 font-mono text-xs text-slate-800 font-semibold bg-slate-100/80 px-2.5 py-1 rounded-md border border-slate-200 w-fit">
-                              <span>{cp.vat_number || cp.afm}</span>
-                              {cp.vat_valid && (
-                                <span title="VIES Verified Natural Key"><ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" /></span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-mono">Unregistered</span>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          {getRoleBadge(cp.derived_role)}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-col">
-                            <span className="text-xs font-semibold text-slate-800">{activeCount} active agreements</span>
-                            {arr > 0 ? (
-                              <span className="text-xs font-bold text-emerald-600 font-mono">€{arr.toLocaleString()}/yr ARR</span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 font-mono">No active revenue</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-4" onClick={e => e.stopPropagation()}>
-                          {isLinked ? (
-                            <a
-                              href={`https://app.attio.com/stellar-blue/company/${cp.attio_link?.attio_record_id || cp.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-extrabold bg-gradient-to-r from-blue-50 via-cyan-50 to-indigo-50 hover:from-blue-100 hover:to-cyan-100 text-blue-700 hover:text-blue-900 border border-blue-200/80 rounded-full transition-all shadow-2xs group/link cursor-pointer"
-                              title={`Click to open Attio CRM profile (${cp.attio_link?.attio_record_id})`}
-                            >
-                              <RefreshCw className="w-3.5 h-3.5 text-blue-600 group-hover/link:rotate-180 transition-transform duration-500" />
-                              <span>Attio Linked</span>
-                              <ExternalLink className="w-3.5 h-3.5 ml-0.5 text-blue-500 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-transform" />
-                            </a>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 rounded-full">
-                              <Unlink className="w-3.5 h-3.5 text-slate-400" />
-                              Unlinked
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-4 pr-6 text-right flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                          <Button size="sm" variant="outline" onClick={() => openDossier(cp)}>
-                            Manage Dossier
-                          </Button>
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (confirm(`Delete corporate entity "${cp.legal_name}"?`)) {
-                                  await deleteCounterparty(cp.id);
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="Delete entity"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-slate-500">
-                      <Building2 className="w-10 h-10 mx-auto mb-3 text-slate-300 animate-pulse" />
-                      <p className="text-base font-semibold text-slate-700">No counterparties found matching current filter</p>
-                      <p className="text-xs text-slate-400 mt-1">Try resetting your search query or register a new corporate entity.</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <CounterpartiesGrid
+            counterparties={filteredRegistry}
+            isAdmin={isAdmin}
+            onOpen={(cp) => openDossier(cp)}
+            onDelete={async (cp) => {
+              if (confirm(`Delete corporate entity "${cp.legal_name}"?`)) {
+                await deleteCounterparty(cp.id);
+              }
+            }}
+            getContractCount={getContractCount}
+            getContractArr={getContractArr}
+          />
         </Card>
       )}
 

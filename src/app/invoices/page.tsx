@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -13,6 +14,8 @@ import {
   Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+
+const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 
 export default function InvoicesRegistryPage() {
   const { 
@@ -591,227 +594,35 @@ export default function InvoicesRegistryPage() {
             </div>
           </Card>
 
-          {/* Table View */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold text-[11px] uppercase tracking-wider">
-                <tr>
-                  <th className="p-4">Dir & Entity</th>
-                  <th className="p-4">Invoice UUID</th>
-                  <th className="p-4">Invoice # & MARK</th>
-                  <th className="p-4">Linkage (Contract/Tag)</th>
-                  <th className="p-4">Issue & Due Date</th>
-                  <th className="p-4 text-right">Gross EUR (Net + VAT)</th>
-                  <th className="p-4 text-center">Status</th>
-                  <th className="p-4 text-center">Archive Document</th>
-                  <th className="p-4 text-right">Fast Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredInvoices.map((inv) => {
-                  const paidAmount = (inv.payments || []).reduce((s, p) => s + p.amount, 0);
-                  const remaining = Math.max(0, inv.gross_eur - paidAmount);
-                  const isOverdue = new Date(inv.due_date) < new Date() && inv.status !== 'paid' && inv.status !== 'cancelled';
-
-                  return (
-                    <tr 
-                      key={inv.id} 
-                      onClick={() => openInvoiceModal(inv)} 
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 340), y: Math.min(e.clientY, window.innerHeight - 380), invoice: inv });
-                      }}
-                      className="hover:bg-slate-100/80 transition-colors cursor-pointer"
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-extrabold text-[10px] border ${
-                            inv.direction === 'outgoing' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#3D87D3] border-blue-200'
-                          }`}>
-                            {inv.direction === 'outgoing' ? 'AR' : 'AP'}
-                          </div>
-                          <div>
-                            <span className="font-bold text-slate-900 block">{inv.counterparty?.legal_name || 'Unmapped Entity'}</span>
-                            <span className="text-[11px] text-slate-500 font-normal">{inv.counterparty?.trade_name || inv.counterparty?.country || 'Greece'}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={(e) => copyToClipboard(inv.id, `Invoice UUID (${inv.id.slice(0, 8)}...)`, inv.id, e)}
-                          className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
-                          title="Click to copy full Invoice UUID · Right-click row for Fast Report"
-                        >
-                          <span>{inv.id.slice(0, 8)}...{inv.id.slice(-4)}</span>
-                          {copiedId === inv.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          )}
-                        </button>
-                      </td>
-                      <td className="p-4">
-                        <span className="font-extrabold text-slate-900 text-sm block font-mono">{inv.invoice_number}</span>
-                        {inv.mark ? (
-                          <span className="text-[10px] text-emerald-600 font-mono bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 inline-block mt-0.5">
-                            MARK: {inv.mark}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-amber-600 italic block mt-0.5">Pending MARK sync</span>
-                        )}
-                      </td>
-                      <td className="p-4">
-                        {inv.contract ? (
-                          <div className="flex items-center gap-1.5 text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg w-fit border border-indigo-100 font-bold text-[11px]">
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>{inv.contract.product || 'Agreement #'}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg w-fit border border-purple-100 font-bold text-[11px]">
-                            <Tag className="w-3.5 h-3.5" />
-                            <span>{inv.category || 'General Operating'}</span>
-                          </div>
-                        )}
-                        {inv.reference_period && (
-                          <div className="text-[10px] text-amber-800 font-mono bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60 font-black mt-1.5 w-fit shadow-2xs">
-                            Ref: {inv.reference_period}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-4">
-                        <span className="block font-semibold text-slate-800">{inv.issue_date}</span>
-                        <span className={`text-[11px] block mt-0.5 ${isOverdue ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
-                          Due: {inv.due_date} {isOverdue && '(OVERDUE)'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right">
-                        <span className="font-extrabold text-slate-900 text-sm block">€{inv.gross_eur.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        <span className="text-[11px] text-slate-500 font-normal block mt-0.5">
-                          Net: €{inv.net.toFixed(2)} + VAT {inv.vat_rate}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                        <select
-                          value={inv.status}
-                          onChange={(e: any) => {
-                            updateInvoiceStatus(inv.id, e.target.value as InvoiceStatus);
-                          }}
-                          className={`text-xs font-extrabold px-2 py-1 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 cursor-pointer shadow-2xs transition-all ${
-                            inv.status === 'paid' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
-                            inv.status === 'draft' ? 'bg-amber-100 text-amber-900 border-amber-400' :
-                            inv.status === 'partially_paid' ? 'bg-amber-50 text-amber-800 border-amber-300' :
-                            inv.status === 'sent_received' ? 'bg-blue-50 text-blue-800 border-blue-300' :
-                            inv.status === 'disputed' ? 'bg-rose-50 text-rose-800 border-rose-300' :
-                            inv.status === 'cancelled' ? 'bg-slate-100 text-slate-500 border-slate-300 line-through' :
-                            'bg-slate-50 text-slate-700 border-slate-300'
-                          }`}
-                          title="Click to change invoice status"
-                        >
-                          <option value="draft">Draft</option>
-                          <option value="registered">Registered</option>
-                          <option value="sent_received">{inv.direction === 'outgoing' ? 'Sent' : 'Received'}</option>
-                          <option value="partially_paid">Partially Paid</option>
-                          <option value="paid">Paid in Full</option>
-                          <option value="disputed">Disputed</option>
-                          <option value="resolved">Resolved</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                      </td>
-                      <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                        {inv.documents && inv.documents.length > 0 ? (
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              setPreviewDoc({
-                                name: inv.documents![0].file_name,
-                                url: inv.documents![0].url,
-                                storagePath: inv.documents![0].storage_path,
-                                subtitle: `Invoice #${inv.invoice_number} · ${inv.counterparty?.legal_name || 'Counterparty'}`
-                              });
-                            }} 
-                            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer shadow-2xs"
-                            title="Click to Preview or Download Document"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-[#3D87D3]" />
-                            <span>{inv.documents[0].file_name.slice(0, 15)}...</span>
-                          </button>
-                        ) : (
-                          <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-3 py-1 rounded-lg hover:bg-rose-100 cursor-pointer transition-colors shadow-xs">
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Upload PDF</span>
-                            <input
-                              type="file"
-                              accept="application/pdf,image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleUploadDocument(inv.id, e.target.files[0]);
-                                }
-                              }}
-                            />
-                          </label>
-                        )}
-                      </td>
-                      <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2">
-                          {inv.status !== 'paid' && inv.status !== 'cancelled' ? (
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPayingInvoice(inv);
-                                setPayAmount(remaining);
-                                setPayDate(new Date().toISOString().split('T')[0]);
-                                setPayBankRef('');
-                                setPayNote(`Payment for ${inv.invoice_number}`);
-                              }}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-1"
-                              title="1-Click Fast Path Collection / Payment"
-                            >
-                              <Check className="w-3.5 h-3.5 stroke-[3]" />
-                              Mark Paid Today
-                            </Button>
-                          ) : (
-                            <span className="text-slate-400 font-semibold text-xs italic pr-2">Settled</span>
-                          )}
-                          <Button
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openInvoiceModal(inv);
-                            }}
-                            className="p-1.5 h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-colors flex items-center justify-center"
-                            title="Edit Invoice Details"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={async () => {
-                              if (confirm(`Are you sure you want to delete invoice ${inv.invoice_number}? This action cannot be undone and will remove all linked document archives and payment records.`)) {
-                                await deleteInvoice(inv.id);
-                              }
-                            }}
-                            className="p-1.5 h-8 w-8 text-slate-500 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center justify-center"
-                            title="Delete Invoice Record"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {filteredInvoices.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="p-12 text-center text-slate-400 font-semibold text-sm italic">
-                      No invoices match your active filter parameters. Register a new bill or alter your search criteria above.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          {/* Table View (AG Grid) */}
+          <InvoicesGrid
+            invoices={filteredInvoices}
+            onOpen={(inv) => openInvoiceModal(inv)}
+            onStatusChange={(inv, status) => updateInvoiceStatus(inv.id, status)}
+            onMarkPaid={(inv, remaining) => {
+              setPayingInvoice(inv);
+              setPayAmount(remaining);
+              setPayDate(new Date().toISOString().split('T')[0]);
+              setPayBankRef('');
+              setPayNote(`Payment for ${inv.invoice_number}`);
+            }}
+            onDelete={(inv) => {
+              if (confirm(`Are you sure you want to delete invoice ${inv.invoice_number}? This action cannot be undone and will remove all linked document archives and payment records.`)) {
+                deleteInvoice(inv.id);
+              }
+            }}
+            onUploadDocument={(inv, file) => handleUploadDocument(inv.id, file)}
+            onPreviewDocument={(inv) => {
+              if (inv.documents && inv.documents[0]) {
+                setPreviewDoc({
+                  name: inv.documents[0].file_name,
+                  url: inv.documents[0].url,
+                  storagePath: inv.documents[0].storage_path,
+                  subtitle: `Invoice #${inv.invoice_number} · ${inv.counterparty?.legal_name || 'Counterparty'}`
+                });
+              }
+            }}
+          />
         </div>
       )}
 

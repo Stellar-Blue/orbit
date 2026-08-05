@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
@@ -11,6 +12,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+
+const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(m => m.PeopleGrid), { ssr: false });
 
 export default function PeopleDirectoryPage() {
   const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile } = useAuth();
@@ -259,62 +262,11 @@ export default function PeopleDirectoryPage() {
 
       {/* VIEWING AREA */}
       {viewMode === 'table' ? (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
-                <th className="p-3.5 pl-5">Employee Name & Greek Spelling</th>
-                <th className="p-3.5">Role / Title</th>
-                <th className="p-3.5">Team</th>
-                <th className="p-3.5">Employment Type</th>
-                <th className="p-3.5">Work Schedule</th>
-                <th className="p-3.5 text-right pr-5">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 text-sm">
-              {filteredProfiles.map(p => {
-                const isContractor = p.employment_type === 'contractor';
-                const isPartTime = p.employment_type === 'part_time';
-                return (
-                  <tr 
-                    key={p.id} 
-                    onClick={() => { setSelectedProfile(p); setActiveTab('overview'); }}
-                    className="hover:bg-slate-50 transition-colors cursor-pointer group"
-                  >
-                    <td className="p-3.5 pl-5">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
-                          {p.first_name[0]}{p.last_name[0]}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-800 group-hover:text-[#3D87D3] transition-colors">{p.first_name} {p.last_name}</p>
-                          <p className="text-xs text-slate-500">{p.name_el} &bull; <span className="text-slate-500 font-mono">{p.work_email}</span></p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-3.5 font-medium text-slate-700">{p.title}</td>
-                    <td className="p-3.5">
-                      <Badge variant="neutral">{getTeamName(p.team_id)}</Badge>
-                    </td>
-                    <td className="p-3.5">
-                      <Badge variant={isContractor ? 'warning' : isPartTime ? 'info' : 'success'}>
-                        {p.employment_type.replace('_', ' ').toUpperCase()}
-                      </Badge>
-                    </td>
-                    <td className="p-3.5 text-xs text-slate-500 font-mono">
-                      {p.work_schedule.join(', ')} {isPartTime && <span className="text-amber-700 font-semibold">(Part-time)</span>}
-                    </td>
-                    <td className="p-3.5 text-right pr-5">
-                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedProfile(p); setActiveTab('overview'); }}>
-                        View Profile &rarr;
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <PeopleGrid
+          profiles={filteredProfiles}
+          teams={teams}
+          onSelect={(p) => { setSelectedProfile(p); setActiveTab('overview'); }}
+        />
       ) : (
         /* Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

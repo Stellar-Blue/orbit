@@ -17,6 +17,7 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
+const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
@@ -513,88 +514,21 @@ export default function ContractsRegistryPage() {
               <span className="text-xs text-slate-500 font-mono">Snapshots preserved independently per agreement</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
-                    <th className="py-3 px-5">Ref / Entity</th>
-                    <th className="py-3 px-4">Tier Rating</th>
-                    <th className="py-3 px-4">Type</th>
-                    <th className="py-3 px-4">Term & Start</th>
-                    <th className="py-3 px-4">Discount</th>
-                    <th className="py-3 px-4 text-right">Net ARR (Recurring)</th>
-                    <th className="py-3 px-4 text-right">One-Off Additions</th>
-                    <th className="py-3 px-4 text-right">Real Deal TCV</th>
-                    <th className="py-3 px-5 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-sm">
-                  {filteredContracts.map((c) => {
-                    const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
-
-                    return (
-                      <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-5 font-semibold text-slate-800">
-                          <div className="font-extrabold text-slate-900">{c.reference}</div>
-                          <div className="text-xs text-slate-500 font-normal">{c.counterparty?.legal_name || 'Client Entity'}</div>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black border inline-block ${val.tierInfo.badgeClass}`}>
-                            {val.tierInfo.label}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <Badge variant={c.direction === 'revenue' ? 'success' : 'warning'}>
-                            {c.direction === 'revenue' ? 'Revenue' : 'Spend'}
-                          </Badge>
-                        </td>
-                        <td className="py-3.5 px-4 text-xs font-semibold text-slate-700">
-                          <div>{c.term_years ? `${c.term_years} Year(s)` : 'Standard Term'}</div>
-                          <div className="text-[11px] text-slate-400 font-mono">{c.service_start_date || c.starts_on}</div>
-                        </td>
-                        <td className="py-3.5 px-4 text-xs font-bold text-amber-600">
-                          {c.discount_pct ? `${c.discount_pct}% Off` : 'None (0%)'}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-700">
-                          €{val.netARR.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-amber-600">
-                          {val.oneTimeValue > 0 ? `+€${val.oneTimeValue.toLocaleString()}` : '€0.00'}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900">
-                          €{val.totalContractValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td className="py-3.5 px-5 text-center flex items-center justify-center space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedContract(c);
-                              setDossierTab('pricing');
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs inline-flex items-center transition-colors shadow-2xs cursor-pointer"
-                          >
-                            <Layers className="w-3.5 h-3.5 mr-1 text-indigo-600" />
-                            {c.lines && c.lines.length > 0 ? `Edit Rate Sheet (${c.lines.length})` : 'Build Rate Sheet'}
-                          </button>
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
-                                  await deleteContract(c.id);
-                                }
-                              }}
-                              className="text-slate-400 hover:text-rose-600 transition-colors p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
-                              title="Delete Contract"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <RevenueGrid
+                contracts={filteredContracts}
+                catalogModules={catalogModules}
+                catalogItems={catalogItems}
+                isAdmin={isAdmin}
+                onEditPricing={(c) => {
+                  setSelectedContract(c);
+                  setDossierTab('pricing');
+                }}
+                onDelete={async (c) => {
+                  if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
+                    await deleteContract(c.id);
+                  }
+                }}
+              />
             </div>
           </div>
         </div>

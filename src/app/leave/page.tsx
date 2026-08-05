@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -11,6 +12,8 @@ import {
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest } from '@/lib/types';
+
+const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
 
 export default function LeaveManagementPage() {
   const { 
@@ -744,69 +747,12 @@ export default function LeaveManagementPage() {
                 </div>
               </div>
 
-              {/* Table Grid */}
-              <div className="overflow-hidden rounded-xl border border-slate-200 shadow-2xs">
-                <table className="w-full text-left text-xs text-slate-600">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase font-extrabold tracking-wider text-[10px]">
-                    <tr>
-                      <th className="p-3 pl-4">Date Range</th>
-                      <th className="p-3">Category / Type</th>
-                      <th className="p-3 text-center">Working Days</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3 pr-4">Memo &amp; Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white font-medium">
-                    {exportYearLeaves.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-400 italic">
-                          No leave requests recorded for {selectedYear} yet. Click on the calendar or quick filer to submit time-off!
-                        </td>
-                      </tr>
-                    ) : (
-                      exportYearLeaves.map((req, idx) => {
-                        const lt = leaveTypes.find(t => t.id === req.leave_type_id);
-                        const effDays = getEffectiveDays(req);
-                        return (
-                          <tr key={req.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-3 pl-4 font-mono font-extrabold text-slate-900">
-                              {req.start_date} &rarr; {req.end_date}
-                            </td>
-                            <td className="p-3 font-semibold text-slate-800">
-                              <span className="flex items-center">
-                                <span className="w-2.5 h-2.5 rounded-full mr-2 inline-block shrink-0" style={{ backgroundColor: lt?.colour || '#3D87D3' }} />
-                                {lt?.name_el || (req.origin === 'mandatory' ? 'Mandatory Closure' : 'Regular Leave')}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center font-mono font-bold text-slate-700">
-                              <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 font-extrabold">
-                                {effDays}d
-                              </span>
-                            </td>
-                            <td className="p-3">
-                              {req.status === 'approved' && (
-                                <Badge variant="success">✓ APPROVED</Badge>
-                              )}
-                              {req.status === 'pending' && (
-                                <Badge variant="warning">⏳ PENDING</Badge>
-                              )}
-                              {req.status === 'rejected' && (
-                                <Badge variant="error">✕ REJECTED</Badge>
-                              )}
-                              {req.status === 'taken' && (
-                                <Badge variant="neutral">✓ TAKEN</Badge>
-                              )}
-                            </td>
-                            <td className="p-3 pr-4 text-slate-500 truncate max-w-[150px]" title={req.note}>
-                              {req.note || 'Standard time off'}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {/* Table Grid (AG Grid) */}
+              <LeaveGrid
+                leaves={exportYearLeaves}
+                leaveTypes={leaveTypes}
+                getEffectiveDays={getEffectiveDays}
+              />
             </div>
           </Card>
         )}

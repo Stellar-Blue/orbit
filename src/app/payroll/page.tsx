@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, StatCard, Modal } from '@/components/ui/primitives';
@@ -14,6 +15,8 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+
+const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
 
 export default function PayrollPage() {
   const { 
@@ -762,126 +765,17 @@ export default function PayrollPage() {
             </div>
           )}
 
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
-                  <th className="p-3.5 pl-5">Employee / Partner</th>
-                  <th className="p-3.5">Period</th>
-                  <th className="p-3.5">Payment UUID</th>
-                  <th className="p-3.5">Payment Type</th>
-                  <th className="p-3.5">Gross Amount</th>
-                  <th className="p-3.5">Net Pay</th>
-                  <th className="p-3.5">Employer EFKA</th>
-                  <th className="p-3.5">Total Cost</th>
-                  <th className="p-3.5">Bank Reference</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5 text-right pr-5">Vouchers & Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {displayedPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-500 italic">
-                      No payment records found for {periodLabel} matching filter. Click <strong>&ldquo;Generate Draft&rdquo;</strong> above to instantiate planned rows!
-                    </td>
-                  </tr>
-                ) : (
-                  displayedPayments.map(pay => {
-                    const prof = profiles.find(p => p.id === pay.profile_id);
-                    const pt = paymentTypes.find(type => type.id === pay.payment_type_id);
-                    const missingDoc = pay.status === 'paid' && !hasPaymentReceipt(pay.documents);
-
-                    return (
-                      <tr 
-                        key={pay.id} 
-                        onClick={() => { setSelectedPaymentForDocs(pay); setAddMoreDocs([]); }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 340), y: Math.min(e.clientY, window.innerHeight - 380), payment: pay });
-                        }}
-                        className={`hover:bg-slate-100/80 transition-colors cursor-pointer ${missingDoc ? 'bg-amber-50/30' : ''}`}
-                      >
-                        <td className="p-3.5 pl-5 font-bold text-slate-800">
-                          {prof?.first_name} {prof?.last_name}
-                          <span className="text-xs text-slate-500 font-normal block">{prof?.title} ({prof?.employment_type})</span>
-                        </td>
-                        <td className="p-3.5 font-mono text-xs font-bold text-indigo-700 bg-indigo-50/50 rounded">
-                          {pay.period}
-                        </td>
-                        <td className="p-3.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={(e) => copyToClipboard(pay.id, `Payment UUID (${pay.id.slice(0, 8)}...)`, pay.id, e)}
-                            className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[11px] transition-colors cursor-pointer shadow-2xs"
-                            title="Click to copy full Payment UUID · Right-click row for Fast Report"
-                          >
-                            <span>{pay.id.slice(0, 8)}...{pay.id.slice(-4)}</span>
-                            {copiedId === pay.id ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            )}
-                          </button>
-                        </td>
-                        <td className="p-3.5 text-xs text-[#3D87D3] font-medium">
-                          {pt?.name_el || pay.payment_type?.name_el || 'Μισθός'}
-                          <span className="text-[10px] text-slate-400 block font-normal">{pt?.name_en || pay.payment_type?.name_en}</span>
-                        </td>
-                        <td className="p-3.5 font-mono text-slate-700">€{pay.gross.toLocaleString()}</td>
-                        <td className="p-3.5 font-mono font-bold text-emerald-700">€{pay.net.toLocaleString()}</td>
-                        <td className="p-3.5 font-mono text-slate-600">€{pay.employer_contributions.toLocaleString()}</td>
-                        <td className="p-3.5 font-mono font-extrabold text-slate-900 bg-slate-50/80">€{pay.total_cost.toLocaleString()}</td>
-                        <td className="p-3.5 font-mono text-xs text-slate-600 max-w-[120px] truncate">
-                          {pay.bank_reference || <span className="text-slate-400 italic font-sans font-normal">Pending Ref</span>}
-                        </td>
-                        <td className="p-3.5">
-                          <Badge variant={pay.status === 'paid' ? 'success' : pay.status === 'planned' ? 'warning' : 'neutral'}>
-                            {pay.status.toUpperCase()}
-                          </Badge>
-                          {missingDoc && (
-                            <span className="text-[10px] text-amber-700 font-bold block mt-1">⚠️ Missing Receipt</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-right pr-5" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenEditModal(pay)}
-                              title="Adjust Amounts / Edit"
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedPaymentForDocs(pay);
-                                setAddMoreDocs([]);
-                              }}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer shadow-2xs ${missingDoc ? 'bg-amber-100 border-amber-300 text-amber-900 font-bold' : 'bg-slate-100 hover:bg-indigo-50 border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700'}`}
-                            >
-                              <Paperclip className="w-3.5 h-3.5 text-[#3D87D3] shrink-0" />
-                              {pay.documents && pay.documents.length > 0 ? (
-                                <span className="font-bold text-slate-900 flex items-center gap-1">
-                                  {pay.documents.length} doc{pay.documents.length !== 1 ? 's' : ''}
-                                  {hasPaymentReceipt(pay.documents) ? (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-100 text-emerald-800 rounded border border-emerald-300">✓ Receipt</span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-200 text-amber-900 rounded border border-amber-400">No Receipt</span>
-                                  )}
-                                </span>
-                              ) : (
-                                <span>{missingDoc ? '+ Attach Receipt' : 'Attach Docs'}</span>
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <PayrollGrid
+            payments={displayedPayments}
+            profiles={profiles}
+            paymentTypes={paymentTypes}
+            hasPaymentReceipt={hasPaymentReceipt}
+            onEdit={(pay) => handleOpenEditModal(pay)}
+            onAttachDocs={(pay) => {
+              setSelectedPaymentForDocs(pay);
+              setAddMoreDocs([]);
+            }}
+          />
         </div>
       )}
 

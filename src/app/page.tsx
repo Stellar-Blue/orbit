@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { 
@@ -17,6 +18,8 @@ import {
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod } from '@/lib/pricing-engine';
+
+const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
 interface DaySchedule {
   dateStr: string;
@@ -726,98 +729,10 @@ export default function DashboardPage() {
             </div>
 
             <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 bg-slate-100 z-10 shadow-2xs">
-                  <tr className="bg-slate-100 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
-                    <th className="py-2.5 px-4">Contract / Counterparty</th>
-                    <th className="py-2.5 px-3">Direction</th>
-                    <th className="py-2.5 px-3">Invoicing Cadence & Timing</th>
-                    <th className="py-2.5 px-3">Billing Horizon</th>
-                    <th className="py-2.5 px-4 text-right">Expected Rate (€)</th>
-                    <th className="py-2.5 px-3 text-center">Billing Status</th>
-                    <th className="py-2.5 px-4 text-right">Action / Generation</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-sm font-medium">
-                  {filteredActionQueue.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
-                        No active contracts match your filter criteria or require attention at this time!
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredActionQueue.map(item => (
-                      <tr key={`${item.contractId}::${item.periodKey}`} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3.5 px-4">
-                          <Link href={`/contracts/${item.contractId}`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
-                            {item.counterpartyName}
-                          </Link>
-                          <span className="text-xs text-slate-500 font-mono">Ref: {item.reference}</span>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <Badge variant={item.direction === 'revenue' ? 'success' : 'warning'}>
-                            {item.direction === 'revenue' ? 'Revenue' : 'Spend'}
-                          </Badge>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <div className="font-bold text-slate-800 capitalize">{item.cadence}</div>
-                          <div className="text-xs text-slate-500">
-                            {item.timing === 'end_of_period' ? '⏳ Arrears (End of period)' : 
-                             item.timing === 'upon_milestone' ? '🎯 Upon Milestone' : 
-                             '🚀 In Advance (Start of period)'}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-3">
-                          <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold">
-                            {item.periodLabel}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900">
-                          €{item.expectedAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td className="py-3.5 px-3 text-center">
-                          {item.status === 'unbilled' ? (
-                            <span className="inline-flex items-center text-xs font-extrabold text-rose-700 bg-rose-100 px-2.5 py-1 rounded-full border border-rose-300">
-                              <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-600" />
-                              Unbilled
-                            </span>
-                          ) : item.status === 'draft_created' ? (
-                            <span className="inline-flex items-center text-xs font-extrabold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300">
-                              <Clock className="w-3.5 h-3.5 mr-1 text-amber-600" />
-                              Draft Created
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center text-xs font-extrabold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300">
-                              <CheckCircle className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                              Invoiced
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          {item.status === 'unbilled' ? (
-                            <button
-                              type="button"
-                              onClick={() => handleQuickCreateInvoice(item)}
-                              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm hover:shadow transition-all cursor-pointer"
-                            >
-                              <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                              <span>Create Draft</span>
-                            </button>
-                          ) : (
-                            <Link
-                              href="/invoices"
-                              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
-                            >
-                              <FileCheck className="w-3.5 h-3.5 text-blue-600" />
-                              <span>View in Ledger &rarr;</span>
-                            </Link>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+              <BillingActionGrid
+              items={filteredActionQueue as any}
+              onQuickCreate={(item) => handleQuickCreateInvoice(item as any)}
+            />
             </div>
           </Card>
         </div>

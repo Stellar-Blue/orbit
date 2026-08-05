@@ -126,7 +126,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
     const defs: ColDef<ContractRow>[] = [
       {
         headerName: 'Counterparty', field: 'counterparty', minWidth: 190, sortable: true,
-        filter: 'agTextColumnFilter', pinned: 'left',
+        ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <div>
             <div className="font-bold text-slate-800">{p.value}</div>
@@ -135,7 +135,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         )
       },
       {
-        headerName: 'Contract UUID', field: 'uuid', width: 130, sortable: true, filter: 'agTextColumnFilter',
+        headerName: 'Contract UUID', field: 'uuid', width: 130, sortable: true, ...excelSetFilter(),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <button
             type="button"
@@ -205,7 +205,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         )
       },
       {
-        headerName: 'Notice', field: 'noticeDeadline', width: 115, sortable: true, filter: 'agTextColumnFilter',
+        headerName: 'Notice', field: 'noticeDeadline', width: 115, sortable: true, ...excelSetFilter(),
         cellClass: (params) => params.data?.isUrgent ? 'font-bold text-rose-600' : 'text-slate-600',
         valueFormatter: (p) => p.value
       },
@@ -213,7 +213,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Notice Days', field: 'noticeDays', width: 105, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
         valueFormatter: (p) => `${p.value}d`
       },
-      { headerName: 'Signed On', field: 'signedOn', width: 100, sortable: true, filter: 'agTextColumnFilter' }
+      { headerName: 'Signed On', field: 'signedOn', width: 100, sortable: true, ...excelSetFilter() }
     ];
 
     if (isAdmin) {

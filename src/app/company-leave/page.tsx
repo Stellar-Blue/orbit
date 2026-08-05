@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { 
@@ -11,6 +12,8 @@ import {
 import { parseISO, format, eachDayOfInterval } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest, LeaveType } from '@/lib/types';
+
+const CompanyLeaveGrid = dynamic(() => import('@/components/leave/company-leave-grid').then(m => m.CompanyLeaveGrid), { ssr: false });
 
 export default function CompanyLeaveManagementPage() {
   const { 
@@ -584,158 +587,27 @@ export default function CompanyLeaveManagementPage() {
                   <p>Your team leave approval queue is completely up to date.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-600 min-w-[800px]">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase font-extrabold tracking-wider text-[11px]">
-                      <tr>
-                        <th className="p-4">Employee Member</th>
-                        <th className="p-4">Leave Category</th>
-                        <th className="p-4">Date Horizon</th>
-                        <th className="p-4">Working Days</th>
-                        <th className="p-4">Reason / Notes</th>
-                        <th className="p-4">Status &amp; ΕΡΓΑΝΗ</th>
-                        <th className="p-4 text-right">Admin Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white font-medium">
-                      {displayedRequests.map(req => {
-                        const prof = profiles.find(p => p.id === req.profile_id);
-                        const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
-                        const workDays = getEffectiveDays(req);
-                        const isPendingCancel = req.status === 'cancellation_requested';
-
-                        return (
-                          <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-4">
-                              <div className="font-extrabold text-slate-900 text-sm">
-                                {prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown Team Member'}
-                              </div>
-                              <div className="text-[11px] text-slate-400 font-semibold">
-                                {prof?.title || 'Team Member'} &bull; {prof?.employment_type.toUpperCase()}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-extrabold border shadow-2xs" style={{ 
-                                backgroundColor: `${lType?.colour || '#3D87D3'}15`,
-                                color: lType?.colour || '#3D87D3',
-                                borderColor: `${lType?.colour || '#3D87D3'}30`
-                              }}>
-                                <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: lType?.colour || '#3D87D3' }} />
-                                {lType?.name_el || 'Leave'} ({lType?.name_en || 'Other'})
-                              </span>
-                              {req.origin === 'mandatory' && (
-                                <span className="block mt-1 text-[10px] font-extrabold text-indigo-700">📌 Company Mandatory Closure</span>
-                              )}
-                            </td>
-                            <td className="p-4 font-mono font-bold text-slate-800">
-                              {req.start_date} &rarr; {req.end_date}
-                            </td>
-                            <td className="p-4 font-mono font-black text-slate-900 text-sm">
-                              {workDays}d
-                            </td>
-                            <td className="p-4 text-slate-600 max-w-xs truncate">
-                              {req.note ? <span className="italic text-slate-800">&ldquo;{req.note}&rdquo;</span> : <span className="text-slate-300 font-normal">None provided</span>}
-                            </td>
-                            <td className="p-4 space-y-1">
-                              <div className="flex items-center space-x-1.5">
-                                {req.status === 'approved' || req.status === 'taken' ? (
-                                  <Badge variant="success" className="font-extrabold">✓ APPROVED</Badge>
-                                ) : req.status === 'rejected' ? (
-                                  <Badge variant="error" className="font-extrabold">× REJECTED</Badge>
-                                ) : (
-                                  <Badge variant="warning" className="font-extrabold animate-pulse">⏳ PENDING</Badge>
-                                )}
-                              </div>
-                              {isPendingCancel && (
-                                <Badge variant="warning" className="text-[10px] font-black bg-amber-100 text-amber-950 border-amber-300 block w-fit">
-                                  ⚠️ Cancellation Requested
-                                </Badge>
-                              )}
-                              <div className="text-[10px] font-mono text-slate-400 uppercase">
-                                ΕΡΓΑΝΗ: <span className="text-slate-600 font-bold">{req.ergani_status}</span>
-                              </div>
-                            </td>
-                            <td className="p-4 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end space-x-2">
-                                {req.status === 'pending' && !isPendingCancel && (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="primary"
-                                      onClick={() => updateLeaveRequestStatus(req.id, 'approved', 'Approved by Administration')}
-                                      className="bg-emerald-600 hover:bg-emerald-500 font-black px-3 py-1.5 shadow-2xs text-xs cursor-pointer"
-                                    >
-                                      Approve
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="danger"
-                                      onClick={() => setRejectModalTarget(req.id)}
-                                      className="font-black px-3 py-1.5 shadow-2xs text-xs cursor-pointer"
-                                    >
-                                      Reject
-                                    </Button>
-                                  </>
-                                )}
-
-                                {isPendingCancel && (
-                                  <div className="flex items-center space-x-2">
-                                    <Button
-                                      size="sm"
-                                      className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] py-1 px-2 cursor-pointer"
-                                      onClick={() => decideLeaveCancellation(req.id, true)}
-                                    >
-                                      Approve Cancellation
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-[11px] py-1 px-2 text-slate-700 cursor-pointer"
-                                      onClick={() => decideLeaveCancellation(req.id, false)}
-                                    >
-                                      Keep Leave Active
-                                    </Button>
-                                  </div>
-                                )}
-
-                                {(req.status === 'approved' || req.status === 'taken') && !isPendingCancel && req.origin !== 'mandatory' && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setEditingLeave(req);
-                                      setEditStartDate(req.start_date);
-                                      setEditEndDate(req.end_date);
-                                      setEditNote(req.note || '');
-                                      setEditReason('');
-                                    }}
-                                    className="text-[11px] font-bold py-1 px-2.5 text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer flex items-center"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Modify / Cut Short
-                                  </Button>
-                                )}
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    if (window.confirm("Are you sure you want to permanently delete this leave entry for this employee? This action cannot be undone.")) {
-                                      await deleteLeaveRequest(req.id);
-                                    }
-                                  }}
-                                  className="text-[11px] font-bold p-1.5 text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer flex items-center shrink-0"
-                                  title="Delete Leave Request"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <CompanyLeaveGrid
+                  requests={displayedRequests}
+                  profiles={profiles}
+                  leaveTypes={leaveTypes}
+                  getEffectiveDays={getEffectiveDays}
+                  onApprove={(id) => updateLeaveRequestStatus(id, 'approved', 'Approved by Administration')}
+                  onReject={(id) => setRejectModalTarget(id)}
+                  onDecideCancellation={(id, approve) => decideLeaveCancellation(id, approve)}
+                  onEdit={(req) => {
+                    setEditingLeave(req);
+                    setEditStartDate(req.start_date);
+                    setEditEndDate(req.end_date);
+                    setEditNote(req.note || '');
+                    setEditReason('');
+                  }}
+                  onDelete={async (id) => {
+                    if (window.confirm("Are you sure you want to permanently delete this leave entry for this employee? This action cannot be undone.")) {
+                      await deleteLeaveRequest(id);
+                    }
+                  }}
+                />
               )}
             </Card>
           </div>
