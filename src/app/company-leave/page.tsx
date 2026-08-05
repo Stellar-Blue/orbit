@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
+import { DateRangePicker } from '@/components/leave/date-range-picker';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, 
   Users, Filter, Edit3, ShieldAlert,
@@ -1060,25 +1061,13 @@ export default function CompanyLeaveManagementPage() {
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Start Date</label>
-              <input 
-                type="date" 
-                value={addEmpStart} 
-                onChange={e => setAddEmpStart(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" 
-              />
-            </div>
-            <div>
-              <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">End Date</label>
-              <input 
-                type="date" 
-                value={addEmpEnd} 
-                onChange={e => setAddEmpEnd(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" 
-              />
-            </div>
+          <div>
+            <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Leave Period (Start → End)</label>
+            <DateRangePicker
+              start={addEmpStart}
+              end={addEmpEnd}
+              onChange={(s, e) => { setAddEmpStart(s); setAddEmpEnd(e); }}
+            />
           </div>
 
           <div className="p-3.5 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex items-center justify-between text-xs text-slate-800 font-medium">
