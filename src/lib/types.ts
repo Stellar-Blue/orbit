@@ -22,6 +22,7 @@ export interface ProfileSensitive {
   iban: string;
   address: string;
   birth_date: string;
+  id_number?: string;
 }
 
 export interface Profile {

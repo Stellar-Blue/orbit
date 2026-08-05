@@ -4,7 +4,7 @@ import React, { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays, AlertTriangle } from 'lucide-react';
+import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
 
 export default function MyProfilePage() {
   return (
@@ -358,6 +358,38 @@ function MyProfileInner() {
                 </div>
               );
             })()}
+          </Card>
+
+          {/* Personal & financial data (managed by HR admins in People Directory) */}
+          <Card className="p-6">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
+              <FileText className="w-4 h-4 text-amber-500" /> Personal & Financial Data
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Your records on file with HR. Managed by administrators in the People Directory — contact them to correct anything.
+            </p>
+            {currentUser.sensitive ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  ['ΑΦΜ (Tax ID)', currentUser.sensitive.afm],
+                  ['ΑΜΚΑ (Social Security)', currentUser.sensitive.amka],
+                  ['ΑΜΑ ΕΦΚΑ', currentUser.sensitive.ama_efka],
+                  ['IBAN', currentUser.sensitive.iban],
+                  ['Address', currentUser.sensitive.address],
+                  ['Birth Date', currentUser.sensitive.birth_date],
+                  ['ID Number', currentUser.sensitive.id_number],
+                ].map(([label, value]) => (
+                  <div key={label as string} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">{label}</div>
+                    <div className="text-sm font-bold text-slate-800 mt-0.5 font-mono">{value || '—'}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                No personal records on file yet. Ask an administrator to add them in the People Directory.
+              </div>
+            )}
           </Card>
         </div>
       </div>
