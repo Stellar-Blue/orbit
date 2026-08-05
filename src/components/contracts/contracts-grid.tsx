@@ -255,7 +255,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           />
         </div>
         <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {contracts.length} contracts · click a row to open the dossier · right-click column headers for sort/filter menu
+          {contracts.length} contracts · double-click a row to open the dossier · right-click column headers for sort/filter menu
         </span>
       </div>
       <div className="ag-theme-quartz h-[560px]">
@@ -268,7 +268,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           rowHeight={52}
           headerHeight={36}
           {...GROUPING_OPTIONS}
-          onRowClicked={e => { if (e.data) onSelect(e.data.contract); }}
+          onRowDoubleClicked={e => { if (e.data) onSelect(e.data.contract); }}
           rowClassRules={{
             'contract-row-urgent': (params) => !!params.data?.isUrgent
           }}

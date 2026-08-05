@@ -226,7 +226,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
           rowHeight={52}
           headerHeight={36}
           {...GROUPING_OPTIONS}
-          onRowClicked={e => { if (e.data) onAttachDocs(e.data.pay); }}
+          onRowDoubleClicked={e => { if (e.data) onAttachDocs(e.data.pay); }}
           rowClassRules={{
             'payroll-row-missing-doc': (params) => !!params.data?.missingDoc
           }}

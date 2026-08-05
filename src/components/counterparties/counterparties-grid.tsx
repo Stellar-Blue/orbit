@@ -247,7 +247,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
           />
         </div>
         <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {counterparties.length} entities · click a row to open the dossier
+          {counterparties.length} entities · double-click a row to open the dossier
         </span>
       </div>
       <div className="h-[540px]">
@@ -260,7 +260,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
           rowHeight={58}
           headerHeight={36}
           {...GROUPING_OPTIONS}
-          onRowClicked={e => { if (e.data) onOpen(e.data.cp); }}
+          onRowDoubleClicked={e => { if (e.data) onOpen(e.data.cp); }}
           pagination={true}
           paginationPageSize={25}
           paginationPageSizeSelector={[10, 25, 50, 100]}

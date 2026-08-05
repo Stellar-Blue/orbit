@@ -122,7 +122,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, onSelec
           rowHeight={56}
           headerHeight={36}
           {...GROUPING_OPTIONS}
-          onRowClicked={e => { if (e.data) onSelect(e.data.profile); }}
+          onRowDoubleClicked={e => { if (e.data) onSelect(e.data.profile); }}
           pagination={true}
           paginationPageSize={25}
           paginationPageSizeSelector={[10, 25, 50, 100]}

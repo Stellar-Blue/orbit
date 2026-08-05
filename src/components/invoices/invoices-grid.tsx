@@ -285,7 +285,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           />
         </div>
         <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {invoices.length} invoices · click a row to open · use column filters for Excel-style options
+          {invoices.length} invoices · double-click a row to open · use column filters for Excel-style options
         </span>
       </div>
       <div className="h-[560px]">
@@ -298,7 +298,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           rowHeight={56}
           headerHeight={36}
           {...GROUPING_OPTIONS}
-          onRowClicked={e => { if (e.data) onOpen(e.data.inv); }}
+          onRowDoubleClicked={e => { if (e.data) onOpen(e.data.inv); }}
           rowClassRules={{
             'invoice-row-overdue': (params) => !!params.data?.overdue
           }}
