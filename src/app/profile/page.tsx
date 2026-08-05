@@ -78,7 +78,7 @@ function MyProfileInner() {
   };
 
   const handleRevoke = async () => {
-    if (!confirm('Revoke the Slack connection? Orbit will stop mirroring your leave & remote statuses, and you will be asked to reconnect at your next sign-in.')) return;
+    if (!confirm('Disconnect Slack? Orbit will stop mirroring your leave & remote statuses, and you will be asked to reconnect at your next sign-in.')) return;
     setRevoking(true);
     await revokeSlackConnection();
     setRevoking(false);
@@ -256,7 +256,7 @@ function MyProfileInner() {
                   </div>
                 </div>
                 <Button size="sm" variant="danger" onClick={handleRevoke} disabled={revoking} className="shrink-0 cursor-pointer">
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> {revoking ? 'Revoking…' : 'Revoke Connection'}
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> {revoking ? 'Disconnecting…' : 'Disconnect'}
                 </Button>
               </div>
             ) : (
