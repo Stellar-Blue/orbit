@@ -25,7 +25,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
   const anchor = toDate(start) || toDate(end) || new Date();
   const [viewYear, setViewYear] = useState(anchor.getUTCFullYear());
   const [viewMonth, setViewMonth] = useState(anchor.getUTCMonth());
-  const [selectingEnd, setSelectingEnd] = useState(false);
+  const [pendingStart, setPendingStart] = useState<string | null>(null);
 
   const startDate = toDate(start);
   const endDate = toDate(end);
@@ -51,18 +51,17 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
 
   const handleDay = (d: Date) => {
     const str = toStr(d);
-    if (!startDate || selectingEnd) {
+    if (pendingStart === null) {
+      setPendingStart(str);
       onChange(str, str);
-      setSelectingEnd(true);
       return;
     }
-    // Second click defines the range end (auto-clamped to be >= start)
-    if (str < start) {
-      onChange(str, start);
+    setPendingStart(null);
+    if (str < pendingStart) {
+      onChange(str, pendingStart);
     } else {
-      onChange(start, str);
+      onChange(pendingStart, str);
     }
-    setSelectingEnd(false);
   };
 
   const inRange = (d: Date): boolean => {
@@ -121,7 +120,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
         </span>
         <button
           type="button"
-          onClick={() => { onChange('', ''); setSelectingEnd(false); }}
+          onClick={() => { onChange('', ''); setPendingStart(null); }}
           className="text-[10px] font-bold text-slate-400 hover:text-rose-600 cursor-pointer uppercase tracking-wide"
         >
           Clear
