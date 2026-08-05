@@ -20,9 +20,6 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 
   terminated: 'neutral'
 };
 
-const eurFormatter = (value: number) =>
-  value == null || isNaN(value) ? '' : `€${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-
 interface ContractRow {
   contract: Contract;
   counterparty: string;
@@ -184,24 +181,34 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
       { headerName: 'Term (Yrs)', field: 'termYears', width: 100, sortable: true, filter: 'agNumberColumnFilter' },
       { headerName: 'Discount %', field: 'discount', width: 100, sortable: true, filter: 'agNumberColumnFilter' },
       {
-        headerName: 'ARR (€/yr)', field: 'arr', width: 130, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
-        cellClass: 'font-mono font-bold text-emerald-700',
-        valueFormatter: (p) => eurFormatter(p.value)
-      },
-      {
-        headerName: 'One-Off', field: 'oneOff', width: 110, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
-        cellClass: 'font-mono text-amber-600',
-        valueFormatter: (p) => (p.value > 0 ? eurFormatter(p.value) : '')
-      },
-      {
-        headerName: 'TCV', field: 'tcv', width: 140, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
-        cellClass: 'font-mono font-bold text-slate-800',
-        valueFormatter: (p) => eurFormatter(p.value)
-      },
-      {
-        headerName: 'Tier', field: 'tier', width: 210, sortable: true, ...excelSetFilter(),
-        cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-block ${p.data?.tierClass || ''}`}>{p.value}</span>
+        headerName: 'Commercials & Tier', field: 'tcv', width: 250, sortable: true, filter: 'agNumberColumnFilter',
+        tooltipField: 'tier',
+        cellRenderer: (p: ICellRendererParams<ContractRow, number>) => (
+          <div className="space-y-1.5 py-0.5">
+            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">ARR (Recurring)</span>
+                <span className="font-mono font-black text-xs text-emerald-700">
+                  €{(p.data?.arr || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr
+                </span>
+              </div>
+              {(p.data?.oneOff || 0) > 0 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-medium">One-off additional:</span>
+                  <span className="font-mono font-bold text-amber-600">+€{(p.data?.oneOff || 0).toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-slate-200/80 pt-1 text-[11px]">
+                <span className="font-extrabold text-slate-700">Real Deal TCV:</span>
+                <span className="font-mono font-extrabold text-slate-900">€{(p.data?.tcv || 0).toLocaleString()}</span>
+              </div>
+            </div>
+            <div>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-block ${p.data?.tierClass || ''}`}>
+                {p.data?.tier || '—'}
+              </span>
+            </div>
+          </div>
         )
       },
       {

@@ -21,7 +21,7 @@ export default function CounterpartiesRegistryPage() {
   const { 
     counterparties, contracts, attioEvents, addCounterparty, updateCounterparty, 
     linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, 
-    addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices
+    addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices, catalogModules, catalogItems
   } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -454,6 +454,9 @@ export default function CounterpartiesRegistryPage() {
 
           <CounterpartiesGrid
             counterparties={filteredRegistry}
+            contracts={contracts}
+            catalogModules={catalogModules}
+            catalogItems={catalogItems}
             isAdmin={isAdmin}
             onOpen={(cp) => openDossier(cp)}
             onDelete={async (cp) => {

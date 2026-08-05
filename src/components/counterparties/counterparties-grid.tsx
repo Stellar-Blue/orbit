@@ -4,7 +4,8 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
-import { Counterparty } from '@/lib/types';
+import { Counterparty, Contract, CatalogModule, CatalogItem } from '@/lib/types';
+import { calculateCounterpartyValuation } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, MapPin, ShieldCheck, RefreshCw, ExternalLink, Unlink, Trash2, Search } from 'lucide-react';
 
@@ -21,10 +22,18 @@ interface CpRow {
   arr: number;
   attioLinked: boolean;
   attioId: string;
+  portfolioTier: string;
+  portfolioTierClass: string;
+  portfolioARR: number;
+  portfolioTCV: number;
+  portfolioContracts: number;
 }
 
 interface CounterpartiesGridProps {
   counterparties: Counterparty[];
+  contracts: Contract[];
+  catalogModules: CatalogModule[];
+  catalogItems: CatalogItem[];
   isAdmin: boolean;
   onOpen: (cp: Counterparty) => void;
   onDelete: (cp: Counterparty) => void;
@@ -41,6 +50,9 @@ const roleBadge = (role: string | undefined) => {
 
 export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
   counterparties,
+  contracts,
+  catalogModules,
+  catalogItems,
   isAdmin,
   onOpen,
   onDelete,
@@ -58,21 +70,30 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
   };
 
   const rowData = useMemo<CpRow[]>(() => {
-    return counterparties.map(cp => ({
-      cp,
-      name: cp.legal_name,
-      sub: cp.trade_name && cp.trade_name !== cp.legal_name ? `Trade: ${cp.trade_name}` : (cp.website_domain || 'No domain registered'),
-      internal: !!cp.is_internal,
-      country: cp.country || '—',
-      vat: cp.vat_number || cp.afm || '',
-      vatValid: !!cp.vat_valid,
-      role: cp.derived_role || 'none yet',
-      activeCount: getContractCount(cp.id),
-      arr: getContractArr(cp.id),
-      attioLinked: cp.attio_link?.link_status === 'linked',
-      attioId: cp.attio_link?.attio_record_id || cp.id
-    }));
-  }, [counterparties, getContractCount, getContractArr]);
+    return counterparties.map(cp => {
+      const cpContracts = contracts.filter(c => c.counterparty_id === cp.id);
+      const portfolio = calculateCounterpartyValuation(cpContracts, catalogModules, catalogItems);
+      return {
+        cp,
+        name: cp.legal_name,
+        sub: cp.trade_name && cp.trade_name !== cp.legal_name ? `Trade: ${cp.trade_name}` : (cp.website_domain || 'No domain registered'),
+        internal: !!cp.is_internal,
+        country: cp.country || '—',
+        vat: cp.vat_number || cp.afm || '',
+        vatValid: !!cp.vat_valid,
+        role: cp.derived_role || 'none yet',
+        activeCount: getContractCount(cp.id),
+        arr: getContractArr(cp.id),
+        attioLinked: cp.attio_link?.link_status === 'linked',
+        attioId: cp.attio_link?.attio_record_id || cp.id,
+        portfolioTier: portfolio.tierInfo.label,
+        portfolioTierClass: portfolio.tierInfo.badgeClass,
+        portfolioARR: portfolio.totalNetARR,
+        portfolioTCV: portfolio.totalContractValue,
+        portfolioContracts: portfolio.contractCount
+      };
+    });
+  }, [counterparties, contracts, catalogModules, catalogItems, getContractCount, getContractArr]);
 
   const columnDefs = useMemo<ColDef<CpRow>[]>(() => [
     {
@@ -145,6 +166,19 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
           ) : (
             <span className="text-[11px] text-slate-400 font-mono">No active revenue</span>
           )}
+        </div>
+      )
+    },
+    {
+      headerName: 'Portfolio Tier (Counterparty)', field: 'portfolioTier', width: 250, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<CpRow, string>) => (
+        <div className="space-y-1">
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-block ${p.data?.portfolioTierClass || ''}`}>
+            {p.value}
+          </span>
+          <div className="text-[10px] text-slate-500 font-mono">
+            {p.data?.portfolioContracts} contract{p.data?.portfolioContracts === 1 ? '' : 's'} · €{(p.data?.portfolioARR || 0).toLocaleString()}/yr ARR
+          </div>
         </div>
       )
     },

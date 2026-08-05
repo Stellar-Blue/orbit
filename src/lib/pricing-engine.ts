@@ -22,6 +22,48 @@ export interface ContractValuation {
   };
 }
 
+export interface CounterpartyValuation {
+  totalNetARR: number;              // Combined recurring ARR across the counterparty's contracts
+  oneTimeValue: number;             // Combined one-time value
+  totalContractValue: number;       // Combined deal TCV
+  weightedARR: number;              // Combined weighted ARR (drives the portfolio tier)
+  tierInfo: ContractTierResult;     // Counterparty-level Tier 1 to 10 rating
+  contractCount: number;            // Number of contracts contributing to the tier
+}
+
+/**
+ * Calculates the counterparty-level valuation & tier by aggregating the weighted ARR,
+ * recurring ARR, one-time value and TCV across ALL of the counterparty's contracts.
+ * The tier is driven by the combined weighted ARR of the whole portfolio.
+ */
+export function calculateCounterpartyValuation(
+  contracts: Array<Partial<Contract> & { id: string; counterparty_id: string }>,
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): CounterpartyValuation {
+  let weightedARR = 0;
+  let totalNetARR = 0;
+  let oneTimeValue = 0;
+  let totalContractValue = 0;
+  let contractCount = 0;
+
+  contracts.forEach(c => {
+    const val = calculateContractValuation(
+      c.lines || [], c.discount_pct || 0, c.term_years || 1,
+      c.service_start_date || c.starts_on, catalogModules, catalogItems,
+      c.value || 0, c.billing_cadence
+    );
+    weightedARR += val.weightedARR;
+    totalNetARR += val.netARR;
+    oneTimeValue += val.oneTimeValue;
+    totalContractValue += val.totalContractValue;
+    contractCount += 1;
+  });
+
+  const tierInfo = getContractTier(weightedARR);
+  return { totalNetARR, oneTimeValue, totalContractValue, weightedARR, tierInfo, contractCount };
+}
+
 /**
  * Determines whether a pricing line item uses a variable quantity scheme (e.g. Per-Asset & Tiered Optimization Engines, Man-Days)
  * versus a fixed/constant scheme (Flat ETRM Modules & Subscriptions).
