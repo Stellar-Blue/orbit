@@ -340,6 +340,7 @@ export async function syncOutlookForProfile(
       }
       await admin.from('external_refs').insert({
         provider: 'm365',
+        profile_id: profileId,
         orbit_kind: ev.orbitKind,
         orbit_id: ev.orbitId,
         external_id: String(created.event?.id),
@@ -355,8 +356,11 @@ export async function syncOutlookForProfile(
     if (!ref.external_id || ref.deleted_at) continue;
     const deleted = await graphDeleteEvent(profile.work_email, ref.external_id);
     if (!deleted.ok) {
-      result.skipped = `graph_error:${deleted.code || deleted.status}`;
-      return result;
+      if (!isMailboxMissing(deleted)) {
+        result.skipped = `graph_error:${deleted.code || deleted.status}`;
+        return result;
+      }
+      // Event already gone (e.g. deleted manually in Outlook) — just drop the ref
     }
     await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
     result.deleted += 1;
@@ -367,8 +371,37 @@ export async function syncOutlookForProfile(
     result.workPlan = await syncWorkPlan(admin, delegatedToken, profile.work_email, settings, profileId, today, horizonEnd);
   }
 
+  // Legacy "Working remotely" calendar events (pre-work-plan) — removed regardless of delegated connect
+  await cleanupLegacyRemoteEvents(admin, profileId, profile.work_email, result);
+
   result.ok = true;
   return result;
+}
+
+async function cleanupLegacyRemoteEvents(
+  admin: SupabaseClient,
+  profileId: string,
+  mailboxEmail: string,
+  result: OutlookSyncResult
+) {
+  const { data: refs } = await admin
+    .from('external_refs')
+    .select('id, marker, external_id, deleted_at')
+    .eq('provider', 'm365')
+    .eq('profile_id', profileId)
+    .eq('orbit_kind', 'remote')
+    .like('marker', 'remote:%')
+    .is('deleted_at', null);
+  for (const ref of (refs || []) as Array<{ id: string; external_id: string | null }>) {
+    if (!ref.external_id) continue;
+    const res = await graphDeleteEvent(mailboxEmail, ref.external_id);
+    if (!res.ok && !isForbidden(res) && !isMailboxMissing(res)) {
+      result.skipped = `graph_error:${res.code || res.status}`;
+      return;
+    }
+    await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
+    result.deleted += 1;
+  }
 }
 
 async function syncWorkPlan(
@@ -492,7 +525,7 @@ async function syncWorkPlan(
         continue;
       }
       await admin.from('external_refs').insert({
-        provider: 'm365', orbit_kind: 'remote', orbit_id: rule.orbitId,
+        provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: rule.orbitId,
         external_id: String(res.event?.id), marker: rule.marker,
       });
       summary.created += 1;
@@ -518,7 +551,7 @@ async function syncWorkPlan(
         continue;
       }
       await admin.from('external_refs').insert({
-        provider: 'm365', orbit_kind: 'leave', orbit_id: t.orbitId,
+        provider: 'm365', profile_id: profileId, orbit_kind: 'leave', orbit_id: t.orbitId,
         external_id: String(res.event?.id), marker: t.marker,
       });
       summary.created += 1;
@@ -529,6 +562,21 @@ async function syncWorkPlan(
   for (const ref of existingRefs.values()) {
     if (desiredRules.has(ref.marker) || desiredTimeOff.has(ref.marker)) continue;
     if (!ref.external_id || ref.deleted_at) continue;
+
+    // Legacy remote-day calendar events (replaced by work plan rules) — delete as events
+    if (ref.marker.startsWith('remote:day:') || ref.marker.startsWith('remote:pat:')) {
+      const res = await graphDeleteEvent(mailboxEmail, ref.external_id);
+      if (!res.ok && !isForbidden(res)) {
+        return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+      }
+      await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
+      summary.deleted += 1;
+      continue;
+    }
+
+    // leave: events are managed by the calendar-event path — never touch here
+    if (!ref.marker.startsWith('wprec:') && !ref.marker.startsWith('wpto:')) continue;
+
     const isRule = ref.marker.startsWith('wprec:');
     const res = isRule
       ? await wpDeleteRecurrence(token, mailboxEmail, ref.external_id)
@@ -544,30 +592,13 @@ async function syncWorkPlan(
 }
 
 async function loadWorkPlanRefs(admin: SupabaseClient, profileId: string): Promise<Map<string, { id: string; marker: string; external_id: string | null; deleted_at: string | null }>> {
-  const { data: leaveRows } = await admin
-    .from('leave_requests')
-    .select('id')
-    .eq('profile_id', profileId)
-    .in('status', ['approved', 'in_progress', 'taken']);
-  const { data: patternRows } = await admin
-    .from('remote_patterns')
-    .select('id')
-    .eq('profile_id', profileId);
-  const { data: dayRows } = await admin
-    .from('remote_days')
-    .select('id')
-    .eq('profile_id', profileId);
-  const orbitIds = new Set<string>([
-    ...(leaveRows || []).map((r: { id: string }) => r.id),
-    ...(patternRows || []).map((r: { id: string }) => r.id),
-    ...(dayRows || []).map((r: { id: string }) => r.id),
-  ]);
+  // Query by profile_id so refs of DELETED records are still found and cleaned up
   const { data } = await admin
     .from('external_refs')
     .select('id, marker, external_id, deleted_at')
     .eq('provider', 'm365')
-    .in('orbit_kind', ['leave', 'remote'])
-    .in('orbit_id', Array.from(orbitIds));
+    .eq('profile_id', profileId)
+    .in('orbit_kind', ['leave', 'remote']);
   const map = new Map<string, { id: string; marker: string; external_id: string | null; deleted_at: string | null }>();
   (data || []).forEach((r: { id: string; marker: string; external_id: string | null; deleted_at: string | null }) => map.set(r.marker, r));
   return map;
@@ -696,21 +727,13 @@ async function loadExistingRefs(
   profileId: string,
   desired: Set<string>
 ): Promise<Map<string, { id: string; marker: string; external_id: string | null; deleted_at: string | null }>> {
-  const { data: leaveRows } = await admin
-    .from('leave_requests')
-    .select('id')
-    .eq('profile_id', profileId)
-    .in('status', ['approved', 'in_progress', 'taken']);
-  const orbitIds = new Set<string>([
-    ...(leaveRows || []).map((r: { id: string }) => r.id),
-    ...Array.from(desired).filter(m => m.startsWith('leave:')).map(m => m.replace(/^leave:/, '').replace(/:full$|:end$/, '')),
-  ]);
+  // Query by profile_id (not orbit_id) so refs of DELETED records are still found and cleaned up
   const { data } = await admin
     .from('external_refs')
     .select('id, marker, external_id, deleted_at')
     .eq('provider', 'm365')
-    .eq('orbit_kind', 'leave')
-    .in('orbit_id', Array.from(orbitIds));
+    .eq('profile_id', profileId)
+    .eq('orbit_kind', 'leave');
   const map = new Map<string, { id: string; marker: string; external_id: string | null; deleted_at: string | null }>();
   (data || []).forEach((r: { id: string; marker: string; external_id: string | null; deleted_at: string | null }) => map.set(r.marker, r));
   return map;
