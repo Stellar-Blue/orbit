@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Globe, MapPin, AlertTriangle, Calendar as CalendarIcon, 
-  Users, ShieldCheck, Clock, Building2, Info, CheckCircle2, XCircle, 
+  Users, ShieldCheck, Clock, Building2, Info, XCircle, 
   ChevronLeft, ChevronRight, Zap, Lock, RefreshCw, FileText 
 } from 'lucide-react';
 import { 
