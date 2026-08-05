@@ -74,6 +74,35 @@ export interface SalaryRecord {
   note?: string;
 }
 
+export interface EmployeeContract {
+  id: string;
+  profile_id: string;
+  contract_type: 'indefinite' | 'fixed_term' | 'contractor';
+  title?: string;
+  start_date: string;
+  end_date?: string | null;
+  auto_renew: boolean;
+  notice_days: number;
+  status: 'active' | 'expired' | 'terminated';
+  notes?: string | null;
+  created_at?: string;
+}
+
+export interface SalaryBonus {
+  id: string;
+  profile_id: string;
+  name: string;
+  amount: number;
+  kind: 'recurring' | 'one_time';
+  frequency?: 'monthly' | 'quarterly' | 'annual' | null;
+  start_period?: string | null;
+  end_period?: string | null;
+  period?: string | null;
+  status: 'active' | 'paid' | 'expired' | 'inactive';
+  note?: string | null;
+  created_at?: string;
+}
+
 export interface PaymentDocumentType {
   id: string;
   code: string;

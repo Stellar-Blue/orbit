@@ -16,7 +16,8 @@ import Papa from 'papaparse';
 const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(m => m.PeopleGrid), { ssr: false });
 
 export default function PeopleDirectoryPage() {
-  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile, employeeIntegrations } = useAuth();
+  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile, employeeIntegrations,
+    employeeContracts, addEmployeeContract, updateEmployeeContract, salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -48,6 +49,24 @@ export default function PeopleDirectoryPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editData, setEditData] = useState<any>(null);
 
+  // Contract & bonus editor state
+  const [editingContract, setEditingContract] = useState(false);
+  const [contractForm, setContractForm] = useState({
+    contract_type: 'indefinite' as 'indefinite' | 'fixed_term' | 'contractor',
+    title: '',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: null as string | null,
+    auto_renew: false,
+    notice_days: 30,
+    status: 'active' as 'active' | 'expired' | 'terminated',
+    notes: '',
+  });
+  const [bonusForm, setBonusForm] = useState({
+    name: '', amount: 0, kind: 'recurring' as 'recurring' | 'one_time',
+    frequency: 'monthly' as 'monthly' | 'quarterly' | 'annual',
+    start_period: '', end_period: '', period: '',
+  });
+
   // New Person Form Fields
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
@@ -62,6 +81,24 @@ export default function PeopleDirectoryPage() {
   const [newAmka, setNewAmka] = useState('');
   const [newIban, setNewIban] = useState('');
   const [newAddress, setNewAddress] = useState('');
+
+  const activeContract = employeeContracts.find(c => c.profile_id === selectedProfile?.id) || null;
+
+  const openContractEditor = () => {
+    if (activeContract) {
+      setContractForm({
+        contract_type: activeContract.contract_type,
+        title: activeContract.title || '',
+        start_date: activeContract.start_date,
+        end_date: activeContract.end_date || null,
+        auto_renew: activeContract.auto_renew,
+        notice_days: activeContract.notice_days,
+        status: activeContract.status,
+        notes: activeContract.notes || '',
+      });
+    }
+    setEditingContract(true);
+  };
 
   const handleCreatePerson = (e: React.FormEvent) => {
     e.preventDefault();
@@ -449,10 +486,115 @@ export default function PeopleDirectoryPage() {
               isAdmin ? (
                 <div className="space-y-4">
                   <div className="p-3.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-xs flex items-center justify-between font-medium">
-                    <span>Confidential salary history ledger view.</span>
+                    <span>Confidential employment contract, salary history and bonus ledger view.</span>
                     <Badge variant="info">Strict Founder RLS</Badge>
                   </div>
+
+                  {/* Employment contract */}
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-extrabold text-slate-900 text-sm">Employment Contract</h4>
+                      <button
+                        type="button"
+                        onClick={() => editingContract ? setEditingContract(false) : openContractEditor()}
+                        className="text-[11px] font-bold text-[#3D87D3] hover:underline cursor-pointer"
+                      >
+                        {editingContract ? 'Cancel' : activeContract ? 'Edit Contract' : '+ Define Contract'}
+                      </button>
+                    </div>
+
+                    {editingContract ? (
+                      <div className="grid grid-cols-2 gap-3 p-3 bg-white border border-slate-200 rounded-lg">
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Contract Type</label>
+                          <select
+                            value={contractForm.contract_type}
+                            onChange={e => setContractForm({ ...contractForm, contract_type: e.target.value as any })}
+                            className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium"
+                          >
+                            <option value="indefinite">Indefinite (Permanent)</option>
+                            <option value="fixed_term">Fixed Term</option>
+                            <option value="contractor">Contractor Agreement</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Job Title on Contract</label>
+                          <input type="text" value={contractForm.title || ''} onChange={e => setContractForm({ ...contractForm, title: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" />
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Start Date</label>
+                          <input type="date" value={contractForm.start_date} onChange={e => setContractForm({ ...contractForm, start_date: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">End Date (fixed term)</label>
+                          <input type="date" value={contractForm.end_date || ''} onChange={e => setContractForm({ ...contractForm, end_date: e.target.value || null })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={contractForm.auto_renew} onChange={e => setContractForm({ ...contractForm, auto_renew: e.target.checked })} className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer" />
+                            <span className="font-semibold text-slate-600">Auto-renew</span>
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={contractForm.status === 'active'} onChange={e => setContractForm({ ...contractForm, status: e.target.checked ? 'active' : 'terminated' })} className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer" />
+                            <span className="font-semibold text-slate-600">Active</span>
+                          </label>
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Notice Period (days)</label>
+                          <input type="number" value={contractForm.notice_days} onChange={e => setContractForm({ ...contractForm, notice_days: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-slate-500 font-semibold block mb-1">Notes</label>
+                          <input type="text" value={contractForm.notes || ''} onChange={e => setContractForm({ ...contractForm, notes: e.target.value })} placeholder="e.g. Includes non-compete clause" className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                        </div>
+                        <div className="col-span-2 flex justify-end gap-2 pt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="primary"
+                            className="bg-[#3D87D3] text-white cursor-pointer"
+                            onClick={async () => {
+                              if (!contractForm.start_date) { alert('Start date is required.'); return; }
+                              const ok = activeContract
+                                ? await updateEmployeeContract(activeContract.id, contractForm)
+                                : await addEmployeeContract({ ...contractForm, profile_id: selectedProfile.id });
+                              if (ok) setEditingContract(false);
+                            }}
+                          >
+                            <Check className="w-3.5 h-3.5 mr-1.5" /> {activeContract ? 'Save Contract Changes' : 'Create Contract'}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : activeContract ? (
+                      <div className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-slate-800">
+                            {activeContract.contract_type === 'indefinite' ? 'Indefinite' : activeContract.contract_type === 'fixed_term' ? 'Fixed Term' : 'Contractor Agreement'}
+                            {activeContract.title ? ` — ${activeContract.title}` : ''}
+                          </span>
+                          <Badge variant={activeContract.status === 'active' ? 'success' : 'warning'}>{activeContract.status.toUpperCase()}</Badge>
+                        </div>
+                        <div className="text-slate-600 mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+                          <span><strong className="text-slate-800">From:</strong> {activeContract.start_date}</span>
+                          <span><strong className="text-slate-800">To:</strong> {activeContract.end_date || 'Open-ended'}</span>
+                          <span><strong className="text-slate-800">Auto-renew:</strong> {activeContract.auto_renew ? 'Yes' : 'No'}</span>
+                          <span><strong className="text-slate-800">Notice:</strong> {activeContract.notice_days} days</span>
+                        </div>
+                        {activeContract.notes && <div className="text-slate-500 mt-1.5 italic">{activeContract.notes}</div>}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg bg-white">
+                        No contract defined for this employee yet. Define one to keep payroll and terms documented.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Salary history */}
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-extrabold text-slate-900 text-sm">Salary History</h4>
+                      <span className="text-[10px] text-slate-400 font-mono">Changes are closed-ended — a raise ends the previous record</span>
+                    </div>
                     {salaries.filter(s => s.profile_id === selectedProfile.id).map(sal => (
                       <div key={sal.id} className="p-3 rounded-lg bg-white border border-slate-200 flex items-center justify-between shadow-2xs">
                         <div>
@@ -462,6 +604,120 @@ export default function PeopleDirectoryPage() {
                         <Badge variant="neutral">{sal.basis.toUpperCase()}</Badge>
                       </div>
                     ))}
+                    {salaries.filter(s => s.profile_id === selectedProfile.id).length === 0 && (
+                      <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg bg-white">
+                        No salary record yet — define one in Payroll to enable draft generation.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bonuses */}
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-extrabold text-slate-900 text-sm">Salary Bonuses</h4>
+                      <span className="text-[10px] text-slate-400 font-mono">Recurring bonuses are auto-generated in payroll each period; one-time bonuses are entered manually with proof documents</span>
+                    </div>
+
+                    {/* Add bonus form */}
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 p-3 bg-white border border-slate-200 rounded-lg">
+                      <div className="col-span-2">
+                        <label className="text-slate-500 font-semibold block mb-1">Bonus Name</label>
+                        <input type="text" placeholder="e.g. Performance Bonus" value={bonusForm.name} onChange={e => setBonusForm({ ...bonusForm, name: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                      </div>
+                      <div>
+                        <label className="text-slate-500 font-semibold block mb-1">Amount (€)</label>
+                        <input type="number" step="0.01" placeholder="500" value={bonusForm.amount || ''} onChange={e => setBonusForm({ ...bonusForm, amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                      </div>
+                      <div>
+                        <label className="text-slate-500 font-semibold block mb-1">Kind</label>
+                        <select value={bonusForm.kind} onChange={e => setBonusForm({ ...bonusForm, kind: e.target.value as 'recurring' | 'one_time' })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                          <option value="recurring">Recurring</option>
+                          <option value="one_time">One-time</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-slate-500 font-semibold block mb-1">Frequency / Period</label>
+                        {bonusForm.kind === 'recurring' ? (
+                          <select value={bonusForm.frequency || 'monthly'} onChange={e => setBonusForm({ ...bonusForm, frequency: e.target.value as any })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="annual">Annual</option>
+                          </select>
+                        ) : (
+                          <input type="month" value={bonusForm.period || ''} onChange={e => setBonusForm({ ...bonusForm, period: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        )}
+                      </div>
+                      <div className="flex items-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="primary"
+                          className="bg-[#3D87D3] text-white cursor-pointer w-full"
+                          onClick={async () => {
+                            if (!bonusForm.name.trim() || !bonusForm.amount) { alert('Name and amount are required.'); return; }
+                            const ok = await addSalaryBonus({
+                              profile_id: selectedProfile.id,
+                              name: bonusForm.name.trim(),
+                              amount: bonusForm.amount,
+                              kind: bonusForm.kind,
+                              frequency: bonusForm.kind === 'recurring' ? bonusForm.frequency : (null as any),
+                              start_period: bonusForm.kind === 'recurring' ? (bonusForm.start_period || null) : null,
+                              end_period: bonusForm.kind === 'recurring' ? (bonusForm.end_period || null) : null,
+                              period: bonusForm.kind === 'one_time' ? (bonusForm.period || null) : null,
+                              status: 'active',
+                            });
+                            if (ok) setBonusForm({ name: '', amount: 0, kind: 'recurring', frequency: 'monthly', start_period: '', end_period: '', period: '' });
+                          }}
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Add Bonus
+                        </Button>
+                      </div>
+                      {bonusForm.kind === 'recurring' && (
+                        <div className="col-span-3">
+                          <label className="text-slate-500 font-semibold block mb-1">Valid from / to period (YYYY-MM, empty = open)</label>
+                          <div className="flex gap-2">
+                            <input type="month" value={bonusForm.start_period || ''} onChange={e => setBonusForm({ ...bonusForm, start_period: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                            <input type="month" value={bonusForm.end_period || ''} onChange={e => setBonusForm({ ...bonusForm, end_period: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {salaryBonuses.filter(b => b.profile_id === selectedProfile.id).map(b => (
+                      <div key={b.id} className="p-3 rounded-lg bg-white border border-slate-200 flex items-center justify-between shadow-2xs">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800">{b.name}</span>
+                            <Badge variant={b.kind === 'recurring' ? 'info' : 'warning'} className="text-[9px] px-1.5 py-0">{b.kind === 'recurring' ? `${(b.frequency || 'monthly').toUpperCase()} RECURRING` : 'ONE-TIME'}</Badge>
+                            <Badge variant={b.status === 'active' ? 'success' : 'neutral'} className="text-[9px] px-1.5 py-0">{b.status.toUpperCase()}</Badge>
+                          </div>
+                          <div className="text-slate-500 mt-0.5">
+                            €{Number(b.amount).toLocaleString()}
+                            {b.kind === 'recurring'
+                              ? <> · {b.start_period || 'any'} → {b.end_period || 'open-ended'}</>
+                              : b.period ? <> · paid in {b.period}</> : null}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="cursor-pointer"
+                            onClick={() => updateSalaryBonus(b.id, { status: b.status === 'active' ? 'inactive' : 'active' })}
+                          >
+                            {b.status === 'active' ? 'Deactivate' : 'Activate'}
+                          </Button>
+                          <Button size="sm" variant="danger" onClick={() => { if (confirm(`Delete bonus "${b.name}"?`)) deleteSalaryBonus(b.id); }} className="cursor-pointer">
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {salaryBonuses.filter(b => b.profile_id === selectedProfile.id).length === 0 && (
+                      <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg bg-white">
+                        No bonuses defined. Add a recurring bonus to auto-generate it in every payroll run.
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

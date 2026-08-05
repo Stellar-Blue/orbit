@@ -9,7 +9,8 @@ import {
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
-  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType
+  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
+  EmployeeContract, SalaryBonus
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -79,6 +80,13 @@ interface AppState {
   addDocumentType: (dt: Omit<PaymentDocumentType, 'id' | 'sort_order'>) => Promise<boolean>;
   updateDocumentType: (id: string, updates: Partial<PaymentDocumentType>) => Promise<boolean>;
   deleteDocumentType: (id: string) => Promise<boolean>;
+  employeeContracts: EmployeeContract[];
+  addEmployeeContract: (c: Omit<EmployeeContract, 'id'>) => Promise<boolean>;
+  updateEmployeeContract: (id: string, updates: Partial<EmployeeContract>) => Promise<boolean>;
+  salaryBonuses: SalaryBonus[];
+  addSalaryBonus: (b: Omit<SalaryBonus, 'id'>) => Promise<boolean>;
+  updateSalaryBonus: (id: string, updates: Partial<SalaryBonus>) => Promise<boolean>;
+  deleteSalaryBonus: (id: string) => Promise<boolean>;
   addSalaryRecord: (record: Omit<SalaryRecord, 'id'>) => Promise<void>;
   updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
@@ -191,6 +199,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tierHistory, setTierHistory] = useState<CounterpartyTierHistoryRow[]>([]);
   const [tierOverrides, setTierOverrides] = useState<CounterpartyTierOverride[]>([]);
   const [documentTypes, setDocumentTypes] = useState<PaymentDocumentType[]>([]);
+  const [employeeContracts, setEmployeeContracts] = useState<EmployeeContract[]>([]);
+  const [salaryBonuses, setSalaryBonuses] = useState<SalaryBonus[]>([]);
   const [invoiceCategories, setInvoiceCategories] = useState<InvoiceCategory[]>([]);
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
@@ -227,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
-          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes
+          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -261,7 +271,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('employee_integrations').select('*'),
           supabase.from('integration_exemptions').select('*'),
           supabase.from('integration_settings').select('*'),
-          supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true })
+          supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true }),
+          supabase.from('employee_contracts').select('*'),
+          supabase.from('salary_bonuses').select('*')
         ]);
 
         const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
@@ -430,6 +442,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         setDocumentTypes((documentTypesRes?.data || []) as PaymentDocumentType[]);
+        setEmployeeContracts((contractsRes2?.data || []) as EmployeeContract[]);
+        setSalaryBonuses((bonusesRes?.data || []) as SalaryBonus[]);
 
         const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
         setEmployeeIntegrations(myIntegrationRows);
@@ -1106,6 +1120,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const addEmployeeContract = async (c: Omit<EmployeeContract, 'id'>): Promise<boolean> => {
+    const newC: EmployeeContract = { ...c, id: generateUUID() };
+    setEmployeeContracts(prev => [...prev, newC]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('employee_contracts').insert(newC);
+      if (error) {
+        console.error('Failed to insert employee contract:', error);
+        alert(`Database Error: ${error.message}`);
+        setEmployeeContracts(prev => prev.filter(x => x.id !== newC.id));
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception inserting employee contract:', e);
+      return false;
+    }
+  };
+
+  const updateEmployeeContract = async (id: string, updates: Partial<EmployeeContract>): Promise<boolean> => {
+    setEmployeeContracts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('employee_contracts').update(updates).eq('id', id);
+      if (error) {
+        console.error('Failed to update employee contract:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception updating employee contract:', e);
+      return false;
+    }
+  };
+
+  const addSalaryBonus = async (b: Omit<SalaryBonus, 'id'>): Promise<boolean> => {
+    const newB: SalaryBonus = { ...b, id: generateUUID() };
+    setSalaryBonuses(prev => [...prev, newB]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('salary_bonuses').insert(newB);
+      if (error) {
+        console.error('Failed to insert salary bonus:', error);
+        alert(`Database Error: ${error.message}`);
+        setSalaryBonuses(prev => prev.filter(x => x.id !== newB.id));
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception inserting salary bonus:', e);
+      return false;
+    }
+  };
+
+  const updateSalaryBonus = async (id: string, updates: Partial<SalaryBonus>): Promise<boolean> => {
+    setSalaryBonuses(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('salary_bonuses').update(updates).eq('id', id);
+      if (error) {
+        console.error('Failed to update salary bonus:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception updating salary bonus:', e);
+      return false;
+    }
+  };
+
+  const deleteSalaryBonus = async (id: string): Promise<boolean> => {
+    setSalaryBonuses(prev => prev.filter(b => b.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('salary_bonuses').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete salary bonus:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception deleting salary bonus:', e);
+      return false;
+    }
+  };
+
   const addSalaryRecord = async (rec: Omit<SalaryRecord, 'id'>) => {
     const newSal: SalaryRecord = { ...rec, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
@@ -1277,6 +1380,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
           }
         });
+
+        // Recurring monthly bonuses defined on the salary contract — auto-generated each period
+        const ptBonus = paymentTypes.find(t => t.code === 'bonus');
+        if (ptBonus) {
+          const activeMonthlyBonuses = salaryBonuses.filter(b =>
+            b.profile_id === p.id && b.status === 'active' && b.kind === 'recurring' &&
+            b.frequency === 'monthly' &&
+            (!b.start_period || b.start_period <= period) &&
+            (!b.end_period || b.end_period >= period)
+          );
+          activeMonthlyBonuses.forEach(b => {
+            const duplicateBonus = payments.some(exist =>
+              exist.profile_id === p.id && exist.payment_type_id === ptBonus.id &&
+              exist.period === period && exist.note === `Bonus: ${b.name}`
+            );
+            if (duplicateBonus || newPays.some(n => n.profile_id === p.id && n.payment_type_id === ptBonus.id && n.note === `Bonus: ${b.name}`)) return;
+            const bonusAmount = Number(b.amount);
+            const bonusTotalCost = Number((bonusAmount * mult).toFixed(2));
+            const bonusEmployer = Number((bonusTotalCost - bonusAmount).toFixed(2));
+            const bonusNet = Number((bonusAmount * 0.72).toFixed(2));
+            newPays.push({
+              id: generateUUID(),
+              profile_id: p.id,
+              period,
+              payment_type_id: ptBonus.id,
+              payment_type: ptBonus,
+              gross: bonusAmount,
+              net: bonusNet,
+              employer_contributions: bonusEmployer,
+              total_cost: bonusTotalCost,
+              payment_date: `${period}-28`,
+              status: 'planned',
+              note: `Bonus: ${b.name}`,
+              documents: []
+            });
+          });
+        }
       }
     });
 
@@ -2718,6 +2858,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addDocumentType,
       updateDocumentType,
       deleteDocumentType,
+      employeeContracts,
+      addEmployeeContract,
+      updateEmployeeContract,
+      salaryBonuses,
+      addSalaryBonus,
+      updateSalaryBonus,
+      deleteSalaryBonus,
       addSalaryRecord,
       updateSalaryRecord,
       addContract,
