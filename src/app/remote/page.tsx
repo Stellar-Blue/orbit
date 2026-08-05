@@ -17,8 +17,12 @@ export default function RemoteWorkLogPage() {
   const { 
     currentUser, profiles, remoteDays, remotePatterns, remotePolicies, 
     remoteAmendmentRequests, saveRemotePattern, addRemoteDay, bulkAddRemoteDays, 
-    requestRemoteAmendment, decideRemoteAmendment, publicHolidays, mandatoryLeaves, leaveRequests 
+    requestRemoteAmendment, decideRemoteAmendment, publicHolidays, mandatoryLeaves, leaveRequests,
+    employeeIntegrations 
   } = useAuth();
+  
+  const m365Integration = employeeIntegrations.find(i => i.provider === 'm365') || null;
+  const outlookConnected = m365Integration?.status === 'connected';
   
   const isAdmin = currentUser.role === 'admin';
   const isContractor = currentUser.employment_type === 'contractor';
@@ -168,6 +172,15 @@ export default function RemoteWorkLogPage() {
 
       const remoteEntry = (remoteDays || []).find(rd => rd.profile_id === currentUser.id && rd.date === dateStr);
       const mode = remoteEntry ? (remoteEntry.mode as 'office' | 'remote_gr' | 'remote_abroad') : 'office';
+      // True ad-hoc day: declared override NOT covered by the recurring pattern.
+      // Pattern-covered days are handled by the Outlook work plan itself; ad-hoc days mirror as extra events.
+      const patternCovered = (remotePatterns || []).some(rp =>
+        rp.profile_id === currentUser.id &&
+        (rp.mode === 'remote_gr' || rp.mode === 'remote_abroad') &&
+        rp.weekday === weekdayStr &&
+        dateStr >= rp.valid_from &&
+        (!rp.valid_to || dateStr <= rp.valid_to)
+      );
 
       // Check if there is an active pending amendment request for this day
       const pendingAmendment = (remoteAmendmentRequests || []).find(r => r.profile_id === currentUser.id && r.date === dateStr && r.status === 'pending');
@@ -183,12 +196,13 @@ export default function RemoteWorkLogPage() {
         isHoliday: isHoliday || isMandatory,
         isOnLeave,
         mode,
+        isCustom: !!remoteEntry && !patternCovered,
         location: remoteEntry?.location,
         note: remoteEntry?.note,
         pendingAmendment
       };
     });
-  }, [currentMonth, remoteDays, currentUser.id, publicHolidays, mandatoryLeaves, leaveRequests, remoteAmendmentRequests]);
+  }, [currentMonth, remoteDays, remotePatterns, currentUser.id, publicHolidays, mandatoryLeaves, leaveRequests, remoteAmendmentRequests]);
 
   // Handle clicking a date cell on the interactive schedule calendar
   const handleDateClick = (day: typeof calendarDays[number]) => {
@@ -356,34 +370,29 @@ export default function RemoteWorkLogPage() {
         </div>
       </div>
 
-      {/* Unobtrusive Quota Banner (Remaining Quota Only) */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs">
-        <div className="flex items-center space-x-3.5">
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 text-[#3D87D3] shadow-2xs shrink-0">
-            <Clock className="w-5 h-5 text-[#3D87D3]" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                {periodLabel} Remote Quota
-              </span>
-              <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-white text-[#3D87D3] border border-[#3D87D3]/30 shadow-2xs">
-                Remaining Quota: {remainingQuota} {remainingQuota === 1 ? 'day available' : 'days available'} {periodText}
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 mt-1 font-medium">
-              Declare your upcoming remote schedule directly on the interactive calendar below or use pattern quick-fill tools.
-            </p>
-          </div>
+      {/* Compact Quota Strip */}
+      <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs text-xs">
+        <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[#3D87D3] shrink-0">
+          <Clock className="w-4 h-4" />
         </div>
-        <div className="flex items-center space-x-2 shrink-0">
+        <span className="font-bold uppercase tracking-wider text-slate-700 shrink-0 hidden sm:inline">
+          {periodLabel} Remote Quota
+        </span>
+        <div className="h-4 w-px bg-slate-200 shrink-0 hidden sm:block" />
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <span className="font-extrabold text-slate-900">
+            {myRemoteDaysCount} / {quotaMaxDays} {myRemoteDaysCount === 1 ? 'day' : 'days'} used
+          </span>
+          <span className="font-bold text-slate-500">{remainingQuota} remaining {periodText}</span>
+        </div>
+        <div className="ml-auto shrink-0">
           {remainingQuota === 0 ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-xs font-extrabold shadow-2xs">
-              <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-600" /> Quota Exhausted
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-extrabold shadow-2xs">
+              <AlertTriangle className="w-3 h-3 mr-1 text-amber-600" /> Exhausted
             </span>
           ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold shadow-2xs">
-              <ShieldCheck className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Active Eligibility
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold shadow-2xs">
+              <ShieldCheck className="w-3 h-3 mr-1 text-emerald-600" /> Eligible
             </span>
           )}
         </div>
@@ -396,11 +405,34 @@ export default function RemoteWorkLogPage() {
         <div className="xl:col-span-4 space-y-6">
           <Card title="Default Working Pattern Helper" subtitle="Template routine used to easily auto-fill your remote schedule" className="shadow-xs border-slate-200 h-full flex flex-col justify-between">
             <div>
-              <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-950 text-xs mb-4 flex items-start space-x-2">
+              <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-950 text-xs mb-3 flex items-start space-x-2">
                 <Info className="w-4 h-4 text-[#3D87D3] shrink-0 mt-0.5" />
                 <span>
                   Your pattern acts as an auto-fill helper template. Set your routine below and click an auto-fill action to populate your calendar.
                 </span>
+              </div>
+
+              <div className={`mb-4 p-3 rounded-xl border flex items-start space-x-2.5 text-xs ${outlookConnected ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-900' : 'bg-amber-50/70 border-amber-200/80 text-amber-900'}`}>
+                <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${outlookConnected ? 'text-emerald-600' : 'text-amber-600'}`} />
+                <div>
+                  {outlookConnected ? (
+                    <>
+                      <span className="font-extrabold flex items-center gap-1.5">
+                        <Badge variant="success" className="text-[9px] px-1.5 py-0">SYNCED</Badge> This pattern is synced with your Outlook work plan
+                      </span>
+                      <p className="text-[11px] mt-0.5 opacity-80">
+                        Remote days in the pattern update your Outlook calendar in real time; office days are shown as office. Saving updates Outlook immediately.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-extrabold">Not synced with Outlook</span>
+                      <p className="text-[11px] mt-0.5 opacity-80">
+                        <a href={`/api/msal/connect?next=${encodeURIComponent('/remote')}`} className="font-bold underline underline-offset-2">Connect Microsoft</a> once to mirror this pattern (and your declared days) to your Outlook work plan.
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2.5">
@@ -576,13 +608,15 @@ export default function RemoteWorkLogPage() {
                             </div>
                           )}
                           {day.mode === 'remote_gr' && (
-                            <div className="px-2 py-1 rounded-md bg-cyan-100 text-cyan-950 text-[11px] font-extrabold text-center border border-cyan-300 shadow-2xs transition-transform group-hover:scale-[1.02]">
+                            <div title={day.isCustom ? (outlookConnected ? 'Extra day — synced to your Outlook calendar as an event' : 'Extra day — connect Microsoft to sync to Outlook') : undefined} className="px-2 py-1 rounded-md bg-cyan-100 text-cyan-950 text-[11px] font-extrabold text-center border border-cyan-300 shadow-2xs transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
                               🏠 Remote GR
+                              {day.isCustom && <span className={`inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1 py-0.5 rounded ${outlookConnected ? 'bg-emerald-500/15 text-emerald-700' : 'bg-slate-400/15 text-slate-500'}`}><RefreshCw className="w-2 h-2" /> Outlook</span>}
                             </div>
                           )}
                           {day.mode === 'remote_abroad' && (
-                            <div title={`Abroad: ${day.location || 'Logged'}`} className="px-2 py-1 rounded-md bg-blue-100 text-blue-950 text-[11px] font-extrabold truncate text-center border border-blue-300 shadow-2xs transition-transform group-hover:scale-[1.02]">
+                            <div title={`Abroad: ${day.location || 'Logged'}${day.isCustom ? ' · declared day — synced to Outlook as an extra event' : ''}`} className="px-2 py-1 rounded-md bg-blue-100 text-blue-950 text-[11px] font-extrabold truncate text-center border border-blue-300 shadow-2xs transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
                               ✈️ Abroad
+                              {day.isCustom && <span className={`inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1 py-0.5 rounded shrink-0 ${outlookConnected ? 'bg-emerald-500/15 text-emerald-700' : 'bg-slate-400/15 text-slate-500'}`}><RefreshCw className="w-2 h-2" /> Outlook</span>}
                             </div>
                           )}
                           {day.pendingAmendment && (
