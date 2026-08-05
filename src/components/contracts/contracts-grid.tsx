@@ -44,6 +44,16 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 
   terminated: 'neutral'
 };
 
+// Excel-style filters (checkbox set filters with search / Select All / Blanks) are an
+// AG Grid Enterprise feature: they activate with the license key, and fall back to
+// text filters while the key is missing.
+const HAS_AG_GRID_LICENSE = !!AG_GRID_LICENSE_KEY;
+
+const excelSetFilter = (values?: string[]): Pick<ColDef, 'filter' | 'filterParams'> =>
+  HAS_AG_GRID_LICENSE
+    ? { filter: 'agSetColumnFilter', filterParams: { values, excelMode: 'windows' } }
+    : { filter: 'agTextColumnFilter', filterParams: undefined };
+
 const eurFormatter = (value: number) =>
   value == null || isNaN(value) ? '' : `€${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 
@@ -174,20 +184,20 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
       },
       {
         headerName: 'Direction', field: 'direction', width: 105, sortable: true,
-        filter: 'agSetColumnFilter', filterParams: { values: ['revenue', 'cost'] },
+        ...excelSetFilter(['revenue', 'cost']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <Badge variant={p.value === 'revenue' ? 'success' : 'warning'} className="text-[10px]">{String(p.value).toUpperCase()}</Badge>
         )
       },
-      { headerName: 'Product', field: 'product', width: 170, sortable: true, filter: 'agTextColumnFilter' },
+      { headerName: 'Product', field: 'product', width: 170, sortable: true, ...excelSetFilter() },
       {
         headerName: 'Status', field: 'status', width: 120, sortable: true,
-        filter: 'agSetColumnFilter', filterParams: { values: ['draft', 'in_negotiation', 'active', 'expiring', 'expired', 'terminated'] },
+        ...excelSetFilter(['draft', 'in_negotiation', 'active', 'expiring', 'expired', 'terminated']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <Badge variant={STATUS_VARIANT[p.value || ''] || 'neutral'} className="text-[10px]">{String(p.value || '').toUpperCase().replace('_', ' ')}</Badge>
         )
       },
-      { headerName: 'Owner', field: 'owner', width: 130, sortable: true, filter: 'agTextColumnFilter' },
+      { headerName: 'Owner', field: 'owner', width: 130, sortable: true, ...excelSetFilter() },
       {
         headerName: 'Start', field: 'startsOn', width: 100, sortable: true,
         filter: 'agDateColumnFilter', filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
@@ -198,13 +208,13 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         filter: 'agDateColumnFilter', filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
         valueFormatter: (p) => p.value
       },
-      { headerName: 'Auto Renew', field: 'autoRenews', width: 100, sortable: true, filter: 'agSetColumnFilter', filterParams: { values: ['Yes', 'No'] } },
-      { headerName: 'Renew Term', field: 'renewalTerm', width: 100, sortable: true, filter: 'agTextColumnFilter' },
-      { headerName: 'Cadence', field: 'billingCadence', width: 110, sortable: true, filter: 'agTextColumnFilter' },
-      { headerName: 'Invoice Timing', field: 'invoiceTiming', width: 130, sortable: true, filter: 'agTextColumnFilter' },
-      { headerName: 'Pay Terms', field: 'paymentTerms', width: 95, sortable: true, filter: 'agTextColumnFilter' },
-      { headerName: 'VAT', field: 'vat', width: 150, sortable: true, filter: 'agTextColumnFilter' },
-      { headerName: 'Currency', field: 'currency', width: 90, sortable: true, filter: 'agTextColumnFilter' },
+      { headerName: 'Auto Renew', field: 'autoRenews', width: 100, sortable: true, ...excelSetFilter(['Yes', 'No']) },
+      { headerName: 'Renew Term', field: 'renewalTerm', width: 100, sortable: true, ...excelSetFilter() },
+      { headerName: 'Cadence', field: 'billingCadence', width: 110, sortable: true, ...excelSetFilter() },
+      { headerName: 'Invoice Timing', field: 'invoiceTiming', width: 130, sortable: true, ...excelSetFilter() },
+      { headerName: 'Pay Terms', field: 'paymentTerms', width: 95, sortable: true, ...excelSetFilter() },
+      { headerName: 'VAT', field: 'vat', width: 150, sortable: true, ...excelSetFilter() },
+      { headerName: 'Currency', field: 'currency', width: 90, sortable: true, ...excelSetFilter() },
       { headerName: 'Term (Yrs)', field: 'termYears', width: 100, sortable: true, filter: 'agNumberColumnFilter' },
       { headerName: 'Discount %', field: 'discount', width: 100, sortable: true, filter: 'agNumberColumnFilter' },
       {
@@ -223,7 +233,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         valueFormatter: (p) => eurFormatter(p.value)
       },
       {
-        headerName: 'Tier', field: 'tier', width: 210, sortable: true, filter: 'agTextColumnFilter',
+        headerName: 'Tier', field: 'tier', width: 210, sortable: true, ...excelSetFilter(),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-block ${p.data?.tierClass || ''}`}>{p.value}</span>
         )
