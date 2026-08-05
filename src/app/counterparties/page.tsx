@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Counterparty, AttioLink, CounterpartyContact } from '@/lib/types';
@@ -1015,10 +1016,16 @@ export default function CounterpartiesRegistryPage() {
                     <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-2xl bg-white overflow-hidden">
                       {contracts.filter(c => c.counterparty_id === selectedEntity.id).length > 0 ? (
                         contracts.filter(c => c.counterparty_id === selectedEntity.id).map(cnt => (
-                          <div key={cnt.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                          <Link
+                            key={cnt.id}
+                            href={`/contracts/${cnt.id}`}
+                            className="p-3.5 flex items-center justify-between hover:bg-blue-50/50 transition-colors group"
+                            title={`Open contract ${cnt.reference} in the Contract Registry`}
+                          >
                             <div>
                               <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                {cnt.reference}
+                                <span className="text-[#3D87D3] group-hover:underline">{cnt.reference}</span>
+                                <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#3D87D3] transition-colors" />
                                 <span className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded ${
                                   cnt.direction === 'revenue' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                                 }`}>
@@ -1033,7 +1040,7 @@ export default function CounterpartiesRegistryPage() {
                               <div className="font-mono font-bold text-slate-900">€{(cnt.value || 0).toLocaleString()}</div>
                               <div className="text-[11px] text-slate-400 font-mono">{cnt.billing_cadence}</div>
                             </div>
-                          </div>
+                          </Link>
                         ))
                       ) : (
                         <div className="p-6 text-center text-slate-400 text-xs">
