@@ -1492,6 +1492,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
     const config = (clientVersion?.config || {}) as unknown as { tiers?: Array<{ color?: string }> };
+    const rawBreakdown = state.breakdown as unknown;
+    const breakdown = typeof rawBreakdown === 'string'
+      ? (JSON.parse(rawBreakdown) as Record<string, unknown>)
+      : (rawBreakdown as Record<string, unknown>);
     const tierColor = config.tiers?.[state.tier_index ?? -1]?.color || (state.tier_index === null ? '#94a3b8' : '#64748b');
     const today = new Date().toISOString().split('T')[0];
     const override = overrides.find(o => o.counterparty_id === cp.id && o.model === 'client' && (!o.expires_on || o.expires_on >= today));
@@ -1500,7 +1504,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       tier_index: state.tier_index,
       tier_count: state.tier_count,
       score: state.score,
-      breakdown: state.breakdown || {},
+      breakdown,
       computed_at: state.computed_at,
       label: tierLabel(displayIndex, state.tier_count),
       color: override ? (config.tiers?.[override.tier_index ?? -1]?.color || tierColor) : tierColor,
@@ -1553,7 +1557,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cause
       );
 
-      const rowsToInsert = newStates.map(s => ({ ...s, breakdown: JSON.stringify(s.breakdown) }));
+      const rowsToInsert = newStates.map(s => ({ ...s, breakdown: s.breakdown }));
       const { error: upsertError } = await supabase.from('counterparty_tiers').upsert(rowsToInsert, { onConflict: 'counterparty_id,model' });
       if (upsertError) throw upsertError;
 
@@ -1617,7 +1621,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (deactivateError) throw deactivateError;
 
       const { error: insertError } = await supabase.from('tier_model_versions').insert({
-        id: versionId, model, tier_count: tierCount, config: JSON.stringify(config),
+        id: versionId, model, tier_count: tierCount, config,
         created_by: currentUser?.id || null, active: true
       });
       if (insertError) throw insertError;

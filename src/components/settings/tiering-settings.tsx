@@ -22,7 +22,9 @@ export const TieringSettings: React.FC = () => {
 
   const [config, setConfig] = useState<TierModelConfig>(() => {
     const active = tierModelVersions.find(v => v.model === 'client' && v.active);
-    return (active?.config as unknown as TierModelConfig) || DEFAULT_CLIENT_MODEL_CONFIG;
+    const raw = active?.config as unknown;
+    const parsed = typeof raw === 'string' ? (JSON.parse(raw) as TierModelConfig) : (raw as TierModelConfig);
+    return parsed && Array.isArray(parsed.tiers) ? parsed : DEFAULT_CLIENT_MODEL_CONFIG;
   });
   const [dirty, setDirty] = useState(false);
   const [applying, setApplying] = useState(false);

@@ -762,10 +762,13 @@ export default function CounterpartiesRegistryPage() {
             {(() => {
               const tier = selectedEntity.tier;
               if (!tier) return null;
-              const breakdown = (tier.breakdown || {}) as unknown as Array<{
-                key: string; label: string; value: number | null; points: number | null;
-                weight: number; contribution: number | null; notApplicable: boolean;
-              }>;
+              const rawBreakdown = tier.breakdown || {};
+              const breakdown = Array.isArray(rawBreakdown)
+                ? rawBreakdown as Array<{
+                    key: string; label: string; value: number | null; points: number | null;
+                    weight: number; contribution: number | null; notApplicable: boolean;
+                  }>
+                : [];
               return (
                 <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
