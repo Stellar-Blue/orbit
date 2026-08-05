@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { PaymentRecord } from '@/lib/types';
 import { Card } from '@/components/ui/primitives';
 import { CheckCircle2, Download, Paperclip, Search } from 'lucide-react';
@@ -145,6 +145,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
           quickFilterText={quickFilter}
           rowHeight={56}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           pagination={true}
           paginationPageSize={25}
           paginationPageSizeSelector={[10, 25, 50, 100]}

@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Badge } from '@/components/ui/primitives';
 import { Plus, RefreshCw, CheckCircle2, Search } from 'lucide-react';
 
@@ -167,6 +167,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
           quickFilterText={quickFilter}
           rowHeight={50}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           initialState={{
             sort: {
               sortModel: [

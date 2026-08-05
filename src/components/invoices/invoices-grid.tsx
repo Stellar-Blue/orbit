@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams, type ValueFormatterParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Invoice, InvoiceStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search } from 'lucide-react';
@@ -297,6 +297,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           quickFilterText={quickFilter}
           rowHeight={56}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           onRowClicked={e => { if (e.data) onOpen(e.data.inv); }}
           rowClassRules={{
             'invoice-row-overdue': (params) => !!params.data?.overdue

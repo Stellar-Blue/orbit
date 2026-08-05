@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Badge } from '@/components/ui/primitives';
 import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, Search } from 'lucide-react';
 
@@ -177,6 +177,7 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
           quickFilterText={quickFilter}
           rowHeight={54}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           pagination={true}
           paginationPageSize={25}
           paginationPageSizeSelector={[10, 25, 50, 100]}

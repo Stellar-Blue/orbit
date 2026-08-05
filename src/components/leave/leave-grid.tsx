@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { LeaveRequest, LeaveType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Search } from 'lucide-react';
@@ -111,6 +111,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
           quickFilterText={quickFilter}
           rowHeight={48}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           pagination={true}
           paginationPageSize={25}
           paginationPageSizeSelector={[10, 25, 50, 100]}

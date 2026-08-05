@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { PaymentRecord, Profile, PaymentType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, Edit, Paperclip, Search } from 'lucide-react';
@@ -225,6 +225,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
           quickFilterText={quickFilter}
           rowHeight={52}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           onRowClicked={e => { if (e.data) onAttachDocs(e.data.pay); }}
           rowClassRules={{
             'payroll-row-missing-doc': (params) => !!params.data?.missingDoc

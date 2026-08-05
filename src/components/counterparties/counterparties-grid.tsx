@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Counterparty, Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateCounterpartyValuation } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
@@ -259,6 +259,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
           quickFilterText={quickFilter}
           rowHeight={58}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           onRowClicked={e => { if (e.data) onOpen(e.data.cp); }}
           pagination={true}
           paginationPageSize={25}

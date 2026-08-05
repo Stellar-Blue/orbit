@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
@@ -267,6 +267,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           quickFilterText={quickFilter}
           rowHeight={52}
           headerHeight={36}
+          {...GROUPING_OPTIONS}
           onRowClicked={e => { if (e.data) onSelect(e.data.contract); }}
           rowClassRules={{
             'contract-row-urgent': (params) => !!params.data?.isUrgent
