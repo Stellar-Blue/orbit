@@ -4,10 +4,12 @@ import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase } from 'lucide-react';
+import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays } from 'lucide-react';
 
 export default function MyProfilePage() {
-  const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection } = useAuth();
+  const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection, employeeIntegrations, refreshIntegrationState } = useAuth();
+
+  const m365Integration = employeeIntegrations.find(i => i.provider === 'm365') || null;
 
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(currentUser.first_name);
@@ -251,6 +253,69 @@ export default function MyProfilePage() {
                 </a>
               </div>
             )}
+          </Card>
+          {/* Outlook / Microsoft 365 work plan */}
+          <Card className="p-6">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
+              <CalendarDays className="w-4 h-4 text-blue-500" /> Outlook Work Plan & Calendar
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Orbit updates your Outlook work plan (office / remote days) and mirrors approved leave as Out of office events, so colleagues and scheduling assistants see your availability. Requires one Microsoft sign-in.
+            </p>
+
+            {(() => {
+              const connected = m365Integration?.status === 'connected';
+              return connected ? (
+                <div className="rounded-2xl bg-emerald-50/60 border border-emerald-200/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-200 flex items-center justify-center">
+                      <CalendarDays className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        Connected
+                        <Badge variant="success" className="text-[9px] px-1.5 py-0">ACTIVE</Badge>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {m365Integration.last_synced_at
+                          ? <>Last synced {new Date(m365Integration.last_synced_at).toLocaleString()}</>
+                          : 'Ready for next sync'}
+                      </div>
+                    </div>
+                  </div>
+                  <Button size="sm" variant="danger" onClick={async () => {
+                    if (!confirm('Disconnect Microsoft? Orbit will stop updating your Outlook work plan and calendar.')) return;
+                    const res = await fetch('/api/msal/revoke', { method: 'POST' });
+                    if (res.ok) await refreshIntegrationState();
+                  }} className="shrink-0 cursor-pointer">
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Disconnect
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-200/60 flex items-center justify-center">
+                      <CalendarDays className="w-5 h-5 text-slate-500" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        {m365Integration?.status === 'revoked' ? 'Connection revoked' : 'Not connected'}
+                        <Badge variant={m365Integration?.status === 'revoked' ? 'error' : 'neutral'} className="text-[9px] px-1.5 py-0">{m365Integration?.status === 'revoked' ? 'REVOKED' : 'OFF'}</Badge>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {m365Integration?.status === 'revoked'
+                          ? 'Reconnect to resume work plan & calendar mirroring.'
+                          : 'Connect once to enable Outlook mirroring for your leave and remote days.'}
+                      </div>
+                    </div>
+                  </div>
+                  <a href={`/api/msal/connect?next=${encodeURIComponent('/profile')}`} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
+                    <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
+                    {m365Integration?.status === 'revoked' ? 'Reconnect Microsoft' : 'Connect Microsoft'}
+                  </a>
+                </div>
+              );
+            })()}
           </Card>
         </div>
       </div>
