@@ -368,30 +368,28 @@ export default function RemoteWorkLogPage() {
             Declare remote work schedules, utilize pattern auto-fill templates, and inspect organizational office rosters.
           </p>
         </div>
-      </div>
 
-      {/* Compact Quota Strip */}
-      <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs text-xs">
-        <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[#3D87D3] shrink-0">
-          <Clock className="w-4 h-4" />
-        </div>
-        <span className="font-bold uppercase tracking-wider text-slate-700 shrink-0 hidden sm:inline">
-          {periodLabel} Remote Quota
-        </span>
-        <div className="h-4 w-px bg-slate-200 shrink-0 hidden sm:block" />
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <span className="font-extrabold text-slate-900">
-            {myRemoteDaysCount} / {quotaMaxDays} {myRemoteDaysCount === 1 ? 'day' : 'days'} used
+        {/* Compact Quota — rides the header's empty space */}
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs text-xs shrink-0">
+          <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[#3D87D3] shrink-0">
+            <Clock className="w-4 h-4" />
+          </div>
+          <span className="font-bold uppercase tracking-wider text-slate-700 shrink-0 hidden md:inline">
+            {periodLabel} Remote Quota
           </span>
-          <span className="font-bold text-slate-500">{remainingQuota} remaining {periodText}</span>
-        </div>
-        <div className="ml-auto shrink-0">
+          <div className="h-4 w-px bg-slate-200 shrink-0 hidden md:block" />
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <span className="font-extrabold text-slate-900">
+              {myRemoteDaysCount} / {quotaMaxDays} {myRemoteDaysCount === 1 ? 'day' : 'days'} used
+            </span>
+            <span className="font-bold text-slate-500">{remainingQuota} remaining {periodText}</span>
+          </div>
           {remainingQuota === 0 ? (
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-extrabold shadow-2xs">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-extrabold shadow-2xs shrink-0">
               <AlertTriangle className="w-3 h-3 mr-1 text-amber-600" /> Exhausted
             </span>
           ) : (
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold shadow-2xs">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold shadow-2xs shrink-0">
               <ShieldCheck className="w-3 h-3 mr-1 text-emerald-600" /> Eligible
             </span>
           )}
@@ -405,33 +403,33 @@ export default function RemoteWorkLogPage() {
         <div className="xl:col-span-4 space-y-6">
           <Card title="Default Working Pattern Helper" subtitle="Template routine used to easily auto-fill your remote schedule" className="shadow-xs border-slate-200 h-full flex flex-col justify-between">
             <div>
-              <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-950 text-xs mb-3 flex items-start space-x-2">
-                <Info className="w-4 h-4 text-[#3D87D3] shrink-0 mt-0.5" />
-                <span>
-                  Your pattern acts as an auto-fill helper template. Set your routine below and click an auto-fill action to populate your calendar.
-                </span>
-              </div>
-
-              <div className={`mb-4 p-3 rounded-xl border flex items-start space-x-2.5 text-xs ${outlookConnected ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-900' : 'bg-amber-50/70 border-amber-200/80 text-amber-900'}`}>
-                <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${outlookConnected ? 'text-emerald-600' : 'text-amber-600'}`} />
-                <div>
-                  {outlookConnected ? (
-                    <>
-                      <span className="font-extrabold flex items-center gap-1.5">
-                        <Badge variant="success" className="text-[9px] px-1.5 py-0">SYNCED</Badge> This pattern is synced with your Outlook work plan
-                      </span>
-                      <p className="text-[11px] mt-0.5 opacity-80">
-                        Remote days in the pattern update your Outlook calendar in real time; office days are shown as office. Saving updates Outlook immediately.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-extrabold">Not synced with Outlook</span>
-                      <p className="text-[11px] mt-0.5 opacity-80">
-                        <a href={`/api/msal/connect?next=${encodeURIComponent('/remote')}`} className="font-bold underline underline-offset-2">Connect Microsoft</a> once to mirror this pattern (and your declared days) to your Outlook work plan.
-                      </p>
-                    </>
-                  )}
+              {/* Hover-only info: pattern explanation + Outlook sync status */}
+              <div className="relative group mb-3 inline-block">
+                <button
+                  type="button"
+                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-[#3D87D3]/10 text-slate-500 hover:text-[#3D87D3] border border-slate-200 flex items-center justify-center cursor-pointer transition-colors"
+                  aria-label="Pattern helper info"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+                <div className="hidden group-hover:block absolute left-0 top-9 z-30 w-80 p-4 rounded-xl bg-slate-900/95 backdrop-blur border border-slate-700 shadow-2xl text-[11px] leading-relaxed space-y-3">
+                  <div className="text-slate-200">
+                    <span className="font-extrabold text-white block mb-0.5">Auto-fill helper template</span>
+                    Set your routine below and click an auto-fill action to populate your calendar. The pattern is not just a template — remote days in it update your Outlook work plan.
+                  </div>
+                  <div className={`rounded-lg p-2.5 border ${outlookConnected ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200' : 'bg-amber-500/10 border-amber-500/30 text-amber-200'}`}>
+                    {outlookConnected ? (
+                      <>
+                        <span className="font-extrabold text-white block mb-0.5">Synced with Outlook</span>
+                        Remote pattern days update your Outlook work plan (remote / office) in real time; saving updates Outlook immediately.
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-extrabold text-white block mb-0.5">Not synced with Outlook</span>
+                        <a href={`/api/msal/connect?next=${encodeURIComponent('/remote')}`} className="font-bold underline underline-offset-2 text-emerald-300">Connect Microsoft</a> once to mirror this pattern and your declared days to Outlook.
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
