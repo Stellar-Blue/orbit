@@ -1,15 +1,33 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays } from 'lucide-react';
+import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays, AlertTriangle } from 'lucide-react';
 
 export default function MyProfilePage() {
+  return (
+    <Suspense fallback={<div className="text-slate-400 text-sm">Loading profile…</div>}>
+      <MyProfileInner />
+    </Suspense>
+  );
+}
+
+function MyProfileInner() {
   const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection, employeeIntegrations, refreshIntegrationState } = useAuth();
+  const searchParams = useSearchParams();
+  const msalError = searchParams.get('msal');
 
   const m365Integration = employeeIntegrations.find(i => i.provider === 'm365') || null;
+
+  const MSAL_ERRORS: Record<string, string> = {
+    error: 'Microsoft sign-in failed or was interrupted.',
+    cancelled: 'Microsoft sign-in was cancelled.',
+    exchange_failed: 'Microsoft rejected the authorization code (check the app registration: redirect URI and delegated Calendars.ReadWrite permission).',
+    store_failed: 'Orbit could not securely store your Microsoft session. Please contact an administrator.',
+  };
 
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(currentUser.first_name);
@@ -254,6 +272,16 @@ export default function MyProfilePage() {
               </div>
             )}
           </Card>
+          {msalError && MSAL_ERRORS[msalError] && (
+            <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-bold">Microsoft connection failed</div>
+                <div className="text-xs mt-0.5">{MSAL_ERRORS[msalError]}</div>
+              </div>
+            </div>
+          )}
+
           {/* Outlook / Microsoft 365 work plan */}
           <Card className="p-6">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">

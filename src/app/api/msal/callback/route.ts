@@ -36,14 +36,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/profile?msal=cancelled', request.url));
   }
 
+  console.log('msal callback: hit, state ok', state.profile_id, 'code?', !!code);
   const tokens = await exchangeMsalCode(code);
   if (!tokens) {
+    console.error('msal callback: exchange failed for profile', state.profile_id, 'tenant', process.env.GRAPH_TENANT_ID);
     return NextResponse.redirect(new URL('/profile?msal=exchange_failed', request.url));
   }
 
   const admin = getAdminClient();
   const stored = await storeMsalTokens(admin, state.profile_id, tokens);
   if (!stored) {
+    console.error('msal callback: vault store failed for profile', state.profile_id);
     return NextResponse.redirect(new URL('/profile?msal=store_failed', request.url));
   }
 
