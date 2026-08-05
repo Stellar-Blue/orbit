@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { exchangeMsalCode, storeMsalTokens } from '@/lib/integrations/msal';
 import { getAdminClient } from '@/lib/integrations/server';
+import { syncOutlookForProfile } from '@/lib/integrations/outlook';
 
 export async function GET(request: NextRequest) {
   const stateCookie = request.cookies.get('msal_oauth_state')?.value;
@@ -58,6 +59,9 @@ export async function GET(request: NextRequest) {
     connected_at: now,
     last_synced_at: now,
   }, { onConflict: 'profile_id,provider' });
+
+  // Mirror immediately so the work plan shows current leave/remote state without waiting for the nightly cron
+  syncOutlookForProfile(admin, state.profile_id).catch(err => console.error('post-connect outlook sync error:', err));
 
   const response = NextResponse.redirect(new URL(state.next, request.url));
   response.cookies.set('msal_oauth_state', '', { maxAge: 0, path: '/' });

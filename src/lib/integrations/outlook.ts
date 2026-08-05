@@ -167,6 +167,10 @@ export async function wpDeleteOccurrence(token: string, mailboxEmail: string, id
   return graphRequest('DELETE', `${wpBase(mailboxEmail)}/occurrences/${encodeURIComponent(id)}`, undefined, token);
 }
 
+export async function wpListRecurrences(token: string, mailboxEmail: string): Promise<GraphResult> {
+  return graphRequest('GET', `${wpBase(mailboxEmail)}/recurrences`, undefined, token);
+}
+
 export async function wpSetCurrentLocation(token: string, mailboxEmail: string, workLocationType: 'office' | 'remote' | 'timeOff'): Promise<GraphResult> {
   return graphRequest('POST', `${wpBase(mailboxEmail)}/occurrences/setCurrentLocation`, {
     updateScope: 'currentDay',
@@ -390,7 +394,7 @@ async function cleanupLegacyRemoteEvents(
     .eq('provider', 'm365')
     .eq('profile_id', profileId)
     .eq('orbit_kind', 'remote')
-    .like('marker', 'remote:%')
+    .like('marker', 'remote:pat:%')
     .is('deleted_at', null);
   for (const ref of (refs || []) as Array<{ id: string; external_id: string | null }>) {
     if (!ref.external_id) continue;
@@ -425,39 +429,17 @@ async function syncWorkPlan(
     .or(`valid_to.is.null,valid_to.gte.${today}`);
 
   const desiredRules = new Map<string, DesiredRemoteRule>();
+  const patternWeekday = new Map<string, string>();
   for (const p of (patterns || []) as Array<{ id: string; weekday: string; valid_from: string; valid_to: string | null }>) {
     const wd = graphWeekday(p.weekday);
     if (!wd) continue;
+    patternWeekday.set(p.id, wd);
     desiredRules.set(`wprec:pat:${p.id}`, {
       marker: `wprec:pat:${p.id}`,
       orbitId: p.id,
       weekday: wd,
       from: p.valid_from,
       to: p.valid_to,
-    });
-  }
-
-  const { data: remoteDays } = await admin
-    .from('remote_days')
-    .select('id, date')
-    .eq('profile_id', profileId)
-    .in('mode', ['remote_gr', 'remote_abroad'])
-    .gte('date', today)
-    .lte('date', horizonEnd);
-
-  for (const rd of (remoteDays || []) as Array<{ id: string; date: string }>) {
-    // Skip days already covered by a pattern rule (avoid duplicate rules for same weekday)
-    const weekdayOfDay = graphWeekday(weekdayOf(rd.date));
-    const covered = Array.from(desiredRules.values()).some(r =>
-      r.weekday === weekdayOfDay && rd.date >= r.from && (!r.to || rd.date <= r.to)
-    );
-    if (covered) continue;
-    desiredRules.set(`wprec:day:${rd.id}`, {
-      marker: `wprec:day:${rd.id}`,
-      orbitId: rd.id,
-      weekday: weekdayOfDay || 'monday',
-      from: rd.date,
-      to: rd.date,
     });
   }
 
@@ -506,11 +488,32 @@ async function syncWorkPlan(
 
   const existingRefs = await loadWorkPlanRefs(admin, profileId);
 
-  // Rules: create or PUT (idempotent full update)
+  // Reconcile remote rules against the user's EXISTING work plan.
+  // The plan has one recurring rule per weekday; Orbit flips the matching rule to `remote`
+  // (never creating overlapping segments — Graph rejects those), and reverts to `unspecified`
+  // when the Orbit pattern no longer calls for remote that day.
+  const existingRules = await wpListRecurrences(token, mailboxEmail);
+  if (!existingRules.ok) {
+    return { ...summary, skipped: `graph_error:${existingRules.code || existingRules.status}` };
+  }
+  const rulesByWeekday = new Map<string, Record<string, unknown>>();
+  for (const r of (existingRules.event?.value as Array<Record<string, unknown>> | undefined) || []) {
+    const days = (r.recurrence as { pattern?: { daysOfWeek?: string[] } } | undefined)?.pattern?.daysOfWeek || [];
+    const tzKey = r.start as { dateTime?: string } | undefined;
+    if (days.length === 1 && !rulesByWeekday.has(days[0])) {
+      rulesByWeekday.set(days[0], r);
+    }
+    void tzKey;
+  }
+
   for (const rule of desiredRules.values()) {
     const ref = existingRefs.get(rule.marker);
-    const payload = buildRemoteRulePayload(rule);
     if (ref?.external_id && !ref.deleted_at) {
+      // Rule we own — keep it remote (PUT full object with type remote)
+      const existing = rulesByWeekday.get(rule.weekday);
+      const payload = existing && existing.id === ref.external_id
+        ? { ...existing, workLocationType: 'remote' }
+        : buildRemoteRulePayload(rule);
       const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, payload);
       if (!res.ok) {
         if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
@@ -518,18 +521,48 @@ async function syncWorkPlan(
         continue;
       }
       summary.updated += 1;
-    } else {
-      const res = await wpCreateRecurrence(token, mailboxEmail, payload);
+      continue;
+    }
+
+    const existing = rulesByWeekday.get(rule.weekday);
+    if (existing) {
+      if (existing.workLocationType === 'remote') {
+        // Already remote in the plan — nothing to do (may be the user's own plan)
+        continue;
+      }
+      // Flip the user's rule for this weekday to remote
+      const res = await wpUpdateRecurrence(token, mailboxEmail, String(existing.id), { ...existing, workLocationType: 'remote' });
       if (!res.ok) {
         if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
         continue;
       }
       await admin.from('external_refs').insert({
         provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: rule.orbitId,
-        external_id: String(res.event?.id), marker: rule.marker,
+        external_id: String(existing.id), marker: rule.marker,
       });
-      summary.created += 1;
+      summary.updated += 1;
+      continue;
     }
+
+    // No plan rule for this weekday — create one (noEnd range, bounded segment 08:00–17:00)
+    const res = await wpCreateRecurrence(token, mailboxEmail, {
+      start: { dateTime: `${rule.from}T08:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
+      end: { dateTime: `${rule.from}T17:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
+      workLocationType: 'remote',
+      recurrence: {
+        pattern: { type: 'weekly', interval: 1, daysOfWeek: [rule.weekday] },
+        range: { type: 'noEnd', startDate: rule.from, recurrenceTimeZone: ATHENS_TIMEZONE },
+      },
+    });
+    if (!res.ok) {
+      if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+      continue;
+    }
+    await admin.from('external_refs').insert({
+      provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: rule.orbitId,
+      external_id: String(res.event?.id), marker: rule.marker,
+    });
+    summary.created += 1;
   }
 
   // Time-off: create or PUT
@@ -578,9 +611,29 @@ async function syncWorkPlan(
     if (!ref.marker.startsWith('wprec:') && !ref.marker.startsWith('wpto:')) continue;
 
     const isRule = ref.marker.startsWith('wprec:');
-    const res = isRule
-      ? await wpDeleteRecurrence(token, mailboxEmail, ref.external_id)
-      : await wpDeleteOccurrence(token, mailboxEmail, ref.external_id);
+    if (isRule) {
+      // Restore the weekday rule to the baseline (`unspecified`) when we flipped it,
+      // or delete rules we created once their Orbit pattern is gone
+      const patternId = ref.marker.replace('wprec:pat:', '');
+      const wd = patternWeekday.get(patternId);
+      const existing = wd ? rulesByWeekday.get(wd) : undefined;
+      if (existing && String(existing.id) === ref.external_id) {
+        const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...existing, workLocationType: 'unspecified' });
+        if (!res.ok && !isForbidden(res)) {
+          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+        }
+      } else {
+        const res = await wpDeleteRecurrence(token, mailboxEmail, ref.external_id);
+        if (!res.ok && !isForbidden(res)) {
+          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+        }
+      }
+      await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
+      summary.deleted += 1;
+      continue;
+    }
+
+    const res = await wpDeleteOccurrence(token, mailboxEmail, ref.external_id);
     if (!res.ok && !isForbidden(res)) {
       return { ...summary, skipped: `graph_error:${res.code || res.status}` };
     }
@@ -716,6 +769,39 @@ async function computeDesiredEvents(
     }
   }
 
+  // Ad-hoc remote days: the work plan cannot express one-off remote days without clobbering the
+  // recurring weekday rule, so they mirror as "Working remotely" calendar events (leave wins).
+  const { data: patterns } = await admin
+    .from('remote_patterns')
+    .select('id, weekday, valid_from, valid_to')
+    .eq('profile_id', profileId)
+    .in('mode', ['remote_gr', 'remote_abroad'])
+    .lte('valid_from', horizonEnd)
+    .or(`valid_to.is.null,valid_to.gte.${today}`);
+
+  const patternCovered = (dateStr: string): boolean => {
+    const wd = weekdayOf(dateStr);
+    return (patterns || []).some((p: { weekday: string; valid_from: string; valid_to: string | null }) =>
+      p.weekday === wd && dateStr >= p.valid_from && (!p.valid_to || dateStr <= p.valid_to)
+    );
+  };
+
+  const { data: remoteDays } = await admin
+    .from('remote_days')
+    .select('id, date')
+    .eq('profile_id', profileId)
+    .in('mode', ['remote_gr', 'remote_abroad'])
+    .gte('date', today)
+    .lte('date', horizonEnd);
+
+  for (const rd of (remoteDays || []) as Array<{ id: string; date: string }>) {
+    if (patternCovered(rd.date)) continue; // recurring plan rule handles it
+    events.set(`remote:day:${rd.id}`, {
+      marker: `remote:day:${rd.id}`, orbitKind: 'remote', orbitId: rd.id, subject: settings.remoteLabel,
+      allDay: true, startDate: rd.date, endDate: addDays(rd.date, 1), showAs: 'workingElsewhere',
+    });
+  }
+
   return {
     events,
     eventMarkers: () => new Set(events.keys()),
@@ -733,7 +819,9 @@ async function loadExistingRefs(
     .select('id, marker, external_id, deleted_at')
     .eq('provider', 'm365')
     .eq('profile_id', profileId)
-    .eq('orbit_kind', 'leave');
+    .in('orbit_kind', ['leave', 'remote'])
+    .not('marker', 'like', 'wprec:%')
+    .not('marker', 'like', 'wpto:%');
   const map = new Map<string, { id: string; marker: string; external_id: string | null; deleted_at: string | null }>();
   (data || []).forEach((r: { id: string; marker: string; external_id: string | null; deleted_at: string | null }) => map.set(r.marker, r));
   return map;

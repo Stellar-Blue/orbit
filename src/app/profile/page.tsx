@@ -3,7 +3,6 @@
 import React, { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays, AlertTriangle } from 'lucide-react';
 
@@ -47,15 +46,12 @@ function MyProfileInner() {
   const handleUploadPhoto = async (file: File) => {
     setUploading(true);
     try {
-      const supabase = getSupabaseBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No session');
-      const ext = file.name.split('.').pop() || 'jpg';
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('profile-photos').upload(path, file, { upsert: true, contentType: file.type });
-      if (error) throw error;
-      const { data: publicUrlData } = supabase.storage.from('profile-photos').getPublicUrl(path);
-      const ok = await updateMyProfile({ photo_url: publicUrlData.publicUrl });
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/profile/photo', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
+      const ok = await updateMyProfile({ photo_url: data.url });
       if (!ok) throw new Error('Failed to persist photo URL');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unknown error';
