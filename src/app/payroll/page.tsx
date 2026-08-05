@@ -27,6 +27,40 @@ export default function PayrollPage() {
   } = useAuth();
   
   const [backfillingId, setBackfillingId] = useState<string | null>(null);
+  const [editSalaryId, setEditSalaryId] = useState<string | null>(null);
+  const [salForm, setSalForm] = useState({
+    gross_amount: 0, multiplier: 1.24, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '',
+  });
+
+  const openSalaryEditor = (sal: SalaryRecord) => {
+    setSalForm({
+      gross_amount: Number(sal.gross_amount || 0),
+      multiplier: Number(sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24)),
+      valid_from: sal.valid_from || '',
+      valid_to: sal.valid_to || '',
+      basis: sal.basis || 'monthly_gross',
+      note: sal.note || '',
+    });
+    setEditSalaryId(sal.id);
+  };
+
+  const handleSaveSalaryEdit = async () => {
+    if (!editSalaryId || !salForm.valid_from || salForm.gross_amount <= 0) {
+      alert('Valid from and a positive gross amount are required.');
+      return;
+    }
+    await updateSalaryRecord(editSalaryId, {
+      gross_amount: Number(salForm.gross_amount),
+      employer_cost_pct: salForm.multiplier > 1 ? Number(((salForm.multiplier - 1) * 100).toFixed(2)) : undefined,
+      employer_cost_multiplier: Number(salForm.multiplier),
+      valid_from: salForm.valid_from,
+      valid_to: salForm.valid_to || undefined,
+      basis: salForm.basis as any,
+      note: salForm.note.trim() || undefined,
+    });
+    setEditSalaryId(null);
+    alert('Salary record updated.');
+  };
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
     if (!docs || !Array.isArray(docs) || docs.length === 0) return false;
@@ -806,51 +840,95 @@ export default function PayrollPage() {
                 const loadedMonthly = Number((sal.gross_amount * mult).toFixed(2));
 
                 return (
-                  <div key={sal.id} className={`p-4 rounded-xl border transition-all flex items-center justify-between text-xs ${isActive ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/70 border-slate-200 opacity-75'}`}>
-                    <div className="flex items-center space-x-3.5">
-                      <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'ACTIVE RATE' : 'PAST HISTORY'}</Badge>
-                      <div>
-                        <span className="font-bold text-slate-800 text-sm block">{prof?.first_name} {prof?.last_name} <span className="text-xs font-normal text-slate-500">({prof?.title})</span></span>
-                        <span className="text-slate-500 block mt-0.5">
-                          Validity: <strong className="font-mono text-slate-700">{sal.valid_from}</strong> &rarr; <strong className="font-mono text-slate-700">{sal.valid_to || 'Present'}</strong>
-                          {sal.note && <span className="ml-2 text-slate-400">&bull; {sal.note}</span>}
-                        </span>
+                  <div key={sal.id} className={`p-4 rounded-xl border transition-all text-xs ${isActive ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/70 border-slate-200 opacity-75'}`}>
+                    {editSalaryId === sal.id ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Gross (€)</label>
+                          <input type="number" step="0.01" value={salForm.gross_amount || ''} onChange={e => setSalForm({ ...salForm, gross_amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Employer Multiplier</label>
+                          <input type="number" step="0.01" value={salForm.multiplier || ''} onChange={e => setSalForm({ ...salForm, multiplier: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
+                          <input type="date" value={salForm.valid_from} onChange={e => setSalForm({ ...salForm, valid_from: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Valid To (empty = active)</label>
+                          <input type="date" value={salForm.valid_to} onChange={e => setSalForm({ ...salForm, valid_to: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        </div>
+                        <div>
+                          <label className="text-slate-500 font-semibold block mb-1">Basis</label>
+                          <select value={salForm.basis} onChange={e => setSalForm({ ...salForm, basis: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                            <option value="monthly_gross">Monthly Gross</option>
+                            <option value="daily_rate">Daily Rate</option>
+                            <option value="fixed_fee">Fixed Fee</option>
+                            <option value="fee">Fee</option>
+                          </select>
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#3D87D3] text-white cursor-pointer">
+                            <Check className="w-3.5 h-3.5 mr-1" /> Save
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditSalaryId(null)} className="cursor-pointer">Cancel</Button>
+                        </div>
+                        <div className="col-span-2 sm:col-span-6">
+                          <label className="text-slate-500 font-semibold block mb-1">Note</label>
+                          <input type="text" value={salForm.note} onChange={e => setSalForm({ ...salForm, note: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right flex items-center space-x-6">
-                      <div>
-                        <span className="text-xs text-slate-400 font-medium block">Employer Multiplier</span>
-                        <span className="font-mono font-bold text-[#3D87D3] text-sm">&times;{mult}</span>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3.5">
+                          <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'ACTIVE RATE' : 'PAST HISTORY'}</Badge>
+                          <div>
+                            <span className="font-bold text-slate-800 text-sm block">{prof?.first_name} {prof?.last_name} <span className="text-xs font-normal text-slate-500">({prof?.title})</span></span>
+                            <span className="text-slate-500 block mt-0.5">
+                              Validity: <strong className="font-mono text-slate-700">{sal.valid_from}</strong> &rarr; <strong className="font-mono text-slate-700">{sal.valid_to || 'Present'}</strong>
+                              {sal.note && <span className="ml-2 text-slate-400">&bull; {sal.note}</span>}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right flex items-center space-x-6">
+                          <div>
+                            <span className="text-xs text-slate-400 font-medium block">Employer Multiplier</span>
+                            <span className="font-mono font-bold text-[#3D87D3] text-sm">&times;{mult}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-slate-400 font-medium block">Gross Base ({(sal.basis || 'monthly_gross').replace('_', ' ')})</span>
+                            <span className="font-mono font-bold text-slate-800 text-sm">€{(sal.gross_amount || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/80">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Fully-Loaded Cost</span>
+                            <span className="text-base font-mono font-extrabold text-emerald-700">€{loadedMonthly.toLocaleString()} <span className="text-[11px] text-slate-400 font-normal">/mo</span></span>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={backfillingId === sal.id}
+                              onClick={async () => {
+                                setBackfillingId(sal.id);
+                                const res = await backfillSalaryPayments(sal.id);
+                                setBackfillingId(null);
+                                alert(res.created > 0
+                                  ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} from ${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}.`
+                                  : 'All past payments already exist — nothing to produce.');
+                              }}
+                              className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
+                            >
+                              <Zap className={`w-3.5 h-3.5 mr-1 ${backfillingId === sal.id ? 'animate-pulse' : ''}`} />
+                              {backfillingId === sal.id ? 'Producing…' : 'Produce Past Payments'}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => openSalaryEditor(sal)} className="text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer shrink-0">
+                              <Edit className="w-3.5 h-3.5 mr-1" /> Edit
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-xs text-slate-400 font-medium block">Gross Base ({(sal.basis || 'monthly_gross').replace('_', ' ')})</span>
-                        <span className="font-mono font-bold text-slate-800 text-sm">€{(sal.gross_amount || 0).toLocaleString()}</span>
-                      </div>
-                      <div className="bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/80">
-                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Fully-Loaded Cost</span>
-                        <span className="text-base font-mono font-extrabold text-emerald-700">€{loadedMonthly.toLocaleString()} <span className="text-[11px] text-slate-400 font-normal">/mo</span></span>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={backfillingId === sal.id}
-                          onClick={async () => {
-                            setBackfillingId(sal.id);
-                            const res = await backfillSalaryPayments(sal.id);
-                            setBackfillingId(null);
-                            alert(res.created > 0
-                              ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} from ${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}.`
-                              : 'All past payments already exist — nothing to produce.');
-                          }}
-                          className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
-                        >
-                          <Zap className={`w-3.5 h-3.5 mr-1 ${backfillingId === sal.id ? 'animate-pulse' : ''}`} />
-                          {backfillingId === sal.id ? 'Producing…' : 'Produce Past Payments'}
-                        </Button>
-                        <span className="text-[9px] text-slate-400 font-mono">Creates missing monthly rows since {sal.valid_from.slice(0, 7)}</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}

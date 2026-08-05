@@ -1286,7 +1286,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setSalaries(prev => [newSal, ...prev]);
     try {
-      await supabase.from('salary_history').insert(newSal);
+      const { error } = await supabase.from('salary_history').insert(newSal);
+      if (error) {
+        console.error('Failed to insert new salary record:', error);
+        alert(`Database Error: ${error.message}`);
+        setSalaries(prev => prev.filter(s => s.id !== newSal.id));
+      }
     } catch (e) {
       console.error('Failed to insert new salary record:', e);
     }
