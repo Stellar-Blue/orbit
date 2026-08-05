@@ -22,7 +22,8 @@ export default function PayrollPage() {
   const { 
     currentUser, profiles, paymentTypes, salaries, payments, 
     generateDraftMonth, addPaymentRecord, updatePaymentRecord, deletePaymentRecord, markAllPaidForPeriod,
-    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord 
+    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord,
+    documentTypes 
   } = useAuth();
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
@@ -1038,10 +1039,6 @@ export default function PayrollPage() {
                 <input type="number" step="0.01" value={edGross} onChange={e => setEdGross(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold" />
               </div>
               <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Employer EFKA (€)</label>
-                <input type="number" step="0.01" value={edEfka} onChange={e => setEdEfka(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-600" />
-              </div>
-              <div>
                 <label className="block font-semibold uppercase text-slate-500 mb-1">Net Payable (€)</label>
                 <input type="number" step="0.01" value={edNet} onChange={e => setEdNet(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-emerald-700 font-bold" />
               </div>
@@ -1195,14 +1192,10 @@ export default function PayrollPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Gross Amount (€)</label>
               <input type="number" step="0.01" value={upGross} onChange={e => setUpGross(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono font-bold" />
-            </div>
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Employer EFKA (€)</label>
-              <input type="number" step="0.01" value={upEfka} onChange={e => setUpEfka(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-600 font-mono" />
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Net Pay (€)</label>
@@ -1268,12 +1261,9 @@ export default function PayrollPage() {
                         }}
                         className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[11px] font-semibold text-slate-700"
                       >
-                        <option value="receipt">⭐ Bank Receipt (Proof)</option>
-                        <option value="payslip">📄 Payslip (Analysis)</option>
-                        <option value="invoice">🧾 Contractor Invoice</option>
-                        <option value="tax_sheet">🏛️ Tax Declaration</option>
-                        <option value="timesheet">🕒 Timesheet Record</option>
-                        <option value="other">📎 Other Attachment</option>
+                        {documentTypes.filter(dt => dt.active).map(dt => (
+                          <option key={dt.code} value={dt.code}>{dt.emoji} {dt.label}</option>
+                        ))}
                       </select>
                       <button 
                         type="button" 
@@ -1384,12 +1374,9 @@ export default function PayrollPage() {
                             }`}
                             title="Change document category / mark as Receipt"
                           >
-                            <option value="receipt">⭐ Bank Receipt (Proof)</option>
-                            <option value="payslip">📄 Payslip (Analysis)</option>
-                            <option value="invoice">🧾 Contractor Invoice</option>
-                            <option value="tax_sheet">🏛️ Tax Declaration</option>
-                            <option value="timesheet">🕒 Timesheet Record</option>
-                            <option value="other">📎 Other Attachment</option>
+                            {documentTypes.filter(dt => dt.active).map(dt => (
+                              <option key={dt.code} value={dt.code}>{dt.emoji} {dt.label}</option>
+                            ))}
                           </select>
                           <button
                             type="button"
@@ -1457,12 +1444,9 @@ export default function PayrollPage() {
                           }}
                           className="bg-white border border-slate-300 rounded px-2 py-0.5 text-[11px] font-semibold text-slate-700"
                         >
-                          <option value="receipt">⭐ Bank Receipt (Proof)</option>
-                          <option value="payslip">📄 Payslip (Analysis)</option>
-                          <option value="invoice">🧾 Contractor Invoice</option>
-                          <option value="tax_sheet">🏛️ Tax Declaration</option>
-                          <option value="timesheet">🕒 Timesheet Record</option>
-                          <option value="other">📎 Other Attachment</option>
+                          {documentTypes.filter(dt => dt.active).map(dt => (
+                            <option key={dt.code} value={dt.code}>{dt.emoji} {dt.label}</option>
+                          ))}
                         </select>
                         <button type="button" onClick={() => setAddMoreDocs(prev => prev.filter((_, i) => i !== idx))} className="text-rose-500 hover:text-rose-700 p-1">
                           <X className="w-3.5 h-3.5" />

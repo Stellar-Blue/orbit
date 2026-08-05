@@ -74,6 +74,17 @@ export interface SalaryRecord {
   note?: string;
 }
 
+export interface PaymentDocumentType {
+  id: string;
+  code: string;
+  label: string;
+  emoji: string;
+  is_default: boolean;
+  active: boolean;
+  sort_order: number;
+  created_at?: string;
+}
+
 export interface PaymentDocument {
   id: string;
   name: string;

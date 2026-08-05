@@ -6,15 +6,16 @@ import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, ShieldCheck, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Sparkles, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
-  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter, Receipt, ChevronRight, MessageSquare
+  Key, Webhook, Copy, Check, ExternalLink, Lock, Terminal, Eye, EyeOff, Filter, Receipt, ChevronRight, MessageSquare, FileText
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 import { TieringSettings } from '@/components/settings/tiering-settings';
 import { IntegrationsSettings } from '@/components/settings/integrations-settings';
+import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
 
 export default function CompanySettingsPage() {
   const { 
-    currentUser, remotePolicies, updateRemotePolicy, 
+    currentUser, remotePolicies, updateRemotePolicy, documentTypes, 
     teams, profiles, addTeam, updateTeam, deleteTeam,
     leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType,
     catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem,
@@ -22,7 +23,7 @@ export default function CompanySettingsPage() {
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
   const [attioApiKey, setAttioApiKey] = useState('attio_live_key_5572910a9c8d7e6f_stellarblue');
@@ -69,7 +70,7 @@ export default function CompanySettingsPage() {
     }
   };
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
@@ -78,7 +79,7 @@ export default function CompanySettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
-    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'invoices', 'tiering', 'integrations', 'general'].includes(savedTab)) {
+    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'attio', 'invoices', 'tiering', 'integrations', 'documents', 'general'].includes(savedTab)) {
       setSelectedTab(savedTab);
     }
     const savedApiKey = localStorage.getItem('orbit_attio_api_key');
@@ -2040,6 +2041,9 @@ export default function CompanySettingsPage() {
       )}
 
       {/* Placeholders for Future Setting Modules */}
+      {selectedTab === 'documents' && (
+        <PaymentDocumentTypesSettings />
+      )}
       {selectedTab === 'integrations' && (
         <IntegrationsSettings />
       )}
@@ -2251,6 +2255,26 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-100 text-indigo-700 font-black uppercase">Sync</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('documents')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'documents'
+                  ? 'bg-emerald-50/70 border-emerald-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'documents' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Payroll Document Types</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Categories for uploaded payslips & receipts</div>
+                </div>
+              </div>
+              <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-100 text-emerald-700 font-black uppercase">{documentTypes?.length || 0}</span>
             </button>
 
             <button

@@ -9,7 +9,7 @@ import {
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
-  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation
+  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -75,6 +75,10 @@ interface AppState {
   deletePaymentDocument: (paymentId: string, documentId: string) => void;
   generateDraftMonth: (period: string) => Promise<void>;
   addPaymentType: (type: Omit<PaymentType, 'id' | 'sort_order'>) => Promise<void>;
+  documentTypes: PaymentDocumentType[];
+  addDocumentType: (dt: Omit<PaymentDocumentType, 'id' | 'sort_order'>) => Promise<boolean>;
+  updateDocumentType: (id: string, updates: Partial<PaymentDocumentType>) => Promise<boolean>;
+  deleteDocumentType: (id: string) => Promise<boolean>;
   addSalaryRecord: (record: Omit<SalaryRecord, 'id'>) => Promise<void>;
   updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
@@ -186,6 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tierStates, setTierStates] = useState<CounterpartyTierRow[]>([]);
   const [tierHistory, setTierHistory] = useState<CounterpartyTierHistoryRow[]>([]);
   const [tierOverrides, setTierOverrides] = useState<CounterpartyTierOverride[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<PaymentDocumentType[]>([]);
   const [invoiceCategories, setInvoiceCategories] = useState<InvoiceCategory[]>([]);
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
@@ -222,7 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
-          integrationsRes, exemptionsRes, integrationSettingsRes
+          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -255,7 +260,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('counterparty_tier_overrides').select('*'),
           supabase.from('employee_integrations').select('*'),
           supabase.from('integration_exemptions').select('*'),
-          supabase.from('integration_settings').select('*')
+          supabase.from('integration_settings').select('*'),
+          supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true })
         ]);
 
         const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
@@ -422,6 +428,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {
           console.warn('Invoice tracking tables sync notice (migration pending):', e);
         }
+
+        setDocumentTypes((documentTypesRes?.data || []) as PaymentDocumentType[]);
 
         const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
         setEmployeeIntegrations(myIntegrationRows);
@@ -1042,6 +1050,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.from('payment_types').insert(newPt);
     } catch (e) {
       console.error('Failed to insert payment type:', e);
+    }
+  };
+
+  const addDocumentType = async (dt: Omit<PaymentDocumentType, 'id' | 'sort_order'>): Promise<boolean> => {
+    const newDt: PaymentDocumentType = { ...dt, id: generateUUID(), sort_order: documentTypes.length + 1 };
+    setDocumentTypes(prev => [...prev, newDt]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('payment_document_types').insert(newDt);
+      if (error) {
+        console.error('Failed to insert document type:', error);
+        alert(`Database Error: ${error.message}`);
+        setDocumentTypes(prev => prev.filter(d => d.id !== newDt.id));
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception inserting document type:', e);
+      return false;
+    }
+  };
+
+  const updateDocumentType = async (id: string, updates: Partial<PaymentDocumentType>): Promise<boolean> => {
+    setDocumentTypes(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('payment_document_types').update(updates).eq('id', id);
+      if (error) {
+        console.error('Failed to update document type:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception updating document type:', e);
+      return false;
+    }
+  };
+
+  const deleteDocumentType = async (id: string): Promise<boolean> => {
+    setDocumentTypes(prev => prev.filter(d => d.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('payment_document_types').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete document type:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception deleting document type:', e);
+      return false;
     }
   };
 
@@ -2653,6 +2714,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deletePaymentDocument,
       generateDraftMonth,
       addPaymentType,
+      documentTypes,
+      addDocumentType,
+      updateDocumentType,
+      deleteDocumentType,
       addSalaryRecord,
       updateSalaryRecord,
       addContract,
