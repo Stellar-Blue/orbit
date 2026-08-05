@@ -75,6 +75,7 @@ interface AppState {
   updatePaymentDocumentType: (paymentId: string, documentId: string, type: string) => void;
   deletePaymentDocument: (paymentId: string, documentId: string) => void;
   generateDraftMonth: (period: string) => Promise<void>;
+  backfillSalaryPayments: (salaryId: string) => Promise<{ created: number; skipped: number }>;
   addPaymentType: (type: Omit<PaymentType, 'id' | 'sort_order'>) => Promise<void>;
   documentTypes: PaymentDocumentType[];
   addDocumentType: (dt: Omit<PaymentDocumentType, 'id' | 'sort_order'>) => Promise<boolean>;
@@ -1002,6 +1003,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e: any) {
       console.error('Failed to delete mandatory leave:', e);
     }
+  };
+
+  const backfillSalaryPayments = async (salaryId: string): Promise<{ created: number; skipped: number }> => {
+    const sal = salaries.find(s => s.id === salaryId);
+    if (!sal) return { created: 0, skipped: 0 };
+    const prof = profiles.find(p => p.id === sal.profile_id);
+    if (!prof) return { created: 0, skipped: 0 };
+
+    const pt = paymentTypes.find(t => t.code === (prof.employment_type === 'contractor' ? 'contractor_invoice' : 'salary'));
+    if (!pt) return { created: 0, skipped: 0 };
+
+    const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
+    const isContractor = prof.employment_type === 'contractor';
+    const totalCost = Number((sal.gross_amount * mult).toFixed(2));
+    const employerContrib = isContractor ? 0 : Number((totalCost - sal.gross_amount).toFixed(2));
+    const net = isContractor ? sal.gross_amount : Number((sal.gross_amount * 0.72).toFixed(2));
+
+    const startPeriod = sal.valid_from.slice(0, 7);
+    const endPeriod = sal.valid_to ? sal.valid_to.slice(0, 7) : new Date().toISOString().slice(0, 7);
+
+    const newPays: PaymentRecord[] = [];
+    let period = startPeriod;
+    let guard = 0;
+    while (period <= endPeriod && guard < 600) {
+      const exists = payments.some(p => p.profile_id === sal.profile_id && p.payment_type_id === pt.id && p.period === period);
+      if (!exists) {
+        newPays.push({
+          id: generateUUID(),
+          profile_id: sal.profile_id,
+          period,
+          payment_type_id: pt.id,
+          payment_type: pt,
+          gross: sal.gross_amount,
+          net,
+          employer_contributions: employerContrib,
+          total_cost: totalCost,
+          payment_date: `${period}-28`,
+          status: 'planned',
+          documents: []
+        });
+      }
+      const [y, m] = period.split('-').map(Number);
+      period = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+      guard++;
+    }
+
+    if (newPays.length > 0) {
+      const supabase = getSupabaseBrowserClient();
+      const clean = newPays.map(({ payment_type, ...p }) => ({ ...p, documents: p.documents || [] }));
+      const { error } = await supabase.from('payments').insert(clean);
+      if (error) {
+        console.error('Failed to backfill salary payments:', error);
+        alert(`Database Error: ${error.message}`);
+        return { created: 0, skipped: newPays.length };
+      }
+      setPayments(prev => [...newPays, ...prev]);
+    }
+    return { created: newPays.length, skipped: 0 };
   };
 
   const addPaymentRecord = async (pay: Omit<PaymentRecord, 'id'>) => {
@@ -2853,6 +2912,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatePaymentDocumentType,
       deletePaymentDocument,
       generateDraftMonth,
+      backfillSalaryPayments,
       addPaymentType,
       documentTypes,
       addDocumentType,

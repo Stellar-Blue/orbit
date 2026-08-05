@@ -9,7 +9,7 @@ import {
   DollarSign, Download, Plus, Sparkles, ShieldAlert, 
   Calendar, CheckCircle, RefreshCw, Layers, Sliders, TrendingUp,
   Upload, FileText, Trash2, FileCheck, Paperclip, ExternalLink, Eye, X, Check, FolderOpen, FileSpreadsheet,
-  AlertTriangle, Edit, CheckSquare, Users, ShieldCheck, PieChart, Archive, Copy, Share2
+  AlertTriangle, Edit, CheckSquare, Users, ShieldCheck, PieChart, Archive, Copy, Share2, Zap
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -23,8 +23,10 @@ export default function PayrollPage() {
     currentUser, profiles, paymentTypes, salaries, payments, 
     generateDraftMonth, addPaymentRecord, updatePaymentRecord, deletePaymentRecord, markAllPaidForPeriod,
     addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord,
-    documentTypes 
+    documentTypes, backfillSalaryPayments 
   } = useAuth();
+  
+  const [backfillingId, setBackfillingId] = useState<string | null>(null);
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
     if (!docs || !Array.isArray(docs) || docs.length === 0) return false;
@@ -827,6 +829,26 @@ export default function PayrollPage() {
                       <div className="bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/80">
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">Fully-Loaded Cost</span>
                         <span className="text-base font-mono font-extrabold text-emerald-700">€{loadedMonthly.toLocaleString()} <span className="text-[11px] text-slate-400 font-normal">/mo</span></span>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={backfillingId === sal.id}
+                          onClick={async () => {
+                            setBackfillingId(sal.id);
+                            const res = await backfillSalaryPayments(sal.id);
+                            setBackfillingId(null);
+                            alert(res.created > 0
+                              ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} from ${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}.`
+                              : 'All past payments already exist — nothing to produce.');
+                          }}
+                          className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
+                        >
+                          <Zap className={`w-3.5 h-3.5 mr-1 ${backfillingId === sal.id ? 'animate-pulse' : ''}`} />
+                          {backfillingId === sal.id ? 'Producing…' : 'Produce Past Payments'}
+                        </Button>
+                        <span className="text-[9px] text-slate-400 font-mono">Creates missing monthly rows since {sal.valid_from.slice(0, 7)}</span>
                       </div>
                     </div>
                   </div>
