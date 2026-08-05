@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/mandatory-leave-fanout",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/integration-daily",
+      "schedule": "30 4 * * *"
     }
   ]
 }

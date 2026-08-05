@@ -12,7 +12,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole } = useAuth();
+  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole, slackIntegration } = useAuth();
 
   if (isAuthPage) {
     return (
@@ -84,6 +84,24 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
               <EyeOff className="w-3.5 h-3.5 mr-1.5 text-amber-700 shrink-0" />
               <span>Exit Employee Preview</span>
             </button>
+          </div>
+        )}
+
+        {/* Persistent Slack Reconnect Ribbon (token revoked — gate re-arms at next sign-in) */}
+        {slackIntegration?.status === 'revoked' && (
+          <div className="bg-gradient-to-r from-rose-500 via-rose-600 to-orange-600 text-white px-3 sm:px-4 md:px-5 py-2.5 text-xs font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-rose-700 animate-in slide-in-from-top duration-200">
+            <div className="flex items-center space-x-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
+              <span>
+                <strong>Slack connection revoked:</strong> Orbit can no longer mirror your leave & remote status. Reconnect to continue using Orbit after your next sign-in.
+              </span>
+            </div>
+            <a
+              href={`/onboarding?next=${encodeURIComponent(pathname || '/')}`}
+              className="px-3.5 py-1.5 bg-white text-rose-950 rounded-xl hover:bg-rose-50 font-black shadow-sm cursor-pointer transition-transform active:scale-95 flex items-center shrink-0 text-xs border border-rose-200/80 no-underline"
+            >
+              Reconnect Slack
+            </a>
           </div>
         )}
 

@@ -13,6 +13,8 @@ import {
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
+import { enqueueStatusSync, athensTodayStr } from './integrations/client';
+import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 
 interface AppState {
   currentUser: Profile;
@@ -129,6 +131,14 @@ interface AppState {
   saveInvoiceAllocation: (invoiceId: string, contractId: string, period: string, amount: number) => Promise<boolean>;
   addInvoiceCategory: (name: string, description?: string) => Promise<boolean>;
   deleteInvoiceCategory: (id: string) => Promise<boolean>;
+  slackIntegration: EmployeeIntegration | null;
+  myIntegrationExemption: IntegrationExemption | null;
+  integrationSettings: IntegrationSettings;
+  integrationExceptions: { exceptions: { id: string; type: string; profile_id: string | null; reason: string | null; created_at: string; orbit_kind: string; operation: string }[]; revoked: { id: string; profile_id: string; profile_name: string | null; revoked_at: string | null }[]; notConnectedCount: number };
+  integrationLastReconciledAt: string | null;
+  refreshIntegrationState: () => Promise<void>;
+  syncSlackStatus: (profileId: string, date: string, orbitId?: string) => Promise<void>;
+  revokeSlackConnection: () => Promise<void>;
 }
 
 const AuthContext = createContext<AppState | undefined>(undefined);
@@ -178,6 +188,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
+  const [slackIntegration, setSlackIntegration] = useState<EmployeeIntegration | null>(null);
+  const [myIntegrationExemption, setMyIntegrationExemption] = useState<IntegrationExemption | null>(null);
+  const [integrationSettings, setIntegrationSettings] = useState<IntegrationSettings>(DEFAULT_SLACK_SETTINGS);
+  const [integrationExceptions, setIntegrationExceptions] = useState<{
+    exceptions: { id: string; type: string; profile_id: string | null; reason: string | null; created_at: string; orbit_kind: string; operation: string }[];
+    revoked: { id: string; profile_id: string; profile_name: string | null; revoked_at: string | null }[];
+    notConnectedCount: number;
+  }>({ exceptions: [], revoked: [], notConnectedCount: 0 });
+  const [integrationLastReconciledAt, setIntegrationLastReconciledAt] = useState<string | null>(null);
 
   useEffect(() => {
     // Intercept OAuth authorization code if Supabase redirects to site root instead of /auth/callback
@@ -199,7 +218,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
           holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
-          tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes
+          tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
+          integrationsRes, exemptionsRes, integrationSettingsRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -229,7 +249,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('tier_model_versions').select('*'),
           supabase.from('counterparty_tiers').select('*'),
           supabase.from('counterparty_tier_history').select('*').order('changed_at', { ascending: false }).limit(300),
-          supabase.from('counterparty_tier_overrides').select('*')
+          supabase.from('counterparty_tier_overrides').select('*'),
+          supabase.from('employee_integrations').select('*'),
+          supabase.from('integration_exemptions').select('*'),
+          supabase.from('integration_settings').select('*')
         ]);
 
         const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
@@ -396,6 +419,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {
           console.warn('Invoice tracking tables sync notice (migration pending):', e);
         }
+
+        const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
+        const myExemptions: IntegrationExemption[] = (exemptionsRes?.data || []) as IntegrationExemption[];
+        const myInteg = myIntegrationRows.find(i => i.provider === 'slack') || null;
+        setSlackIntegration(myInteg);
+        const activeExemptions = myExemptions.filter(x => x.provider === 'slack' && (!x.expires_at || new Date(x.expires_at) > new Date()));
+        setMyIntegrationExemption(activeExemptions.sort((a, b) => (a.expires_at || '').localeCompare(b.expires_at || ''))[0] || null);
+        const settingsMap: Record<string, string> = {};
+        (integrationSettingsRes?.data || []).forEach((r: any) => { settingsMap[r.key] = r.value; });
+        setIntegrationSettings({
+          leave_label: settingsMap.leave_label ?? DEFAULT_SLACK_SETTINGS.leave_label,
+          leave_emoji: settingsMap.leave_emoji ?? DEFAULT_SLACK_SETTINGS.leave_emoji,
+          remote_label: settingsMap.remote_label ?? DEFAULT_SLACK_SETTINGS.remote_label,
+          remote_emoji: settingsMap.remote_emoji ?? DEFAULT_SLACK_SETTINGS.remote_emoji,
+          half_day_label: settingsMap.half_day_label ?? DEFAULT_SLACK_SETTINGS.half_day_label,
+        });
+        setIntegrationLastReconciledAt(settingsMap.last_reconciled_at ?? null);
 
         let matchedId = '';
         const { data: { session } } = await supabase.auth.getSession();
@@ -586,6 +626,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         decided_at, 
         rejection_reason: rejectionReason || r.rejection_reason 
       } : r));
+      if (status === 'approved') {
+        const target = leaveRequests.find(r => r.id === id);
+        if (target) {
+          syncSlackStatus(target.profile_id, athensTodayStr(), id);
+        }
+      }
     } catch (e: any) {
       console.error('Failed to update leave request status:', e);
     }
@@ -618,6 +664,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ergani_status: ergani
         };
       }));
+      const targetBefore = leaveRequests.find(r => r.id === id);
+      if (targetBefore && (targetBefore.status === 'approved' || updated.status === 'approved')) {
+        syncSlackStatus(targetBefore.profile_id, athensTodayStr(), id);
+      }
     } catch (e: any) {
       console.error('Failed to edit leave request in database:', e);
     }
@@ -657,6 +707,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const ergani = (approve && r.ergani_status === 'submitted') ? 'needs_amendment' : r.ergani_status;
         return { ...r, status: newStatus, ergani_status: ergani, decided_by: currentUser.id, decided_at: new Date().toISOString().split('T')[0] };
       }));
+      if (approve && target) {
+        syncSlackStatus(target.profile_id, athensTodayStr(), id);
+      }
     } catch (e: any) {
       console.error('Failed to decide leave cancellation:', e);
     }
@@ -2072,6 +2125,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
         return [newDay, ...filtered];
       });
+      if (newDay.date === athensTodayStr()) {
+        syncSlackStatus(newDay.profile_id, newDay.date);
+      }
     } catch (e: any) {
       console.error("Exception saving remote day:", e);
     }
@@ -2122,6 +2178,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const filtered = prev.filter(r => !(r.profile_id === profileId && affectedDates.has(r.date)));
         return [...(toUpsert as RemoteDay[]), ...filtered];
       });
+      const today = athensTodayStr();
+      for (const d of toUpsert) {
+        if (d.date === today) syncSlackStatus(profileId, d.date);
+      }
       return true;
     } catch (e: any) {
       console.error("Bulk add remote days error:", e);
@@ -2451,6 +2511,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const refreshIntegrationState = async (): Promise<void> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const [{ data: integRows }, { data: exemptRows }, { data: settingsRows }] = await Promise.all([
+        supabase.from('employee_integrations').select('*'),
+        supabase.from('integration_exemptions').select('*'),
+        supabase.from('integration_settings').select('*'),
+      ]);
+      const mine = ((integRows || []) as EmployeeIntegration[]).find(i => i.provider === 'slack') || null;
+      setSlackIntegration(mine);
+      const active = ((exemptRows || []) as IntegrationExemption[])
+        .filter(x => x.provider === 'slack' && (!x.expires_at || new Date(x.expires_at) > new Date()))
+        .sort((a, b) => (a.expires_at || '').localeCompare(b.expires_at || ''));
+      setMyIntegrationExemption(active[0] || null);
+      const settingsMap: Record<string, string> = {};
+      (settingsRows || []).forEach((r: any) => { settingsMap[r.key] = r.value; });
+      setIntegrationSettings({
+        leave_label: settingsMap.leave_label ?? DEFAULT_SLACK_SETTINGS.leave_label,
+        leave_emoji: settingsMap.leave_emoji ?? DEFAULT_SLACK_SETTINGS.leave_emoji,
+        remote_label: settingsMap.remote_label ?? DEFAULT_SLACK_SETTINGS.remote_label,
+        remote_emoji: settingsMap.remote_emoji ?? DEFAULT_SLACK_SETTINGS.remote_emoji,
+        half_day_label: settingsMap.half_day_label ?? DEFAULT_SLACK_SETTINGS.half_day_label,
+      });
+      setIntegrationLastReconciledAt(settingsMap.last_reconciled_at ?? null);
+      if (currentUser.role === 'admin') {
+        const res = await fetch('/api/integrations/exceptions');
+        if (res.ok) {
+          const data = await res.json();
+          setIntegrationExceptions(data);
+        }
+      }
+    } catch (e) {
+      console.error('refreshIntegrationState error:', e);
+    }
+  };
+
+  const syncSlackStatus = async (profileId: string, date: string, orbitId?: string): Promise<void> => {
+    await enqueueStatusSync(profileId, date, orbitId);
+  };
+
+  const revokeSlackConnection = async (): Promise<void> => {
+    try {
+      const res = await fetch('/api/slack/revoke', { method: 'POST' });
+      if (res.ok) {
+        await refreshIntegrationState();
+      }
+    } catch (e) {
+      console.error('revokeSlackConnection error:', e);
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
@@ -2556,7 +2667,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addInvoiceDocument,
       saveInvoiceAllocation,
       addInvoiceCategory,
-      deleteInvoiceCategory
+      deleteInvoiceCategory,
+      slackIntegration,
+      myIntegrationExemption,
+      integrationSettings,
+      integrationExceptions,
+      integrationLastReconciledAt,
+      refreshIntegrationState,
+      syncSlackStatus,
+      revokeSlackConnection
     }}>
       {children}
     </AuthContext.Provider>

@@ -14,7 +14,7 @@ import {
   Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
   CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
   CalendarDays, ChevronLeft, ChevronRight, Search, Globe,
-  ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle
+  ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod } from '@/lib/pricing-engine';
@@ -51,7 +51,7 @@ export default function DashboardPage() {
   const { 
     currentUser, profiles, teams, contracts, invoices, addInvoice, catalogModules, catalogItems, leaveRequests, leaveTypes, 
     entitlements, salaries, remoteDays, remotePatterns, remotePolicies, 
-    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance 
+    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt 
   } = useAuth();
   
   const isAdmin = currentUser.role === 'admin';
@@ -603,6 +603,35 @@ export default function DashboardPage() {
               icon={<AlertTriangle className={`w-5 h-5 ${urgentContracts.length > 0 ? 'text-rose-500' : 'text-slate-400'}`} />}
             />
           </div>
+
+          {/* Integrations health widget */}
+          {(() => {
+            const totalExceptions = integrationExceptions.exceptions.length + integrationExceptions.revoked.length;
+            const healthy = totalExceptions === 0;
+            return (
+              <Link href="/settings" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border bg-gradient-to-r from-indigo-50/70 to-slate-50/70 border-indigo-200/60 hover:border-indigo-300 hover:shadow-xs transition-all no-underline group">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${healthy ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-200' : 'bg-amber-500/10 text-amber-600 border border-amber-200'}`}>
+                    <RefreshCw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      Integrations
+                      {healthy
+                        ? <Badge variant="success" className="text-[9px] px-1.5 py-0">All mirrors healthy</Badge>
+                        : <Badge variant="warning" className="text-[9px] px-1.5 py-0">{totalExceptions} exceptions</Badge>}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      Last reconciled: {integrationLastReconciledAt ? new Date(integrationLastReconciledAt).toLocaleString() : 'not yet'} · {integrationExceptions.notConnectedCount} employee(s) not connected to Slack
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-[#3D87D3] group-hover:underline flex items-center gap-1 shrink-0">
+                  Manage <ArrowUpRight className="w-3.5 h-3.5" />
+                </span>
+              </Link>
+            );
+          })()}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card title="Contract Notice Windows & Renewal Alerts" subtitle="Alert engine protecting against auto-renewing notice lapses" action={<Link href="/contracts" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">View All <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">

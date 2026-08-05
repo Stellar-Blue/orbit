@@ -42,6 +42,7 @@ export interface Profile {
   photo_url?: string;
   work_schedule: string[];
   role: UserRole; // joined from user_roles
+  onboarding_completed_at?: string | null; // integration onboarding gate marker
   sensitive?: ProfileSensitive; // admin only
 }
 
