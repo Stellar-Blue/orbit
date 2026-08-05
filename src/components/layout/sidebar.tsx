@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
-  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt 
+  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -31,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
 
   // Personal Section
   const personalItems = [
+    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-3 text-emerald-500" />, show: true },
     { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: !isContractor },
     { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-3 text-cyan-500" />, show: !isContractor },
     { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-3 text-emerald-500" />, show: true },
@@ -187,8 +188,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
             className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-200/50 transition-colors border border-transparent hover:border-slate-300 text-left cursor-pointer"
           >
             <div className="flex items-center space-x-3 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-extrabold text-xs shadow-xs shrink-0">
-                {currentUser.first_name[0]}{currentUser.last_name[0]}
+              <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-extrabold text-xs shadow-xs shrink-0 overflow-hidden">
+                {currentUser.photo_url ? (
+                  <img src={currentUser.photo_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span>{currentUser.first_name[0]}{currentUser.last_name[0]}</span>
+                )}
               </div>
               <div className="truncate">
                 <p className="text-sm font-extrabold text-slate-900 truncate">{currentUser.first_name} {currentUser.last_name}</p>

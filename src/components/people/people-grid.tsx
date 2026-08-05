@@ -5,6 +5,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Profile, Team } from '@/lib/types';
+import { EmployeeIntegration } from '@/lib/integrations/types';
 import { Badge } from '@/components/ui/primitives';
 import { Search } from 'lucide-react';
 
@@ -18,30 +19,42 @@ interface PeopleRow {
   team: string;
   employment: string;
   schedule: string;
+  slackStatus: 'connected' | 'revoked' | 'none';
 }
 
 interface PeopleGridProps {
   profiles: Profile[];
   teams: Team[];
+  integrations: EmployeeIntegration[];
   onSelect: (p: Profile) => void;
 }
 
-export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, onSelect }) => {
+export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integrations, onSelect }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
+  const integrationMap = useMemo(() => {
+    const map = new Map<string, EmployeeIntegration>();
+    integrations.forEach(i => { if (i.provider === 'slack') map.set(i.profile_id, i); });
+    return map;
+  }, [integrations]);
+
   const rowData = useMemo<PeopleRow[]>(() => {
-    return profiles.map(p => ({
-      profile: p,
-      name: `${p.first_name} ${p.last_name}`,
-      greekName: p.name_el || '',
-      email: p.work_email || '',
-      title: p.title || '',
-      role: p.role || 'employee',
-      team: teams.find(t => t.id === p.team_id)?.name || 'General',
-      employment: p.employment_type.replace('_', ' ').toUpperCase(),
-      schedule: (p.work_schedule || []).join(', ')
-    }));
-  }, [profiles, teams]);
+    return profiles.map(p => {
+      const integ = integrationMap.get(p.id);
+      return {
+        profile: p,
+        name: `${p.first_name} ${p.last_name}`,
+        greekName: p.name_el || '',
+        email: p.work_email || '',
+        title: p.title || '',
+        role: p.role || 'employee',
+        team: teams.find(t => t.id === p.team_id)?.name || 'General',
+        employment: p.employment_type.replace('_', ' ').toUpperCase(),
+        schedule: (p.work_schedule || []).join(', '),
+        slackStatus: !integ ? 'none' : integ.status === 'revoked' ? 'revoked' : 'connected',
+      };
+    });
+  }, [profiles, teams, integrationMap]);
 
   const columnDefs = useMemo<ColDef<PeopleRow>[]>(() => [
     {
@@ -79,6 +92,18 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, onSelec
     {
       headerName: 'Work Schedule', field: 'schedule', width: 220, sortable: true, ...excelSetFilter(),
       cellClass: 'text-xs text-slate-500 font-mono'
+    },
+    {
+      headerName: 'Slack', field: 'slackStatus', width: 130, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+        p.value === 'connected' ? (
+          <Badge variant="success" className="text-[10px]">● Connected</Badge>
+        ) : p.value === 'revoked' ? (
+          <Badge variant="error" className="text-[10px]">● Revoked</Badge>
+        ) : (
+          <Badge variant="neutral" className="text-[10px]">Not connected</Badge>
+        )
+      )
     },
     {
       headerName: '', field: 'profile.id', width: 130, sortable: false, filter: false, pinned: 'right',

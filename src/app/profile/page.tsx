@@ -1,0 +1,259 @@
+"use client";
+
+import React, { useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { Card, Button, Badge } from '@/components/ui/primitives';
+import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase } from 'lucide-react';
+
+export default function MyProfilePage() {
+  const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection } = useAuth();
+
+  const [editing, setEditing] = useState(false);
+  const [firstName, setFirstName] = useState(currentUser.first_name);
+  const [lastName, setLastName] = useState(currentUser.last_name);
+  const [nameEl, setNameEl] = useState(currentUser.name_el);
+  const [title, setTitle] = useState(currentUser.title);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const team = currentUser.team?.name || '—';
+  const initials = `${currentUser.first_name[0] || ''}${currentUser.last_name[0] || ''}`.toUpperCase();
+  const isRevoked = slackIntegration?.status === 'revoked';
+  const isConnected = slackIntegration?.status === 'connected';
+
+  const handleUploadPhoto = async (file: File) => {
+    setUploading(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No session');
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('profile-photos').upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data: publicUrlData } = supabase.storage.from('profile-photos').getPublicUrl(path);
+      const ok = await updateMyProfile({ photo_url: publicUrlData.publicUrl });
+      if (!ok) throw new Error('Failed to persist photo URL');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      alert(`Photo upload failed: ${msg}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const ok = await updateMyProfile({
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      name_el: nameEl.trim() || `${firstName.trim()} ${lastName.trim()}`,
+      title: title.trim(),
+    });
+    setSaving(false);
+    if (ok) {
+      setEditing(false);
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2500);
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!confirm('Revoke the Slack connection? Orbit will stop mirroring your leave & remote statuses, and you will be asked to reconnect at your next sign-in.')) return;
+    setRevoking(true);
+    await revokeSlackConnection();
+    setRevoking(false);
+  };
+
+  const connectUrl = `/api/slack/connect?next=${encodeURIComponent('/profile')}`;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-200">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">My Profile</h1>
+        <p className="text-xs text-slate-500 mt-0.5">Your personal information, photo and integration connections</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: identity card */}
+        <Card className="p-6 flex flex-col items-center text-center">
+          <div className="relative">
+            <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[#3D87D3] to-indigo-600 text-white flex items-center justify-center text-3xl font-black shadow-lg shadow-blue-500/20 overflow-hidden">
+              {currentUser.photo_url ? (
+                <img src={currentUser.photo_url} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <span>{initials}</span>
+              )}
+            </div>
+            <label
+              className={`absolute bottom-1 right-1 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors ${uploading ? 'pointer-events-none opacity-60' : ''}`}
+              title="Upload profile photo"
+            >
+              {uploading ? <Loader2 className="w-4 h-4 text-slate-400 animate-spin" /> : <Camera className="w-4 h-4 text-slate-600" />}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploading}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUploadPhoto(f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+
+          <h2 className="text-lg font-black text-slate-900 mt-4">{currentUser.first_name} {currentUser.last_name}</h2>
+          <p className="text-sm text-slate-500 font-medium">{currentUser.title || 'Team Member'}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="info">{currentUser.employment_type.replace('_', ' ').toUpperCase()}</Badge>
+            <Badge variant={currentUser.role === 'admin' ? 'warning' : 'neutral'}>{currentUser.role.toUpperCase()}</Badge>
+          </div>
+
+          <div className="w-full mt-5 space-y-2.5 text-left">
+            <div className="flex items-center gap-2.5 text-xs text-slate-600">
+              <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="font-mono truncate">{currentUser.work_email}</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs text-slate-600">
+              <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>{team}</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs text-slate-600">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Started {currentUser.start_date}</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Right: editable details */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <UserRound className="w-4 h-4 text-[#3D87D3]" /> Personal Information
+              </h3>
+              {savedFlash && <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1 flex items-center gap-1"><Check className="w-3 h-3" /> Saved</span>}
+            </div>
+
+            {editing ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">First Name</label>
+                  <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Last Name</label>
+                  <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Name (Greek)</label>
+                  <input type="text" value={nameEl} onChange={e => setNameEl(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Job Title</label>
+                  <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
+                </div>
+                <div className="flex items-center gap-2 sm:col-span-2 pt-1">
+                  <Button size="sm" variant="primary" onClick={handleSave} disabled={saving} className="bg-[#3D87D3] text-white cursor-pointer">
+                    {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
+                    {saving ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => { setEditing(false); setFirstName(currentUser.first_name); setLastName(currentUser.last_name); setNameEl(currentUser.name_el); setTitle(currentUser.title); }} className="cursor-pointer">
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">First Name</div>
+                  <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.first_name}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Last Name</div>
+                  <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.last_name}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Name (Greek)</div>
+                  <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.name_el || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Job Title</div>
+                  <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.title || '—'}</div>
+                </div>
+                <div className="sm:col-span-2 pt-2">
+                  <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="cursor-pointer">
+                    <Edit3 className="w-3.5 h-3.5 mr-1.5" /> Edit Information
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Slack connection */}
+          <Card className="p-6">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
+              <MessageSquare className="w-4 h-4 text-[#3D87D3]" /> Slack Status Mirroring
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Orbit mirrors your approved leave and remote days to Slack with self-clearing statuses. Orbit is master; Slack never writes back.
+            </p>
+
+            {isConnected ? (
+              <div className="rounded-2xl bg-emerald-50/60 border border-emerald-200/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-200 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      Connected
+                      <Badge variant="success" className="text-[9px] px-1.5 py-0">ACTIVE</Badge>
+                    </div>
+                    <div className="text-xs text-slate-500 font-mono mt-0.5">
+                      {slackIntegration?.external_user_id ? `Slack user: ${slackIntegration.external_user_id}` : 'User token linked'}
+                      {slackIntegration?.last_synced_at && <> · last synced {new Date(slackIntegration.last_synced_at).toLocaleString()}</>}
+                    </div>
+                  </div>
+                </div>
+                <Button size="sm" variant="danger" onClick={handleRevoke} disabled={revoking} className="shrink-0 cursor-pointer">
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> {revoking ? 'Revoking…' : 'Revoke Connection'}
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-200/60 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-slate-500" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      {isRevoked ? 'Connection revoked' : 'Not connected'}
+                      <Badge variant={isRevoked ? 'error' : 'neutral'} className="text-[9px] px-1.5 py-0">{isRevoked ? 'REVOKED' : 'OFF'}</Badge>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {myIntegrationExemption
+                        ? `Temporarily exempt${myIntegrationExemption.expires_at ? ` until ${new Date(myIntegrationExemption.expires_at).toLocaleString()}` : ''} (admin-granted)`
+                        : isRevoked
+                          ? 'Orbit can no longer mirror your status. Reconnect to keep the mirror active.'
+                          : 'Connect Slack so Orbit can mirror your leave & remote statuses.'}
+                    </div>
+                  </div>
+                </div>
+                <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
+                  {isRevoked ? <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> : <MessageSquare className="w-3.5 h-3.5 mr-1.5" />}
+                  {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}
+                </a>
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

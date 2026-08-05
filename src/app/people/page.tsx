@@ -16,7 +16,7 @@ import Papa from 'papaparse';
 const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(m => m.PeopleGrid), { ssr: false });
 
 export default function PeopleDirectoryPage() {
-  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile } = useAuth();
+  const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile, employeeIntegrations } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -265,6 +265,7 @@ export default function PeopleDirectoryPage() {
         <PeopleGrid
           profiles={filteredProfiles}
           teams={teams}
+          integrations={employeeIntegrations}
           onSelect={(p) => { setSelectedProfile(p); setActiveTab('overview'); }}
         />
       ) : (

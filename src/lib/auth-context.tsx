@@ -57,6 +57,8 @@ interface AppState {
   // Actions for immediate optimistic mutation in UI
   switchUser: (profileId: string) => void;
   updateProfile: (profile: Profile) => void;
+  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'photo_url'>>) => Promise<boolean>;
+  employeeIntegrations: EmployeeIntegration[];
   addProfile: (profile: Profile) => void;
   deleteProfile: (profileId: string) => Promise<boolean>;
   addLeaveRequest: (req: Omit<LeaveRequest, 'id'>) => void;
@@ -189,6 +191,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
   const [slackIntegration, setSlackIntegration] = useState<EmployeeIntegration | null>(null);
+  const [employeeIntegrations, setEmployeeIntegrations] = useState<EmployeeIntegration[]>([]);
   const [myIntegrationExemption, setMyIntegrationExemption] = useState<IntegrationExemption | null>(null);
   const [integrationSettings, setIntegrationSettings] = useState<IntegrationSettings>(DEFAULT_SLACK_SETTINGS);
   const [integrationExceptions, setIntegrationExceptions] = useState<{
@@ -421,6 +424,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
+        setEmployeeIntegrations(myIntegrationRows);
         const myExemptions: IntegrationExemption[] = (exemptionsRes?.data || []) as IntegrationExemption[];
         const myInteg = myIntegrationRows.find(i => i.provider === 'slack') || null;
         setSlackIntegration(myInteg);
@@ -530,8 +534,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteProfile = async (profileId: string): Promise<boolean> => {
+  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'photo_url'>>): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('profiles').update(edits).eq('id', currentUser.id);
+      if (error) {
+        console.error('Failed to update own profile:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setProfiles(prev => prev.map(p => p.id === currentUser.id ? { ...p, ...edits } : p));
+      return true;
+    } catch (e) {
+      console.error('Exception updating own profile:', e);
+      return false;
+    }
+  };
+
+  const deleteProfile = async (profileId: string): Promise<boolean> => {    const supabase = getSupabaseBrowserClient();
     try {
       const { data, error } = await supabase.rpc('admin_delete_profile', { target_profile_id: profileId });
       if (error) {
@@ -2520,6 +2540,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('integration_settings').select('*'),
       ]);
       const mine = ((integRows || []) as EmployeeIntegration[]).find(i => i.provider === 'slack') || null;
+      setEmployeeIntegrations((integRows || []) as EmployeeIntegration[]);
       setSlackIntegration(mine);
       const active = ((exemptRows || []) as IntegrationExemption[])
         .filter(x => x.provider === 'slack' && (!x.expires_at || new Date(x.expires_at) > new Date()))
@@ -2602,6 +2623,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signOut,
       switchUser,
       updateProfile,
+      updateMyProfile,
       addProfile,
       deleteProfile,
       addLeaveRequest,
@@ -2669,6 +2691,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addInvoiceCategory,
       deleteInvoiceCategory,
       slackIntegration,
+      employeeIntegrations,
       myIntegrationExemption,
       integrationSettings,
       integrationExceptions,
