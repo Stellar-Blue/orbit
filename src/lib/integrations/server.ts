@@ -432,9 +432,12 @@ export async function exchangeSlackCode(code: string): Promise<SlackOAuthExchang
     }
     const data = await res.json();
     if (!data.ok) return { ok: false, error: data.error || 'slack_error' };
+    // User-scope-only installs put the token in authed_user.access_token (no bot token exists)
+    const accessToken = (data.access_token as string | undefined) || (data.authed_user?.access_token as string | undefined);
+    if (!accessToken) return { ok: false, error: 'no_access_token' };
     return {
       ok: true,
-      accessToken: data.access_token as string,
+      accessToken,
       authedUserId: data.authed_user?.id as string | undefined,
     };
   } catch {
@@ -450,7 +453,9 @@ export function slackOAuthUrl(state: string): string | null {
     : `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/slack/callback`;
   const params = new URLSearchParams({
     client_id: clientId,
-    scope: 'users.profile:read users.profile:write',
+    // This app has no bot user — user-token scopes go in `user_scope` (comma-separated).
+    // Passing them in `scope` is treated as bot scopes and Slack rejects it with "Invalid permissions requested".
+    user_scope: 'users.profile:read,users.profile:write',
     state,
     redirect_uri: redirectUri,
   });
