@@ -39,7 +39,7 @@ export interface Profile {
   start_date: string;
   end_date?: string;
   status: 'active' | 'on_leave' | 'departed';
-  photo_url?: string;
+  photo_url?: string | null;
   work_schedule: string[];
   role: UserRole; // joined from user_roles
   onboarding_completed_at?: string | null; // integration onboarding gate marker

@@ -104,9 +104,27 @@ function MyProfileInner() {
                 <span>{initials}</span>
               )}
             </div>
+            {currentUser.photo_url && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!confirm('Remove your profile photo?')) return;
+                  const res = await fetch('/api/profile/photo', { method: 'DELETE' });
+                  if (res.ok) {
+                    await updateMyProfile({ photo_url: null });
+                  } else {
+                    alert('Failed to remove profile photo');
+                  }
+                }}
+                className="absolute bottom-1 right-1 w-8 h-8 rounded-full bg-rose-500 text-white border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:bg-rose-600 transition-colors z-10"
+                title="Remove profile photo"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
             <label
-              className={`absolute bottom-1 right-1 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors ${uploading ? 'pointer-events-none opacity-60' : ''}`}
-              title="Upload profile photo"
+              className={`absolute top-1 right-1 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors ${uploading ? 'pointer-events-none opacity-60' : ''}`}
+              title="Upload or replace profile photo"
             >
               {uploading ? <Loader2 className="w-4 h-4 text-slate-400 animate-spin" /> : <Camera className="w-4 h-4 text-slate-600" />}
               <input

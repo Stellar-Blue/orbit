@@ -10,6 +10,7 @@ import {
   isSameDay, parseISO, isWithinInterval 
 } from 'date-fns';
 import { Card, StatCard, Badge, Button } from '@/components/ui/primitives';
+import { ProfileAvatar } from '@/components/ui/profile-avatar';
 import { 
   Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
   CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
@@ -868,9 +869,12 @@ export default function DashboardPage() {
                   className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between space-y-3"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-extrabold text-slate-900 text-sm leading-snug">{profile.first_name} {profile.last_name}</p>
-                      <p className="text-xs text-slate-500 font-medium">{profile.title || 'Team Member'}</p>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <ProfileAvatar photoUrl={profile.photo_url} firstName={profile.first_name} lastName={profile.last_name} size="md" />
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-slate-900 text-sm leading-snug truncate">{profile.first_name} {profile.last_name}</p>
+                        <p className="text-xs text-slate-500 font-medium truncate">{profile.title || 'Team Member'}</p>
+                      </div>
                     </div>
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
                       {profile.team?.name || 'Staff'}
@@ -1212,6 +1216,7 @@ export default function DashboardPage() {
                                 >
                                   <div className="flex items-center truncate">
                                     <span className="mr-1.5">🏖️</span>
+                                    <ProfileAvatar photoUrl={prof.photo_url} firstName={prof.first_name} lastName={prof.last_name} size="xs" className="mr-1.5" />
                                     <span className="font-extrabold mr-1.5">{prof.first_name} {prof.last_name}</span>
                                     <span className="opacity-80 font-medium">({displayType})</span>
                                   </div>
@@ -1249,6 +1254,7 @@ export default function DashboardPage() {
                                     className="px-2 py-0.5 my-0.5 rounded-md bg-cyan-50/90 text-cyan-950 border border-cyan-200/80 text-[10px] font-semibold truncate flex items-center shadow-2xs pointer-events-auto"
                                   >
                                     <span className="mr-1">{r.mode === 'remote_abroad' ? '✈️' : '🏠'}</span>
+                                    <ProfileAvatar photoUrl={r.profile.photo_url} firstName={r.profile.first_name} lastName={r.profile.last_name} size="xs" className="mr-1" />
                                     <span className="font-bold mr-1">{r.profile.first_name}</span>
                                     <span className="text-slate-500 font-normal">{r.mode === 'remote_abroad' ? `(Abroad)` : '(Remote GR)'}</span>
                                   </div>

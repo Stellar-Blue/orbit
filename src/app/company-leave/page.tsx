@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { DateRangePicker } from '@/components/leave/date-range-picker';
+import { ProfileAvatar } from '@/components/ui/profile-avatar';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, 
   Users, Filter, Edit3, ShieldAlert,
@@ -853,9 +854,12 @@ export default function CompanyLeaveManagementPage() {
                   
                   return (
                     <div key={p.id} className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs shadow-2xs">
-                      <div>
-                        <span className="font-extrabold text-slate-900">{p.first_name} {p.last_name}</span>
-                        <span className="text-[10px] font-bold text-slate-500 ml-1.5">({p.employment_type.toUpperCase()})</span>
+                      <div className="flex items-center gap-2">
+                        <ProfileAvatar photoUrl={p.photo_url} firstName={p.first_name} lastName={p.last_name} size="sm" />
+                        <div>
+                          <span className="font-extrabold text-slate-900">{p.first_name} {p.last_name}</span>
+                          <span className="text-[10px] font-bold text-slate-500 ml-1.5">({p.employment_type.toUpperCase()})</span>
+                        </div>
                       </div>
                       <div>
                         {isContractor ? (

@@ -50,3 +50,28 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true, url: photoUrl });
 }
+
+export async function DELETE(request: NextRequest) {
+  const session = await requireApiSession(request);
+  if (isNextResponse(session)) return session;
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin.from('profiles').select('photo_url').eq('id', session.profileId).maybeSingle();
+  const photoUrl = profile?.photo_url as string | undefined;
+
+  // Remove the stored file (folder is the profile id) — best effort
+  if (photoUrl) {
+    const match = photoUrl.match(/profile-photos\/([^/?#]+)\/[^/?#]+/);
+    if (match) {
+      const path = `${match[1]}/${photoUrl.split('/').pop()}`;
+      await admin.storage.from('profile-photos').remove([path]);
+    }
+  }
+
+  const { error } = await admin.from('profiles').update({ photo_url: null }).eq('id', session.profileId);
+  if (error) {
+    return NextResponse.json({ error: 'Failed to clear profile photo' }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
