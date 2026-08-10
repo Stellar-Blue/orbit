@@ -129,10 +129,14 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Counterparty', field: 'counterparty', minWidth: 190, sortable: true,
         ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <div>
-            <div className="font-bold text-slate-800">{p.value}</div>
-            <div className="text-[10px] text-[#3D87D3] font-mono">{p.data?.reference}</div>
-          </div>
+          <div className="font-bold text-slate-800">{p.value}</div>
+        )
+      },
+      {
+        headerName: 'Contract Title', field: 'reference', minWidth: 170, sortable: true,
+        ...excelSetFilter(), pinned: 'left',
+        cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
+          <span className="font-mono font-black text-[#3D87D3]">{p.value}</span>
         )
       },
       {
