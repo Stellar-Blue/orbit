@@ -554,13 +554,14 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                       <tr className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3 px-4 font-medium text-slate-900 align-top">
                           {readOnly ? (
-                            <span className="block mt-1 font-bold">{line.name}</span>
+                            <span className="block mt-1 font-bold text-base">{line.name}</span>
                           ) : (
                             <input
                               type="text"
                               value={line.name}
                               onChange={e => updateLine(idx, 'name', e.target.value)}
-                              className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-sm font-medium focus:outline-none focus:border-blue-500"
+                              title={line.name || 'Line description...'}
+                              className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-base font-semibold focus:outline-none focus:border-blue-500"
                               placeholder="Line description..."
                             />
                           )}
