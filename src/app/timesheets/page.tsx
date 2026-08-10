@@ -33,6 +33,7 @@ const roleLabel = (role?: string | null): string => {
 export default function TimesheetsPage() {
   const { currentUser, profiles, contracts, timesheets, addTimesheet, updateTimesheet, deleteTimesheet } = useAuth();
   const isAdmin = currentUser.role === 'admin';
+  const canSeeCharges = isAdmin; // billing figures are admin-only
 
   const today = () => new Date().toISOString().slice(0, 10);
 
@@ -136,7 +137,9 @@ export default function TimesheetsPage() {
           <span className="text-xs font-bold uppercase text-slate-400">Total logged</span>
           <div className="text-right">
             <span className="font-mono font-black text-lg text-[#3D87D3] block leading-tight">{fmtHours(grandTotal)}</span>
-            <span className="font-mono font-bold text-xs text-emerald-600 block">≈ €{grandCharge.toLocaleString(undefined, { maximumFractionDigits: 2 })} billable</span>
+            {canSeeCharges && (
+              <span className="font-mono font-bold text-xs text-emerald-600 block">≈ €{grandCharge.toLocaleString(undefined, { maximumFractionDigits: 2 })} billable</span>
+            )}
           </div>
         </div>
       </div>
@@ -195,7 +198,7 @@ export default function TimesheetsPage() {
               <option value="">{contractId ? 'Select the man-hours line…' : 'Pick a contract first…'}</option>
               {manHourLines.map(l => (
                 <option key={l.id} value={l.id}>
-                  {l.name} · {roleLabel(l.role)} · {String(l.seniority || 'mid').toUpperCase()} — €{Number(l.unit_price) || 0}/hr
+                  {l.name} · {roleLabel(l.role)} · {String(l.seniority || 'mid').toUpperCase()}{canSeeCharges ? ` — €${Number(l.unit_price) || 0}/hr` : ''}
                 </option>
               ))}
             </select>
@@ -219,13 +222,15 @@ export default function TimesheetsPage() {
             />
             <span className="text-[10px] text-slate-400 mt-0.5 block">Decimal hours · 7.5 = 7h30m</span>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Est. Client Charge</label>
-            <div className={`${inputCls} font-mono font-black text-emerald-700 bg-emerald-50/50`}>
-              €{entryAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          {canSeeCharges && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Est. Client Charge</label>
+              <div className={`${inputCls} font-mono font-black text-emerald-700 bg-emerald-50/50`}>
+                €{entryAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </div>
+              <span className="text-[10px] text-slate-400 mt-0.5 block">hours × line rate</span>
             </div>
-            <span className="text-[10px] text-slate-400 mt-0.5 block">hours × line rate</span>
-          </div>
+          )}
           <div className="lg:col-span-3">
             <label className="block text-xs font-bold text-slate-700 mb-1">Note <span className="font-normal text-slate-400">(optional)</span></label>
             <input type="text" value={note} onChange={e => setNote(e.target.value)} className={inputCls} placeholder="What did you work on?" />
@@ -259,7 +264,9 @@ export default function TimesheetsPage() {
                   </span>
                   <div className="text-right whitespace-nowrap">
                     <span className="font-mono font-black text-[#3D87D3] block leading-tight">{fmtHours(total)}</span>
-                    <span className="font-mono font-bold text-[11px] text-emerald-600 block">€{charge.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    {canSeeCharges && (
+                      <span className="font-mono font-bold text-[11px] text-emerald-600 block">€{charge.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    )}
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -269,7 +276,7 @@ export default function TimesheetsPage() {
                         <th className="py-2 px-4">Date</th>
                         <th className="py-2 px-3">Rate Line</th>
                         <th className="py-2 px-3">Hours</th>
-                        <th className="py-2 px-3">Charge</th>
+                        {canSeeCharges && <th className="py-2 px-3">Charge</th>}
                         <th className="py-2 px-3">Note</th>
                         <th className="py-2 px-3 text-right">Actions</th>
                       </tr>
@@ -285,14 +292,16 @@ export default function TimesheetsPage() {
                             <td className="py-2.5 px-3">
                               {ln ? (
                                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 inline-block">
-                                  {roleLabel(ln.role)} · {String(ln.seniority || 'mid').toUpperCase()} · €{Number(ln.unit_price) || 0}/hr
+                                  {roleLabel(ln.role)} · {String(ln.seniority || 'mid').toUpperCase()}{canSeeCharges ? ` · €${Number(ln.unit_price) || 0}/hr` : ''}
                                 </span>
                               ) : (
                                 <span className="text-[11px] text-slate-400">—</span>
                               )}
                             </td>
                             <td className="py-2.5 px-3 font-mono font-bold text-slate-800 whitespace-nowrap">{fmtHours(Number(t.hours) || 0)}</td>
-                            <td className="py-2.5 px-3 font-mono font-bold text-emerald-700 whitespace-nowrap">€{entryCharge(t).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                            {canSeeCharges && (
+                              <td className="py-2.5 px-3 font-mono font-bold text-emerald-700 whitespace-nowrap">€{entryCharge(t).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                            )}
                             <td className="py-2.5 px-3 text-slate-500 text-xs">{t.note || '—'}</td>
                             <td className="py-2.5 px-3">
                               <div className="flex items-center justify-end gap-1.5">
