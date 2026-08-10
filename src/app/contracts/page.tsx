@@ -607,7 +607,7 @@ export default function ContractsRegistryPage() {
         isOpen={!!selectedContract} 
         onClose={() => setSelectedContract(null)} 
         title={selectedContract ? `Contract Dossier & Edit Hub: ${selectedContract.reference}` : 'Contract'}
-        size="6xl"
+        size="full"
       >
         {selectedContract && (
           <div className="space-y-6 text-sm">
