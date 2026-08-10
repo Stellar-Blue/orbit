@@ -36,12 +36,14 @@ function OnboardingInner() {
   const [exemption, setExemption] = useState<IntegrationExemption | null>(null);
 
   useEffect(() => {
+    const profileId = currentUser?.id;
+    if (!profileId) return; // wait for the real profile before querying (avoids the fallback profile)
     let cancelled = false;
     (async () => {
       const supabase = getSupabaseBrowserClient();
       const [{ data: integ }, { data: ex }] = await Promise.all([
-        supabase.from('employee_integrations').select('*').eq('provider', 'slack').maybeSingle(),
-        supabase.from('integration_exemptions').select('*').eq('provider', 'slack').limit(1).maybeSingle(),
+        supabase.from('employee_integrations').select('*').eq('profile_id', profileId).eq('provider', 'slack').maybeSingle(),
+        supabase.from('integration_exemptions').select('*').eq('profile_id', profileId).eq('provider', 'slack').limit(1).maybeSingle(),
       ]);
       if (cancelled) return;
       setIntegration((integ as EmployeeIntegration) || null);
@@ -49,7 +51,7 @@ function OnboardingInner() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (loading) return;
