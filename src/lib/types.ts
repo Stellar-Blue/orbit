@@ -458,6 +458,19 @@ export interface ContractLineGroup {
   created_at?: string;
 }
 
+export interface ContractTimesheet {
+  id: string;
+  profile_id: string;
+  contract_id: string;
+  work_date: string; // YYYY-MM-DD
+  hours: number; // fractional hours, minutes supported (7.5 = 7h30m)
+  note?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  contract?: Contract;
+  profile?: Profile;
+}
+
 export interface ContractSchedule {
   id: string;
   contract_id: string;

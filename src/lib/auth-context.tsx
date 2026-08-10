@@ -8,7 +8,7 @@ import {
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
-  CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
+  CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
   EmployeeContract, SalaryBonus
 } from './types';
@@ -110,6 +110,10 @@ interface AppState {
   updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
   bulkAddRemoteDays: (profileId: string, declarations: { date: string; mode: RemoteMode | 'office'; location?: string; note?: string }[]) => Promise<boolean>;
+  timesheets: ContractTimesheet[];
+  addTimesheet: (entry: Omit<ContractTimesheet, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => Promise<boolean>;
+  updateTimesheet: (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id'>>) => Promise<boolean>;
+  deleteTimesheet: (id: string) => Promise<boolean>;
   requestRemoteAmendment: (payload: { date: string; requested_mode: RemoteMode | 'office'; reason: string; location?: string }) => Promise<boolean>;
   decideRemoteAmendment: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
@@ -184,6 +188,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [remoteDays, setRemoteDays] = useState<RemoteDay[]>([]);
+  const [timesheets, setTimesheets] = useState<ContractTimesheet[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
@@ -235,7 +240,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const [
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
-          holidaysRes, remoteDaysRes, remotePatternsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
+          holidaysRes, remoteDaysRes, remotePatternsRes, timesheetsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
           integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes
@@ -254,6 +259,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('public_holidays').select('*'),
           supabase.from('remote_days').select('*'),
           supabase.from('remote_patterns').select('*'),
+          supabase.from('contract_timesheets').select('*'),
           supabase.from('counterparties').select('*'),
           supabase.from('contracts').select('*'),
           supabase.from('remote_policies').select('*'),
@@ -313,6 +319,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const loadedRemoteDays: RemoteDay[] = remoteDaysRes.data || [];
         setRemoteDays(loadedRemoteDays);
+
+        const loadedTimesheets: ContractTimesheet[] = (timesheetsRes?.data || []) as ContractTimesheet[];
+        setTimesheets(loadedTimesheets);
 
         const loadedRemotePatterns: RemotePattern[] = remotePatternsRes.data || [];
         setRemotePatterns(loadedRemotePatterns);
@@ -592,6 +601,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setPayments(prev => prev.filter(p => p.profile_id !== profileId));
       setEntitlements(prev => prev.filter(e => e.profile_id !== profileId));
       setRemoteDays(prev => prev.filter(d => d.profile_id !== profileId));
+      setTimesheets(prev => prev.filter(t => t.profile_id !== profileId));
       setRemotePatterns(prev => prev.filter(p => p.profile_id !== profileId));
       return true;
     } catch (e) {
@@ -2433,6 +2443,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const addTimesheet = async (entry: Omit<ContractTimesheet, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<boolean> => {
+    const newEntry: ContractTimesheet = { ...entry, id: entry.id || generateUUID(), hours: Number(entry.hours) || 0 };
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('contract_timesheets').upsert({
+        id: newEntry.id,
+        profile_id: newEntry.profile_id,
+        contract_id: newEntry.contract_id,
+        work_date: newEntry.work_date,
+        hours: newEntry.hours,
+        note: newEntry.note || null
+      }, { onConflict: 'profile_id,contract_id,work_date' }).select();
+      if (error) {
+        console.error("Failed to persist timesheet entry:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setTimesheets(prev => {
+        const filtered = prev.filter(t => !(t.profile_id === newEntry.profile_id && t.contract_id === newEntry.contract_id && t.work_date === newEntry.work_date));
+        return [newEntry, ...filtered];
+      });
+      return true;
+    } catch (e: any) {
+      console.error("Exception saving timesheet entry:", e);
+      return false;
+    }
+  };
+
+  const updateTimesheet = async (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id'>>): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const payload: any = { ...updates, updated_at: new Date().toISOString() };
+    if (updates.hours !== undefined) payload.hours = Number(updates.hours);
+    try {
+      const { error } = await supabase.from('contract_timesheets').update(payload).eq('id', id);
+      if (error) {
+        console.error("Failed to update timesheet entry:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setTimesheets(prev => prev.map(t => t.id === id ? { ...t, ...payload } : t));
+      return true;
+    } catch (e: any) {
+      console.error("Exception updating timesheet entry:", e);
+      return false;
+    }
+  };
+
+  const deleteTimesheet = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('contract_timesheets').delete().eq('id', id);
+      if (error) {
+        console.error("Failed to delete timesheet entry:", error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setTimesheets(prev => prev.filter(t => t.id !== id));
+      return true;
+    } catch (e: any) {
+      console.error("Exception deleting timesheet entry:", e);
+      return false;
+    }
+  };
+
   const updateRemotePolicy = async (id: string, updated: Partial<RemotePolicy>) => {
     try {
       const supabase = getSupabaseBrowserClient();
@@ -2878,6 +2952,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       leaveRequests,
       publicHolidays,
       remoteDays,
+      timesheets,
       remotePatterns,
       remotePolicies,
       remoteAmendmentRequests,
@@ -2957,6 +3032,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateRemotePolicy,
       addRemoteDay,
       bulkAddRemoteDays,
+      addTimesheet,
+      updateTimesheet,
+      deleteTimesheet,
       requestRemoteAmendment,
       decideRemoteAmendment,
       editLeaveRequest,
