@@ -8,7 +8,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
-  FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
+  FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, X, 
   ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Copy, Users, Share2
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
@@ -26,6 +26,8 @@ export default function ContractsRegistryPage() {
   
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
+  const [periodFrom, setPeriodFrom] = useState('');
+  const [periodTo, setPeriodTo] = useState('');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices'>('general');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -171,9 +173,36 @@ export default function ContractsRegistryPage() {
     return matchesDirection && matchesStatus;
   });
 
-  const revenueTotal = contracts.filter(c => c.direction === 'revenue' && c.status === 'active').reduce((acc, c) => acc + (c.value || 0), 0);
-  const costTotal = contracts.filter(c => c.direction === 'cost' && c.status === 'active').reduce((acc, c) => acc + (c.value || 0), 0);
+  // Reporting-period attribution: fraction of a contract's term overlapping the selected
+  // date range. Without a range every active contract counts in full; with one, the
+  // committed value is prorated to the portion of the term that falls inside the window.
+  const parseDay = (s: string): Date | null => {
+    if (!s) return null;
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  };
+  const DAY_MS = 86400000;
+  const valueInPeriod = (c: Contract): number => {
+    const full = c.value || 0;
+    if (!periodFrom && !periodTo) return full;
+    const start = parseDay(c.starts_on);
+    if (!start) return 0;
+    const end = c.ends_on ? parseDay(c.ends_on) : null;
+    const lo = periodFrom ? parseDay(periodFrom)! : new Date(0);
+    const hi = periodTo ? parseDay(periodTo)! : new Date(9999, 11, 31);
+    const ovStart = start > lo ? start : lo;
+    const ovEnd = end && end < hi ? end : hi;
+    if (ovEnd < ovStart) return 0; // term does not overlap the reporting period
+    if (!end) return full; // auto-renewing / indefinite term — fully committed
+    const termDays = Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1;
+    const overlapDays = Math.round((ovEnd.getTime() - ovStart.getTime()) / DAY_MS) + 1;
+    return Math.round(full * (overlapDays / termDays));
+  };
+
+  const revenueTotal = contracts.filter(c => c.direction === 'revenue' && c.status === 'active').reduce((acc, c) => acc + valueInPeriod(c), 0);
+  const costTotal = contracts.filter(c => c.direction === 'cost' && c.status === 'active').reduce((acc, c) => acc + valueInPeriod(c), 0);
   const urgentAlerts = contracts.filter(c => getContractNoticeStatus(c).isUrgent).length;
+  const hasPeriod = !!(periodFrom || periodTo);
 
   const handleCreateContract = (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,18 +286,57 @@ export default function ContractsRegistryPage() {
         </div>
       </div>
 
+      {/* Reporting Period */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-white border border-slate-200 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-slate-400">
+            <Calendar className="w-4 h-4" /> Reporting Period
+          </span>
+          <input
+            type="date"
+            value={periodFrom}
+            max={periodTo || undefined}
+            onChange={e => setPeriodFrom(e.target.value)}
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
+          />
+          <span className="text-slate-400 text-xs">→</span>
+          <input
+            type="date"
+            value={periodTo}
+            min={periodFrom || undefined}
+            onChange={e => setPeriodTo(e.target.value)}
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
+          />
+          {hasPeriod && (
+            <button
+              onClick={() => { setPeriodFrom(''); setPeriodTo(''); }}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" /> Clear
+            </button>
+          )}
+        </div>
+        <div className="text-xs font-mono text-slate-500">
+          {hasPeriod ? (
+            <>Totals cover <span className="font-bold text-[#3D87D3]">{periodFrom || 'start'} → {periodTo || 'present'}</span>, prorated to the period</>
+          ) : (
+            <>Showing <span className="font-bold">all-time</span> contracted totals</>
+          )}
+        </div>
+      </div>
+
       {/* KPI & Notice Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard 
           title="Contracted Client Revenue (Active)" 
           value={`€${revenueTotal.toLocaleString()}`} 
-          subtitle="Atlas ETRM, EMS & Consulting subscriptions"
+          subtitle={hasPeriod ? `Committed for ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Atlas ETRM, EMS & Consulting subscriptions"}
           icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
         />
         <StatCard 
           title="Committed Supplier Spend (Active)" 
           value={`€${costTotal.toLocaleString()}`} 
-          subtitle="Cloud infrastructure & algorithm partner feeds"
+          subtitle={hasPeriod ? `Committed for ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Cloud infrastructure & algorithm partner feeds"}
           icon={<DollarSign className="w-5 h-5 text-amber-600" />}
         />
         <StatCard 
