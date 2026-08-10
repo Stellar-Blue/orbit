@@ -43,6 +43,7 @@ export interface Profile {
   photo_url?: string | null;
   work_schedule: string[];
   role: UserRole; // joined from user_roles
+  seniority_level?: 'junior' | 'mid' | 'senior';
   onboarding_completed_at?: string | null; // integration onboarding gate marker
   sensitive?: ProfileSensitive; // admin only
 }
@@ -430,6 +431,9 @@ export interface CatalogItem {
   unit_label: string;
   default_frequency: 'monthly' | 'quarterly' | 'annual' | 'one_time';
   active: boolean;
+  pricing_kind?: 'unit' | 'man_hours';
+  role?: string | null;
+  seniority?: 'junior' | 'mid' | 'senior' | null;
   created_at?: string;
 }
 
@@ -447,6 +451,9 @@ export interface ContractLine {
   monthly_quantities?: { [period: string]: number } | null;
   apply_discount?: boolean;
   min_monthly_charge?: number | null;
+  line_kind?: 'unit' | 'man_hours';
+  role?: string | null;
+  seniority?: 'junior' | 'mid' | 'senior' | null;
 }
 
 export interface ContractLineGroup {
@@ -462,12 +469,14 @@ export interface ContractTimesheet {
   id: string;
   profile_id: string;
   contract_id: string;
+  contract_line_id?: string | null;
   work_date: string; // YYYY-MM-DD
   hours: number; // fractional hours, minutes supported (7.5 = 7h30m)
   note?: string | null;
   created_at?: string;
   updated_at?: string;
   contract?: Contract;
+  contract_line?: ContractLine;
   profile?: Profile;
 }
 

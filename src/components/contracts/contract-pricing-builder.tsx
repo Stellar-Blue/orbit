@@ -35,6 +35,18 @@ const generateGroupId = (): string => {
   return `grp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const roleLabel = (role?: string | null): string => {
+  const map: Record<string, string> = {
+    engineer: 'Engineer',
+    consultant: 'Consultant',
+    designer: 'Product Designer',
+    project_manager: 'Project Manager',
+    data_scientist: 'Data Scientist',
+    devops: 'DevOps Engineer',
+  };
+  return role ? (map[role] || role) : 'Man-Hours';
+};
+
 export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   contractId,
   initialLines = [],
@@ -70,7 +82,10 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       note: l.note || '',
       monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {},
       apply_discount: l.apply_discount !== false,
-      min_monthly_charge: null
+      min_monthly_charge: null,
+      line_kind: l.line_kind || 'unit',
+      role: l.role || null,
+      seniority: l.seniority || null
     }))
   );
 
@@ -135,7 +150,10 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         note: '',
         monthly_quantities: {},
         apply_discount: true,
-        min_monthly_charge: null
+        min_monthly_charge: null,
+        line_kind: item.pricing_kind === 'man_hours' ? 'man_hours' : 'unit',
+        role: item.role || null,
+        seniority: item.seniority || null
       }
     ]);
     setSelectedCatalogId('');
@@ -155,7 +173,10 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
         note: 'Custom negotiated rate',
         monthly_quantities: {},
         apply_discount: true,
-        min_monthly_charge: null
+        min_monthly_charge: null,
+        line_kind: 'unit',
+        role: null,
+        seniority: null
       }
     ]);
   };
@@ -564,6 +585,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               className="w-full bg-white border border-slate-300 rounded px-3 py-2.5 text-[17px] font-semibold focus:outline-none focus:border-blue-500"
                               placeholder="Line description..."
                             />
+                          )}
+                          {line.line_kind === 'man_hours' && (
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 inline-block mt-1">
+                              MAN-HOURS · {roleLabel(line.role)} · {String(line.seniority || 'mid').toUpperCase()}
+                            </span>
                           )}
                           {!isOneTime && (
                             <span className="text-[11px] font-normal mt-1 block text-slate-500">

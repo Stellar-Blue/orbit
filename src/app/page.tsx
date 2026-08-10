@@ -18,7 +18,7 @@ import {
   ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
-import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
 
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
@@ -52,7 +52,7 @@ export default function DashboardPage() {
   const { 
     currentUser, profiles, teams, contracts, invoices, addInvoice, catalogModules, catalogItems, leaveRequests, leaveTypes, 
     entitlements, salaries, remoteDays, remotePatterns, remotePolicies, 
-    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt 
+    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt, timesheets 
   } = useAuth();
   
   const isAdmin = currentUser.role === 'admin';
@@ -197,9 +197,13 @@ export default function DashboardPage() {
         const cntLines = cnt.lines || [];
         const startDateForCalc = cnt.service_start_date || cnt.starts_on || period.from;
 
+        // Man-hours are billed from logged timesheets (hours × rate per man-hours line)
+        const manHours = calculateManHoursCharge(cntLines as any, (timesheets || []), period.from, period.to);
+
+        let base = 0;
         // If we have structured line items, use the frequency-aware calculator
         if (cntLines.length > 0) {
-          const amt = calculateInvoiceAmountForPeriod(
+          base = calculateInvoiceAmountForPeriod(
             cntLines as any,
             period.from,
             period.to,
@@ -210,8 +214,8 @@ export default function DashboardPage() {
             catalogModules || [],
             catalogItems || []
           );
-          if (amt > 0) return amt;
         }
+        if (base > 0 || manHours > 0) return base + manHours;
 
         // Fallback to valuation-based estimate when no structured lines exist
         const schedItem = (cnt.schedule || []).find(s => s.period === period.from.slice(0, 7));
@@ -286,7 +290,7 @@ export default function DashboardPage() {
       if (a.periodKey > b.periodKey) return 1;
       return b.expectedAmount - a.expectedAmount;
     });
-  }, [contracts, invoices, currentPeriodStr, currentQuarterStr, catalogModules, catalogItems, generatedDraftIds]);
+  }, [contracts, invoices, currentPeriodStr, currentQuarterStr, catalogModules, catalogItems, generatedDraftIds, timesheets]);
 
   const handleQuickCreateInvoice = async (item: typeof pendingInvoicesQueue[0]) => {
     if (!addInvoice) return;

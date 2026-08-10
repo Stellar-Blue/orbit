@@ -335,9 +335,20 @@ export function calculateContractValuation(
   groups: Array<Partial<ContractLineGroup>> = []
 ): ContractValuation {
   const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
-  
+
+  // Man-hours lines are billed from logged timesheets, never as fixed recurring value.
+  const recurringLines = lines.filter(l => (l as any).line_kind !== 'man_hours');
+  if (recurringLines.length === 0 && lines.length > 0) {
+    const tierInfo = getContractTier(0);
+    return {
+      netMonthlyMRR: 0, netARR: 0, oneTimeValue: 0, scheduledRecurringValue: 0,
+      totalContractValue: 0, weightedARR: 0, tierInfo,
+      breakdown: { flatModulesARR: 0, perAssetEngineARR: 0, fixedRateARR: 0 }
+    };
+  }
+
   // If we have line items, calculate with full granularity
-  if (lines && lines.length > 0) {
+  if (recurringLines.length > 0) {
     let startingNetMonthly = 0;
     let oneTimeValue = 0;
     let flatModulesARR = 0;
@@ -359,8 +370,8 @@ export function calculateContractValuation(
 
     let scheduledRecurringValue = 0;
     periods.forEach((period, pIdx) => {
-      const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
-      lines.forEach(l => {
+      const groupRatios = computeGroupFloorRatiosForPeriod(recurringLines, periods, pIdx, groupFloors, catalogModules, catalogItems);
+      recurringLines.forEach(l => {
         const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
         let { gross: grossVal } = calculateLineGrossAmount(l as any, effQty);
         if (l.group_id && l.frequency !== 'one_time') {
@@ -396,7 +407,7 @@ export function calculateContractValuation(
     const tierRatios = new Map<string, number>();
     if (groupFloors.size > 0) {
       const equivByGroup = new Map<string, number>();
-      lines.forEach(l => {
+      recurringLines.forEach(l => {
         if (l.frequency === 'one_time' || !l.group_id) return;
         const baseQty = Number(l.quantity) || 0;
         let { gross: g } = calculateLineGrossAmount(l as any, baseQty);
@@ -411,7 +422,7 @@ export function calculateContractValuation(
     }
 
     // Calculate weighted ARR contribution across items for Tier scoring
-    lines.forEach(l => {
+    recurringLines.forEach(l => {
       if (l.frequency === 'one_time') return; // One-time fees do not contribute to ARR tiering
       
       const baseQty = Number(l.quantity) || 0;
@@ -512,6 +523,33 @@ export function calculateContractValuation(
   };
 }
 
+export function calculateManHoursCharge(
+  lines: Array<Partial<ContractLine>>,
+  timesheets: Array<{ contract_line_id?: string | null; work_date: string; hours: number }>,
+  periodFrom: string,
+  periodTo: string
+): number {
+  if (!timesheets || timesheets.length === 0) return 0;
+
+  // Resolve hourly rates from the contract's man-hours lines
+  const rateByLine = new Map<string, number>();
+  (lines || []).forEach(l => {
+    if ((l as any).line_kind === 'man_hours' && l.id) {
+      rateByLine.set(l.id, Number(l.unit_price) || 0);
+    }
+  });
+
+  let total = 0;
+  timesheets.forEach(t => {
+    if (!t.contract_line_id) return; // not linked to a billable man-hours line
+    if (t.work_date < periodFrom || t.work_date > periodTo) return;
+    const rate = rateByLine.get(t.contract_line_id);
+    if (rate === undefined) return;
+    total += (Number(t.hours) || 0) * rate;
+  });
+  return total;
+}
+
 export function getContractNoticeStatus(contract: {
   status?: string;
   ends_on?: string;
@@ -591,6 +629,10 @@ export function calculateInvoiceAmountForPeriod(
   groups: Array<Partial<ContractLineGroup>> = []
 ): number {
   if (!lines || lines.length === 0) return 0;
+
+  // Man-hours lines are billed from logged timesheets, not in the fixed invoice amount.
+  lines = lines.filter(l => (l as any).line_kind !== 'man_hours');
+  if (lines.length === 0) return 0;
 
   const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const periodStart = new Date(periodFrom + 'T00:00:00');

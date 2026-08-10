@@ -101,6 +101,14 @@ export default function CompanySettingsPage() {
   }, []);
 
   const [newModuleId, setNewModuleId] = useState('');
+  const MAN_HOUR_ROLES: Array<{ value: string; label: string }> = [
+    { value: 'engineer', label: 'Engineer' },
+    { value: 'consultant', label: 'Consultant' },
+    { value: 'designer', label: 'Product Designer' },
+    { value: 'project_manager', label: 'Project Manager' },
+    { value: 'data_scientist', label: 'Data Scientist' },
+    { value: 'devops', label: 'DevOps Engineer' },
+  ];
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState<number>(1000);
   const [newItemUnit, setNewItemUnit] = useState('flat');
@@ -112,6 +120,12 @@ export default function CompanySettingsPage() {
   const [editItemUnit, setEditItemUnit] = useState<string>('');
   const [editItemFreq, setEditItemFreq] = useState<'monthly' | 'quarterly' | 'annual' | 'one_time'>('monthly');
   const [editItemModuleId, setEditItemModuleId] = useState<string>('');
+  const [newItemPricingKind, setNewItemPricingKind] = useState<'unit' | 'man_hours'>('unit');
+  const [newItemRole, setNewItemRole] = useState('engineer');
+  const [newItemSeniority, setNewItemSeniority] = useState<'junior' | 'mid' | 'senior'>('mid');
+  const [editItemPricingKind, setEditItemPricingKind] = useState<'unit' | 'man_hours'>('unit');
+  const [editItemRole, setEditItemRole] = useState('engineer');
+  const [editItemSeniority, setEditItemSeniority] = useState<'junior' | 'mid' | 'senior'>('mid');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -1015,7 +1029,10 @@ export default function CompanySettingsPage() {
                                       default_unit_price: Number(editItemPrice) || 0,
                                       unit_label: editItemUnit.trim() || 'unit',
                                       default_frequency: editItemFreq,
-                                      active: item.active
+                                      active: item.active,
+                                      pricing_kind: editItemPricingKind,
+                                      role: editItemPricingKind === 'man_hours' ? editItemRole : null,
+                                      seniority: editItemPricingKind === 'man_hours' ? editItemSeniority : null
                                     });
                                     setEditingItemId(null);
                                   }}
@@ -1082,6 +1099,45 @@ export default function CompanySettingsPage() {
                                       </select>
                                     </div>
                                   </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div>
+                                      <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Pricing Type</label>
+                                      <select
+                                        value={editItemPricingKind}
+                                        onChange={e => setEditItemPricingKind(e.target.value as any)}
+                                        className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-semibold uppercase text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      >
+                                        <option value="unit">Unit (fixed recurring)</option>
+                                        <option value="man_hours">Man-Hours (billed from timesheets)</option>
+                                      </select>
+                                    </div>
+                                    {editItemPricingKind === 'man_hours' && (
+                                      <>
+                                        <div>
+                                          <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Role</label>
+                                          <select
+                                            value={editItemRole}
+                                            onChange={e => setEditItemRole(e.target.value)}
+                                            className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                          >
+                                            {MAN_HOUR_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-extrabold uppercase text-purple-900 mb-1">Seniority</label>
+                                          <select
+                                            value={editItemSeniority}
+                                            onChange={e => setEditItemSeniority(e.target.value as any)}
+                                            className="w-full bg-white border border-purple-300 rounded-lg p-2 text-xs font-semibold uppercase text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                          >
+                                            <option value="junior">Junior</option>
+                                            <option value="mid">Mid</option>
+                                            <option value="senior">Senior</option>
+                                          </select>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
                                   <div className="flex items-center justify-end space-x-2 pt-1">
                                     <button
                                       type="button"
@@ -1124,6 +1180,9 @@ export default function CompanySettingsPage() {
                                     setEditItemUnit(item.unit_label);
                                     setEditItemFreq(item.default_frequency);
                                     setEditItemModuleId(item.module_id);
+                                    setEditItemPricingKind(item.pricing_kind || 'unit');
+                                    setEditItemRole(item.role || 'engineer');
+                                    setEditItemSeniority((item.seniority as any) || 'mid');
                                   }}
                                   className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 text-slate-600 font-bold text-xs inline-flex items-center transition-all cursor-pointer shadow-2xs"
                                   title="Edit rate item default values"
@@ -1164,7 +1223,10 @@ export default function CompanySettingsPage() {
                   default_unit_price: Number(newItemPrice) || 0,
                   unit_label: newItemUnit.trim() || 'unit',
                   default_frequency: newItemFreq,
-                  active: true
+                  active: true,
+                  pricing_kind: newItemPricingKind,
+                  role: newItemPricingKind === 'man_hours' ? newItemRole : null,
+                  seniority: newItemPricingKind === 'man_hours' ? newItemSeniority : null
                 });
                 setNewItemName('');
                 setNewItemPrice(1000);
@@ -1229,6 +1291,45 @@ export default function CompanySettingsPage() {
                     <option value="annual">Annual</option>
                     <option value="one_time">One-time (undiscounted)</option>
                   </select>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Pricing Type</label>
+                    <select
+                      value={newItemPricingKind}
+                      onChange={e => setNewItemPricingKind(e.target.value as any)}
+                      className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-semibold uppercase focus:ring-2 focus:ring-purple-500 bg-white"
+                    >
+                      <option value="unit">Unit (fixed recurring)</option>
+                      <option value="man_hours">Man-Hours (billed from timesheets)</option>
+                    </select>
+                  </div>
+                  {newItemPricingKind === 'man_hours' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Role</label>
+                        <select
+                          value={newItemRole}
+                          onChange={e => setNewItemRole(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-semibold focus:ring-2 focus:ring-purple-500 bg-white"
+                        >
+                          {MAN_HOUR_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Seniority</label>
+                        <select
+                          value={newItemSeniority}
+                          onChange={e => setNewItemSeniority(e.target.value as any)}
+                          className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-semibold uppercase focus:ring-2 focus:ring-purple-500 bg-white"
+                        >
+                          <option value="junior">Junior</option>
+                          <option value="mid">Mid</option>
+                          <option value="senior">Senior</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <Button type="submit" variant="primary" className="w-full justify-center bg-purple-600 hover:bg-purple-700 text-white font-extrabold cursor-pointer shadow-md">
                   <Plus className="w-4 h-4 mr-1" /> Register Catalog Item

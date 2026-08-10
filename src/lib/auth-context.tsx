@@ -112,7 +112,7 @@ interface AppState {
   bulkAddRemoteDays: (profileId: string, declarations: { date: string; mode: RemoteMode | 'office'; location?: string; note?: string }[]) => Promise<boolean>;
   timesheets: ContractTimesheet[];
   addTimesheet: (entry: Omit<ContractTimesheet, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => Promise<boolean>;
-  updateTimesheet: (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id'>>) => Promise<boolean>;
+  updateTimesheet: (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id' | 'contract_line_id'>>) => Promise<boolean>;
   deleteTimesheet: (id: string) => Promise<boolean>;
   requestRemoteAmendment: (payload: { date: string; requested_mode: RemoteMode | 'office'; reason: string; location?: string }) => Promise<boolean>;
   decideRemoteAmendment: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
@@ -1618,7 +1618,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         note: l.note || null,
         monthly_quantities: l.monthly_quantities || null,
         apply_discount: l.apply_discount !== false,
-        min_monthly_charge: null
+        min_monthly_charge: null,
+        line_kind: l.line_kind || 'unit',
+        role: l.role || null,
+        seniority: l.seniority || null
       }));
       if (linesToInsert.length > 0) {
         await supabase.from('contract_lines').insert(linesToInsert);
@@ -2451,6 +2454,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: newEntry.id,
         profile_id: newEntry.profile_id,
         contract_id: newEntry.contract_id,
+        contract_line_id: newEntry.contract_line_id || null,
         work_date: newEntry.work_date,
         hours: newEntry.hours,
         note: newEntry.note || null
@@ -2471,7 +2475,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateTimesheet = async (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id'>>): Promise<boolean> => {
+  const updateTimesheet = async (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id' | 'contract_line_id'>>): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
     if (updates.hours !== undefined) payload.hours = Number(updates.hours);

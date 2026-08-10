@@ -75,6 +75,7 @@ export default function PeopleDirectoryPage() {
   const [newTitle, setNewTitle] = useState('Team Member');
   const [newTeamId, setNewTeamId] = useState(teams[0]?.id || 'tm-ops');
   const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('full_time');
+  const [newSeniorityLevel, setNewSeniorityLevel] = useState<'junior' | 'mid' | 'senior'>('mid');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [newRole, setNewRole] = useState<'employee' | 'admin'>('employee');
   const [newAfm, setNewAfm] = useState('');
@@ -111,6 +112,7 @@ export default function PeopleDirectoryPage() {
       title: newTitle,
       team_id: newTeamId,
       employment_type: newEmploymentType,
+      seniority_level: newSeniorityLevel,
       start_date: newStartDate,
       status: 'active',
       work_schedule: newEmploymentType === 'part_time' ? ['Mon', 'Wed', 'Fri'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
@@ -408,6 +410,10 @@ export default function PeopleDirectoryPage() {
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Employment Type</span>
                       <Badge variant="info" className="mt-0.5">{selectedProfile.employment_type.toUpperCase()}</Badge>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase font-semibold block">Seniority Level</span>
+                      <Badge variant="neutral" className="mt-0.5 uppercase">{(selectedProfile.seniority_level || 'mid')}</Badge>
                     </div>
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Assigned Team</span>
@@ -770,6 +776,14 @@ export default function PeopleDirectoryPage() {
                     </select>
                   </div>
                   <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Seniority Level (for man-hours billing)</label>
+                    <select value={editData.seniority_level || 'mid'} onChange={e => setEditData({...editData, seniority_level: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
+                      <option value="junior">Junior</option>
+                      <option value="mid">Mid</option>
+                      <option value="senior">Senior</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="text-slate-600 font-semibold block mb-1">Role Permission</label>
                     <select value={editData.role || 'employee'} onChange={e => setEditData({...editData, role: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
                       <option value="employee">Employee</option>
@@ -863,6 +877,14 @@ export default function PeopleDirectoryPage() {
                 <option value="full_time">Full Time</option>
                 <option value="part_time">Part Time</option>
                 <option value="contractor">Contractor</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Seniority Level (for man-hours billing)</label>
+              <select value={newSeniorityLevel} onChange={e => setNewSeniorityLevel(e.target.value as any)} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                <option value="junior">Junior</option>
+                <option value="mid">Mid</option>
+                <option value="senior">Senior</option>
               </select>
             </div>
             <div>
