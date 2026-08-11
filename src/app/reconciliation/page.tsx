@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { Card, Button, Badge, StatCard } from '@/components/ui/primitives';
 import { 
   ShieldCheck, Upload, AlertTriangle, FileText, CheckCircle, 
@@ -37,7 +38,7 @@ export default function ReconciliationPage() {
     setTimeout(() => {
       setReconcileStatus('completed');
       setDriftCount(0);
-      alert(`Successfully processed file ${file.name}. Parsed 14 records and matched against internal leaves and remote overrides. Zero drift detected!`);
+      notifySuccess(`Processed ${file.name} — all records matched with zero drift.`);
     }, 1200);
   };
 

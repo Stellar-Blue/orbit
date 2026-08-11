@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { Counterparty, AttioLink, CounterpartyContact, Contract } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
@@ -251,7 +252,7 @@ export default function CounterpartiesRegistryPage() {
       if (data && data.companies) {
         setAttioSyncCompanies(data.companies);
         if (data.companies.length === 0) {
-          alert("Connected successfully to Attio, but 0 corporate records matched your filter criteria.");
+          notifyValidation({ type: 'info', title: 'No matches', message: 'Connected to Attio, but no corporate records matched your filter criteria.' });
         }
       }
     } catch (err: any) {
@@ -302,14 +303,14 @@ export default function CounterpartiesRegistryPage() {
     if (!attioSyncCompanies || attioSyncCompanies.length === 0) return;
     const unimported = attioSyncCompanies.filter(comp => !isCompanyImported(comp));
     if (unimported.length === 0) {
-      alert("All fetched Attio CRM entities have already been imported into Orbit!");
+      notifyValidation({ type: 'info', title: 'Already imported', message: 'All fetched Attio entities are already in Orbit.' });
       return;
     }
     if (confirm(`Bulk import all ${unimported.length} qualifying Attio CRM companies into Orbit's Corporate Entity Registry?`)) {
       for (const comp of unimported) {
         await handleImportCompany(comp);
       }
-      alert(`Successfully imported and linked ${unimported.length} corporate entities from Attio CRM!`);
+      notifySuccess(`Imported and linked ${unimported.length} corporate entit${unimported.length === 1 ? 'y' : 'ies'} from Attio.`);
     }
   };
 
@@ -365,7 +366,7 @@ export default function CounterpartiesRegistryPage() {
               onClick={async () => {
                 if (confirm(`WARNING: Are you sure you want to delete ALL ${counterparties.length} current counterparties? This will clean out the entire existing registry so you can import clean data.`)) {
                   await deleteAllCounterparties();
-                  alert("All counterparties have been successfully removed!");
+                  notifySuccess('All counterparties have been removed.');
                 }
               }}
               className="bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 font-bold shadow-2xs cursor-pointer flex items-center gap-1.5"
@@ -646,7 +647,7 @@ export default function CounterpartiesRegistryPage() {
                           onClick={() => {
                             if (confirm(`Accept "${payload.name}" into Orbit's verified corporate registry and bind Attio sync link?`)) {
                               processAttioReviewEvent(event.id, 'confirm');
-                              alert("Successfully imported and validated against corporate registry!");
+                              notifySuccess('Imported and validated against the corporate registry.');
                             }
                           }}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
@@ -1090,7 +1091,7 @@ export default function CounterpartiesRegistryPage() {
                               const rec = linkRecordId.trim() || `attio_rec_${selectedEntity.id.slice(0, 6)}`;
                               linkToAttio(selectedEntity.id, rec);
                               setSelectedEntity(prev => prev ? { ...prev, attio_link: { id: 'l1', counterparty_id: prev.id, attio_record_id: rec, link_status: 'linked' } } : null);
-                              alert("Attio relationship bound successfully!");
+                              notifySuccess('Attio relationship linked.');
                             }}
                             className="bg-[#3D87D3] text-white shrink-0"
                           >

@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import {
   validateModelConfig, simulateConfig, tierLabel, DEFAULT_CLIENT_MODEL_CONFIG, METRIC_LABELS, METRIC_DESCRIPTIONS,
   type TierModelConfig, type MetricConfig, type TierConfig, type TierDataContext
@@ -91,7 +92,7 @@ export const TieringSettings: React.FC = () => {
       const digest = result.changes.length > 0
         ? result.changes.map(c => `${c.new_tier_index === null ? 'Unrated' : `Tier ${c.new_tier_index + 1}`}`).length
         : 0;
-      alert(`Tiering model applied & recomputed.\n• ${digest} tier change(s) recorded (cause: config_change).`);
+      notifySuccess(`Tiering model applied (${digest} change(s) recorded).`);
       setDirty(false);
     } else {
       alert(`Apply failed: ${result.error || 'Unknown error'}`);

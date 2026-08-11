@@ -17,6 +17,7 @@ import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
+import { notifySuccess } from './validation-modal';
 
 interface AppState {
   currentUser: Profile;
@@ -1582,7 +1583,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
       setPayments(prev => [...newPays, ...prev]);
-      alert(`Generated ${newPays.length} draft payment row(s) for period ${period}! Includes statutory allowances where applicable.`);
+      notifySuccess(`Generated ${newPays.length} draft payment row(s) for ${period}.`);
     } catch (e: any) {
       console.error('Failed to batch insert draft payments:', e);
     }
@@ -2149,7 +2150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }));
 
       setCounterparties(updatedCps);
-      alert("Attio Nightly Reconciliation Job Executed Successfully!\n• All Orbit-owned rollup attributes (ARR, Active Contracts, Renewal Dates) pushed to linked CRM company records.\n• VIES validation status & drift audit verified.");
+      notifySuccess('Attio nightly reconciliation completed.');
     } catch (e) {
       console.error(e);
       alert("Error executing Attio reconciliation.");

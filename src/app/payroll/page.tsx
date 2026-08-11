@@ -330,7 +330,7 @@ export default function PayrollPage() {
       }
 
       setIsExportOpen(false);
-      alert(`Accountant bundle exported successfully! Generated Excel ledger sheet ${includeReceiptsZip ? '+ ZIP archive with receipt PDFs matching {ΑΦΜ}_{type}_{YYYY-MM}.pdf structure' : ''}.`);
+      notifySuccess('Accountant bundle exported.');
     } catch (e) {
       console.error('Export failed:', e);
       alert('Error generating accountant export package.');
@@ -512,7 +512,7 @@ export default function PayrollPage() {
 
     setIsUploadOpen(false);
     setUpDocs([]);
-    alert(`Successfully uploaded payment of €${upGross.toLocaleString()} with ${upDocs.length} attached document(s) for period ${upPeriod}!`);
+    notifySuccess(`Payment of €${upGross.toLocaleString()} uploaded with ${upDocs.length} document(s) for ${upPeriod}.`);
   };
 
   const handleSaveAdditionalDocs = () => {
@@ -520,7 +520,7 @@ export default function PayrollPage() {
     addPaymentDocuments(selectedPaymentForDocs.id, addMoreDocs);
     setSelectedPaymentForDocs(prev => prev ? { ...prev, documents: [...(prev.documents || []), ...addMoreDocs] } : null);
     setAddMoreDocs([]);
-    alert(`Successfully attached ${addMoreDocs.length} new document(s) to the payment record!`);
+    notifySuccess(`Attached ${addMoreDocs.length} document(s) to the payment record.`);
   };
 
   const handleDownloadDoc = (doc: PaymentDocument, profName?: string, bankRef?: string) => {
@@ -576,7 +576,7 @@ export default function PayrollPage() {
     });
 
     setEditingPayment(null);
-    alert('Payment row updated against payroll run!');
+    notifySuccess('Payment row updated.');
   };
 
   // Save Raise / New Salary Record (Never edit in place)
@@ -596,7 +596,7 @@ export default function PayrollPage() {
       note: rsNote.trim() || undefined
     });
     setIsRaiseOpen(false);
-    alert('New salary record recorded! Previous active record automatically closed to preserve salary history.');
+    notifySuccess('New salary record recorded.');
   };
 
   // Save Dynamic Payment Type
@@ -617,7 +617,7 @@ export default function PayrollPage() {
       active: true
     });
     setIsTypeOpen(false);
-    alert('New payment type created! Available instantly for monthly drafts and manual disbursements.');
+    notifySuccess('New payment type created.');
   };
 
   return (
@@ -711,7 +711,7 @@ export default function PayrollPage() {
                       uploaded_at: new Date().toISOString().split('T')[0]
                     }]);
                   });
-                  alert('Bulk matched and uploaded receipts to all pending rows!');
+                  notifySuccess('Bulk matched and uploaded receipts to all pending rows.');
                 }
               }} 
               className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
@@ -914,9 +914,9 @@ export default function PayrollPage() {
                                 setBackfillingId(sal.id);
                                 const res = await backfillSalaryPayments(sal.id);
                                 setBackfillingId(null);
-                                alert(res.created > 0
-                                  ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} from ${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}.`
-                                  : 'All past payments already exist — nothing to produce.');
+                                notifySuccess(res.created > 0
+                                  ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} (${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}).`
+                                  : 'All past payments already exist.');
                               }}
                               className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
                             >

@@ -1703,7 +1703,7 @@ export default function CompanySettingsPage() {
                       localStorage.setItem('orbit_attio_api_key', attioApiKey);
                       localStorage.setItem('orbit_attio_workspace', attioWorkspace);
                     }
-                    alert("Attio API credentials saved successfully and preserved in secure local storage!");
+                    notifySuccess('Attio API credentials saved.');
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 3000);
                   }}
@@ -1812,7 +1812,7 @@ export default function CompanySettingsPage() {
                     if (typeof window !== 'undefined') {
                       localStorage.setItem('orbit_attio_webhook_secret', attioWebhookSecret);
                     }
-                    alert("Webhook HMAC signing secret saved successfully to configuration ledger!");
+                    notifySuccess('Webhook signing secret saved.');
                   }}
                   className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 shadow-sm cursor-pointer"
                 >
@@ -1862,7 +1862,7 @@ export default function CompanySettingsPage() {
                       localStorage.setItem('orbit_attio_rel_attribute', attioRelAttribute);
                       localStorage.setItem('orbit_attio_rel_values', JSON.stringify(attioRelValues));
                     }
-                    alert(`Relationship attribute "${attioRelAttribute}" with ${attioRelValues.length} active sync criteria saved successfully!`);
+                    notifySuccess(`Relationship attribute "${attioRelAttribute}" saved (${attioRelValues.length} active criteria).`);
                   }}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer flex items-center"
                 >
