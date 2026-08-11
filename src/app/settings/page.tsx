@@ -13,6 +13,7 @@ import { TieringSettings } from '@/components/settings/tiering-settings';
 import { IntegrationsSettings } from '@/components/settings/integrations-settings';
 import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
+import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 
 export default function CompanySettingsPage() {
   const { 
@@ -324,6 +325,7 @@ export default function CompanySettingsPage() {
       <div className="lg:col-span-9 space-y-6">
         {/* TAB 1: REMOTE WORK POLICY */}
         {selectedTab === 'remote' && (
+          <>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Main Configuration Card */}
           <Card 
@@ -508,6 +510,27 @@ export default function CompanySettingsPage() {
             </Card>
           </div>
         </div>
+
+        {/* Per-Employee Remote Quotas */}
+        <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-extrabold text-slate-800">Per-Employee Remote Quotas</span>
+            <Badge variant="info">{profiles.filter(p => remotePolicies.some(rp => rp.scope_type === 'employee' && rp.scope_id === p.id)).length} customized</Badge>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">Employees without a personal quota use the company default above. A personal quota overrides it — edit or clear per person here.</p>
+          <div className="divide-y divide-slate-100">
+            {profiles.map(p => (
+              <div key={p.id} className="py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                <div className="min-w-[180px]">
+                  <div className="text-xs font-bold text-slate-800">{p.first_name} {p.last_name}</div>
+                  <div className="text-[10px] text-slate-400">{p.title}</div>
+                </div>
+                <div className="flex-1"><EmployeeRemoteQuota key={p.id} profileId={p.id} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+        </>
       )}
 
       {/* TAB 2: COMPANY TEAMS CONFIGURATION */}
