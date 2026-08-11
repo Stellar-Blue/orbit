@@ -344,7 +344,15 @@ export default function RemoteWorkLogPage() {
     if (!selectedDateForAction || !actionModalMode) return;
 
     if (targetMode === 'remote_abroad' && !abroadLocation.trim()) {
-      alert('VALIDATION ERROR: Location is mandatory when working remotely from abroad due to EU tax compliance!');
+      notifyValidation({
+        type: 'error',
+        title: 'Location required',
+        message: 'Working from outside the office city means you must declare where you will be. Add the city you will work from to continue.',
+        items: [
+          { label: 'Selected mode', value: 'Other City' },
+          { label: 'Missing', value: 'Work location (city)' },
+        ],
+      });
       return;
     }
 
@@ -584,7 +592,7 @@ export default function RemoteWorkLogPage() {
               </div>
               <div className="flex items-center space-x-3 text-xs text-slate-600">
                 <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-cyan-500 mr-1.5" /> Remote (GR)</span>
-                <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 mr-1.5" /> Abroad</span>
+                <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 mr-1.5" /> Other City</span>
                 <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-slate-400 mr-1.5" /> Office HQ</span>
               </div>
             </div>
@@ -665,8 +673,8 @@ export default function RemoteWorkLogPage() {
                             </div>
                           )}
                           {day.mode === 'remote_abroad' && (
-                            <div title={`Abroad: ${day.location || 'Logged'}${day.isCustom ? ' · declared day — synced to Outlook as an extra event' : ''}`} className="px-2 py-1 rounded-md bg-blue-100 text-blue-950 text-[11px] font-extrabold truncate text-center border border-blue-300 shadow-2xs transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
-                              ✈️ Abroad
+                            <div title={`Other City: ${day.location || 'Logged'}${day.isCustom ? ' · declared day — synced to Outlook as an extra event' : ''}`} className="px-2 py-1 rounded-md bg-blue-100 text-blue-950 text-[11px] font-extrabold truncate text-center border border-blue-300 shadow-2xs transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
+                              📍 Other City
                               {day.isCustom && <span className={`inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1 py-0.5 rounded shrink-0 ${outlookConnected ? 'bg-emerald-500/15 text-emerald-700' : 'bg-slate-400/15 text-slate-500'}`}><RefreshCw className="w-2 h-2" /> Outlook</span>}
                             </div>
                           )}
@@ -750,8 +758,8 @@ export default function RemoteWorkLogPage() {
                       targetMode === 'remote_abroad' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    <span>✈️</span>
-                    <span className="mt-1">Abroad</span>
+                    <span>📍</span>
+                    <span className="mt-1">Other City</span>
                   </button>
                 </div>
               </div>
@@ -759,11 +767,11 @@ export default function RemoteWorkLogPage() {
               {targetMode === 'remote_abroad' && (
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-2 text-amber-900">
                   <span className="font-extrabold flex items-center text-[11px]">
-                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-600" /> MANDATORY ABROAD LOCATION
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-600" /> MANDATORY LOCATION
                   </span>
                   <input 
                     type="text" 
-                    placeholder="e.g. Berlin, Germany or Madrid, Spain"
+                    placeholder="e.g. Thessaloniki, GR or Berlin, Germany"
                     value={abroadLocation}
                     onChange={e => setAbroadLocation(e.target.value)}
                     required

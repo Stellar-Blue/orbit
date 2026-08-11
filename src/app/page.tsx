@@ -900,10 +900,10 @@ export default function DashboardPage() {
                       )}
                       {mode === 'remote_abroad' && (
                         <span 
-                          title={`Location: ${location || 'Logged in EU'}`}
+                          title={`Location: ${location || 'Not declared'}`}
                           className="px-2.5 py-1 rounded-md bg-blue-100 text-blue-900 text-xs font-extrabold border border-blue-200 shadow-2xs flex items-center truncate max-w-[140px]"
                         >
-                          ✈️ Abroad {location ? `(${location})` : ''}
+                          📍 Other City {location ? `(${location})` : ''}
                         </span>
                       )}
                       {mode === 'weekend' && (
@@ -1261,7 +1261,7 @@ export default function DashboardPage() {
                                     <span className="mr-1">{r.mode === 'remote_abroad' ? '✈️' : '🏠'}</span>
                                     <ProfileAvatar photoUrl={r.profile.photo_url} firstName={r.profile.first_name} lastName={r.profile.last_name} size="xs" className="mr-1" />
                                     <span className="font-bold mr-1">{r.profile.first_name}</span>
-                                    <span className="text-slate-500 font-normal">{r.mode === 'remote_abroad' ? `(Abroad)` : '(Remote GR)'}</span>
+                                    <span className="text-slate-500 font-normal">{r.mode === 'remote_abroad' ? `(Other City)` : '(Remote GR)'}</span>
                                   </div>
                                 );
                               });
@@ -1405,7 +1405,7 @@ export default function DashboardPage() {
                             )}
                             {!isOnLeave && remoteInfo && (
                               <div
-                                title={`${p.first_name} ${p.last_name}: Working Remotely (${remoteInfo.mode === 'remote_abroad' ? 'Abroad' : 'GR'})`}
+                                title={`${p.first_name} ${p.last_name}: Working Remotely (${remoteInfo.mode === 'remote_abroad' ? 'Other City' : 'GR'})`}
                                 className={`h-6 ${remoteInfo.mode === 'remote_abroad' ? 'bg-indigo-500' : 'bg-cyan-500'} text-white flex items-center justify-center text-[9px] font-bold shadow-2xs ${
                                   prevRemote ? 'rounded-l-none ml-0' : 'rounded-l-md ml-0.5'
                                 } ${
@@ -1588,7 +1588,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="font-bold text-cyan-800 capitalize">
-                            {r.mode === 'remote_abroad' ? `Abroad: ${r.location || 'International'}` : 'Remote (Greece)'}
+                            {r.mode === 'remote_abroad' ? `Other City: ${r.location || 'Not declared'}` : 'Remote (Greece)'}
                           </span>
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-white rounded border border-slate-200 text-slate-600">
                             {r.isOverride ? 'Daily Log' : 'Weekly Pattern'}
