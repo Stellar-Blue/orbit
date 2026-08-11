@@ -91,7 +91,7 @@ export default function CompanySettingsPage() {
     }
   };
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'timesheets' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
