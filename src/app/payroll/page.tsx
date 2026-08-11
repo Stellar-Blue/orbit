@@ -1120,7 +1120,7 @@ export default function PayrollPage() {
           <div className="pt-3 border-t border-slate-200 flex justify-end space-x-2.5">
             <Button variant="outline" size="sm" onClick={() => setIsExportOpen(false)}>Cancel</Button>
             <Button variant="primary" size="sm" onClick={handleAccountantExportConfirm} disabled={isExporting} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5">
-              {isExporting ? 'Generating Bundle...' : 'Download Accountant Package &rarr;'}
+              {isExporting ? 'Generating Bundle...' : 'Download Accountant Package →'}
             </Button>
           </div>
         </div>

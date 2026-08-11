@@ -825,7 +825,7 @@ export default function RemoteWorkLogPage() {
                   Cancel
                 </Button>
                 <Button variant="primary" type="submit" className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold px-6">
-                  {actionModalMode === 'amend' && !isAdmin ? 'Submit Amendment Request &rarr;' : 'Save Declaration &rarr;'}
+                  {actionModalMode === 'amend' && !isAdmin ? 'Submit Amendment Request →' : 'Save Declaration →'}
                 </Button>
               </div>
             </form>

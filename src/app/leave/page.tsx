@@ -968,7 +968,7 @@ export default function LeaveManagementPage() {
           <div className="pt-2 flex justify-end space-x-2">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsRequestOpen(false)}>Cancel</Button>
             <Button variant="primary" size="sm" type="submit" className="bg-[#3D87D3] hover:bg-[#3D87D3]/90">
-              {isAdmin ? 'Record Approved Admin Entry &rarr;' : 'Submit for Approval &rarr;'}
+              {isAdmin ? 'Record Approved Admin Entry →' : 'Submit for Approval →'}
             </Button>
           </div>
         </form>
