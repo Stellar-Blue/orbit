@@ -12,7 +12,6 @@ import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem
 import { TieringSettings } from '@/components/settings/tiering-settings';
 import { IntegrationsSettings } from '@/components/settings/integrations-settings';
 import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
-import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 
 export default function CompanySettingsPage() {
   const { 
@@ -21,13 +20,13 @@ export default function CompanySettingsPage() {
     leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType,
     catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem,
     invoiceCategories, addInvoiceCategory, deleteInvoiceCategory,
-    jobRoles, seniorityLevels, rateCards, rateCardEntries,
+    jobRoles, seniorityLevels, profileRoleHistory, rateCards, rateCardEntries,
     saveJobRole, deleteJobRole, saveSeniorityLevel, deleteSeniorityLevel,
     saveRateCard, deleteRateCard, saveRateCardEntry, deleteRateCardEntry
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'timesheets' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
   const [newRoleName, setNewRoleName] = useState('');
   const [newSeniorityName, setNewSeniorityName] = useState('');
   const [selectedRateCardId, setSelectedRateCardId] = useState('');
@@ -92,7 +91,7 @@ export default function CompanySettingsPage() {
     }
   };
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'pricing' | 'timesheets' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
@@ -1383,17 +1382,92 @@ export default function CompanySettingsPage() {
         </div>
       )}
 
-      {/* TAB 4.5: TIMESHEET CONFIGURATION */}
+      {/* TAB 4.3: JOB ROLES (workforce structure) */}
+      {selectedTab === 'roles' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center"><Tag className="w-5 h-5 mr-2 text-blue-600" /> Job Roles</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Roles performed on engagements (workforce structure). Consumed by timesheets, rate cards, and assignments.</p>
+            </div>
+            <Badge variant="info">{jobRoles.filter(r => r.active).length} active roles</Badge>
+          </div>
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-5 space-y-3 max-w-2xl">
+            {jobRoles.filter(r => r.active).sort((a, b) => a.sort_order - b.sort_order).map(r => (
+              <div key={r.id} className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 rounded-lg text-xs">
+                <span className="font-semibold text-slate-700">{r.name}</span>
+                <button onClick={async () => { if (confirm(`Delete role "${r.name}"?`)) await deleteJobRole(r.id); }} className="text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-2">
+              <input value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="New role…" className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              <Button variant="primary" size="sm" onClick={async () => { if (!newRoleName.trim()) { alert('Name required.'); return; } await saveJobRole({ name: newRoleName.trim(), sort_order: (jobRoles.length + 1) * 10 }); setNewRoleName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5 mr-1" /> Add Role</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4.4: SENIORITY LEVELS (workforce structure) */}
+      {selectedTab === 'seniorities' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center"><Sliders className="w-5 h-5 mr-2 text-violet-600" /> Seniority Levels</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Ordered career levels (workforce structure). Consumed by timesheets, rate cards, and assignments.</p>
+            </div>
+            <Badge variant="info">{seniorityLevels.filter(s => s.active).length} active levels</Badge>
+          </div>
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-5 space-y-3 max-w-2xl">
+            {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => (
+              <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 rounded-lg text-xs">
+                <span className="font-semibold text-slate-700">{s.name}</span>
+                <button onClick={async () => { if (confirm(`Delete level "${s.name}"?`)) await deleteSeniorityLevel(s.id); }} className="text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-2">
+              <input value={newSeniorityName} onChange={e => setNewSeniorityName(e.target.value)} placeholder="New level…" className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              <Button variant="primary" size="sm" onClick={async () => { if (!newSeniorityName.trim()) { alert('Name required.'); return; } await saveSeniorityLevel({ name: newSeniorityName.trim(), rank: seniorityLevels.length + 1 }); setNewSeniorityName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5 mr-1" /> Add Level</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4.5: TIMESHEET CONFIGURATION (overview of what affects timesheets + rate card source of truth) */}
       {selectedTab === 'timesheets' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center"><Clock className="w-5 h-5 mr-2 text-sky-600" /> Timesheet Configuration</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Roles, seniorities, and the rate card used to price logged effort (admin-only financial data).</p>
+              <p className="text-xs text-slate-500 mt-0.5">One view of everything that affects timesheets. Each item is configured at its own source of truth — quick links below.</p>
             </div>
             <Badge variant="info">{rateCards.length} rate card(s)</Badge>
           </div>
 
+          {/* Sources & quick links */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <button onClick={() => handleTabChange('roles')} className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 text-left hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
+              <div className="flex items-center justify-between"><Tag className="w-4 h-4 text-blue-500" /><ChevronRight className="w-4 h-4 text-slate-300" /></div>
+              <div className="mt-2 text-sm font-extrabold text-slate-800">Job Roles</div>
+              <div className="text-[11px] text-slate-400">{jobRoles.filter(r => r.active).length} active · Workforce Policies</div>
+            </button>
+            <button onClick={() => handleTabChange('seniorities')} className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 text-left hover:border-violet-300 hover:shadow-md transition-all cursor-pointer">
+              <div className="flex items-center justify-between"><Sliders className="w-4 h-4 text-violet-500" /><ChevronRight className="w-4 h-4 text-slate-300" /></div>
+              <div className="mt-2 text-sm font-extrabold text-slate-800">Seniority Levels</div>
+              <div className="text-[11px] text-slate-400">{seniorityLevels.filter(s => s.active).length} active · Workforce Policies</div>
+            </button>
+            <a href="/people" className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 text-left hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer">
+              <div className="flex items-center justify-between"><Users className="w-4 h-4 text-emerald-500" /><ChevronRight className="w-4 h-4 text-slate-300" /></div>
+              <div className="mt-2 text-sm font-extrabold text-slate-800">Role & Seniority Assignments</div>
+              <div className="text-[11px] text-slate-400">{profiles.filter(p => profileRoleHistory.some(h => h.profile_id === p.id && !h.valid_to)).length} assigned · per person in People</div>
+            </a>
+            <div className="rounded-2xl bg-sky-50 border border-sky-200 shadow-2xs p-4">
+              <div className="flex items-center justify-between"><DollarSign className="w-4 h-4 text-sky-600" /></div>
+              <div className="mt-2 text-sm font-extrabold text-slate-800">Rate Card</div>
+              <div className="text-[11px] text-slate-500">Merged man-hours pricing · edited below</div>
+            </div>
+          </div>
+
+          {/* Rate card matrix — single source of truth for man-hours hourly rates */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
             <div className="lg:col-span-2 rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden">
               <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
@@ -1453,54 +1527,6 @@ export default function CompanySettingsPage() {
                   <Button variant="primary" size="sm" onClick={async () => { if (!newCardName.trim()) { alert('Name required.'); return; } await saveRateCard({ name: newCardName.trim(), is_default: rateCards.length === 0 }); setNewCardName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
                 </div>
               </div>
-
-              <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 space-y-2">
-                <span className="text-xs font-extrabold text-slate-800">Job Roles</span>
-                {jobRoles.filter(r => r.active).sort((a, b) => a.sort_order - b.sort_order).map(r => (
-                  <div key={r.id} className="flex items-center justify-between gap-2 px-2 py-1 bg-slate-50 rounded-lg text-xs">
-                    <span className="font-semibold text-slate-700">{r.name}</span>
-                    <button onClick={async () => { if (confirm(`Delete role "${r.name}"?`)) await deleteJobRole(r.id); }} className="text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div>
-                ))}
-                <div className="flex gap-2 pt-1">
-                  <input value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="New role…" className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" />
-                  <Button variant="outline" size="sm" onClick={async () => { if (!newRoleName.trim()) { alert('Name required.'); return; } await saveJobRole({ name: newRoleName.trim(), sort_order: (jobRoles.length + 1) * 10 }); setNewRoleName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 space-y-2">
-                <span className="text-xs font-extrabold text-slate-800">Seniority Levels</span>
-                {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => (
-                  <div key={s.id} className="flex items-center justify-between gap-2 px-2 py-1 bg-slate-50 rounded-lg text-xs">
-                    <span className="font-semibold text-slate-700">{s.name}</span>
-                    <button onClick={async () => { if (confirm(`Delete level "${s.name}"?`)) await deleteSeniorityLevel(s.id); }} className="text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div>
-                ))}
-                <div className="flex gap-2 pt-1">
-                  <input value={newSeniorityName} onChange={e => setNewSeniorityName(e.target.value)} placeholder="New level…" className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" />
-                  <Button variant="outline" size="sm" onClick={async () => { if (!newSeniorityName.trim()) { alert('Name required.'); return; } await saveSeniorityLevel({ name: newSeniorityName.trim(), rank: seniorityLevels.length + 1 }); setNewSeniorityName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Employee role & seniority assignments */}
-          <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-5">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-extrabold text-slate-800">Employee Role & Seniority Assignments</span>
-              <Badge variant="info">{profiles.length} people</Badge>
-            </div>
-            <p className="text-xs text-slate-500 mb-3">Effective-dated: assigning a new role closes the previous one from the effective date onward — history is preserved for correct billing.</p>
-            <div className="divide-y divide-slate-100">
-              {profiles.map(p => (
-                <div key={p.id} className="py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-                  <div className="min-w-[180px]">
-                    <div className="text-xs font-bold text-slate-800">{p.first_name} {p.last_name}</div>
-                    <div className="text-[10px] text-slate-400">{p.title}</div>
-                  </div>
-                  <div className="flex-1"><EmployeeRoleAssigner key={p.id} profileId={p.id} compact /></div>
-                </div>
-              ))}
             </div>
           </div>
         </div>
@@ -2389,6 +2415,46 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <Badge variant="warning" className="text-[10px] px-1.5 py-0">{leaveTypes.length}</Badge>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('roles')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'roles'
+                  ? 'bg-blue-50/70 border-blue-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'roles' ? 'bg-blue-500 text-white shadow-xs' : 'bg-blue-50 text-blue-600'}`}>
+                  <Tag className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Job Roles</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Roles performed on engagements</div>
+                </div>
+              </div>
+              <Badge variant="info" className="text-[10px] px-1.5 py-0">{jobRoles.filter(r => r.active).length}</Badge>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('seniorities')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'seniorities'
+                  ? 'bg-violet-50/70 border-violet-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'seniorities' ? 'bg-violet-500 text-white shadow-xs' : 'bg-violet-50 text-violet-600'}`}>
+                  <Sliders className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Seniority Levels</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Junior → Principal</div>
+                </div>
+              </div>
+              <Badge variant="info" className="text-[10px] px-1.5 py-0">{seniorityLevels.filter(s => s.active).length}</Badge>
             </button>
           </div>
 
