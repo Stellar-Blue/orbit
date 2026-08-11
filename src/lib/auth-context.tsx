@@ -6,7 +6,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest,
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest, RemoteQuotaRequest,
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
@@ -35,6 +35,7 @@ interface AppState {
   remotePatterns: RemotePattern[];
   remotePolicies: RemotePolicy[];
   remoteAmendmentRequests: RemoteAmendmentRequest[];
+  remoteQuotaRequests: RemoteQuotaRequest[];
   counterparties: Counterparty[];
   attioEvents: AttioEvent[];
   contracts: Contract[];
@@ -152,6 +153,8 @@ interface AppState {
   decideTimeEntries: (ids: string[], status: 'approved' | 'rejected') => Promise<boolean>;
   requestRemoteAmendment: (payload: { date: string; requested_mode: RemoteMode | 'office'; reason: string; location?: string }) => Promise<boolean>;
   decideRemoteAmendment: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
+  requestRemoteQuotaOverride: (payload: { date: string; requested_mode: RemoteMode | 'office'; location?: string; reason?: string; period_used?: number; period_max?: number }) => Promise<boolean>;
+  decideRemoteQuotaRequest: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
   requestLeaveCancellation: (id: string) => void;
   decideLeaveCancellation: (id: string, approve: boolean) => void;
@@ -239,6 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
+  const [remoteQuotaRequests, setRemoteQuotaRequests] = useState<RemoteQuotaRequest[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [attioEvents, setAttioEvents] = useState<AttioEvent[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -465,6 +469,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch {
           // Graceful fallback if remote_amendments table is not created yet
+        }
+
+        try {
+          const quotaRes = await supabase.from('remote_quota_requests').select('*');
+          if (quotaRes.data) {
+            setRemoteQuotaRequests(quotaRes.data as RemoteQuotaRequest[]);
+          }
+        } catch {
+          // Graceful fallback if remote_quota_requests table is not created yet
         }
 
         try {
@@ -2931,6 +2944,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const requestRemoteQuotaOverride = async (payload: { date: string; requested_mode: RemoteMode | 'office'; location?: string; reason?: string; period_used?: number; period_max?: number }): Promise<boolean> => {
+    const req: RemoteQuotaRequest = {
+      id: generateUUID(),
+      profile_id: currentUser.id,
+      date: payload.date,
+      requested_mode: payload.requested_mode,
+      location: payload.location,
+      reason: payload.reason,
+      period_used: payload.period_used,
+      period_max: payload.period_max,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    setRemoteQuotaRequests(prev => [req, ...prev]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('remote_quota_requests').insert([req]);
+    } catch (e) {
+      console.log("Locally logged remote quota request");
+    }
+    return true;
+  };
+
+  const decideRemoteQuotaRequest = async (id: string, status: 'approved' | 'rejected'): Promise<boolean> => {
+    const req = remoteQuotaRequests.find(r => r.id === id);
+    if (!req) return false;
+
+    setRemoteQuotaRequests(prev => prev.map(r => r.id === id ? { ...r, status, decided_at: new Date().toISOString(), decided_by: currentUser.id } : r));
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.from('remote_quota_requests').update({ status, decided_at: new Date().toISOString(), decided_by: currentUser.id }).eq('id', id);
+    } catch (e) {
+      console.log("Locally updated remote quota request");
+    }
+
+    if (status === 'approved') {
+      await bulkAddRemoteDays(req.profile_id, [{
+        date: req.date,
+        mode: req.requested_mode,
+        location: req.location,
+        note: `Approved quota exception: ${req.reason || 'Quota exceeded'}`
+      }]);
+    }
+    return true;
+  };
+
   const addInvoice = async (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>): Promise<Invoice | null> => {
     const id = generateUUID();
     const newInv: Invoice = {
@@ -3290,6 +3350,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       remotePatterns,
       remotePolicies,
       remoteAmendmentRequests,
+      remoteQuotaRequests,
       counterparties,
       attioEvents,
       contracts,
@@ -3394,6 +3455,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       decideTimeEntries,
       requestRemoteAmendment,
       decideRemoteAmendment,
+      requestRemoteQuotaOverride,
+      decideRemoteQuotaRequest,
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,

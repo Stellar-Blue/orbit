@@ -4,12 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
 
 export interface ValidationItem { label: string; value: string; }
+export interface ValidationNoticeAction { label: string; onClick: () => void; }
 export interface ValidationNotice {
   type?: 'error' | 'warning' | 'success' | 'info';
   title?: string;
   message: string;
   items?: ValidationItem[];
   duration?: number; // ms auto-dismiss; 0 = sticky (requires OK)
+  action?: ValidationNoticeAction; // optional call-to-action button (e.g. request approval)
 }
 
 type Listener = (n: ValidationNotice) => void;
@@ -94,12 +96,24 @@ export function ValidationHost() {
               ))}
             </div>
           )}
-          <button
-            onClick={() => setVisible(false)}
-            className="w-full py-2.5 rounded-xl bg-[#3D87D3] hover:bg-[#3272B4] text-white text-sm font-bold cursor-pointer transition-colors"
-          >
-            OK
-          </button>
+          <div className="flex gap-2">
+            {notice.action && (
+              <button
+                onClick={() => { setVisible(false); notice.action?.onClick(); }}
+                className="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold cursor-pointer transition-colors"
+              >
+                {notice.action.label}
+              </button>
+            )}
+            <button
+              onClick={() => setVisible(false)}
+              className={notice.action
+                ? "flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold cursor-pointer transition-colors"
+                : "w-full py-2.5 rounded-xl bg-[#3D87D3] hover:bg-[#3272B4] text-white text-sm font-bold cursor-pointer transition-colors"}
+            >
+              OK
+            </button>
+          </div>
         </div>
       </div>
     </div>

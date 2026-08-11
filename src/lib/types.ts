@@ -256,6 +256,21 @@ export interface RemoteAmendmentRequest {
   decided_by?: string;
 }
 
+export interface RemoteQuotaRequest {
+  id: string;
+  profile_id: string;
+  date: string;
+  requested_mode: 'office' | 'remote_gr' | 'remote_abroad';
+  location?: string;
+  reason?: string;
+  period_used?: number;
+  period_max?: number;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at?: string;
+  decided_at?: string;
+  decided_by?: string;
+}
+
 export interface AttioLink {
   id: string;
   counterparty_id: string;

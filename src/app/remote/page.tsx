@@ -17,8 +17,8 @@ import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 export default function RemoteWorkLogPage() {
   const { 
     currentUser, profiles, remoteDays, remotePatterns, remotePolicies, 
-    remoteAmendmentRequests, saveRemotePattern, addRemoteDay, bulkAddRemoteDays, 
-    requestRemoteAmendment, decideRemoteAmendment, publicHolidays, mandatoryLeaves, leaveRequests,
+    remoteAmendmentRequests, remoteQuotaRequests, saveRemotePattern, addRemoteDay, bulkAddRemoteDays, 
+    requestRemoteAmendment, decideRemoteAmendment, requestRemoteQuotaOverride, decideRemoteQuotaRequest, publicHolidays, mandatoryLeaves, leaveRequests,
     employeeIntegrations 
   } = useAuth();
   
@@ -378,16 +378,32 @@ export default function RemoteWorkLogPage() {
         if (!wasRemote && periodCountForDate >= quotaMaxDays) {
           const periodNoun = quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month';
           notifyValidation({
-            type: 'error',
+            type: 'warning',
             title: 'Remote quota exceeded',
             message: (leaveCountForDate > 0 && remoteCountForDate < quotaMaxDays)
-              ? `Approved leave fills your ${periodLabel.toLowerCase()} remote-work quota (${quotaMaxDays} day(s) per ${periodNoun}), so no remote day can be added this period.`
-              : `You've reached your ${periodLabel.toLowerCase()} remote-work quota (${quotaMaxDays} day(s) per ${periodNoun}). No more remote days can be added this period.`,
+              ? `Approved leave fills your ${periodLabel.toLowerCase()} remote-work quota (${quotaMaxDays} day(s) per ${periodNoun}), so no remote day can be added this period. You can still request an exception for admin approval.`
+              : `You've reached your ${periodLabel.toLowerCase()} remote-work quota (${quotaMaxDays} day(s) per ${periodNoun}). No more remote days can be added this period, but you can request an exception for admin approval.`,
             items: [
               { label: 'Remote days used', value: `${remoteCountForDate} / ${quotaMaxDays}` },
               ...(countsLeave ? [{ label: 'Approved leave counted', value: String(leaveCountForDate) }] : []),
               { label: 'Total toward quota', value: String(periodCountForDate) },
-            ]
+            ],
+            action: {
+              label: 'Request admin approval',
+              onClick: async () => {
+                await requestRemoteQuotaOverride({
+                  date: selectedDateForAction,
+                  requested_mode: targetMode,
+                  location: targetMode === 'remote_abroad' ? abroadLocation : undefined,
+                  reason: noteOrReason || 'Remote quota exceeded',
+                  period_used: periodCountForDate,
+                  period_max: quotaMaxDays,
+                });
+                setActionModalMode(null);
+                setSelectedDateForAction(null);
+                notifySuccess('Your exception request has been submitted. An admin will review it shortly.', 'Request sent');
+              }
+            }
           });
           return;
         }
@@ -415,6 +431,16 @@ export default function RemoteWorkLogPage() {
     if (!isAdmin) return [];
     return (remoteAmendmentRequests || []).filter(r => r.status === 'pending');
   }, [remoteAmendmentRequests, isAdmin]);
+
+  // Quota exception requests (when quota is exceeded, employees request admin approval)
+  const myQuotaRequests = useMemo(() => {
+    return (remoteQuotaRequests || []).filter(r => r.profile_id === currentUser.id);
+  }, [remoteQuotaRequests, currentUser.id]);
+
+  const pendingQuotaQueue = useMemo(() => {
+    if (!isAdmin) return [];
+    return (remoteQuotaRequests || []).filter(r => r.status === 'pending');
+  }, [remoteQuotaRequests, isAdmin]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200 pb-20">
@@ -865,6 +891,84 @@ export default function RemoteWorkLogPage() {
                           </button>
                           <button 
                             onClick={() => decideRemoteAmendment(req.id, 'rejected')}
+                            className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold transition-all border border-rose-200"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Section: Remote Quota Exception Requests */}
+      {(myQuotaRequests.length > 0 || pendingQuotaQueue.length > 0) && (
+        <div className="space-y-4 pt-6 border-t border-slate-200/80">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center">
+              <Zap className="w-5 h-5 mr-2 text-[#3D87D3]" /> Remote Quota Exception Requests
+            </h2>
+            <Badge variant="info">Approval Queue</Badge>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* My quota requests */}
+            {myQuotaRequests.length > 0 && (
+              <Card title="My Quota Exception Requests" subtitle="Status of requests submitted when your remote quota was exceeded" className="shadow-xs border-slate-200">
+                <div className="divide-y divide-slate-100 mt-2">
+                  {myQuotaRequests.map(req => (
+                    <div key={req.id} className="py-3 flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <span className="font-mono font-bold text-slate-900 text-sm">{req.date}</span>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-slate-600">Requested: <strong className="text-slate-900 font-bold">{req.requested_mode.replace('_', ' ').toUpperCase()}</strong></span>
+                          {req.period_used != null && req.period_max != null && (
+                            <span className="text-slate-400">| Quota: <strong className="font-mono">{req.period_used}/{req.period_max}</strong></span>
+                          )}
+                          {req.reason && <span className="text-slate-500 italic truncate max-w-[160px]">{req.reason}</span>}
+                        </div>
+                      </div>
+                      <div>
+                        {req.status === 'pending' && <Badge variant="warning">Pending Approval</Badge>}
+                        {req.status === 'approved' && <Badge variant="success">Approved</Badge>}
+                        {req.status === 'rejected' && <Badge variant="error">Rejected</Badge>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Admin review queue for quota exceptions */}
+            {isAdmin && pendingQuotaQueue.length > 0 && (
+              <Card title="Admin Review Queue: Quota Exceptions" subtitle="Review employee requests to exceed their remote quota" className="shadow-sm border-blue-200 bg-blue-50/20">
+                <div className="divide-y divide-slate-200 mt-2">
+                  {pendingQuotaQueue.map(req => {
+                    const emp = (profiles || []).find(p => p.id === req.profile_id);
+                    return (
+                      <div key={req.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div>
+                          <p className="font-extrabold text-slate-900 text-sm">{emp ? `${emp.first_name} ${emp.last_name}` : 'Employee'}</p>
+                          <p className="text-slate-700 mt-0.5">Date: <strong className="font-mono">{req.date}</strong> &rarr; Requesting <strong className="text-[#3D87D3] font-bold">{req.requested_mode.replace('_', ' ').toUpperCase()}</strong></p>
+                          {req.period_used != null && req.period_max != null && (
+                            <p className="text-slate-500 mt-0.5">Quota at request: <strong className="font-mono">{req.period_used}/{req.period_max}</strong>{req.location && <> &bull; Location: <strong>{req.location}</strong></>}</p>
+                          )}
+                          {req.reason && <p className="text-slate-600 italic mt-1 bg-white p-2 rounded border border-slate-200/80">"{req.reason}"</p>}
+                        </div>
+                        <div className="flex items-center space-x-2 shrink-0">
+                          <button 
+                            onClick={() => decideRemoteQuotaRequest(req.id, 'approved')}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold transition-all shadow-2xs"
+                          >
+                            Approve
+                          </button>
+                          <button 
+                            onClick={() => decideRemoteQuotaRequest(req.id, 'rejected')}
                             className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold transition-all border border-rose-200"
                           >
                             Reject
