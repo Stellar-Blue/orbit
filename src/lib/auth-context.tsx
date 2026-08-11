@@ -132,6 +132,7 @@ interface AppState {
   setProfileRole: (profileId: string, jobRoleId: string | null, seniorityId: string | null, validFrom: string) => Promise<boolean>;
   saveRateCard: (c: Partial<RateCard> & { name: string }) => Promise<boolean>;
   deleteRateCard: (id: string) => Promise<boolean>;
+  ensureContractRateCard: (contractId: string) => Promise<string | null>;
   saveRateCardEntry: (e: Omit<RateCardEntry, 'id'> & { id?: string }) => Promise<boolean>;
   deleteRateCardEntry: (id: string) => Promise<boolean>;
   saveProject: (p: Omit<Project, 'id'> & { id?: string }) => Promise<boolean>;
@@ -2658,6 +2659,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (ok) { setRateCards(prev => prev.filter(x => x.id !== id)); setRateCardEntries(prev => prev.filter(e => e.rate_card_id !== id)); }
     return ok;
   };
+
+  // Create (lazily) the rate card owned by a contract, seeded from the global default card.
+  const ensureContractRateCard = async (contractId: string): Promise<string | null> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const existing = rateCards.find(c => c.contract_id === contractId);
+      if (existing) return existing.id;
+      const defaultCard = rateCards.find(c => !c.contract_id && c.is_default) || rateCards.find(c => !c.contract_id);
+      const cardId = generateUUID();
+      await supabase.from('rate_cards').insert({ id: cardId, name: 'Contract rates', currency: 'EUR', contract_id: contractId, is_default: false });
+      if (defaultCard) {
+        const defaults = rateCardEntries.filter(e => e.rate_card_id === defaultCard.id);
+        if (defaults.length > 0) {
+          await supabase.from('rate_card_entries').insert(defaults.map(e => ({
+            id: generateUUID(), rate_card_id: cardId, job_role_id: e.job_role_id, seniority_id: e.seniority_id, hourly_rate: e.hourly_rate, daily_rate: e.daily_rate
+          })));
+        }
+      }
+      const { data: cards } = await supabase.from('rate_cards').select('*');
+      const { data: entries } = await supabase.from('rate_card_entries').select('*');
+      if (cards) setRateCards(cards as RateCard[]);
+      if (entries) setRateCardEntries(entries as RateCardEntry[]);
+      return cardId;
+    } catch (e: any) { console.error('ensureContractRateCard error:', e); return null; }
+  };
   const saveRateCardEntry = async (e: Omit<RateCardEntry, 'id'> & { id?: string }): Promise<boolean> => {
     const row = { id: e.id || generateUUID(), rate_card_id: e.rate_card_id, job_role_id: e.job_role_id, seniority_id: e.seniority_id, hourly_rate: e.hourly_rate ?? null, daily_rate: e.daily_rate ?? null };
     const ok = await upsertRow('rate_card_entries', row, 'rate_card_id,job_role_id,seniority_id');
@@ -3320,6 +3346,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfileRole,
       saveRateCard,
       deleteRateCard,
+      ensureContractRateCard,
       saveRateCardEntry,
       deleteRateCardEntry,
       saveProject,

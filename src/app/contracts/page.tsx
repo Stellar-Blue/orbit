@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
+import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
@@ -21,7 +22,7 @@ const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-gri
 const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   
@@ -30,7 +31,8 @@ export default function ContractsRegistryPage() {
   const [periodFrom, setPeriodFrom] = useState('');
   const [periodTo, setPeriodTo] = useState('');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'projects'>('general');
+  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'projects' | 'ratecard'>('general');
+  const [contractRateCardId, setContractRateCardId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('table');
 
@@ -70,6 +72,14 @@ export default function ContractsRegistryPage() {
       }
     }
   }, [urlId, contracts]);
+
+  // Lazily create the contract's own man-hours rate card (seeded from the global default)
+  useEffect(() => {
+    if (!selectedContract) { setContractRateCardId(null); return; }
+    let cancelled = false;
+    ensureContractRateCard(selectedContract.id).then(id => { if (!cancelled) setContractRateCardId(id); });
+    return () => { cancelled = true; };
+  }, [selectedContract?.id]);
 
   // Sync address bar when contract is selected or closed
   useEffect(() => {
@@ -691,9 +701,31 @@ export default function ContractsRegistryPage() {
                   <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length}</Badge>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setDossierTab('ratecard')}
+                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'ratecard' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <DollarSign className="w-4 h-4 mr-2 text-sky-600" /> Rate Card
+              </button>
             </div>
 
-            {dossierTab === 'projects' ? (
+            {dossierTab === 'ratecard' ? (
+              <div className="pt-3 space-y-4 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-sky-600" /> Man-Hours Rate Card — this contract</h4>
+                    <p className="text-xs text-slate-500">Rates are priced per contract. Seeded from the global default when first opened; edit to override. Used for billing T&M work.</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200"><span className="text-sm font-extrabold text-slate-800">Rate Card Matrix (hourly €)</span></div>
+                  {contractRateCardId ? <RateCardMatrix cardId={contractRateCardId} /> : <div className="p-8 text-center text-xs text-slate-400">Preparing this contract's rate card…</div>}
+                </div>
+              </div>
+            ) : dossierTab === 'projects' ? (
               <ContractProjectsTab contract={selectedContract} />
             ) : dossierTab === 'invoices' ? (
               <div className="space-y-6 pt-3 animate-fadeIn">

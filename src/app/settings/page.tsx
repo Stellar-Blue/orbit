@@ -12,6 +12,7 @@ import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem
 import { TieringSettings } from '@/components/settings/tiering-settings';
 import { IntegrationsSettings } from '@/components/settings/integrations-settings';
 import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
+import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 
 export default function CompanySettingsPage() {
   const { 
@@ -31,20 +32,9 @@ export default function CompanySettingsPage() {
   const [newSeniorityName, setNewSeniorityName] = useState('');
   const [selectedRateCardId, setSelectedRateCardId] = useState('');
   const [newCardName, setNewCardName] = useState('');
-  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
 
-  const activeRateCard = rateCards.find(c => c.id === (selectedRateCardId || rateCards[0]?.id)) || rateCards[0] || null;
-  const commitRate = async (roleId: string, senId: string, raw?: string) => {
-    const cardId = activeRateCard?.id;
-    if (!cardId) return;
-    const existing = rateCardEntries.find(e => e.rate_card_id === cardId && e.job_role_id === roleId && e.seniority_id === senId);
-    const num = parseFloat(raw || '');
-    if (isNaN(num) || num < 0) {
-      if (existing) await deleteRateCardEntry(existing.id);
-      return;
-    }
-    await saveRateCardEntry({ id: existing?.id, rate_card_id: cardId, job_role_id: roleId, seniority_id: senId, hourly_rate: num, daily_rate: null });
-  };
+  const globalRateCards = rateCards.filter(c => !c.contract_id);
+  const activeRateCard = globalRateCards.find(c => c.id === (selectedRateCardId || globalRateCards[0]?.id)) || globalRateCards[0] || null;
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
   const [attioApiKey, setAttioApiKey] = useState('attio_live_key_5572910a9c8d7e6f_stellarblue');
@@ -1440,7 +1430,7 @@ export default function CompanySettingsPage() {
               <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center"><Clock className="w-5 h-5 mr-2 text-sky-600" /> Timesheet Configuration</h2>
               <p className="text-xs text-slate-500 mt-0.5">One view of everything that affects timesheets. Each item is configured at its own source of truth — quick links below.</p>
             </div>
-            <Badge variant="info">{rateCards.length} rate card(s)</Badge>
+            <Badge variant="info">{globalRateCards.length} rate card(s)</Badge>
           </div>
 
           {/* Sources & quick links */}
@@ -1474,48 +1464,15 @@ export default function CompanySettingsPage() {
                 <span className="text-sm font-extrabold text-slate-800">Rate Card Matrix (hourly €)</span>
                 <div className="flex items-center gap-2">
                   <select value={activeRateCard?.id || ''} onChange={e => setSelectedRateCardId(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700">
-                    {rateCards.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (default)' : ''}</option>)}
+                    {globalRateCards.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (default)' : ''}</option>)}
                   </select>
                   <button onClick={async () => { if (activeRateCard && confirm(`Delete rate card "${activeRateCard.name}"?`)) await deleteRateCard(activeRateCard.id); }} className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
               {activeRateCard ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-200">
-                        <th className="py-2 px-3 text-left">Role \ Seniority</th>
-                        {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => <th key={s.id} className="py-2 px-2 text-center">{s.name}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {jobRoles.filter(r => r.active).sort((a, b) => a.sort_order - b.sort_order).map(role => (
-                        <tr key={role.id}>
-                          <td className="py-1.5 px-3 font-semibold text-slate-800">{role.name}</td>
-                          {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(sen => {
-                            const entry = rateCardEntries.find(e => e.rate_card_id === activeRateCard.id && e.job_role_id === role.id && e.seniority_id === sen.id);
-                            const dk = `${role.id}|${sen.id}`;
-                            const val = rateDrafts[dk] !== undefined ? rateDrafts[dk] : (entry?.hourly_rate != null ? String(entry.hourly_rate) : '');
-                            return (
-                              <td key={sen.id} className="py-1.5 px-2 text-center">
-                                <input
-                                  type="number" step="0.5" min="0"
-                                  value={val}
-                                  placeholder="—"
-                                  onChange={ev => setRateDrafts(d => ({ ...d, [dk]: ev.target.value }))}
-                                  onBlur={() => { const raw = rateDrafts[dk]; setRateDrafts(d => { const n = { ...d }; delete n[dk]; return n; }); commitRate(role.id, sen.id, raw); }}
-                                  className="w-20 text-center border border-transparent rounded-md py-1 font-mono focus:outline-none focus:border-sky-400 focus:bg-white bg-slate-50 text-slate-800"
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <RateCardMatrix cardId={activeRateCard.id} />
               ) : (
-                <div className="p-8 text-center text-xs text-slate-400">No rate card yet — create one on the right.</div>
+                <div className="p-8 text-center text-xs text-slate-400">No global rate card yet — create one on the right.</div>
               )}
             </div>
 
@@ -1524,7 +1481,7 @@ export default function CompanySettingsPage() {
                 <span className="text-xs font-extrabold text-slate-800 flex items-center"><Plus className="w-3.5 h-3.5 mr-1.5 text-sky-600" /> New Rate Card</span>
                 <div className="flex gap-2">
                   <input value={newCardName} onChange={e => setNewCardName(e.target.value)} placeholder="Card name…" className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" />
-                  <Button variant="primary" size="sm" onClick={async () => { if (!newCardName.trim()) { alert('Name required.'); return; } await saveRateCard({ name: newCardName.trim(), is_default: rateCards.length === 0 }); setNewCardName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
+                  <Button variant="primary" size="sm" onClick={async () => { if (!newCardName.trim()) { alert('Name required.'); return; } await saveRateCard({ name: newCardName.trim(), is_default: globalRateCards.length === 0 }); setNewCardName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
                 </div>
               </div>
             </div>

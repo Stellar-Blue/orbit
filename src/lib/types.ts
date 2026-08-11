@@ -512,6 +512,7 @@ export interface RateCard {
   id: string;
   name: string;
   currency: string;
+  contract_id?: string | null;
   valid_from?: string | null;
   valid_to?: string | null;
   is_default: boolean;
