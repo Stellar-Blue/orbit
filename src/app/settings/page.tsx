@@ -146,6 +146,7 @@ export default function CompanySettingsPage() {
   // Local state for remote policy form
   const [maxDays, setMaxDays] = useState<number>(8);
   const [periodType, setPeriodType] = useState<PolicyPeriod>('month');
+  const [countsLeave, setCountsLeave] = useState(false);
 
   // Local states for Team management
   const [newTeamName, setNewTeamName] = useState('');
@@ -181,6 +182,7 @@ export default function CompanySettingsPage() {
     if (activeCompanyPolicy) {
       setMaxDays(activeCompanyPolicy.max_days ?? activeCompanyPolicy.max_days_per_month ?? 8);
       setPeriodType(activeCompanyPolicy.period_type || 'month');
+      setCountsLeave(activeCompanyPolicy.counts_leave ?? false);
     }
   }, [activeCompanyPolicy, remotePolicies]);
 
@@ -206,7 +208,8 @@ export default function CompanySettingsPage() {
     try {
       await updateRemotePolicy(activeCompanyPolicy.id, {
         max_days: maxDays,
-        period_type: periodType
+        period_type: periodType,
+        counts_leave: countsLeave
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
@@ -413,6 +416,24 @@ export default function CompanySettingsPage() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Count leave toward the remote quota */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-4">
+                <div>
+                  <span className="text-xs font-extrabold text-slate-800 block">Count approved leave toward the remote quota</span>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    When on, approved leave days in the period are added to remote-day usage. For example, with a quota of 2/week, 3 leave days that week use the whole quota, so no remote work can be declared that week.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCountsLeave(v => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${countsLeave ? 'bg-[#3D87D3]' : 'bg-slate-300'}`}
+                  title={countsLeave ? 'Leave counts toward remote quota' : 'Leave does not count toward remote quota'}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${countsLeave ? 'left-[22px]' : 'left-0.5'}`} />
+                </button>
               </div>
 
               {/* Action Toolbar */}

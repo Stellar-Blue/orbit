@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
+import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { 
   Users, Search, Filter, Download, Lock, ShieldAlert, 
   Mail, Calendar, Briefcase, Plus, Edit2, Check, Trash2 
@@ -828,6 +829,10 @@ export default function PeopleDirectoryPage() {
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                   <span className="text-slate-700 font-bold block text-xs">Timesheet Role & Seniority (effective-dated)</span>
                   <EmployeeRoleAssigner profileId={selectedProfile.id} />
+                </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  <span className="text-slate-700 font-bold block text-xs">Remote Work Quota (per employee — falls back to company default)</span>
+                  <EmployeeRemoteQuota profileId={selectedProfile.id} />
                 </div>
                 <div className="flex items-center justify-between pt-2">
                   {selectedProfile.id !== currentUser.id ? (

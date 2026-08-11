@@ -238,6 +238,7 @@ export interface RemotePolicy {
   max_days_per_month?: number;
   max_days: number;
   period_type: PolicyPeriod;
+  counts_leave?: boolean;
   created_at?: string;
 }
 

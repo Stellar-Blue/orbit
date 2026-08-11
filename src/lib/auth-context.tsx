@@ -109,6 +109,7 @@ interface AppState {
   updateErganiStatus: (id: string, entity: 'leave' | 'remote', status: 'not_required' | 'pending' | 'submitted' | 'needs_amendment') => void;
   saveRemotePattern: (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]) => Promise<boolean>;
   updateRemotePolicy: (id: string, updated: Partial<RemotePolicy>) => Promise<void>;
+  setEmployeeRemoteQuota: (profileId: string, quota: { max_days: number; period_type: RemotePolicy['period_type']; counts_leave: boolean } | null) => Promise<boolean>;
   addRemoteDay: (day: Omit<RemoteDay, 'id'> & { id?: string }) => void;
   bulkAddRemoteDays: (profileId: string, declarations: { date: string; mode: RemoteMode | 'office'; location?: string; note?: string }[]) => Promise<boolean>;
   timesheets: ContractTimesheet[];
@@ -2432,10 +2433,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]): Promise<boolean> => {
     // Enforce Company Remote Quota
+    const employeePolicy = remotePolicies.find(p => p.scope_type === 'employee' && p.scope_id === profileId);
     const companyPolicy = remotePolicies.find(p => p.scope_type === 'company');
-    if (companyPolicy) {
-      const quotaMaxDays = companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8;
-      const quotaPeriod = companyPolicy.period_type || 'month';
+    const effectivePolicy = employeePolicy || companyPolicy;
+    if (effectivePolicy) {
+      const quotaMaxDays = effectivePolicy.max_days ?? effectivePolicy.max_days_per_month ?? 8;
+      const quotaPeriod = effectivePolicy.period_type || 'month';
 
       let maxAllowedWeekly = quotaMaxDays;
       if (quotaPeriod === 'month') maxAllowedWeekly = Math.floor(quotaMaxDays / 4);
@@ -2816,6 +2819,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e: any) {
       console.error("Exception updating remote policy:", e);
       alert("Unexpected error occurred while saving policy.");
+    }
+  };
+
+  // Set (or clear) an employee-specific remote quota. null => delete the row, falling
+  // back to the company default.
+  const setEmployeeRemoteQuota = async (profileId: string, quota: { max_days: number; period_type: RemotePolicy['period_type']; counts_leave: boolean } | null): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const existing = remotePolicies.find(p => p.scope_type === 'employee' && p.scope_id === profileId);
+      if (quota === null) {
+        if (existing) await supabase.from('remote_policies').delete().eq('id', existing.id);
+      } else if (existing) {
+        await supabase.from('remote_policies').update({ max_days: quota.max_days, period_type: quota.period_type, counts_leave: quota.counts_leave }).eq('id', existing.id);
+      } else {
+        await supabase.from('remote_policies').insert({
+          id: generateUUID(), scope_type: 'employee', scope_id: profileId,
+          max_days: quota.max_days, period_type: quota.period_type, counts_leave: quota.counts_leave
+        });
+      }
+      const { data } = await supabase.from('remote_policies').select('*');
+      setRemotePolicies((data || []).map((p: any) => ({ ...p, max_days: p.max_days ?? p.max_days_per_month ?? 8, period_type: p.period_type || 'month' })) as RemotePolicy[]);
+      return true;
+    } catch (e: any) {
+      console.error('setEmployeeRemoteQuota error:', e);
+      alert(`Database Error: ${e.message}`);
+      return false;
     }
   };
 
@@ -3334,6 +3363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateErganiStatus,
       saveRemotePattern,
       updateRemotePolicy,
+      setEmployeeRemoteQuota,
       addRemoteDay,
       bulkAddRemoteDays,
       addTimesheet,

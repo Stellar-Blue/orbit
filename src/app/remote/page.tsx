@@ -79,11 +79,14 @@ export default function RemoteWorkLogPage() {
     );
   }
 
-  // Quota computations based on admin-configured policy
+  // Quota computations based on admin-configured policy (employee-specific overrides company)
+  const employeePolicy = (remotePolicies || []).find(p => p.scope_type === 'employee' && p.scope_id === currentUser.id);
   const companyPolicy = (remotePolicies || []).find(p => p.scope_type === 'company');
-  const quotaMaxDays = companyPolicy ? (companyPolicy.max_days ?? companyPolicy.max_days_per_month ?? 8) : 8;
-  const quotaPeriod = companyPolicy ? (companyPolicy.period_type || 'month') : 'month';
+  const effectivePolicy = employeePolicy || companyPolicy;
+  const quotaMaxDays = effectivePolicy ? (effectivePolicy.max_days ?? effectivePolicy.max_days_per_month ?? 8) : 8;
+  const quotaPeriod = effectivePolicy ? (effectivePolicy.period_type || 'month') : 'month';
   const periodLabel = quotaPeriod === 'week' ? 'Weekly' : quotaPeriod === 'quarter' ? 'Quarterly' : quotaPeriod === 'year' ? 'Annual' : 'Monthly';
+  const countsLeave = effectivePolicy?.counts_leave ?? false;
 
   const getPolicyPeriodKey = (dateStr: string, period: string) => {
     try {
@@ -128,11 +131,45 @@ export default function RemoteWorkLogPage() {
     }
   };
 
+  // Approved leave days overlapping the quota period (used when counts_leave is on)
+  const countLeaveDaysInPeriod = (targetDateStr: string, period: string) => {
+    try {
+      const dObj = parseISO(targetDateStr);
+      let pStart = '', pEnd = '';
+      if (period === 'week') {
+        pStart = format(startOfWeek(dObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+        pEnd = format(endOfWeek(dObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      } else if (period === 'quarter') {
+        const q = Math.floor(dObj.getMonth() / 3) * 3;
+        pStart = format(new Date(dObj.getFullYear(), q, 1), 'yyyy-MM-dd');
+        pEnd = format(new Date(dObj.getFullYear(), q + 3, 0), 'yyyy-MM-dd');
+      } else if (period === 'year') {
+        pStart = format(dObj, 'yyyy-01-01');
+        pEnd = format(dObj, 'yyyy-12-31');
+      } else {
+        pStart = format(dObj, 'yyyy-MM-01');
+        pEnd = format(new Date(dObj.getFullYear(), dObj.getMonth() + 1, 0), 'yyyy-MM-dd');
+      }
+      let count = 0;
+      (leaveRequests || []).forEach(lr => {
+        if (lr.profile_id !== currentUser.id || lr.status !== 'approved') return;
+        const s = lr.start_date < pStart ? pStart : lr.start_date;
+        const e = lr.end_date > pEnd ? pEnd : lr.end_date;
+        if (s <= e) {
+          count += Math.round((parseISO(e).getTime() - parseISO(s).getTime()) / 86400000) + 1;
+        }
+      });
+      return count;
+    } catch {
+      return 0;
+    }
+  };
+
   const activeMonthStr = format(currentMonth, 'yyyy-MM');
   const referenceDateStr = isSameMonth(currentMonth, parseISO(todayStr)) ? todayStr : format(currentMonth, 'yyyy-MM-01');
   const myRemoteDaysCount = useMemo(() => {
-    return getRemoteCountForDatePeriod(referenceDateStr, quotaPeriod);
-  }, [remoteDays, currentUser.id, referenceDateStr, quotaPeriod]);
+    return getRemoteCountForDatePeriod(referenceDateStr, quotaPeriod) + (countsLeave ? countLeaveDaysInPeriod(referenceDateStr, quotaPeriod) : 0);
+  }, [remoteDays, leaveRequests, currentUser.id, referenceDateStr, quotaPeriod, countsLeave]);
 
   const remainingQuota = Math.max(0, quotaMaxDays - myRemoteDaysCount);
   const periodText = quotaPeriod === 'week' 
@@ -325,7 +362,7 @@ export default function RemoteWorkLogPage() {
     } else {
       // Direct declare: strictly enforce admin-configured quota (weekly/monthly/etc.)
       if (targetMode !== 'office' && !isAdmin) {
-        const periodCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod);
+        const periodCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod) + (countsLeave ? countLeaveDaysInPeriod(selectedDateForAction, quotaPeriod) : 0);
         const wasRemote = (remoteDays || []).some(r => r.profile_id === currentUser.id && r.date === selectedDateForAction && r.mode !== 'office');
         if (!wasRemote && periodCountForDate >= quotaMaxDays) {
           alert(`QUOTA EXCEEDED: Your company policy limits remote work to a maximum of ${quotaMaxDays} day(s) per ${quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month'}. You have already reached your quota for this period.`);
@@ -382,6 +419,7 @@ export default function RemoteWorkLogPage() {
             <span className="font-extrabold text-slate-900">
               {myRemoteDaysCount} / {quotaMaxDays} {myRemoteDaysCount === 1 ? 'day' : 'days'} used
             </span>
+            {countsLeave && <span className="text-[10px] font-semibold text-slate-400">incl. approved leave</span>}
             <span className="font-bold text-slate-500">{remainingQuota} remaining {periodText}</span>
           </div>
           {remainingQuota === 0 ? (
