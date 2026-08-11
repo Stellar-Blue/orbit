@@ -4,6 +4,7 @@ import React, { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
+import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
 
 export default function MyProfilePage() {
@@ -381,7 +382,11 @@ function MyProfileInner() {
                 ].map(([label, value]) => (
                   <div key={label as string} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">{label}</div>
-                    <div className="text-sm font-bold text-slate-800 mt-0.5 font-mono">{value || '—'}</div>
+                    {label === 'IBAN' ? (
+                      <BlurredReveal value={value as string | null} className="mt-0.5" />
+                    ) : (
+                      <div className="text-sm font-bold text-slate-800 mt-0.5 font-mono">{value || '—'}</div>
+                    )}
                   </div>
                 ))}
               </div>

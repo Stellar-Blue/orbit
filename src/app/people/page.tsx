@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
+import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { 
@@ -482,7 +483,7 @@ export default function PeopleDirectoryPage() {
                     </div>
                     <div className="col-span-2">
                       <span className="text-slate-500 uppercase font-semibold block">Bank Account IBAN</span>
-                      <span className="text-[#3D87D3] font-mono font-bold text-sm tracking-wider">{selectedProfile.sensitive?.iban || 'GR0000000000000000000000000 (Unset)'}</span>
+                      <BlurredReveal value={selectedProfile.sensitive?.iban} className="mt-1" />
                     </div>
                     <div className="col-span-2">
                       <span className="text-slate-500 uppercase font-semibold block">Registered Residential Address</span>
