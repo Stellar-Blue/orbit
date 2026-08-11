@@ -19,11 +19,32 @@ export default function CompanySettingsPage() {
     teams, profiles, addTeam, updateTeam, deleteTeam,
     leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType,
     catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem,
-    invoiceCategories, addInvoiceCategory, deleteInvoiceCategory
+    invoiceCategories, addInvoiceCategory, deleteInvoiceCategory,
+    jobRoles, seniorityLevels, rateCards, rateCardEntries,
+    saveJobRole, deleteJobRole, saveSeniorityLevel, deleteSeniorityLevel,
+    saveRateCard, deleteRateCard, saveRateCardEntry, deleteRateCardEntry
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'pricing' | 'timesheets' | 'attio' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newSeniorityName, setNewSeniorityName] = useState('');
+  const [selectedRateCardId, setSelectedRateCardId] = useState('');
+  const [newCardName, setNewCardName] = useState('');
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
+
+  const activeRateCard = rateCards.find(c => c.id === (selectedRateCardId || rateCards[0]?.id)) || rateCards[0] || null;
+  const commitRate = async (roleId: string, senId: string, raw?: string) => {
+    const cardId = activeRateCard?.id;
+    if (!cardId) return;
+    const existing = rateCardEntries.find(e => e.rate_card_id === cardId && e.job_role_id === roleId && e.seniority_id === senId);
+    const num = parseFloat(raw || '');
+    if (isNaN(num) || num < 0) {
+      if (existing) await deleteRateCardEntry(existing.id);
+      return;
+    }
+    await saveRateCardEntry({ id: existing?.id, rate_card_id: cardId, job_role_id: roleId, seniority_id: senId, hourly_rate: num, daily_rate: null });
+  };
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
   const [attioApiKey, setAttioApiKey] = useState('attio_live_key_5572910a9c8d7e6f_stellarblue');
@@ -1361,6 +1382,109 @@ export default function CompanySettingsPage() {
         </div>
       )}
 
+      {/* TAB 4.5: TIMESHEET CONFIGURATION */}
+      {selectedTab === 'timesheets' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center"><Clock className="w-5 h-5 mr-2 text-sky-600" /> Timesheet Configuration</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Roles, seniorities, and the rate card used to price logged effort (admin-only financial data).</p>
+            </div>
+            <Badge variant="info">{rateCards.length} rate card(s)</Badge>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            <div className="lg:col-span-2 rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+                <span className="text-sm font-extrabold text-slate-800">Rate Card Matrix (hourly €)</span>
+                <div className="flex items-center gap-2">
+                  <select value={activeRateCard?.id || ''} onChange={e => setSelectedRateCardId(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700">
+                    {rateCards.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (default)' : ''}</option>)}
+                  </select>
+                  <button onClick={async () => { if (activeRateCard && confirm(`Delete rate card "${activeRateCard.name}"?`)) await deleteRateCard(activeRateCard.id); }} className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              </div>
+              {activeRateCard ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-200">
+                        <th className="py-2 px-3 text-left">Role \ Seniority</th>
+                        {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => <th key={s.id} className="py-2 px-2 text-center">{s.name}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {jobRoles.filter(r => r.active).sort((a, b) => a.sort_order - b.sort_order).map(role => (
+                        <tr key={role.id}>
+                          <td className="py-1.5 px-3 font-semibold text-slate-800">{role.name}</td>
+                          {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(sen => {
+                            const entry = rateCardEntries.find(e => e.rate_card_id === activeRateCard.id && e.job_role_id === role.id && e.seniority_id === sen.id);
+                            const dk = `${role.id}|${sen.id}`;
+                            const val = rateDrafts[dk] !== undefined ? rateDrafts[dk] : (entry?.hourly_rate != null ? String(entry.hourly_rate) : '');
+                            return (
+                              <td key={sen.id} className="py-1.5 px-2 text-center">
+                                <input
+                                  type="number" step="0.5" min="0"
+                                  value={val}
+                                  placeholder="—"
+                                  onChange={ev => setRateDrafts(d => ({ ...d, [dk]: ev.target.value }))}
+                                  onBlur={() => { const raw = rateDrafts[dk]; setRateDrafts(d => { const n = { ...d }; delete n[dk]; return n; }); commitRate(role.id, sen.id, raw); }}
+                                  className="w-20 text-center border border-transparent rounded-md py-1 font-mono focus:outline-none focus:border-sky-400 focus:bg-white bg-slate-50 text-slate-800"
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-xs text-slate-400">No rate card yet — create one on the right.</div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 space-y-2">
+                <span className="text-xs font-extrabold text-slate-800 flex items-center"><Plus className="w-3.5 h-3.5 mr-1.5 text-sky-600" /> New Rate Card</span>
+                <div className="flex gap-2">
+                  <input value={newCardName} onChange={e => setNewCardName(e.target.value)} placeholder="Card name…" className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" />
+                  <Button variant="primary" size="sm" onClick={async () => { if (!newCardName.trim()) { alert('Name required.'); return; } await saveRateCard({ name: newCardName.trim(), is_default: rateCards.length === 0 }); setNewCardName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 space-y-2">
+                <span className="text-xs font-extrabold text-slate-800">Job Roles</span>
+                {jobRoles.filter(r => r.active).sort((a, b) => a.sort_order - b.sort_order).map(r => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 px-2 py-1 bg-slate-50 rounded-lg text-xs">
+                    <span className="font-semibold text-slate-700">{r.name}</span>
+                    <button onClick={async () => { if (confirm(`Delete role "${r.name}"?`)) await deleteJobRole(r.id); }} className="text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <input value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="New role…" className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" />
+                  <Button variant="outline" size="sm" onClick={async () => { if (!newRoleName.trim()) { alert('Name required.'); return; } await saveJobRole({ name: newRoleName.trim(), sort_order: (jobRoles.length + 1) * 10 }); setNewRoleName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-4 space-y-2">
+                <span className="text-xs font-extrabold text-slate-800">Seniority Levels</span>
+                {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 px-2 py-1 bg-slate-50 rounded-lg text-xs">
+                    <span className="font-semibold text-slate-700">{s.name}</span>
+                    <button onClick={async () => { if (confirm(`Delete level "${s.name}"?`)) await deleteSeniorityLevel(s.id); }} className="text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <input value={newSeniorityName} onChange={e => setNewSeniorityName(e.target.value)} placeholder="New level…" className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" />
+                  <Button variant="outline" size="sm" onClick={async () => { if (!newSeniorityName.trim()) { alert('Name required.'); return; } await saveSeniorityLevel({ name: newSeniorityName.trim(), rank: seniorityLevels.length + 1 }); setNewSeniorityName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TAB 5: ATTIO CRM API & WEBHOOK CONFIGURATION */}
       {selectedTab === 'attio' && (
         <div className="space-y-8 animate-in fade-in duration-200">
@@ -2270,6 +2394,26 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <Badge variant="info" className="text-[10px] px-1.5 py-0">{catalogItems.length}</Badge>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('timesheets')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'timesheets'
+                  ? 'bg-sky-50/70 border-sky-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'timesheets' ? 'bg-sky-500 text-white shadow-xs' : 'bg-sky-50 text-sky-600'}`}>
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Timesheets</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Roles, seniorities & rate cards</div>
+                </div>
+              </div>
+              <Badge variant="info" className="text-[10px] px-1.5 py-0">{rateCards.length}</Badge>
             </button>
 
             <button

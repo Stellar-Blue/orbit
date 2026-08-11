@@ -10,7 +10,8 @@ import {
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
-  EmployeeContract, SalaryBonus
+  EmployeeContract, SalaryBonus,
+  JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, TimeEntry, TimesheetPeriod
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -114,6 +115,34 @@ interface AppState {
   addTimesheet: (entry: Omit<ContractTimesheet, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => Promise<boolean>;
   updateTimesheet: (id: string, updates: Partial<Pick<ContractTimesheet, 'hours' | 'note' | 'work_date' | 'contract_id' | 'contract_line_id'>>) => Promise<boolean>;
   deleteTimesheet: (id: string) => Promise<boolean>;
+  jobRoles: JobRole[];
+  seniorityLevels: SeniorityLevel[];
+  profileRoleHistory: ProfileRoleHistory[];
+  rateCards: RateCard[];
+  rateCardEntries: RateCardEntry[];
+  projects: Project[];
+  workItems: WorkItem[];
+  projectAssignments: ProjectAssignment[];
+  timeEntries: TimeEntry[];
+  timesheetPeriods: TimesheetPeriod[];
+  saveJobRole: (r: Partial<JobRole> & { name: string }) => Promise<boolean>;
+  deleteJobRole: (id: string) => Promise<boolean>;
+  saveSeniorityLevel: (s: Partial<SeniorityLevel> & { name: string }) => Promise<boolean>;
+  deleteSeniorityLevel: (id: string) => Promise<boolean>;
+  saveRateCard: (c: Partial<RateCard> & { name: string }) => Promise<boolean>;
+  deleteRateCard: (id: string) => Promise<boolean>;
+  saveRateCardEntry: (e: Omit<RateCardEntry, 'id'> & { id?: string }) => Promise<boolean>;
+  deleteRateCardEntry: (id: string) => Promise<boolean>;
+  saveProject: (p: Omit<Project, 'id'> & { id?: string }) => Promise<boolean>;
+  deleteProject: (id: string) => Promise<boolean>;
+  saveWorkItem: (w: Omit<WorkItem, 'id'> & { id?: string }) => Promise<boolean>;
+  deleteWorkItem: (id: string) => Promise<boolean>;
+  saveProjectAssignment: (a: Omit<ProjectAssignment, 'id'> & { id?: string }) => Promise<boolean>;
+  deleteProjectAssignment: (id: string) => Promise<boolean>;
+  saveTimeEntry: (e: Omit<TimeEntry, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => Promise<boolean>;
+  deleteTimeEntry: (id: string) => Promise<boolean>;
+  submitWeek: (profileId: string, from: string, to: string) => Promise<boolean>;
+  decideTimeEntries: (ids: string[], status: 'approved' | 'rejected') => Promise<boolean>;
   requestRemoteAmendment: (payload: { date: string; requested_mode: RemoteMode | 'office'; reason: string; location?: string }) => Promise<boolean>;
   decideRemoteAmendment: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
@@ -189,6 +218,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [remoteDays, setRemoteDays] = useState<RemoteDay[]>([]);
   const [timesheets, setTimesheets] = useState<ContractTimesheet[]>([]);
+  const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
+  const [seniorityLevels, setSeniorityLevels] = useState<SeniorityLevel[]>([]);
+  const [profileRoleHistory, setProfileRoleHistory] = useState<ProfileRoleHistory[]>([]);
+  const [rateCards, setRateCards] = useState<RateCard[]>([]);
+  const [rateCardEntries, setRateCardEntries] = useState<RateCardEntry[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [workItems, setWorkItems] = useState<WorkItem[]>([]);
+  const [projectAssignments, setProjectAssignments] = useState<ProjectAssignment[]>([]);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [timesheetPeriods, setTimesheetPeriods] = useState<TimesheetPeriod[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
@@ -243,7 +282,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           holidaysRes, remoteDaysRes, remotePatternsRes, timesheetsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
-          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes
+          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes,
+          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, timeEntriesRes, timesheetPeriodsRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -280,7 +320,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('integration_settings').select('*'),
           supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true }),
           supabase.from('employee_contracts').select('*'),
-          supabase.from('salary_bonuses').select('*')
+          supabase.from('salary_bonuses').select('*'),
+          supabase.from('job_roles').select('*').order('sort_order', { ascending: true }),
+          supabase.from('seniority_levels').select('*').order('rank', { ascending: true }),
+          supabase.from('profile_role_history').select('*'),
+          supabase.from('rate_cards').select('*'),
+          supabase.from('rate_card_entries').select('*'),
+          supabase.from('projects').select('*'),
+          supabase.from('work_items').select('*'),
+          supabase.from('project_assignments').select('*'),
+          supabase.from('time_entries').select('*'),
+          supabase.from('timesheet_periods').select('*')
         ]);
 
         const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
@@ -455,6 +505,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setEmployeeContracts((contractsRes2?.data || []) as EmployeeContract[]);
         setSalaryBonuses((bonusesRes?.data || []) as SalaryBonus[]);
 
+        setJobRoles((jobRolesRes?.data || []) as JobRole[]);
+        setSeniorityLevels((seniorityLevelsRes?.data || []) as SeniorityLevel[]);
+        setProfileRoleHistory((profileRoleHistoryRes?.data || []) as ProfileRoleHistory[]);
+        setRateCards((rateCardsRes?.data || []) as RateCard[]);
+        setRateCardEntries((rateCardEntriesRes?.data || []) as RateCardEntry[]);
+        setProjects((projectsRes?.data || []) as Project[]);
+        setWorkItems((workItemsRes?.data || []) as WorkItem[]);
+        setProjectAssignments((projectAssignmentsRes?.data || []) as ProjectAssignment[]);
+        setTimeEntries((timeEntriesRes?.data || []) as TimeEntry[]);
+        setTimesheetPeriods((timesheetPeriodsRes?.data || []) as TimesheetPeriod[]);
+
         const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
         setEmployeeIntegrations(myIntegrationRows);
         const myExemptions: IntegrationExemption[] = (exemptionsRes?.data || []) as IntegrationExemption[];
@@ -602,6 +663,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setEntitlements(prev => prev.filter(e => e.profile_id !== profileId));
       setRemoteDays(prev => prev.filter(d => d.profile_id !== profileId));
       setTimesheets(prev => prev.filter(t => t.profile_id !== profileId));
+      setTimeEntries(prev => prev.filter(t => t.profile_id !== profileId));
+      setProjectAssignments(prev => prev.filter(a => a.profile_id !== profileId));
+      setProfileRoleHistory(prev => prev.filter(h => h.profile_id !== profileId));
       setRemotePatterns(prev => prev.filter(p => p.profile_id !== profileId));
       return true;
     } catch (e) {
@@ -2511,6 +2575,165 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // ---- Timesheet v2 (roles, seniorities, rate cards, projects, entries) ----
+  const upsertRow = async (table: string, row: Record<string, any>, conflict?: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await (conflict
+        ? supabase.from(table as any).upsert(row, { onConflict: conflict })
+        : supabase.from(table as any).upsert(row));
+      if (error) { console.error(`Failed to persist ${table}:`, error); alert(`Database Error: ${error.message}`); return false; }
+      return true;
+    } catch (e: any) { console.error(`Exception saving ${table}:`, e); return false; }
+  };
+  const deleteRow = async (table: string, id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from(table as any).delete().eq('id', id);
+      if (error) { console.error(`Failed to delete ${table}:`, error); alert(`Database Error: ${error.message}`); return false; }
+      return true;
+    } catch (e: any) { console.error(`Exception deleting ${table}:`, e); return false; }
+  };
+
+  const saveJobRole = async (r: Partial<JobRole> & { name: string }): Promise<boolean> => {
+    const row = { id: r.id || generateUUID(), name: r.name, active: r.active ?? true, sort_order: r.sort_order ?? 0 };
+    const ok = await upsertRow('job_roles', row);
+    if (ok) setJobRoles(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as JobRole]);
+    return ok;
+  };
+  const deleteJobRole = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('job_roles', id);
+    if (ok) setJobRoles(prev => prev.filter(x => x.id !== id));
+    return ok;
+  };
+
+  const saveSeniorityLevel = async (s: Partial<SeniorityLevel> & { name: string }): Promise<boolean> => {
+    const row = { id: s.id || generateUUID(), name: s.name, rank: s.rank ?? 0, active: s.active ?? true };
+    const ok = await upsertRow('seniority_levels', row);
+    if (ok) setSeniorityLevels(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as SeniorityLevel]);
+    return ok;
+  };
+  const deleteSeniorityLevel = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('seniority_levels', id);
+    if (ok) setSeniorityLevels(prev => prev.filter(x => x.id !== id));
+    return ok;
+  };
+
+  const saveRateCard = async (c: Partial<RateCard> & { name: string }): Promise<boolean> => {
+    const row = { id: c.id || generateUUID(), name: c.name, currency: c.currency || 'EUR', valid_from: c.valid_from || null, valid_to: c.valid_to || null, is_default: c.is_default ?? false, notes: c.notes || null };
+    const ok = await upsertRow('rate_cards', row);
+    if (ok) setRateCards(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as RateCard]);
+    return ok;
+  };
+  const deleteRateCard = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('rate_cards', id);
+    if (ok) { setRateCards(prev => prev.filter(x => x.id !== id)); setRateCardEntries(prev => prev.filter(e => e.rate_card_id !== id)); }
+    return ok;
+  };
+  const saveRateCardEntry = async (e: Omit<RateCardEntry, 'id'> & { id?: string }): Promise<boolean> => {
+    const row = { id: e.id || generateUUID(), rate_card_id: e.rate_card_id, job_role_id: e.job_role_id, seniority_id: e.seniority_id, hourly_rate: e.hourly_rate ?? null, daily_rate: e.daily_rate ?? null };
+    const ok = await upsertRow('rate_card_entries', row, 'rate_card_id,job_role_id,seniority_id');
+    if (ok) setRateCardEntries(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as RateCardEntry]);
+    return ok;
+  };
+  const deleteRateCardEntry = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('rate_card_entries', id);
+    if (ok) setRateCardEntries(prev => prev.filter(x => x.id !== id));
+    return ok;
+  };
+
+  const saveProject = async (p: Omit<Project, 'id'> & { id?: string }): Promise<boolean> => {
+    const row = { id: p.id || generateUUID(), contract_id: p.contract_id || null, name: p.name, code: p.code || null, status: p.status || 'active', owner_profile_id: p.owner_profile_id || null, default_billable: p.default_billable !== false, budget_hours: p.budget_hours ?? null, budget_value: p.budget_value ?? null, starts_on: p.starts_on || null, ends_on: p.ends_on || null };
+    const ok = await upsertRow('projects', row);
+    if (ok) setProjects(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as Project]);
+    return ok;
+  };
+  const deleteProject = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('projects', id);
+    if (ok) { setProjects(prev => prev.filter(x => x.id !== id)); setWorkItems(prev => prev.filter(w => w.project_id !== id)); setProjectAssignments(prev => prev.filter(a => a.project_id !== id)); }
+    return ok;
+  };
+
+  const saveWorkItem = async (w: Omit<WorkItem, 'id'> & { id?: string }): Promise<boolean> => {
+    const row = { id: w.id || generateUUID(), project_id: w.project_id, name: w.name, kind: w.kind || 'feature', linear_issue_id: w.linear_issue_id || null, status: w.status || 'open', budget_hours: w.budget_hours ?? null };
+    const ok = await upsertRow('work_items', row);
+    if (ok) setWorkItems(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as WorkItem]);
+    return ok;
+  };
+  const deleteWorkItem = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('work_items', id);
+    if (ok) setWorkItems(prev => prev.filter(x => x.id !== id));
+    return ok;
+  };
+
+  const saveProjectAssignment = async (a: Omit<ProjectAssignment, 'id'> & { id?: string }): Promise<boolean> => {
+    const row = { id: a.id || generateUUID(), project_id: a.project_id, profile_id: a.profile_id, job_role_id: a.job_role_id, seniority_id: a.seniority_id, rate_override: a.rate_override ?? null, valid_from: a.valid_from || null, valid_to: a.valid_to || null };
+    const ok = await upsertRow('project_assignments', row, 'project_id,profile_id');
+    if (ok) setProjectAssignments(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as ProjectAssignment]);
+    return ok;
+  };
+  const deleteProjectAssignment = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('project_assignments', id);
+    if (ok) setProjectAssignments(prev => prev.filter(x => x.id !== id));
+    return ok;
+  };
+
+  const saveTimeEntry = async (e: Omit<TimeEntry, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<boolean> => {
+    const row: any = {
+      id: e.id || generateUUID(),
+      profile_id: e.profile_id,
+      work_date: e.work_date,
+      minutes: Math.round(Number(e.minutes) || 0),
+      project_id: e.project_id,
+      work_item_id: e.work_item_id || null,
+      note: e.note || null,
+      billable: e.billable !== false,
+      status: e.status || 'draft',
+      currency: e.currency || 'EUR',
+      anomaly_flags: e.anomaly_flags || []
+    };
+    const ok = await upsertRow('time_entries', row, 'profile_id,work_date,project_id,work_item_id');
+    if (ok) setTimeEntries(prev => {
+      const filtered = prev.filter(t => !(t.profile_id === row.profile_id && t.work_date === row.work_date && t.project_id === row.project_id && (t.work_item_id || null) === row.work_item_id));
+      return [row as TimeEntry, ...filtered];
+    });
+    return ok;
+  };
+  const deleteTimeEntry = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('time_entries', id);
+    if (ok) setTimeEntries(prev => prev.filter(t => t.id !== id));
+    return ok;
+  };
+
+  const submitWeek = async (profileId: string, from: string, to: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('time_entries' as any)
+        .update({ status: 'submitted', submitted_at: new Date().toISOString() })
+        .eq('profile_id', profileId)
+        .gte('work_date', from).lte('work_date', to)
+        .in('status', ['draft', 'rejected']);
+      if (error) { alert(`Database Error: ${error.message}`); return false; }
+      setTimeEntries(prev => prev.map(t =>
+        (t.profile_id === profileId && t.work_date >= from && t.work_date <= to && (t.status === 'draft' || t.status === 'rejected'))
+          ? { ...t, status: 'submitted' as const, submitted_at: new Date().toISOString() } : t));
+      return true;
+    } catch (e: any) { console.error('submitWeek error:', e); return false; }
+  };
+
+  const decideTimeEntries = async (ids: string[], status: 'approved' | 'rejected'): Promise<boolean> => {
+    if (ids.length === 0) return true;
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('time_entries' as any)
+        .update({ status, decided_by: currentUser.id, decided_at: new Date().toISOString() })
+        .in('id', ids).eq('status', 'submitted');
+      if (error) { alert(`Database Error: ${error.message}`); return false; }
+      setTimeEntries(prev => prev.map(t => ids.includes(t.id) ? { ...t, status, decided_by: currentUser.id, decided_at: new Date().toISOString() } : t));
+      return true;
+    } catch (e: any) { console.error('decideTimeEntries error:', e); return false; }
+  };
+
   const updateRemotePolicy = async (id: string, updated: Partial<RemotePolicy>) => {
     try {
       const supabase = getSupabaseBrowserClient();
@@ -2957,6 +3180,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       publicHolidays,
       remoteDays,
       timesheets,
+      jobRoles,
+      seniorityLevels,
+      profileRoleHistory,
+      rateCards,
+      rateCardEntries,
+      projects,
+      workItems,
+      projectAssignments,
+      timeEntries,
+      timesheetPeriods,
       remotePatterns,
       remotePolicies,
       remoteAmendmentRequests,
@@ -3039,6 +3272,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addTimesheet,
       updateTimesheet,
       deleteTimesheet,
+      saveJobRole,
+      deleteJobRole,
+      saveSeniorityLevel,
+      deleteSeniorityLevel,
+      saveRateCard,
+      deleteRateCard,
+      saveRateCardEntry,
+      deleteRateCardEntry,
+      saveProject,
+      deleteProject,
+      saveWorkItem,
+      deleteWorkItem,
+      saveProjectAssignment,
+      deleteProjectAssignment,
+      saveTimeEntry,
+      deleteTimeEntry,
+      submitWeek,
+      decideTimeEntries,
       requestRemoteAmendment,
       decideRemoteAmendment,
       editLeaveRequest,

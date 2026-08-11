@@ -44,6 +44,7 @@ export interface Profile {
   work_schedule: string[];
   role: UserRole; // joined from user_roles
   seniority_level?: 'junior' | 'mid' | 'senior';
+  contracted_weekly_hours?: number | null;
   onboarding_completed_at?: string | null; // integration onboarding gate marker
   sensitive?: ProfileSensitive; // admin only
 }
@@ -478,6 +479,134 @@ export interface ContractTimesheet {
   contract?: Contract;
   contract_line?: ContractLine;
   profile?: Profile;
+}
+
+// --- Timesheet v2 (§13 of orbit-timesheet-requirements.md) ---
+export interface JobRole {
+  id: string;
+  name: string;
+  active: boolean;
+  sort_order: number;
+  created_at?: string;
+}
+
+export interface SeniorityLevel {
+  id: string;
+  name: string;
+  rank: number;
+  active: boolean;
+  created_at?: string;
+}
+
+export interface ProfileRoleHistory {
+  id: string;
+  profile_id: string;
+  job_role_id: string;
+  seniority_id: string;
+  valid_from: string;
+  valid_to?: string | null;
+  created_at?: string;
+}
+
+export interface RateCard {
+  id: string;
+  name: string;
+  currency: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  is_default: boolean;
+  notes?: string | null;
+  created_at?: string;
+}
+
+export interface RateCardEntry {
+  id: string;
+  rate_card_id: string;
+  job_role_id: string;
+  seniority_id: string;
+  hourly_rate?: number | null;
+  daily_rate?: number | null;
+  created_at?: string;
+}
+
+export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'archived';
+export interface Project {
+  id: string;
+  contract_id?: string | null;
+  name: string;
+  code?: string | null;
+  status: ProjectStatus;
+  owner_profile_id?: string | null;
+  default_billable: boolean;
+  budget_hours?: number | null;
+  budget_value?: number | null;
+  starts_on?: string | null;
+  ends_on?: string | null;
+  created_at?: string;
+  contract?: Contract;
+  owner_profile?: Profile;
+}
+
+export type WorkItemKind = 'feature' | 'epic' | 'task' | 'workstream';
+export interface WorkItem {
+  id: string;
+  project_id: string;
+  name: string;
+  kind: WorkItemKind;
+  linear_issue_id?: string | null;
+  status: 'open' | 'in_progress' | 'done' | 'blocked';
+  budget_hours?: number | null;
+  created_at?: string;
+}
+
+export interface ProjectAssignment {
+  id: string;
+  project_id: string;
+  profile_id: string;
+  job_role_id: string;
+  seniority_id: string;
+  rate_override?: number | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  created_at?: string;
+}
+
+export type TimeEntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'locked';
+export interface TimeEntry {
+  id: string;
+  profile_id: string;
+  work_date: string; // YYYY-MM-DD
+  minutes: number;
+  project_id: string;
+  work_item_id?: string | null;
+  note?: string | null;
+  billable: boolean;
+  status: TimeEntryStatus;
+  job_role_id?: string | null;
+  seniority_id?: string | null;
+  billing_rate?: number | null;
+  rate_source?: string | null;
+  cost_rate?: number | null;
+  currency: string;
+  submitted_at?: string | null;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  locked_at?: string | null;
+  invoice_id?: string | null;
+  anomaly_flags?: unknown[];
+  created_at?: string;
+  updated_at?: string;
+  project?: Project;
+  work_item?: WorkItem;
+}
+
+export interface TimesheetPeriod {
+  id: string;
+  period: string; // YYYY-MM
+  status: 'open' | 'closed';
+  closed_by?: string | null;
+  closed_at?: string | null;
+  created_at?: string;
 }
 
 export interface ContractSchedule {
