@@ -12,6 +12,7 @@ import {
   ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Copy, Users, Share2
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
+import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
@@ -20,7 +21,7 @@ const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-gri
 const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   
@@ -29,7 +30,7 @@ export default function ContractsRegistryPage() {
   const [periodFrom, setPeriodFrom] = useState('');
   const [periodTo, setPeriodTo] = useState('');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices'>('general');
+  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'projects'>('general');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('table');
 
@@ -678,9 +679,23 @@ export default function ContractsRegistryPage() {
                   <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{invoices?.filter(i => i.contract_id === selectedContract.id).length}</Badge>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setDossierTab('projects')}
+                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'projects' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="w-4 h-4 mr-2 text-sky-600" /> Projects
+                {projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length > 0 && (
+                  <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length}</Badge>
+                )}
+              </button>
             </div>
 
-            {dossierTab === 'invoices' ? (
+            {dossierTab === 'projects' ? (
+              <ContractProjectsTab contract={selectedContract} />
+            ) : dossierTab === 'invoices' ? (
               <div className="space-y-6 pt-3 animate-fadeIn">
                 {(() => {
                   const linkedInvoices = (invoices || []).filter(i => i.contract_id === selectedContract.id && i.status !== 'cancelled');

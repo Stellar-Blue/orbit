@@ -571,6 +571,16 @@ export interface ProjectAssignment {
   created_at?: string;
 }
 
+export interface ProjectRoleForecast {
+  id: string;
+  project_id: string;
+  job_role_id: string;
+  seniority_id: string;
+  forecast_hours: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export type TimeEntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'locked';
 export interface TimeEntry {
   id: string;

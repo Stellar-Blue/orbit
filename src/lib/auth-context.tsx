@@ -11,7 +11,7 @@ import {
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
   EmployeeContract, SalaryBonus,
-  JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, TimeEntry, TimesheetPeriod
+  JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -139,6 +139,9 @@ interface AppState {
   deleteWorkItem: (id: string) => Promise<boolean>;
   saveProjectAssignment: (a: Omit<ProjectAssignment, 'id'> & { id?: string }) => Promise<boolean>;
   deleteProjectAssignment: (id: string) => Promise<boolean>;
+  projectRoleForecasts: ProjectRoleForecast[];
+  saveProjectRoleForecast: (e: Omit<ProjectRoleForecast, 'id'> & { id?: string }) => Promise<boolean>;
+  deleteProjectRoleForecast: (id: string) => Promise<boolean>;
   saveTimeEntry: (e: Omit<TimeEntry, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => Promise<boolean>;
   deleteTimeEntry: (id: string) => Promise<boolean>;
   submitWeek: (profileId: string, from: string, to: string) => Promise<boolean>;
@@ -226,6 +229,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [projects, setProjects] = useState<Project[]>([]);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [projectAssignments, setProjectAssignments] = useState<ProjectAssignment[]>([]);
+  const [projectRoleForecasts, setProjectRoleForecasts] = useState<ProjectRoleForecast[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timesheetPeriods, setTimesheetPeriods] = useState<TimesheetPeriod[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
@@ -283,7 +287,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
           integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes,
-          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, timeEntriesRes, timesheetPeriodsRes
+          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -329,6 +333,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('projects').select('*'),
           supabase.from('work_items').select('*'),
           supabase.from('project_assignments').select('*'),
+          supabase.from('project_role_forecasts').select('*'),
           supabase.from('time_entries').select('*'),
           supabase.from('timesheet_periods').select('*')
         ]);
@@ -513,6 +518,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProjects((projectsRes?.data || []) as Project[]);
         setWorkItems((workItemsRes?.data || []) as WorkItem[]);
         setProjectAssignments((projectAssignmentsRes?.data || []) as ProjectAssignment[]);
+        setProjectRoleForecasts((projectRoleForecastsRes?.data || []) as ProjectRoleForecast[]);
         setTimeEntries((timeEntriesRes?.data || []) as TimeEntry[]);
         setTimesheetPeriods((timesheetPeriodsRes?.data || []) as TimesheetPeriod[]);
 
@@ -2650,7 +2656,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const deleteProject = async (id: string): Promise<boolean> => {
     const ok = await deleteRow('projects', id);
-    if (ok) { setProjects(prev => prev.filter(x => x.id !== id)); setWorkItems(prev => prev.filter(w => w.project_id !== id)); setProjectAssignments(prev => prev.filter(a => a.project_id !== id)); }
+    if (ok) { setProjects(prev => prev.filter(x => x.id !== id)); setWorkItems(prev => prev.filter(w => w.project_id !== id)); setProjectAssignments(prev => prev.filter(a => a.project_id !== id)); setProjectRoleForecasts(prev => prev.filter(f => f.project_id !== id)); }
     return ok;
   };
 
@@ -2675,6 +2681,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteProjectAssignment = async (id: string): Promise<boolean> => {
     const ok = await deleteRow('project_assignments', id);
     if (ok) setProjectAssignments(prev => prev.filter(x => x.id !== id));
+    return ok;
+  };
+
+  const saveProjectRoleForecast = async (e: Omit<ProjectRoleForecast, 'id'> & { id?: string }): Promise<boolean> => {
+    const row = { id: e.id || generateUUID(), project_id: e.project_id, job_role_id: e.job_role_id, seniority_id: e.seniority_id, forecast_hours: Number(e.forecast_hours) || 0 };
+    const ok = await upsertRow('project_role_forecasts', row, 'project_id,job_role_id,seniority_id');
+    if (ok) setProjectRoleForecasts(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as ProjectRoleForecast]);
+    return ok;
+  };
+  const deleteProjectRoleForecast = async (id: string): Promise<boolean> => {
+    const ok = await deleteRow('project_role_forecasts', id);
+    if (ok) setProjectRoleForecasts(prev => prev.filter(x => x.id !== id));
     return ok;
   };
 
@@ -3188,6 +3206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       projects,
       workItems,
       projectAssignments,
+      projectRoleForecasts,
       timeEntries,
       timesheetPeriods,
       remotePatterns,
@@ -3286,6 +3305,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteWorkItem,
       saveProjectAssignment,
       deleteProjectAssignment,
+      saveProjectRoleForecast,
+      deleteProjectRoleForecast,
       saveTimeEntry,
       deleteTimeEntry,
       submitWeek,
