@@ -129,6 +129,7 @@ interface AppState {
   deleteJobRole: (id: string) => Promise<boolean>;
   saveSeniorityLevel: (s: Partial<SeniorityLevel> & { name: string }) => Promise<boolean>;
   deleteSeniorityLevel: (id: string) => Promise<boolean>;
+  setProfileRole: (profileId: string, jobRoleId: string | null, seniorityId: string | null, validFrom: string) => Promise<boolean>;
   saveRateCard: (c: Partial<RateCard> & { name: string }) => Promise<boolean>;
   deleteRateCard: (id: string) => Promise<boolean>;
   saveRateCardEntry: (e: Omit<RateCardEntry, 'id'> & { id?: string }) => Promise<boolean>;
@@ -2625,6 +2626,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return ok;
   };
 
+  // Assign an employee a (role, seniority) from an effective date. Effective-dated:
+  // closes any open history row the day before, then inserts the new one (never edits).
+  const setProfileRole = async (profileId: string, jobRoleId: string | null, seniorityId: string | null, validFrom: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const closeDate = (() => { const d = new Date(validFrom + 'T00:00:00'); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+      const openRows = profileRoleHistory.filter(h => h.profile_id === profileId && !h.valid_to);
+      for (const h of openRows) {
+        await supabase.from('profile_role_history').update({ valid_to: closeDate }).eq('id', h.id);
+      }
+      if (jobRoleId && seniorityId) {
+        await supabase.from('profile_role_history').insert({
+          id: generateUUID(), profile_id: profileId, job_role_id: jobRoleId, seniority_id: seniorityId, valid_from: validFrom, valid_to: null
+        });
+      }
+      const { data } = await supabase.from('profile_role_history').select('*').eq('profile_id', profileId);
+      setProfileRoleHistory(prev => [...prev.filter(h => h.profile_id !== profileId), ...((data || []) as ProfileRoleHistory[])]);
+      return true;
+    } catch (e: any) { console.error('setProfileRole error:', e); alert(`Database Error: ${e.message}`); return false; }
+  };
+
   const saveRateCard = async (c: Partial<RateCard> & { name: string }): Promise<boolean> => {
     const row = { id: c.id || generateUUID(), name: c.name, currency: c.currency || 'EUR', valid_from: c.valid_from || null, valid_to: c.valid_to || null, is_default: c.is_default ?? false, notes: c.notes || null };
     const ok = await upsertRow('rate_cards', row);
@@ -3295,6 +3317,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteJobRole,
       saveSeniorityLevel,
       deleteSeniorityLevel,
+      setProfileRole,
       saveRateCard,
       deleteRateCard,
       saveRateCardEntry,

@@ -12,6 +12,7 @@ import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem
 import { TieringSettings } from '@/components/settings/tiering-settings';
 import { IntegrationsSettings } from '@/components/settings/integrations-settings';
 import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
+import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 
 export default function CompanySettingsPage() {
   const { 
@@ -1480,6 +1481,26 @@ export default function CompanySettingsPage() {
                   <Button variant="outline" size="sm" onClick={async () => { if (!newSeniorityName.trim()) { alert('Name required.'); return; } await saveSeniorityLevel({ name: newSeniorityName.trim(), rank: seniorityLevels.length + 1 }); setNewSeniorityName(''); }} className="cursor-pointer"><Plus className="w-3.5 h-3.5" /></Button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Employee role & seniority assignments */}
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-5">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-extrabold text-slate-800">Employee Role & Seniority Assignments</span>
+              <Badge variant="info">{profiles.length} people</Badge>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">Effective-dated: assigning a new role closes the previous one from the effective date onward — history is preserved for correct billing.</p>
+            <div className="divide-y divide-slate-100">
+              {profiles.map(p => (
+                <div key={p.id} className="py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                  <div className="min-w-[180px]">
+                    <div className="text-xs font-bold text-slate-800">{p.first_name} {p.last_name}</div>
+                    <div className="text-[10px] text-slate-400">{p.title}</div>
+                  </div>
+                  <div className="flex-1"><EmployeeRoleAssigner key={p.id} profileId={p.id} compact /></div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
+import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 import { 
   Users, Search, Filter, Download, Lock, ShieldAlert, 
   Mail, Calendar, Briefcase, Plus, Edit2, Check, Trash2 
@@ -17,7 +18,8 @@ const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(
 
 export default function PeopleDirectoryPage() {
   const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile, employeeIntegrations,
-    employeeContracts, addEmployeeContract, updateEmployeeContract, salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus } = useAuth();
+    employeeContracts, addEmployeeContract, updateEmployeeContract, salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus,
+    jobRoles, seniorityLevels, profileRoleHistory } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -416,6 +418,17 @@ export default function PeopleDirectoryPage() {
                       <Badge variant="neutral" className="mt-0.5 uppercase">{(selectedProfile.seniority_level || 'mid')}</Badge>
                     </div>
                     <div>
+                      <span className="text-slate-500 uppercase font-semibold block">Role / Seniority</span>
+                      {(() => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        const row = profileRoleHistory.filter(h => h.profile_id === selectedProfile.id && h.valid_from <= today && (!h.valid_to || h.valid_to >= today)).sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
+                        if (!row) return <Badge variant="neutral" className="mt-0.5">Unassigned</Badge>;
+                        const rn = jobRoles.find(r => r.id === row.job_role_id)?.name;
+                        const sn = seniorityLevels.find(s => s.id === row.seniority_id)?.name;
+                        return <Badge variant="info" className="mt-0.5">{rn || 'Role'} · {sn || 'Seniority'}</Badge>;
+                      })()}
+                    </div>
+                    <div>
                       <span className="text-slate-500 uppercase font-semibold block">Assigned Team</span>
                       <span className="text-slate-700 font-medium">{getTeamName(selectedProfile.team_id)}</span>
                     </div>
@@ -811,6 +824,10 @@ export default function PeopleDirectoryPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  <span className="text-slate-700 font-bold block text-xs">Timesheet Role & Seniority (effective-dated)</span>
+                  <EmployeeRoleAssigner profileId={selectedProfile.id} />
                 </div>
                 <div className="flex items-center justify-between pt-2">
                   {selectedProfile.id !== currentUser.id ? (
