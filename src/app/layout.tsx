@@ -4,6 +4,7 @@ import { Outfit } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { AppLayoutWrapper } from "@/components/layout/app-layout-wrapper";
+import { ValidationHost } from "@/lib/validation-modal";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -31,6 +32,7 @@ export default function RootLayout({
             {children}
           </AppLayoutWrapper>
         </AuthProvider>
+        <ValidationHost />
       </body>
     </html>
   );

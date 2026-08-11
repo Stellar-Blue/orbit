@@ -12,6 +12,7 @@ import {
   format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, 
   startOfWeek, endOfWeek, isSameMonth, isSameDay, addMonths, subMonths, addDays 
 } from 'date-fns';
+import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 
 export default function RemoteWorkLogPage() {
   const { 
@@ -333,7 +334,7 @@ export default function RemoteWorkLogPage() {
 
     const success = await bulkAddRemoteDays(currentUser.id, declarations);
     if (success) {
-      alert(`⚡ Successfully applied your default pattern to ${declarations.filter(d => d.mode !== 'office').length} remote working days across the selected ${periodType}!`);
+      notifySuccess(`Applied your default pattern to ${declarations.filter(d => d.mode !== 'office').length} remote working day(s) across the selected ${periodType}.`);
     }
   };
 
@@ -362,10 +363,24 @@ export default function RemoteWorkLogPage() {
     } else {
       // Direct declare: strictly enforce admin-configured quota (weekly/monthly/etc.)
       if (targetMode !== 'office' && !isAdmin) {
-        const periodCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod) + (countsLeave ? countLeaveDaysInPeriod(selectedDateForAction, quotaPeriod) : 0);
+        const remoteCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod);
+        const leaveCountForDate = countsLeave ? countLeaveDaysInPeriod(selectedDateForAction, quotaPeriod) : 0;
+        const periodCountForDate = remoteCountForDate + leaveCountForDate;
         const wasRemote = (remoteDays || []).some(r => r.profile_id === currentUser.id && r.date === selectedDateForAction && r.mode !== 'office');
         if (!wasRemote && periodCountForDate >= quotaMaxDays) {
-          alert(`QUOTA EXCEEDED: Your company policy limits remote work to a maximum of ${quotaMaxDays} day(s) per ${quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month'}. You have already reached your quota for this period.`);
+          const periodNoun = quotaPeriod === 'week' ? 'week' : quotaPeriod === 'quarter' ? 'quarter' : quotaPeriod === 'year' ? 'year' : 'month';
+          notifyValidation({
+            type: 'error',
+            title: 'Remote quota exceeded',
+            message: (leaveCountForDate > 0 && remoteCountForDate < quotaMaxDays)
+              ? `Approved leave fills your ${periodLabel.toLowerCase()} remote-work quota (${quotaMaxDays} day(s) per ${periodNoun}), so no remote day can be added this period.`
+              : `You've reached your ${periodLabel.toLowerCase()} remote-work quota (${quotaMaxDays} day(s) per ${periodNoun}). No more remote days can be added this period.`,
+            items: [
+              { label: 'Remote days used', value: `${remoteCountForDate} / ${quotaMaxDays}` },
+              ...(countsLeave ? [{ label: 'Approved leave counted', value: String(leaveCountForDate) }] : []),
+              { label: 'Total toward quota', value: String(periodCountForDate) },
+            ]
+          });
           return;
         }
       }
@@ -507,7 +522,7 @@ export default function RemoteWorkLogPage() {
                 onClick={async () => {
                   const patternEntries = Object.entries(pattern).map(([weekday, mode]) => ({ weekday, mode }));
                   const success = await saveRemotePattern(currentUser.id, patternEntries);
-                  if (success) alert('Default pattern template successfully saved to PostgreSQL!');
+                  if (success) notifySuccess('Your default pattern template was saved.');
                 }}
               >
                 Save Pattern Template

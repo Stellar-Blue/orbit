@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
@@ -160,7 +161,7 @@ export default function ContractsRegistryPage() {
       };
       updateContract(updated);
       setSelectedContract(updated);
-      alert(`Document "${file.name}" uploaded to Supabase Storage and linked to contract record!`);
+      notifySuccess(`Document "${file.name}" attached to the contract.`);
     } else {
       alert("Error processing document attachment.");
     }
@@ -993,7 +994,7 @@ export default function ContractsRegistryPage() {
                       size="sm"
                       onClick={() => {
                         updateContract(selectedContract);
-                        alert("General terms and contract metadata successfully updated!");
+                        notifySuccess('Contract updated.');
                       }}
                       className="shadow-sm font-bold bg-[#3D87D3] hover:bg-[#3476B8] cursor-pointer"
                     >

@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
@@ -176,7 +177,7 @@ export default function LeaveManagementPage() {
     }, currentUser.work_schedule, publicHolidays);
 
     setIsRequestOpen(false);
-    alert('Leave request submitted successfully!');
+    notifySuccess('Leave request submitted.');
   };
 
   // Grid View & Export state

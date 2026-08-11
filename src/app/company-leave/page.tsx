@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { DateRangePicker } from '@/components/leave/date-range-picker';
 import { ProfileAvatar } from '@/components/ui/profile-avatar';
@@ -329,7 +330,7 @@ export default function CompanyLeaveManagementPage() {
     }, targetEmp.work_schedule || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], publicHolidays);
     setIsAddEmployeeLeaveOpen(false);
     setAddEmpNote('');
-    alert('Employee leave record added successfully!');
+    notifySuccess('Leave record added.');
   };
 
   // Handle Save Leave Category
@@ -355,10 +356,10 @@ export default function CompanyLeaveManagementPage() {
 
     if (catEditingId) {
       await updateLeaveType(catEditingId, payload);
-      alert('Leave category updated successfully!');
+      notifySuccess('Leave category updated.');
     } else {
       await addLeaveType(payload);
-      alert('New leave category created! Employees can now select this option when applying for leave.');
+      notifySuccess('New leave category created.');
     }
     setIsCategoryModalOpen(false);
   };

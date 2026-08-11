@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Invoice, InvoiceDirection, InvoiceType, InvoiceStatus, Contract, Counterparty } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
@@ -346,7 +347,7 @@ export default function InvoicesRegistryPage() {
         });
       }
       await addInvoiceDocument(invId, { invoice_id: invId, storage_path: path, file_name: file.name, version: 1, url: documentUrl });
-      alert('Invoice attachment successfully linked and archived!');
+      notifySuccess('Invoice attachment linked.');
     } catch (err: any) {
       console.error('Document upload error:', err);
     }
@@ -1412,7 +1413,7 @@ export default function InvoicesRegistryPage() {
                       setEditingInvoiceId(null);
                       setNewInvNumber('');
                       setNewNotes('');
-                      alert('Invoice updated successfully!');
+                      notifySuccess('Invoice updated.');
                     }
                     return;
                   }
@@ -1444,7 +1445,7 @@ export default function InvoicesRegistryPage() {
                     setIsRegisterModalOpen(false);
                     setNewInvNumber('');
                     setNewNotes('');
-                    alert('Invoice successfully recorded in Orbit archive!');
+                    notifySuccess('Invoice recorded in the archive.');
                   }
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/20"
@@ -1524,7 +1525,7 @@ export default function InvoicesRegistryPage() {
                   }
                   await recordInvoicePayment(payingInvoice.id, payDate, payAmount, payBankRef, payNote);
                   setPayingInvoice(null);
-                  alert('Payment milestone recorded successfully! Invoice status automatically re-computed.');
+                  notifySuccess('Payment milestone recorded. Invoice status updated.');
                 }}
                 className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/20"
               >

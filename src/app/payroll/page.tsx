@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { Card, Button, Badge, StatCard, Modal } from '@/components/ui/primitives';
 import { 
   DollarSign, Download, Plus, Sparkles, ShieldAlert, 
@@ -59,7 +60,7 @@ export default function PayrollPage() {
       note: salForm.note.trim() || undefined,
     });
     setEditSalaryId(null);
-    alert('Salary record updated.');
+    notifySuccess('Salary record updated.');
   };
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
@@ -253,7 +254,7 @@ export default function PayrollPage() {
     for (const m of months) {
       await markAllPaidForPeriod(m);
     }
-    alert(`All draft rows for ${periodLabel} marked as PAID!`);
+    notifySuccess(`All draft rows for ${periodLabel} marked as paid.`);
   };
 
   // One-click Accountant Package Export (XLSX + optional ZIP of receipts)

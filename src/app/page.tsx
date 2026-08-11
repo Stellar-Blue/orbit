@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
+import { notifySuccess } from '@/lib/validation-modal';
 
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
@@ -326,7 +327,7 @@ export default function DashboardPage() {
     if (newInv) {
       const compositeKey = `${item.contractId}::${item.periodKey}`;
       setGeneratedDraftIds(prev => ({ ...prev, [compositeKey]: newInv.id }));
-      alert(`Draft invoice #${invNumber} generated for ${item.counterpartyName} — period ${item.periodLabel} (€${item.expectedAmount.toLocaleString()})!`);
+      notifySuccess(`Draft invoice #${invNumber} created for ${item.counterpartyName} (${item.periodLabel}).`);
     }
   };
 

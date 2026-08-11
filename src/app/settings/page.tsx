@@ -14,6 +14,7 @@ import { IntegrationsSettings } from '@/components/settings/integrations-setting
 import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
+import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 
 export default function CompanySettingsPage() {
   const { 
@@ -201,7 +202,7 @@ export default function CompanySettingsPage() {
 
   const handleSaveRemotePolicy = async () => {
     if (!activeCompanyPolicy) {
-      alert("No company-wide remote policy found in Supabase database. Please check migrations.");
+      notifyValidation({ type: 'error', title: 'Remote policy missing', message: "We couldn't find the company remote policy. Please contact an administrator." });
       return;
     }
     setIsSaving(true);
@@ -231,7 +232,7 @@ export default function CompanySettingsPage() {
     const success = await addTeam(newTeamName.trim(), newTeamLeadId || undefined);
     setIsSubmittingTeam(false);
     if (success) {
-      alert(`Team "${newTeamName.trim()}" successfully created and saved to PostgreSQL!`);
+      notifySuccess(`Team "${newTeamName.trim()}" has been created.`);
       setNewTeamName('');
       setNewTeamLeadId('');
     }
@@ -245,7 +246,7 @@ export default function CompanySettingsPage() {
     const success = await updateTeam(id, editTeamName.trim(), editTeamLeadId || undefined);
     if (success) {
       setEditingTeamId(null);
-      alert('Team successfully updated!');
+      notifySuccess('Team updated.');
     }
   };
 
@@ -273,7 +274,7 @@ export default function CompanySettingsPage() {
     });
     setIsSubmittingLeaveType(false);
     if (success) {
-      alert(`Leave category "${newLeaveNameEn.trim()}" successfully registered to Supabase!`);
+      notifySuccess(`Leave category "${newLeaveNameEn.trim()}" added.`);
       setNewLeaveCode('');
       setNewLeaveNameEn('');
       setNewLeaveNameEl('');
@@ -303,7 +304,7 @@ export default function CompanySettingsPage() {
     });
     if (success) {
       setEditingLeaveId(null);
-      alert('Leave category successfully updated in database!');
+      notifySuccess('Leave category updated.');
     }
   };
 
@@ -444,7 +445,7 @@ export default function CompanySettingsPage() {
                   {saveSuccess && (
                     <span className="flex items-center text-emerald-600 font-bold animate-in fade-in">
                       <CheckCircle2 className="w-4 h-4 mr-1 text-emerald-500" />
-                      Policy successfully persisted to Supabase!
+                      Company remote policy saved.
                     </span>
                   )}
                 </div>
@@ -457,7 +458,7 @@ export default function CompanySettingsPage() {
                   {isSaving ? (
                     <>
                       <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      <span>Saving to DB...</span>
+                      <span>Saving…</span>
                     </>
                   ) : (
                     <>
