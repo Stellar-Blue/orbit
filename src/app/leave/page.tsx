@@ -760,10 +760,10 @@ export default function LeaveManagementPage() {
         )}
         </div>
 
-        {/* RIGHT COLUMN: LEAVE CATEGORY QUOTAS & PERSONAL LEAVE HISTORY (5 COLS) */}
-        <div className="lg:col-span-5 space-y-6">
+        {/* RIGHT COLUMN: PERSONAL LEAVE HISTORY & LEAVE CATEGORY QUOTAS (5 COLS) */}
+        <div className="lg:col-span-5 space-y-6 flex flex-col">
               {/* LEAVE CATEGORIES BREAKDOWN ("THE BIG PICTURE") */}
-              <div className="space-y-3">
+              <div className="space-y-3 order-2">
                 <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center">
                   <Briefcase className="w-4 h-4 mr-2 text-[#3D87D3]" /> Leave Category Quotas &amp; Policy Rules
                 </h3>
@@ -822,7 +822,7 @@ export default function LeaveManagementPage() {
               <Card 
                 title="My Personal Leave History" 
                 subtitle="Audit trail of all your applications (scroll to view full history)" 
-                className="border-slate-200 shadow-xs"
+                className="border-slate-200 shadow-xs order-1"
               >
                 <div className="space-y-2.5 mt-2.5 max-h-[320px] overflow-y-auto overflow-x-hidden pr-1.5 p-1 bg-slate-50/60 border border-slate-200/80 rounded-xl shadow-inner scrollbar-thin scrollbar-thumb-slate-300">
                   {(() => {
