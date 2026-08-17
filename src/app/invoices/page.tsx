@@ -18,6 +18,8 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 
+const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export default function InvoicesRegistryPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
@@ -96,6 +98,10 @@ export default function InvoicesRegistryPage() {
   const [payDate, setPayDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [payBankRef, setPayBankRef] = useState<string>('');
   const [payNote, setPayNote] = useState<string>('');
+
+  // AR/AP reporting period selector (default: current month & year; month 0 = All Year)
+  const [statYear, setStatYear] = useState<number>(new Date().getFullYear());
+  const [statMonth, setStatMonth] = useState<number>(new Date().getMonth() + 1);
 
   const openInvoiceModal = (inv: Invoice) => {
     setEditingInvoiceId(inv.id);
@@ -325,6 +331,43 @@ export default function InvoicesRegistryPage() {
     return months;
   }, [contracts, invoices, salaries]);
 
+  // Years available in the invoice archive (for the AR/AP period selector)
+  const statYears = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    (invoices || []).forEach(i => {
+      const y = Number((i.issue_date || '').slice(0, 4));
+      if (y) years.add(y);
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [invoices]);
+
+  // Totals for selected period + percentage change vs previous month / year (respectively)
+  const statTotals = useMemo(() => {
+    const isYearView = statMonth === 0;
+    const inPeriod = (inv: Invoice, y: number, m: number) => {
+      const invY = Number((inv.issue_date || '').slice(0, 4));
+      const invM = Number((inv.issue_date || '').slice(5, 7));
+      return isYearView ? invY === y : (invY === y && invM === m);
+    };
+    let prevYear = statYear;
+    let prevMonth = statMonth;
+    if (isYearView) {
+      prevYear = statYear - 1;
+    } else {
+      prevMonth = statMonth - 1;
+      if (prevMonth < 1) { prevMonth = 12; prevYear = statYear - 1; }
+    }
+    const sum = (y: number, m: number, dir: InvoiceDirection) =>
+      (invoices || []).filter(i => inPeriod(i, y, m) && i.direction === dir && i.status !== 'cancelled')
+        .reduce((s, i) => s + i.gross_eur, 0);
+    const ar = sum(statYear, statMonth, 'outgoing');
+    const ap = sum(statYear, statMonth, 'incoming');
+    const prevAr = sum(prevYear, prevMonth, 'outgoing');
+    const prevAp = sum(prevYear, prevMonth, 'incoming');
+    const pct = (cur: number, prev: number) => prev === 0 ? (cur === 0 ? 0 : 100) : ((cur - prev) / prev) * 100;
+    return { ar, ap, prevAr, prevAp, arPct: pct(ar, prevAr), apPct: pct(ap, prevAp) };
+  }, [invoices, statYear, statMonth]);
+
   // Handle Document upload helper
   const handleUploadDocument = async (invId: string, file: File) => {
     const supabase = getSupabaseBrowserClient();
@@ -505,19 +548,51 @@ export default function InvoicesRegistryPage() {
       {/* TAB 1: GLOBAL INVOICE REGISTER */}
       {activeTab === 'register' && (
         <div className="space-y-6 animate-fadeIn">
+          {/* AR/AP Reporting Period Selector */}
+          <Card className="p-4 bg-white border-slate-200 shadow-sm rounded-2xl flex flex-wrap items-center gap-x-6 gap-y-3">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-[#3D87D3]" />
+              <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">AR/AP Reporting Period</span>
+            </div>
+            <select
+              value={statMonth}
+              onChange={(e) => setStatMonth(Number(e.target.value))}
+              className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
+              title="Select month (or All Year) for the totals below"
+            >
+              <option value={0}>All Year</option>
+              {STAT_MONTHS.map((m, idx) => <option key={m} value={idx + 1}>{m}</option>)}
+            </select>
+            <select
+              value={statYear}
+              onChange={(e) => setStatYear(Number(e.target.value))}
+              className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
+              title="Select year for the totals below"
+            >
+              {statYears.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <span className="text-[11px] text-slate-400 font-medium">
+              Showing {statMonth === 0 ? `full year ${statYear}` : `${STAT_MONTHS[statMonth - 1]} ${statYear}`} · compared to {statMonth === 0 ? `year ${statYear - 1}` : (statMonth === 1 ? `December ${statYear - 1}` : `${STAT_MONTHS[statMonth - 2]} ${statYear}`)}
+            </span>
+          </Card>
+
           {/* Quick Stat Bar */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatCard 
               title="Total Issued (AR)" 
-              value={`€${invoices.filter(i => i.direction === 'outgoing' && i.status !== 'cancelled').reduce((s, i) => s + i.gross_eur, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+              value={`€${statTotals.ar.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
               icon={<ArrowUpRight className="w-5 h-5 text-emerald-600" />}
-              subtitle="Client billing & subscriptions"
+              subtitle={`${statMonth === 0 ? `Year ${statYear}` : `${STAT_MONTHS[statMonth - 1]} ${statYear}`} · Client billing & subscriptions`}
+              trend={`${statTotals.arPct >= 0 ? '+' : ''}${statTotals.arPct.toFixed(1)}%`}
+              trendUp={statTotals.arPct >= 0}
             />
             <StatCard 
               title="Total Received (AP)" 
-              value={`€${invoices.filter(i => i.direction === 'incoming' && i.status !== 'cancelled').reduce((s, i) => s + i.gross_eur, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+              value={`€${statTotals.ap.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
               icon={<ArrowDownLeft className="w-5 h-5 text-amber-600" />}
-              subtitle="Supplier operating bills"
+              subtitle={`${statMonth === 0 ? `Year ${statYear}` : `${STAT_MONTHS[statMonth - 1]} ${statYear}`} · Supplier operating bills`}
+              trend={`${statTotals.apPct >= 0 ? '+' : ''}${statTotals.apPct.toFixed(1)}%`}
+              trendUp={statTotals.apPct >= 0}
             />
             <StatCard 
               title="Open AR Receivables" 
