@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff, Terminal, ChevronDown } from 'lucide-react';
+import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff, Terminal, ChevronDown, Copy, Check } from 'lucide-react';
 import { IntegrationSettings } from '@/lib/integrations/types';
 import { AttioSettings } from '@/components/settings/attio-settings';
 
@@ -56,6 +56,14 @@ export function IntegrationsSettings() {
   }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logsTableAvailable: true, logsError: null, logs: [] });
   const [showMyDataLogs, setShowMyDataLogs] = useState(true);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [copiedResponseId, setCopiedResponseId] = useState<string | null>(null);
+
+  const copyResponseBody = (id: string, body?: string | null) => {
+    if (!body) return;
+    navigator.clipboard.writeText(body).catch(() => {});
+    setCopiedResponseId(id);
+    setTimeout(() => setCopiedResponseId(cur => (cur === id ? null : cur)), 1500);
+  };
   const [mydataUsername, setMyDataUsername] = useState('');
   const [mydataKey, setMyDataKey] = useState('');
   const [showMyDataKey, setShowMyDataKey] = useState(false);
@@ -681,9 +689,22 @@ export function IntegrationsSettings() {
                                 </div>
                               )}
                               {log.response_body && (
-                                <div className="rounded-lg bg-slate-950 border border-slate-800 p-2 overflow-x-auto max-h-64">
-                                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Response Body (XML)</div>
-                                  <pre className="font-mono text-[10px] text-emerald-300/90 whitespace-pre-wrap break-all">{log.response_body}</pre>
+                                <div className="rounded-lg bg-slate-950 border border-slate-800 p-2">
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Response Body (XML)</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyResponseBody(log.id, log.response_body)}
+                                      className="inline-flex items-center gap-1 text-[9px] font-bold text-sky-400 hover:text-sky-200 px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 cursor-pointer shrink-0"
+                                      title="Copy the full response to clipboard"
+                                    >
+                                      {copiedResponseId === log.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                      {copiedResponseId === log.id ? 'Copied' : 'Copy response'}
+                                    </button>
+                                  </div>
+                                  <div className="overflow-x-auto max-h-64">
+                                    <pre className="font-mono text-[10px] text-emerald-300/90 whitespace-pre-wrap break-all">{log.response_body}</pre>
+                                  </div>
                                 </div>
                               )}
                             </div>
