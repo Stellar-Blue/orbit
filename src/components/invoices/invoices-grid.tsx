@@ -22,6 +22,26 @@ const STATUS_STYLES: Record<string, string> = {
 const eurFormatter = (params: ValueFormatterParams) =>
   `€${Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
+// Derive a "Year · Quarter" label from the reference period (e.g. 2026-08, 2026-Q3, 2026),
+// falling back to the billing period start date when no reference period is set.
+const deriveYearQuarter = (refPeriod?: string | null, periodFrom?: string | null): string => {
+  const ref = (refPeriod || '').trim();
+  const qMatch = ref.match(/^(\d{4})[-\s/]*[Qq]([1-4])$/);
+  if (qMatch) return `${qMatch[1]} · Q${qMatch[2]}`;
+  const mMatch = ref.match(/^(\d{4})-(\d{2})$/);
+  if (mMatch) {
+    const q = Math.floor((parseInt(mMatch[2], 10) - 1) / 3) + 1;
+    return `${mMatch[1]} · Q${q}`;
+  }
+  if (/^\d{4}$/.test(ref)) return `${ref} · FY`;
+  if (periodFrom) {
+    const [y, m] = periodFrom.split('-');
+    const month = parseInt(m, 10);
+    if (y && !isNaN(month)) return `${y} · Q${Math.floor((month - 1) / 3) + 1}`;
+  }
+  return '—';
+};
+
 interface InvoiceRow {
   inv: Invoice;
   entity: string;
@@ -32,6 +52,8 @@ interface InvoiceRow {
   linkage: string;
   linkageType: 'contract' | 'category';
   referencePeriod: string;
+  yearQuarter: string;
+  periodRange: string;
   issueDate: string;
   dueDate: string;
   overdue: boolean;
@@ -89,6 +111,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         linkage: inv.contract ? (inv.contract.product || 'Agreement') : (inv.category || 'General Operating'),
         linkageType: inv.contract ? 'contract' : 'category',
         referencePeriod: inv.reference_period || '',
+        yearQuarter: deriveYearQuarter(inv.reference_period, inv.period_from),
+        periodRange: [inv.period_from, inv.period_to].filter(Boolean).join(' → '),
         issueDate: inv.issue_date,
         dueDate: inv.due_date,
         overdue: isOverdue,
@@ -161,6 +185,26 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             <div className="text-[10px] text-amber-800 font-mono bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60 font-black mt-1.5 w-fit">Ref: {p.data.referencePeriod}</div>
           )}
         </div>
+      )
+    },
+    {
+      headerName: 'Year · Qtr', field: 'yearQuarter', width: 120, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
+        p.value && p.value !== '—' ? (
+          <span className="inline-flex items-center px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-md font-bold text-[11px] font-mono">{p.value}</span>
+        ) : (
+          <span className="text-slate-400 text-[11px] italic">Not set</span>
+        )
+      )
+    },
+    {
+      headerName: 'Ref Period', field: 'periodRange', width: 210, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
+        p.value ? (
+          <span className="text-[11px] text-slate-600 font-mono">{p.value}</span>
+        ) : (
+          <span className="text-slate-400 text-[11px] italic">—</span>
+        )
       )
     },
     {
