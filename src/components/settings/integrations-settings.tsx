@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff, Terminal, ChevronDown, Copy, Check } from 'lucide-react';
+import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff, Terminal, ChevronDown, Copy, Check, RotateCcw } from 'lucide-react';
 import { IntegrationSettings } from '@/lib/integrations/types';
 import { AttioSettings } from '@/components/settings/attio-settings';
 
@@ -70,6 +70,7 @@ export function IntegrationsSettings() {
   const [showMyDataKey, setShowMyDataKey] = useState(false);
   const [savingMyData, setSavingMyData] = useState(false);
   const [syncingMyData, setSyncingMyData] = useState(false);
+  const [resettingMyData, setResettingMyData] = useState(false);
   const [mydataMsg, setMyDataMsg] = useState<string | null>(null);
 
   const loadMyData = async () => {
@@ -137,6 +138,23 @@ export function IntegrationsSettings() {
       flashMyData('myDATA sync request failed.');
     } finally {
       setSyncingMyData(false);
+    }
+  };
+
+  // Reset cursor to MARK 0 + wipe the raw AADE store, then immediately re-sync everything.
+  const handleResetMyData = async () => {
+    if (!confirm('Reset the myDATA sync cursor to MARK 0 and clear the raw AADE store?\n\nThe next sync will fully re-import every transmitted document from the beginning. Your invoice registry (AR/AP) is kept — existing invoices are updated by MARK, nothing is deleted there.')) return;
+    setResettingMyData(true);
+    try {
+      const res = await fetch('/api/integrations/mydata/reset', { method: 'POST' });
+      if (!res.ok) throw new Error('reset failed');
+      flashMyData('myDATA cursor reset to MARK 0 — starting full re-sync…');
+      await handleSyncMyData();
+      await loadMyData();
+    } catch {
+      flashMyData('Failed to reset myDATA sync cursor.');
+    } finally {
+      setResettingMyData(false);
     }
   };
 
@@ -619,8 +637,11 @@ export function IntegrationsSettings() {
             <Button size="sm" variant="outline" onClick={handleClearMyData} disabled={!mydata.configured} className="text-rose-600 border-rose-200 bg-white cursor-pointer">
               <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear Credentials
             </Button>
-            <Button size="sm" variant="primary" onClick={handleSyncMyData} disabled={syncingMyData || !mydata.configured} className="bg-indigo-600 text-white cursor-pointer">
+            <Button size="sm" variant="primary" onClick={handleSyncMyData} disabled={syncingMyData || resettingMyData || !mydata.configured} className="bg-indigo-600 text-white cursor-pointer">
               <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncingMyData ? 'animate-spin' : ''}`} /> {syncingMyData ? 'Syncing…' : 'Sync Now'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleResetMyData} disabled={resettingMyData || syncingMyData || !mydata.configured} className="text-amber-700 border-amber-300 bg-white cursor-pointer" title="Reset the sync cursor to MARK 0 and fully re-import every AADE document">
+              <RotateCcw className={`w-3.5 h-3.5 mr-1 ${resettingMyData ? 'animate-spin' : ''}`} /> {resettingMyData ? 'Resetting…' : 'Reset & Full Resync'}
             </Button>
             <Button size="sm" variant="primary" onClick={handleSaveMyData} disabled={savingMyData || !mydataUsername.trim() || !mydataKey.trim()} className="bg-[#3D87D3] text-white cursor-pointer">
               {savingMyData ? 'Saving…' : 'Save Credentials'}
