@@ -12,11 +12,19 @@ const USE_DEV = process.env.MYDATA_DEV === 'true';
 const USERNAME_SECRET = 'mydata:username';
 const KEY_SECRET = 'mydata:subscription_key';
 
+// AADE responses can legitimately contain many entity references (e.g. large multi-page payloads).
+// Raise the parser's safety caps well above the defaults (maxTotalExpansions=1000, maxExpandedLength=100KB)
+// so legitimate responses aren't rejected as entity-expansion attacks.
 const parser = new XMLParser({
   ignoreAttributes: true,
   parseTagValue: false,
   trimValues: true,
   removeNSPrefix: true,
+  processEntities: {
+    enabled: true,
+    maxTotalExpansions: 1_000_000,
+    maxExpandedLength: 50_000_000,
+  },
 });
 
 export interface MyDataCreds {
