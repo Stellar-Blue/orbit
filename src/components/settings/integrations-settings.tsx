@@ -51,8 +51,9 @@ export function IntegrationsSettings() {
     configured: boolean; username: string | null;
     lastCompletedMark: number; lastSuccessAt: string | null; lastError: string | null;
     docCount: number; invoiceCount: number;
+    logsTableAvailable: boolean; logsError: string | null;
     logs: Array<{ id: string; created_at: string; level: string; message: string; detail?: string | null; mark?: number | null }>;
-  }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logs: [] });
+  }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logsTableAvailable: true, logsError: null, logs: [] });
   const [showMyDataLogs, setShowMyDataLogs] = useState(true);
   const [mydataUsername, setMyDataUsername] = useState('');
   const [mydataKey, setMyDataKey] = useState('');
@@ -127,6 +128,29 @@ export function IntegrationsSettings() {
       setSyncingMyData(false);
     }
   };
+
+  // Live myDATA communication log via SSE (WebSockets aren't supported on serverless; SSE streams new rows in real time)
+  useEffect(() => {
+    const es = new EventSource('/api/integrations/mydata/logs/stream');
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.type === 'logs' && Array.isArray(data.logs)) {
+          setMyData(prev => {
+            const seen = new Set(prev.logs.map(l => l.id));
+            const merged = [...data.logs.filter((l: { id: string }) => !seen.has(l.id)), ...prev.logs];
+            return { ...prev, logs: merged.slice(0, 100) };
+          });
+        } else if (data.type === 'error') {
+          setMyData(prev => ({ ...prev, logsError: data.code === 'table' ? data.message : prev.logsError }));
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+    // EventSource auto-reconnects on drop; no manual handling needed.
+    return () => es.close();
+  }, []);
 
   const loadExemptions = async () => {
     try {
@@ -583,6 +607,14 @@ export function IntegrationsSettings() {
         </div>
 
         {/* Helper / Communication log panel */}
+        {mydata.logsTableAvailable === false && (
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-bold">Log table not found.</strong> The myDATA sync log table (<code className="font-mono text-[10px]">aade_sync_logs</code>) is missing — apply migration <code className="font-mono text-[10px]">0043_mydata_sync_logs.sql</code> and redeploy. Sync itself is unaffected; only logging is disabled.
+            </div>
+          </div>
+        )}
         <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden">
           <button
             type="button"
