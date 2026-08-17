@@ -15,6 +15,8 @@ import {
   Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+import { CashflowBarChart } from '@/components/invoices/cashflow-chart';
+import * as XLSX from 'xlsx';
 
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 
@@ -102,6 +104,11 @@ export default function InvoicesRegistryPage() {
   // AR/AP reporting period selector (default: current month & year; month 0 = All Year)
   const [statYear, setStatYear] = useState<number>(new Date().getFullYear());
   const [statMonth, setStatMonth] = useState<number>(new Date().getMonth() + 1);
+
+  // Cashflow realized/projected period selector (default: start 3 months back, 6 months wide)
+  const [cfStartYear, setCfStartYear] = useState<number>(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d.getFullYear(); });
+  const [cfStartMonth, setCfStartMonth] = useState<number>(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d.getMonth() + 1; });
+  const [cfMonths, setCfMonths] = useState<number>(6);
 
   const openInvoiceModal = (inv: Invoice) => {
     setEditingInvoiceId(inv.id);
@@ -284,52 +291,76 @@ export default function InvoicesRegistryPage() {
     return { current, days1_30, days31_60, days61_90, days90Plus, totalOpenAr };
   }, [invoices]);
 
-  // Cashflow projection for next 6 months
-  const cashflowForecast = useMemo(() => {
-    const months: Array<{ month: string; arInflows: number; apOutflows: number; payrollBurn: number; net: number }> = [];
+  // Cashflow view: realized (actual invoices by issue date) vs projected (contract schedules + open liabilities)
+  // over a user-selectable period. Realized is filled for past/current months, projected for all months.
+  const cashflowView = useMemo(() => {
+    const months: Array<{
+      month: string; label: string;
+      realizedAr: number; realizedAp: number;
+      projectedAr: number; projectedAp: number;
+      payroll: number; realizedNet: number; projectedNet: number;
+      isCurrent: boolean; isPast: boolean;
+    }> = [];
     const monthlyPayroll = (salaries || []).reduce((sum, s) => sum + s.gross_amount, 0) || 28500; // default estimated monthly payroll burn
+    const nowYM = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
-    for (let i = 0; i < 6; i++) {
-      const d = new Date();
-      d.setMonth(d.getMonth() + i);
-      const mStr = d.toISOString().slice(0, 7); // YYYY-MM
-      
-      let arInflows = 0;
-      let apOutflows = 0;
+    for (let i = 0; i < cfMonths; i++) {
+      const d = new Date(cfStartYear, cfStartMonth - 1 + i, 1);
+      const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-      // Add scheduled revenue & supplier costs
+      // Realized = actual invoices issued in this month (accrual basis, cancelled excluded)
+      let realizedAr = 0;
+      let realizedAp = 0;
+      invoices.forEach(inv => {
+        if (inv.status === 'cancelled') return;
+        if ((inv.issue_date || '').slice(0, 7) !== mStr) return;
+        if (inv.direction === 'outgoing') realizedAr += inv.gross_eur;
+        else realizedAp += inv.gross_eur;
+      });
+
+      // Projected = committed contract schedules + open invoice balances due this month
+      let projectedAr = 0;
+      let projectedAp = 0;
       contracts.forEach(cnt => {
         const sched = cnt.schedule?.find(s => s.period === mStr);
         if (sched) {
-          if (cnt.direction === 'revenue') arInflows += sched.amount;
-          else if (cnt.direction === 'cost') apOutflows += sched.amount;
+          if (cnt.direction === 'revenue') projectedAr += sched.amount;
+          else if (cnt.direction === 'cost') projectedAp += sched.amount;
         } else if (cnt.value && cnt.billing_cadence === 'monthly') {
           const val = cnt.value / 12;
-          if (cnt.direction === 'revenue') arInflows += val;
-          else if (cnt.direction === 'cost') apOutflows += val;
+          if (cnt.direction === 'revenue') projectedAr += val;
+          else if (cnt.direction === 'cost') projectedAp += val;
         }
       });
-
-      // Add open invoice due dates falling in this month
       invoices.forEach(inv => {
-        if (inv.status !== 'paid' && inv.status !== 'cancelled' && inv.due_date.startsWith(mStr)) {
-          const paid = (inv.payments || []).reduce((sum, p) => sum + p.amount, 0);
-          const rem = Math.max(0, inv.gross_eur - paid);
-          if (inv.direction === 'outgoing') arInflows += rem;
-          else if (inv.direction === 'incoming') apOutflows += rem;
-        }
+        if (inv.status === 'paid' || inv.status === 'cancelled') return;
+        if (!(inv.due_date || '').startsWith(mStr)) return;
+        const paid = (inv.payments || []).reduce((sum, p) => sum + p.amount, 0);
+        const rem = Math.max(0, inv.gross_eur - paid);
+        if (inv.direction === 'outgoing') projectedAr += rem;
+        else if (inv.direction === 'incoming') projectedAp += rem;
       });
 
+      const isPast = mStr < nowYM;
+      const isCurrent = mStr === nowYM;
       months.push({
         month: mStr,
-        arInflows: Math.round(arInflows),
-        apOutflows: Math.round(apOutflows),
-        payrollBurn: Math.round(monthlyPayroll),
-        net: Math.round(arInflows - apOutflows - monthlyPayroll)
+        label: `${STAT_MONTHS[d.getMonth()].slice(0, 3)} ${String(d.getFullYear()).slice(2)}`,
+        realizedAr: Math.round(realizedAr),
+        realizedAp: Math.round(realizedAp),
+        projectedAr: Math.round(projectedAr),
+        projectedAp: Math.round(projectedAp),
+        payroll: Math.round(monthlyPayroll),
+        realizedNet: Math.round(realizedAr - realizedAp - (isPast || isCurrent ? monthlyPayroll : 0)),
+        projectedNet: Math.round(projectedAr - projectedAp - monthlyPayroll),
+        isCurrent,
+        isPast
       });
     }
     return months;
-  }, [contracts, invoices, salaries]);
+  }, [invoices, contracts, salaries, cfStartYear, cfStartMonth, cfMonths]);
+
+  const fmtNet = (v: number) => (v >= 0 ? `+€${v.toLocaleString()}` : `-€${Math.abs(v).toLocaleString()}`);
 
   // Years available in the invoice archive (for the AR/AP period selector)
   const statYears = useMemo(() => {
@@ -340,6 +371,11 @@ export default function InvoicesRegistryPage() {
     });
     return Array.from(years).sort((a, b) => b - a);
   }, [invoices]);
+
+  // Years for the cashflow period selector: invoice years + next year (so future projections can be explored)
+  const cfYears = useMemo(() => {
+    return Array.from(new Set([...statYears, new Date().getFullYear() + 1])).sort((a, b) => b - a);
+  }, [statYears]);
 
   // Totals for selected period + percentage change vs previous month / year (respectively)
   const statTotals = useMemo(() => {
@@ -423,6 +459,102 @@ export default function InvoicesRegistryPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Export Budgeting & Cashflow report to Excel (multi-sheet) for off-platform analysis
+  const exportCashflowXlsx = () => {
+    const wb = XLSX.utils.book_new();
+    const startLabel = `${STAT_MONTHS[cfStartMonth - 1]}_${cfStartYear}`;
+    const dateStamp = new Date().toISOString().split('T')[0];
+
+    // Sheet 1: Monthly Cashflow (Realized vs Projected)
+    const monthly: (string | number)[][] = [
+      ['ORBIT — BUDGETING & CASHFLOW REPORT'],
+      ['Period Start:', `${STAT_MONTHS[cfStartMonth - 1]} ${cfStartYear}`],
+      ['Months Shown:', String(cfMonths)],
+      ['Generated On:', new Date().toLocaleDateString('en-GB')],
+      [''],
+      ['Month', 'Year', 'Realized AR (EUR)', 'Realized AP (EUR)', 'Realized Net (EUR)', 'Projected AR (EUR)', 'Projected AP (EUR)', 'Projected Net (EUR)', 'Payroll Burn (EUR)', 'Status']
+    ];
+    cashflowView.forEach(m => {
+      monthly.push([
+        m.month,
+        m.month.slice(0, 4),
+        m.realizedAr,
+        m.realizedAp,
+        m.isPast || m.isCurrent ? m.realizedNet : 0,
+        m.projectedAr,
+        m.projectedAp,
+        m.projectedNet,
+        m.payroll,
+        m.isCurrent ? 'CURRENT' : (m.isPast ? 'REALIZED' : 'PROJECTED')
+      ]);
+    });
+    const wsMonthly = XLSX.utils.aoa_to_sheet(monthly);
+    wsMonthly['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 11 }];
+    XLSX.utils.book_append_sheet(wb, wsMonthly, 'Monthly_Cashflow');
+
+    // Sheet 2: Invoice detail within the selected period (for deeper analysis)
+    const startStr = `${cfStartYear}-${String(cfStartMonth).padStart(2, '0')}-01`;
+    const endD = new Date(cfStartYear, cfStartMonth - 1 + cfMonths, 0);
+    const endStr = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`;
+    const detail: (string | number)[][] = [
+      ['ORBIT — INVOICE DETAIL (ISSUED WITHIN SELECTED PERIOD)'],
+      [`Range: ${startStr} to ${endStr}`],
+      [''],
+      ['Invoice Number', 'Direction', 'Type', 'Counterparty', 'Issue Date', 'Due Date', 'Reference Period', 'Net (EUR)', 'VAT (EUR)', 'Gross (EUR)', 'Status', 'Missing PDF']
+    ];
+    invoices
+      .filter(i => i.status !== 'cancelled' && (i.issue_date || '') >= startStr && (i.issue_date || '') <= endStr)
+      .sort((a, b) => a.issue_date.localeCompare(b.issue_date))
+      .forEach(i => {
+        detail.push([
+          i.invoice_number,
+          i.direction === 'outgoing' ? 'AR (Issued)' : 'AP (Received)',
+          (i.type || 'invoice').toUpperCase(),
+          i.counterparty?.legal_name || 'Unmapped Entity',
+          i.issue_date,
+          i.due_date,
+          i.reference_period || '',
+          i.net,
+          i.vat_amount,
+          i.gross_eur,
+          i.status,
+          i.missing_document ? 'YES' : 'No'
+        ]);
+      });
+    const wsDetail = XLSX.utils.aoa_to_sheet(detail);
+    wsDetail['!cols'] = [{ wch: 18 }, { wch: 13 }, { wch: 11 }, { wch: 28 }, { wch: 11 }, { wch: 11 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 13 }, { wch: 15 }, { wch: 11 }];
+    XLSX.utils.book_append_sheet(wb, wsDetail, 'Invoice_Detail');
+
+    // Sheet 3: Summary totals
+    const pastCurrent = cashflowView.filter(m => m.isPast || m.isCurrent);
+    const totalRealizedAr = pastCurrent.reduce((s, m) => s + m.realizedAr, 0);
+    const totalRealizedAp = pastCurrent.reduce((s, m) => s + m.realizedAp, 0);
+    const totalRealizedNet = pastCurrent.reduce((s, m) => s + m.realizedNet, 0);
+    const totalProjectedAr = cashflowView.reduce((s, m) => s + m.projectedAr, 0);
+    const totalProjectedAp = cashflowView.reduce((s, m) => s + m.projectedAp, 0);
+    const totalProjectedNet = cashflowView.reduce((s, m) => s + m.projectedNet, 0);
+    const summary: (string | number)[][] = [
+      ['ORBIT — CASHFLOW SUMMARY'],
+      [''],
+      ['Metric', 'Amount (EUR)'],
+      ['Total Realized AR (invoices issued)', totalRealizedAr],
+      ['Total Realized AP (invoices received)', totalRealizedAp],
+      ['Total Realized Net', totalRealizedNet],
+      ['Total Projected AR (schedules + open due)', totalProjectedAr],
+      ['Total Projected AP (schedules + open due)', totalProjectedAp],
+      ['Total Projected Net', totalProjectedNet],
+      ['Monthly Payroll Burn', cashflowView[0]?.payroll || 0],
+      [''],
+      ['Notes:', 'Realized = actual invoices by issue date. Projected = contract schedules + open invoice balances. Cancelled invoices excluded.']
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+    wsSummary['!cols'] = [{ wch: 46 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+    XLSX.writeFile(wb, `Orbit_Budgeting_Cashflow_${startLabel}_${cfMonths}mo_${dateStamp}.xlsx`);
+    notifySuccess('Budgeting & Cashflow Excel report exported.');
   };
 
   if (!isAdmin) {
@@ -911,50 +1043,123 @@ export default function InvoicesRegistryPage() {
             </div>
           </div>
 
-          {/* 6-Month Cashflow Projections */}
+          {/* Cashflow: Realized vs Projected */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
               <div>
-                <h4 className="text-base font-extrabold text-slate-900">6-Month Forward Cashflow & Burn Forecast</h4>
-                <p className="text-xs text-slate-500">Projected cash trajectory balancing Contracted AR Schedules against AP Vendor Liabilities and Payroll obligations.</p>
+                <h4 className="text-base font-extrabold text-slate-900">Cashflow: Realized vs Projected</h4>
+                <p className="text-xs text-slate-500">Actual invoice flows (realized) side-by-side with committed contract schedules & open liabilities (projected), including monthly payroll burn (~€{(salaries || []).reduce((s, r) => s + r.gross_amount, 0).toFixed(0)}/m).</p>
               </div>
-              <span className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl">
-                Includes monthly payroll burn (~€{(salaries || []).reduce((s, r) => s + r.gross_amount, 0).toFixed(0)}/m)
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-[#3D87D3]" />
+                  <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Period</span>
+                </div>
+                <select
+                  value={cfStartMonth}
+                  onChange={(e) => setCfStartMonth(Number(e.target.value))}
+                  className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
+                  title="Starting month of the range"
+                >
+                  {STAT_MONTHS.map((m, idx) => <option key={m} value={idx + 1}>{m}</option>)}
+                </select>
+                <select
+                  value={cfStartYear}
+                  onChange={(e) => setCfStartYear(Number(e.target.value))}
+                  className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
+                  title="Starting year of the range"
+                >
+                  {cfYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select
+                  value={cfMonths}
+                  onChange={(e) => setCfMonths(Number(e.target.value))}
+                  className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
+                  title="How many months to show"
+                >
+                  {[3, 6, 12].map(n => <option key={n} value={n}>{n} months</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={exportCashflowXlsx}
+                  className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                  title="Export the selected period to Excel (Monthly Cashflow, Invoice Detail, Summary)"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export Excel
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-              {cashflowForecast.map((m) => (
-                <div key={m.month} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-black text-slate-800 bg-slate-200/80 px-2.5 py-1 rounded-lg inline-block font-mono mb-3">
-                      {m.month}
-                    </span>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex justify-between font-semibold text-emerald-700">
-                        <span>AR Inflows:</span>
-                        <span className="font-mono font-extrabold">+€{m.arInflows.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between font-semibold text-amber-700">
-                        <span>AP Outflows:</span>
-                        <span className="font-mono font-extrabold">-€{m.apOutflows.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between font-semibold text-rose-700">
-                        <span>Payroll Burn:</span>
-                        <span className="font-mono font-extrabold">-€{m.payrollBurn.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-slate-200 flex justify-between items-center">
-                    <span className="font-bold text-xs text-slate-600">Net Flow:</span>
-                    <span className={`font-black text-sm font-mono px-2 py-0.5 rounded-lg ${
-                      m.net >= 0 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
-                    }`}>
-                      {m.net >= 0 ? `+€${m.net.toLocaleString()}` : `-€${Math.abs(m.net).toLocaleString()}`}
-                    </span>
-                  </div>
-                </div>
-              ))}
+            {/* Graphs */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3">AR Cash Inflows</h5>
+                <CashflowBarChart
+                  labels={cashflowView.map(m => m.label)}
+                  series={[
+                    { name: 'Realized AR', color: '#10b981', values: cashflowView.map(m => m.realizedAr) },
+                    { name: 'Projected AR', color: '#94a3b8', values: cashflowView.map(m => m.projectedAr) }
+                  ]}
+                />
+              </div>
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3">AP Outflows + Payroll</h5>
+                <CashflowBarChart
+                  labels={cashflowView.map(m => m.label)}
+                  series={[
+                    { name: 'Realized AP', color: '#f59e0b', values: cashflowView.map(m => m.realizedAp) },
+                    { name: 'Projected AP', color: '#e2e8f0', values: cashflowView.map(m => m.projectedAp) }
+                  ]}
+                />
+              </div>
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3">Net Cash Flow</h5>
+                <CashflowBarChart
+                  labels={cashflowView.map(m => m.label)}
+                  series={[
+                    { name: 'Realized Net', color: '#3b82f6', values: cashflowView.map(m => m.realizedNet) },
+                    { name: 'Projected Net', color: '#93c5fd', values: cashflowView.map(m => m.projectedNet) }
+                  ]}
+                />
+              </div>
+            </div>
+
+            {/* Per-month numbers table */}
+            <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-xs min-w-[780px]">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
+                    <th className="p-3 text-left">Month</th>
+                    <th className="p-3 text-right">Realized AR</th>
+                    <th className="p-3 text-right">Realized AP</th>
+                    <th className="p-3 text-right">Realized Net</th>
+                    <th className="p-3 text-right">Projected AR</th>
+                    <th className="p-3 text-right">Projected AP</th>
+                    <th className="p-3 text-right">Projected Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashflowView.map((m) => (
+                    <tr key={m.month} className="border-t border-slate-100 hover:bg-slate-50">
+                      <td className="p-3 font-bold text-slate-800 font-mono whitespace-nowrap">
+                        {m.month}
+                        {m.isCurrent && (
+                          <span className="ml-2 text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-black align-middle">CURRENT</span>
+                        )}
+                        {m.isPast && (
+                          <span className="ml-1.5 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-bold align-middle">REALIZED</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-right font-mono text-emerald-700">{m.realizedAr ? `€${m.realizedAr.toLocaleString()}` : '—'}</td>
+                      <td className="p-3 text-right font-mono text-amber-700">{m.realizedAp ? `€${m.realizedAp.toLocaleString()}` : '—'}</td>
+                      <td className="p-3 text-right font-mono font-extrabold text-slate-800">{m.isPast || m.isCurrent ? fmtNet(m.realizedNet) : '—'}</td>
+                      <td className="p-3 text-right font-mono text-emerald-700">{m.projectedAr ? `€${m.projectedAr.toLocaleString()}` : '—'}</td>
+                      <td className="p-3 text-right font-mono text-amber-700">{m.projectedAp ? `€${m.projectedAp.toLocaleString()}` : '—'}</td>
+                      <td className="p-3 text-right font-mono font-extrabold text-slate-800">{fmtNet(m.projectedNet)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
