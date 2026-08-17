@@ -4,6 +4,10 @@ import { getVaultSecret, setVaultSecret, deleteVaultSecret } from './server';
 
 // AADE myDATA REST API v2.0.1 — RequestTransmittedDocs (issued invoices)
 // Endpoint returns XML. MARK is the durable cursor. Follows the AADE issued-invoices retrieval guide.
+//
+// READ-ONLY TOWARD AADE: this integration only RETRIEVES transmitted documents (GET
+// RequestTransmittedDocs). It never sends, registers, transmits, or cancels anything with the
+// tax authority. All writes go exclusively to the local Supabase database.
 
 const MYDATA_PROD = 'https://mydatapi.aade.gr/myDATA/RequestTransmittedDocs';
 const MYDATA_DEV = 'https://mydataapidev.aade.gr/RequestTransmittedDocs';
@@ -140,7 +144,8 @@ async function fetchWithRetry(url: string, headers: Record<string, string>, atte
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 30_000);
-      const res = await fetch(url, { headers, signal: ctrl.signal });
+      // GET only, no body — this integration never writes to AADE.
+      const res = await fetch(url, { method: 'GET', headers, signal: ctrl.signal });
       clearTimeout(timer);
       if (res.status >= 500 || res.status === 408 || res.status === 429) {
         // transient — retry with backoff
@@ -188,6 +193,7 @@ interface AadeCancelledInvoice {
 
 /**
  * Import issued invoices from AADE myDATA (RequestTransmittedDocs).
+ * - STRICTLY READ-ONLY toward AADE: only GET RequestTransmittedDocs, never sends/registers/cancels.
  * - MARK is the durable cursor; advanced only after the full page chain commits.
  * - Idempotent by AADE MARK (docs table unique on mark; invoices matched on invoices.mark).
  * - Cancellations flip local status to 'cancelled' (records are never deleted).
@@ -222,8 +228,9 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
     Accept: 'application/xml',
   };
 
-  const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark').eq('id', 1).maybeSingle();
+  const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark,company_afm').eq('id', 1).maybeSingle();
   let cursor = Number(state?.last_completed_mark || 0);
+  const companyAfm = (state?.company_afm as string | null | undefined) || null;
   let maxMark = cursor;
   const processedMarks = new Set<number>();
   const cancelledPairs = new Set<string>();
@@ -345,7 +352,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
             continue;
           }
 
-          await mirrorInvoice(admin, inv, mark, receiverVat, base);
+          await mirrorInvoice(admin, inv, mark, receiverVat, companyAfm, base);
         } catch (e) {
           base.skippedErrors += 1;
           // swallow per-doc errors (e.g. unique-constraint collisions with manually registered invoices)
@@ -402,6 +409,7 @@ async function mirrorInvoice(
   inv: AadeInvoice,
   mark: number,
   receiverVat: string | null,
+  companyAfm: string | null,
   base: MyDataSyncResult,
 ): Promise<void> {
   const header = inv.invoiceHeader;
@@ -419,13 +427,23 @@ async function mirrorInvoice(
   const invoiceNumber = series ? `${series}-${aa}` : aa || String(mark);
   const dueDate = new Date(new Date(issueDate + 'T00:00:00').getTime() + 30 * 86400000).toISOString().slice(0, 10);
 
-  // Match the customer by AFM to an existing counterparty
+  // Direction: we ISSUED it when our AFM is the issuer → outgoing (AR), other party = counterpart.
+  // Otherwise we RECEIVED it → incoming (AP), other party = issuer. Without a configured company
+  // AFM we fall back to treating everything as issued (previous behaviour).
+  const issuerVat = normAfm(str(inv.issuer?.vatNumber));
+  const myAfm = companyAfm ? normAfm(companyAfm) : null;
+  const outgoing = myAfm ? issuerVat === myAfm : true;
+  const direction: 'outgoing' | 'incoming' = outgoing ? 'outgoing' : 'incoming';
+  const matchVat = outgoing ? receiverVat : issuerVat;
+  const vatRate = net > 0 ? `${Math.round((vat / net) * 1000) / 10}%` : '0%';
+
+  // Match the other party by AFM to an existing counterparty
   let counterpartyId: string | null = null;
-  if (receiverVat) {
+  if (matchVat) {
     const { data: cp } = await admin
       .from('counterparties')
       .select('id')
-      .or(`afm.eq.${receiverVat},vat_number.eq.${receiverVat},vat_number.eq.EL${receiverVat},vat_number.eq.GR${receiverVat}`)
+      .or(`afm.eq.${matchVat},vat_number.eq.${matchVat},vat_number.eq.EL${matchVat},vat_number.eq.GR${matchVat}`)
       .eq('status', 'active')
       .limit(1)
       .maybeSingle();
@@ -448,7 +466,7 @@ async function mirrorInvoice(
       currency,
       net,
       vat_amount: vat,
-      vat_rate: vat > 0 ? '24%' : '0%',
+      vat_rate: vatRate,
       gross,
       gross_eur: gross,
       missing_document: false,
@@ -456,7 +474,7 @@ async function mirrorInvoice(
     base.invoicesUpdated += 1;
   } else {
     await admin.from('invoices').insert({
-      direction: 'outgoing',
+      direction,
       counterparty_id: counterpartyId,
       type,
       invoice_number: invoiceNumber,
@@ -469,7 +487,7 @@ async function mirrorInvoice(
       fx_rate: 1,
       net,
       vat_amount: vat,
-      vat_rate: vat > 0 ? '24%' : '0%',
+      vat_rate: vatRate,
       gross,
       gross_eur: gross,
       status: 'sent_received',

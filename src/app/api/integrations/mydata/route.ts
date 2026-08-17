@@ -7,7 +7,7 @@ import { clearMyDataCreds, getMyDataCreds, setMyDataCreds } from '@/lib/integrat
 export async function GET() {
   const admin = getAdminClient();
   const creds = await getMyDataCreds(admin);
-  const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark,last_success_at,last_error').eq('id', 1).maybeSingle();
+  const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark,last_success_at,last_error,company_afm').eq('id', 1).maybeSingle();
   const { count: docCount } = await admin.from('aade_documents').select('id', { count: 'exact', head: true });
   const { count: invoiceCount } = await admin.from('invoices').select('id', { count: 'exact', head: true }).eq('created_via', 'api');
   const { data: logs, error: logsError } = await admin
@@ -19,6 +19,7 @@ export async function GET() {
   return NextResponse.json({
     configured: creds.configured,
     username: creds.username,
+    companyAfm: state?.company_afm ?? null,
     lastCompletedMark: state?.last_completed_mark ?? 0,
     lastSuccessAt: state?.last_success_at ?? null,
     lastError: state?.last_error ?? null,
@@ -38,7 +39,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  let body: { username?: string; subscriptionKey?: string; clear?: boolean };
+  let body: { username?: string; subscriptionKey?: string; companyAfm?: string; clear?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -59,5 +60,11 @@ export async function PUT(request: NextRequest) {
   }
   await setMyDataCreds(admin, username, subscriptionKey);
 
-  return NextResponse.json({ ok: true, configured: true, username });
+  // Company AFM drives direction detection (issued vs received); persists in the single-row state table.
+  const companyAfm = typeof body.companyAfm === 'string' ? body.companyAfm.trim() : '';
+  if (typeof body.companyAfm === 'string') {
+    await admin.from('aade_sync_state').update({ company_afm: companyAfm || null }).eq('id', 1);
+  }
+
+  return NextResponse.json({ ok: true, configured: true, username, companyAfm: companyAfm || null });
 }

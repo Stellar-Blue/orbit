@@ -46,14 +46,14 @@ export function IntegrationsSettings() {
   const [grantDays, setGrantDays] = useState(7);
   const [granting, setGranting] = useState(false);
 
-  // AADE myDATA issued-invoice import
+  // AADE myDATA issued/received invoice import
   const [mydata, setMyData] = useState<{
-    configured: boolean; username: string | null;
+    configured: boolean; username: string | null; companyAfm: string | null;
     lastCompletedMark: number; lastSuccessAt: string | null; lastError: string | null;
     docCount: number; invoiceCount: number;
     logsTableAvailable: boolean; logsError: string | null;
     logs: Array<{ id: string; created_at: string; level: string; message: string; detail?: string | null; mark?: number | null; method?: string | null; url?: string | null; request_headers?: string | null; response_status?: number | null; response_body?: string | null; duration_ms?: number | null }>;
-  }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logsTableAvailable: true, logsError: null, logs: [] });
+  }>({ configured: false, username: null, companyAfm: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logsTableAvailable: true, logsError: null, logs: [] });
   const [showMyDataLogs, setShowMyDataLogs] = useState(true);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [copiedResponseId, setCopiedResponseId] = useState<string | null>(null);
@@ -66,6 +66,7 @@ export function IntegrationsSettings() {
   };
   const [mydataUsername, setMyDataUsername] = useState('');
   const [mydataKey, setMyDataKey] = useState('');
+  const [mydataCompanyAfm, setMyDataCompanyAfm] = useState('');
   const [showMyDataKey, setShowMyDataKey] = useState(false);
   const [savingMyData, setSavingMyData] = useState(false);
   const [syncingMyData, setSyncingMyData] = useState(false);
@@ -78,6 +79,7 @@ export function IntegrationsSettings() {
         const data = await res.json();
         setMyData(data);
         if (data.username) setMyDataUsername(data.username);
+        if (data.companyAfm) setMyDataCompanyAfm(data.companyAfm);
       }
     } catch (e) {
       console.error('load mydata error:', e);
@@ -95,7 +97,7 @@ export function IntegrationsSettings() {
     try {
       const res = await fetch('/api/integrations/mydata', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: mydataUsername, subscriptionKey: mydataKey }),
+        body: JSON.stringify({ username: mydataUsername, subscriptionKey: mydataKey, companyAfm: mydataCompanyAfm }),
       });
       if (!res.ok) throw new Error('save failed');
       setMyDataKey('');
@@ -129,7 +131,7 @@ export function IntegrationsSettings() {
       const res = await fetch('/api/integrations/mydata/sync', { method: 'POST' });
       const data = await res.json();
       if (data.error) flashMyData(`myDATA sync failed: ${data.error}`);
-      else flashMyData(`myDATA sync complete — ${data.docsImported ?? 0} imported, ${data.invoicesCreated ?? 0} AR invoices created, ${data.cancellations ?? 0} cancellations.`);
+      else flashMyData(`myDATA sync complete — ${data.docsImported ?? 0} imported, ${data.invoicesCreated ?? 0} invoices created, ${data.cancellations ?? 0} cancellations.`);
       await loadMyData();
     } catch {
       flashMyData('myDATA sync request failed.');
@@ -540,17 +542,18 @@ export function IntegrationsSettings() {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <KeyRound className="w-4 h-4 text-[#3D87D3]" />
-            <h4 className="font-bold text-slate-900 text-sm">AADE myDATA — Automatic Issued-Invoice Import</h4>
+            <h4 className="font-bold text-slate-900 text-sm">AADE myDATA — Automatic Invoice Import</h4>
           </div>
           <Badge variant={mydata.configured ? 'success' : 'warning'} className={mydata.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}>
             {mydata.configured ? 'Configured' : 'Not configured'}
           </Badge>
         </div>
         <p className="text-xs text-slate-500 mb-4">
-          Automatically imports the company&apos;s <strong>issued invoices</strong> transmitted to AADE myDATA
-          (<code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">RequestTransmittedDocs</code>) as AR records,
-          keyed by AADE MARK and mirrored into the invoice registry. Sync runs automatically every day and can be triggered manually below.
-          Credentials are stored encrypted in the vault and never returned to the browser.
+          Automatically imports the company&apos;s <strong>issued and received invoices</strong> transmitted to AADE myDATA
+          (<code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">RequestTransmittedDocs</code>) as AR/AP records,
+          keyed by AADE MARK and mirrored into the invoice registry. Your <strong>Company AFM</strong> tells the sync which side of
+          each document is Orbit: issued invoices become <em>outgoing</em> (AR), received ones <em>incoming</em> (AP). Sync runs
+          automatically every day and can be triggered manually below. Credentials are stored encrypted in the vault and never returned to the browser.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -584,6 +587,16 @@ export function IntegrationsSettings() {
               </button>
             </div>
           </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Company AFM <span className="font-mono normal-case text-slate-400">(tax number)</span></label>
+            <input
+              type="text"
+              value={mydataCompanyAfm}
+              onChange={e => setMyDataCompanyAfm(e.target.value)}
+              placeholder="e.g. 802309756"
+              className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
+            />
+          </div>
         </div>
 
         {mydataMsg && (
@@ -595,7 +608,7 @@ export function IntegrationsSettings() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-4">
           <div className="flex flex-wrap gap-2 text-[10px] font-mono">
             <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Docs: {mydata.docCount}</span>
-            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">AR invoices: {mydata.invoiceCount}</span>
+            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Imported invoices: {mydata.invoiceCount}</span>
             <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">MARK cursor: {mydata.lastCompletedMark}</span>
             <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Last sync: {mydata.lastSuccessAt ? new Date(mydata.lastSuccessAt).toLocaleString() : 'never'}</span>
             {mydata.lastError && (
