@@ -15,7 +15,7 @@ import type { AttioSyncCompany } from '@/components/counterparties/attio-compani
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
-  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers
+  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge
 } from 'lucide-react';
 
 const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
@@ -24,7 +24,7 @@ const CounterpartiesGrid = dynamic(() => import('@/components/counterparties/cou
 export default function CounterpartiesRegistryPage() {
   const { 
     counterparties, contracts, attioEvents, addCounterparty, updateCounterparty, 
-    linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, 
+    linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, mergeCounterparties,
     addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices, catalogModules, catalogItems,
     tierStates, recomputeTiers
   } = useAuth();
@@ -40,6 +40,12 @@ export default function CounterpartiesRegistryPage() {
   const [isReconciling, setIsReconciling] = useState(false);
   const [isTierRecomputing, setIsTierRecomputing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Merge duplicate counterparty state
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeSourceId, setMergeSourceId] = useState('');
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   // Sync initial selection from URL ID
   useEffect(() => {
@@ -745,6 +751,11 @@ export default function CounterpartiesRegistryPage() {
                   </Button>
                 )}
                 {isAdmin && (
+                  <Button size="sm" variant="outline" onClick={() => { setMergeOpen(true); setMergeSourceId(''); setMergeError(null); }} className="text-slate-200 border-slate-600 hover:bg-slate-700" title="Transfer a duplicate counterparty's data into this one">
+                    <Merge className="w-4 h-4 mr-1.5" /> Merge Duplicate Into This
+                  </Button>
+                )}
+                {isAdmin && (
                   <Button size="sm" variant="danger" onClick={() => {
                     if (getContractCount(selectedEntity.id) > 0) {
                       alert("Cannot archive counterparty while active contract agreements exist! Reassign or archive associated contracts first.");
@@ -1242,6 +1253,86 @@ export default function CounterpartiesRegistryPage() {
           </div>
         </Modal>
       )}
+
+      {/* MERGE DUPLICATE COUNTERPARTY MODAL */}
+      {mergeOpen && selectedEntity && (() => {
+        const source = mergeSourceId ? counterparties.find(c => c.id === mergeSourceId) || null : null;
+        const sourceContacts = source?.contacts?.length || 0;
+        const sourceContracts = contracts.filter(c => c.counterparty_id === mergeSourceId).length;
+        const sourceInvoices = (invoices || []).filter(i => i.counterparty_id === mergeSourceId).length;
+        return (
+          <Modal isOpen onClose={() => setMergeOpen(false)} title="Merge Duplicate Counterparty" size="3xl">
+            <div className="space-y-5 text-sm">
+              <p className="text-xs text-slate-500">
+                Pick the <strong>duplicate</strong> counterparty whose data should be transferred into{' '}
+                <strong className="text-emerald-700">{selectedEntity.legal_name}</strong>. All contacts, contracts,
+                invoices, Attio link and tier data move over; the duplicate record is then deleted. This cannot be undone.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                {/* SOURCE (duplicate) */}
+                <div className="p-4 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50">
+                  <div className="text-[10px] uppercase font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full mb-3 w-fit">Duplicate — will be deleted</div>
+                  <CounterpartyPicker value={mergeSourceId} onChange={setMergeSourceId} placeholder="Search the duplicate entity…" allowClear />
+                  {source && (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-[11px] space-y-1.5">
+                      <div className="font-extrabold text-slate-900 text-xs">{source.legal_name} <span className="text-slate-400 font-mono font-normal">({source.vat_number || source.afm || 'no VAT'} · {source.country})</span></div>
+                      <div className="text-emerald-700 font-mono">→ {sourceContacts} contact(s) will transfer</div>
+                      <div className="text-emerald-700 font-mono">→ {sourceContracts} contract(s) will transfer</div>
+                      <div className="text-emerald-700 font-mono">→ {sourceInvoices} invoice(s) will transfer</div>
+                      <div className="text-emerald-700 font-mono">→ {source.attio_link?.link_status === 'linked' ? 'Attio link (moves only if the target has none)' : 'No Attio link'}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* TARGET (kept) */}
+                <div className="p-4 rounded-2xl border-2 border-emerald-300 bg-emerald-50/60">
+                  <div className="text-[10px] uppercase font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full mb-3 w-fit">Kept — receives everything</div>
+                  <div className="font-extrabold text-slate-900">{selectedEntity.legal_name}</div>
+                  <div className="text-[11px] text-slate-500 font-mono">{selectedEntity.vat_number || selectedEntity.afm || 'No VAT'} · {selectedEntity.country}</div>
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-[11px] space-y-1.5">
+                    <div className="font-mono text-slate-600">Already holds: {selectedEntity.contacts?.length || 0} contact(s) · {contracts.filter(c => c.counterparty_id === selectedEntity.id).length} contract(s) · {(invoices || []).filter(i => i.counterparty_id === selectedEntity.id).length} invoice(s)</div>
+                    <div className="text-slate-500">Missing profile fields (VAT, domain, address, notes…) are filled from the duplicate.</div>
+                  </div>
+                </div>
+              </div>
+
+              {mergeError && (
+                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{mergeError}</div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button variant="outline" size="sm" onClick={() => setMergeOpen(false)}>Cancel</Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={!source || merging || mergeSourceId === selectedEntity.id}
+                  onClick={async () => {
+                    if (!source || mergeSourceId === selectedEntity.id) return;
+                    setMerging(true);
+                    setMergeError(null);
+                    const res = await mergeCounterparties(selectedEntity.id, mergeSourceId);
+                    setMerging(false);
+                    if (!res.ok) {
+                      setMergeError(res.error || 'Merge failed.');
+                      return;
+                    }
+                    const counts = res.counts || {};
+                    notifySuccess(`Merged "${source.legal_name}" into "${selectedEntity.legal_name}" — ${(counts.invoices as number) || 0} invoice(s), ${(counts.contracts as number) || 0} contract(s), ${(counts.contacts as number) || 0} contact(s) transferred.`);
+                    setMergeOpen(false);
+                    setMergeSourceId('');
+                    setSelectedEntity(null);
+                    setTimeout(() => window.location.reload(), 900);
+                  }}
+                  className="bg-rose-600 text-white"
+                >
+                  <Merge className="w-4 h-4 mr-1.5" /> {merging ? 'Merging…' : 'Merge Into This'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* NEW ENTITY MODAL */}
       {showNewModal && (

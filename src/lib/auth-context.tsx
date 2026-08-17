@@ -104,6 +104,7 @@ interface AppState {
   processAttioReviewEvent: (eventId: string, action: 'confirm' | 'link' | 'skip', targetCpId?: string) => Promise<boolean>;
   reconcileAttio: () => Promise<void>;
   reassignContracts: (fromCpId: string, contractIds: string[], toCpId: string) => Promise<boolean>;
+  mergeCounterparties: (targetId: string, sourceId: string) => Promise<{ ok: boolean; counts?: Record<string, unknown>; error?: string }>;
   addCounterpartyContact: (contact: Partial<CounterpartyContact>) => Promise<boolean>;
   recomputeTiers: (model: 'client' | 'supplier', cause: 'data_change' | 'config_change' | 'override') => Promise<{ ok: boolean; changes: CounterpartyTierHistoryRow[]; error?: string }>;
   applyTierModelConfig: (model: 'client' | 'supplier', config: Record<string, unknown>, tierCount: number) => Promise<{ ok: boolean; changes: CounterpartyTierHistoryRow[]; error?: string }>;
@@ -2210,6 +2211,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const mergeCounterparties = async (targetId: string, sourceId: string): Promise<{ ok: boolean; counts?: Record<string, unknown>; error?: string }> => {
+    try {
+      const res = await fetch('/api/counterparties/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetId, sourceId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok !== true) {
+        return { ok: false, error: data.error || 'Merge failed' };
+      }
+      // The auth context caches the whole registry in memory; the page triggers a reload
+      // after the success toast so every table (counterparties, contracts, invoices, links,
+      // tiers) is re-synced consistently.
+      return { ok: true, counts: data.counts };
+    } catch (e: any) {
+      console.error('Merge counterparties error:', e);
+      return { ok: false, error: e?.message || 'Merge request failed' };
+    }
+  };
+
   const addCounterpartyContact = async (contact: Partial<CounterpartyContact>): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
@@ -3425,6 +3447,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       applyTierModelConfig,
       setTierOverride,
       reassignContracts,
+      mergeCounterparties,
       addCounterpartyContact,
       saveContractPricing,
       saveCatalogModule,
