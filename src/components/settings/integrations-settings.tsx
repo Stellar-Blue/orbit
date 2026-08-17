@@ -52,9 +52,10 @@ export function IntegrationsSettings() {
     lastCompletedMark: number; lastSuccessAt: string | null; lastError: string | null;
     docCount: number; invoiceCount: number;
     logsTableAvailable: boolean; logsError: string | null;
-    logs: Array<{ id: string; created_at: string; level: string; message: string; detail?: string | null; mark?: number | null }>;
+    logs: Array<{ id: string; created_at: string; level: string; message: string; detail?: string | null; mark?: number | null; method?: string | null; url?: string | null; request_headers?: string | null; response_status?: number | null; response_body?: string | null; duration_ms?: number | null }>;
   }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logsTableAvailable: true, logsError: null, logs: [] });
   const [showMyDataLogs, setShowMyDataLogs] = useState(true);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [mydataUsername, setMyDataUsername] = useState('');
   const [mydataKey, setMyDataKey] = useState('');
   const [showMyDataKey, setShowMyDataKey] = useState(false);
@@ -635,19 +636,64 @@ export function IntegrationsSettings() {
               {mydata.logs.length === 0 ? (
                 <div className="p-4 text-[11px] text-slate-500 font-mono italic">No sync activity logged yet. Hit Sync Now — every request/response is recorded here (secrets are never logged).</div>
               ) : (
-                mydata.logs.map((log) => (
-                  <div key={log.id} className="px-3.5 py-2 flex items-start gap-2.5 text-[11px]">
-                    <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${log.level === 'error' ? 'bg-rose-500' : log.level === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-slate-200">{log.message}</span>
-                        {log.mark != null && <span className="font-mono text-[10px] text-indigo-400 shrink-0">MARK {log.mark}</span>}
+                mydata.logs.map((log) => {
+                  const hasReq = Boolean(log.url || log.response_status != null || log.response_body);
+                  const isOpen = expandedLogId === log.id;
+                  return (
+                    <div key={log.id} className="px-3.5 py-2 text-[11px]">
+                      <div className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${log.level === 'error' ? 'bg-rose-500' : log.level === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-slate-200">{log.message}</span>
+                            {log.method && <span className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 font-mono text-[9px] border border-slate-700">{log.method}</span>}
+                            {log.response_status != null && (
+                              <span className={`px-1.5 py-0.5 rounded font-mono text-[9px] border ${log.response_status < 400 ? 'bg-emerald-900/40 text-emerald-300 border-emerald-800' : 'bg-rose-900/40 text-rose-300 border-rose-800'}`}>
+                                {log.response_status}
+                              </span>
+                            )}
+                            {log.duration_ms != null && <span className="font-mono text-[9px] text-slate-500">{log.duration_ms}ms</span>}
+                            {log.mark != null && <span className="font-mono text-[10px] text-indigo-400 shrink-0">MARK {log.mark}</span>}
+                          </div>
+                          {log.detail && <div className="font-mono text-[10px] text-slate-400 mt-0.5 break-words">{log.detail}</div>}
+                          {hasReq && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLogId(isOpen ? null : log.id)}
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-sky-400 hover:text-sky-200 cursor-pointer"
+                            >
+                              <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                              {isOpen ? 'Hide request/response' : 'View request/response'}
+                            </button>
+                          )}
+                          {isOpen && hasReq && (
+                            <div className="mt-2 space-y-2">
+                              {log.url && (
+                                <div className="rounded-lg bg-slate-900/80 border border-slate-800 p-2 overflow-x-auto">
+                                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Request URL</div>
+                                  <pre className="font-mono text-[10px] text-slate-300 whitespace-pre-wrap break-all">{log.url}</pre>
+                                </div>
+                              )}
+                              {log.request_headers && (
+                                <div className="rounded-lg bg-slate-900/80 border border-slate-800 p-2 overflow-x-auto">
+                                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Request Headers</div>
+                                  <pre className="font-mono text-[10px] text-slate-300 whitespace-pre-wrap break-all">{log.request_headers}</pre>
+                                </div>
+                              )}
+                              {log.response_body && (
+                                <div className="rounded-lg bg-slate-950 border border-slate-800 p-2 overflow-x-auto max-h-64">
+                                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Response Body (XML)</div>
+                                  <pre className="font-mono text-[10px] text-emerald-300/90 whitespace-pre-wrap break-all">{log.response_body}</pre>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <span className="font-mono text-[10px] text-slate-500 shrink-0">{new Date(log.created_at).toLocaleTimeString()}</span>
                       </div>
-                      {log.detail && <div className="font-mono text-[10px] text-slate-400 mt-0.5 break-words">{log.detail}</div>}
                     </div>
-                    <span className="font-mono text-[10px] text-slate-500 shrink-0">{new Date(log.created_at).toLocaleTimeString()}</span>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}

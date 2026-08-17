@@ -12,7 +12,7 @@ export async function GET() {
   const { count: invoiceCount } = await admin.from('invoices').select('id', { count: 'exact', head: true }).eq('created_via', 'api');
   const { data: logs, error: logsError } = await admin
     .from('aade_sync_logs')
-    .select('id,created_at,level,message,detail,mark')
+    .select('id,created_at,level,message,detail,mark,method,url,request_headers,response_status,response_body,duration_ms')
     .order('created_at', { ascending: false })
     .limit(50);
 

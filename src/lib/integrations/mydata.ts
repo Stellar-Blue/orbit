@@ -49,7 +49,8 @@ export async function clearMyDataCreds(admin: SupabaseClient): Promise<void> {
 }
 
 // ---- Debug log ----
-// Only non-sensitive metadata is recorded (never the username, subscription key, AFMs, or raw payloads).
+// Only the username is echoed back; the subscription key is never stored. Response bodies
+// contain counterparty AFMs, so the log table is admin-only (see migration 0044).
 export interface MyDataLogRow {
   id: string;
   created_at: string;
@@ -57,15 +58,36 @@ export interface MyDataLogRow {
   message: string;
   detail?: string | null;
   mark?: number | null;
+  method?: string | null;
+  url?: string | null;
+  request_headers?: string | null;
+  response_status?: number | null;
+  response_body?: string | null;
+  duration_ms?: number | null;
 }
 
-async function logMyData(admin: SupabaseClient, level: MyDataLogRow['level'], message: string, detail?: string | null, mark?: number | null): Promise<void> {
+export interface MyDataRequestLog {
+  method?: string | null;
+  url?: string | null;
+  requestHeaders?: string | null;
+  responseStatus?: number | null;
+  responseBody?: string | null;
+  durationMs?: number | null;
+}
+
+async function logMyData(admin: SupabaseClient, level: MyDataLogRow['level'], message: string, detail?: string | null, mark?: number | null, req?: MyDataRequestLog): Promise<void> {
   try {
     await admin.from('aade_sync_logs').insert({
       level,
       message,
       detail: detail || null,
       mark: mark ?? null,
+      method: req?.method ?? null,
+      url: req?.url ?? null,
+      request_headers: req?.requestHeaders ?? null,
+      response_status: req?.responseStatus ?? null,
+      response_body: req?.responseBody ?? null,
+      duration_ms: req?.durationMs ?? null,
     });
   } catch (e) {
     // logging must never break the sync
@@ -196,12 +218,25 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       if (continuation?.pk) url.searchParams.set('nextPartitionKey', continuation.pk);
       if (continuation?.rk) url.searchParams.set('nextRowKey', continuation.rk);
 
+      const startedAt = Date.now();
       const res = await fetchWithRetry(url.toString(), headers);
       const xml = await res.text();
+      const durationMs = Date.now() - startedAt;
+
+      // Capture the full request/response for the debug log (subscription key is always redacted)
+      const reqLog: MyDataRequestLog = {
+        method: 'GET',
+        url: url.toString(),
+        requestHeaders: `aade-user-id: ${creds.username}\nocp-apim-subscription-key: [REDACTED]\nAccept: application/xml`,
+        responseStatus: res.status,
+        responseBody: xml,
+        durationMs,
+      };
+
       if (!res.ok) {
-        // AADE carries business/validation errors in the XML body too — log status only, never the raw payload
+        // AADE carries business/validation errors in the XML body too
         const msg = `HTTP ${res.status} on page ${pages + 1}`;
-        await logMyData(admin, 'error', 'AADE request error', msg, null);
+        await logMyData(admin, 'error', 'AADE request error', msg, null, reqLog);
         await admin.from('aade_sync_state').update({ last_error: msg }).eq('id', 1);
         return { ...base, ran: true, pages, error: msg, lastCompletedMark: cursor };
       }
@@ -210,7 +245,9 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       const root = parsed.RequestedDoc || parsed;
       const invoices = asArray(root.invoices?.invoice as AadeInvoice[] | AadeInvoice | undefined);
       const continuationEl = root.continuationToken as { nextPartitionKey?: unknown; nextRowKey?: unknown } | undefined;
-      await logMyData(admin, 'info', `Page ${pages + 1}: ${invoices.length} document(s)`, `cursor=${cursor}${continuation?.pk ? ' (continued)' : ''}`);
+      await logMyData(admin, 'info', `GET RequestTransmittedDocs → ${res.status}`,
+        `Page ${pages + 1} · ${invoices.length} document(s) · ${durationMs}ms` + (continuation?.pk ? ' · (continued)' : ''),
+        null, reqLog);
 
       for (const inv of invoices) {
         const mark = asNum(inv.invoiceMark);
