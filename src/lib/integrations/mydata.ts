@@ -118,6 +118,15 @@ const asNum = (x: unknown): number | null => {
 };
 const str = (x: unknown): string | null => (x == null ? null : String(x));
 
+// AADE's Azure gateway wraps responses in <string xmlns="http://schemas.microsoft.com/2003/10/Serialization/">
+// containing XML-escaped XML (&lt;?xml ... &lt;/RequestedDoc&gt;). Decode the text node of <string> and
+// re-parse the real document. Non-wrapped bodies (e.g. some error responses) pass through unchanged.
+function parseAadeXml(xml: string): any {
+  const first = parser.parse(xml);
+  const wrapped = typeof first.string === 'string' ? first.string : null;
+  return wrapped ? parser.parse(wrapped) : first;
+}
+
 // Normalise Greek AFM: strip EL/GR prefix (AADE returns bare 9-digit; counterparties store 'EL123456789')
 const normAfm = (v: string | null | undefined): string | null => {
   if (!v) return null;
@@ -147,17 +156,34 @@ async function fetchWithRetry(url: string, headers: Record<string, string>, atte
   throw new Error(`AADE request failed after ${attempts} attempts`);
 }
 
+// Mirrors the real RequestTransmittedDocs <invoice> element: issuer/counterpart/invoiceHeader/
+// invoiceSummary are DIRECT children of <invoice> (there is no nested wrapper element).
 interface AadeInvoice {
-  invoiceMark: unknown;
-  invoiceUid?: unknown;
+  uid?: unknown;
+  mark?: unknown;
   cancelledByMark?: unknown;
-  invoice?: {
-    issuer?: { vatNumber?: unknown };
-    counterparty?: { vatNumber?: unknown; name?: unknown };
-    invoiceHeader?: { series?: unknown; aa?: unknown; issueDate?: unknown; invoiceType?: unknown; currency?: unknown };
-    invoiceSummary?: { totalNetValue?: unknown; totalVatAmount?: unknown; totalGrossValue?: unknown };
+  issuer?: { vatNumber?: unknown; name?: unknown; country?: unknown; branch?: unknown };
+  counterpart?: { vatNumber?: unknown; name?: unknown; country?: unknown; branch?: unknown };
+  invoiceHeader?: {
+    series?: unknown;
+    aa?: unknown;
+    issueDate?: unknown;
+    invoiceType?: unknown;
+    currency?: unknown;
+    correlatedInvoices?: unknown;
   };
-  qrUrl?: unknown;
+  invoiceDetails?: unknown[];
+  invoiceSummary?: { totalNetValue?: unknown; totalVatAmount?: unknown; totalGrossValue?: unknown };
+  invoiceFormat?: unknown;
+  qrCodeUrl?: unknown;
+  isB2G?: unknown;
+  downloadingInvoiceUrl?: unknown;
+}
+
+interface AadeCancelledInvoice {
+  invoiceMark?: unknown;
+  cancellationMark?: unknown;
+  cancellationDate?: unknown;
 }
 
 /**
@@ -200,6 +226,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
   let cursor = Number(state?.last_completed_mark || 0);
   let maxMark = cursor;
   const processedMarks = new Set<number>();
+  const cancelledPairs = new Set<string>();
 
   const fail = async (error: string): Promise<MyDataSyncResult> => {
     await logMyData(admin, 'error', 'Sync failed', error);
@@ -241,24 +268,24 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
         return { ...base, ran: true, pages, error: msg, lastCompletedMark: cursor };
       }
 
-      const parsed = parser.parse(xml);
+      const parsed = parseAadeXml(xml);
       const root = parsed.RequestedDoc || parsed;
-      const invoices = asArray(root.invoices?.invoice as AadeInvoice[] | AadeInvoice | undefined);
+      const invoices = asArray(root.invoicesDoc?.invoice as AadeInvoice[] | AadeInvoice | undefined);
       const continuationEl = root.continuationToken as { nextPartitionKey?: unknown; nextRowKey?: unknown } | undefined;
       await logMyData(admin, 'info', `GET RequestTransmittedDocs → ${res.status}`,
         `Page ${pages + 1} · ${invoices.length} document(s) · ${durationMs}ms` + (continuation?.pk ? ' · (continued)' : ''),
         null, reqLog);
 
       for (const inv of invoices) {
-        const mark = asNum(inv.invoiceMark);
+        const mark = asNum(inv.mark);
         if (mark == null) continue;
         if (processedMarks.has(mark)) continue;
         processedMarks.add(mark);
         maxMark = Math.max(maxMark, mark);
 
-        const header = inv.invoice?.invoiceHeader;
-        const summary = inv.invoice?.invoiceSummary;
-        const receiverVat = normAfm(str(inv.invoice?.counterparty?.vatNumber));
+        const header = inv.invoiceHeader;
+        const summary = inv.invoiceSummary;
+        const receiverVat = normAfm(str(inv.counterpart?.vatNumber));
 
         try {
           // Record raw doc (idempotent by mark)
@@ -270,7 +297,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
 
           if (existingDoc) {
             await admin.from('aade_documents').update({
-              uid: str(inv.invoiceUid),
+              uid: str(inv.uid),
               issue_date: str(header?.issueDate)?.slice(0, 10) || null,
               invoice_type_code: str(header?.invoiceType),
               series: str(header?.series),
@@ -280,14 +307,14 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
               net: asNum(summary?.totalNetValue),
               vat: asNum(summary?.totalVatAmount),
               gross: asNum(summary?.totalGrossValue),
-              qr_url: str(inv.qrUrl),
+              qr_url: str(inv.qrCodeUrl),
               updated_at: new Date().toISOString(),
             }).eq('mark', mark);
             base.docsUpdated += 1;
           } else {
             await admin.from('aade_documents').insert({
               mark,
-              uid: str(inv.invoiceUid),
+              uid: str(inv.uid),
               issue_date: str(header?.issueDate)?.slice(0, 10) || null,
               invoice_type_code: str(header?.invoiceType),
               series: str(header?.series),
@@ -297,13 +324,16 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
               net: asNum(summary?.totalNetValue),
               vat: asNum(summary?.totalVatAmount),
               gross: asNum(summary?.totalGrossValue),
-              qr_url: str(inv.qrUrl),
+              qr_url: str(inv.qrCodeUrl),
             });
             base.docsImported += 1;
           }
 
           const cancelledBy = asNum(inv.cancelledByMark);
           if (cancelledBy != null) {
+            const pair = `${mark}:${cancelledBy}`;
+            if (cancelledPairs.has(pair)) continue;
+            cancelledPairs.add(pair);
             base.cancellations += 1;
             // Idempotent: insert-or-ignore on the (invoice_mark, cancellation_mark) unique pair
             await admin.from('aade_cancellations').upsert({
@@ -321,6 +351,24 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
           // swallow per-doc errors (e.g. unique-constraint collisions with manually registered invoices)
           console.warn('myDATA per-doc sync error (mark ' + mark + '):', e instanceof Error ? e.message : e);
         }
+      }
+
+      // Cancellations may arrive via <cancelledInvoicesDoc> instead of an inline <cancelledByMark>.
+      const cancelledDocs = asArray((root.cancelledInvoicesDoc as { cancelledInvoice?: unknown } | undefined)?.cancelledInvoice as AadeCancelledInvoice[] | AadeCancelledInvoice | undefined);
+      for (const c of cancelledDocs) {
+        const invoiceMark = asNum(c.invoiceMark);
+        const cancellationMark = asNum(c.cancellationMark);
+        if (invoiceMark == null || cancellationMark == null) continue;
+        const pair = `${invoiceMark}:${cancellationMark}`;
+        if (cancelledPairs.has(pair)) continue;
+        cancelledPairs.add(pair);
+        base.cancellations += 1;
+        await admin.from('aade_cancellations').upsert({
+          invoice_mark: invoiceMark,
+          cancellation_mark: cancellationMark,
+        }, { onConflict: 'invoice_mark,cancellation_mark' });
+        await admin.from('aade_documents').update({ status: 'cancelled' }).eq('mark', invoiceMark);
+        await admin.from('invoices').update({ status: 'cancelled' }).eq('mark', String(invoiceMark));
       }
 
       pages += 1;
@@ -356,8 +404,8 @@ async function mirrorInvoice(
   receiverVat: string | null,
   base: MyDataSyncResult,
 ): Promise<void> {
-  const header = inv.invoice?.invoiceHeader;
-  const summary = inv.invoice?.invoiceSummary;
+  const header = inv.invoiceHeader;
+  const summary = inv.invoiceSummary;
   const net = asNum(summary?.totalNetValue) ?? 0;
   const vat = asNum(summary?.totalVatAmount) ?? 0;
   const gross = asNum(summary?.totalGrossValue) ?? (net + vat);
