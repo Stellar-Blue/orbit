@@ -231,10 +231,11 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
           const cancelledBy = asNum(inv.cancelledByMark);
           if (cancelledBy != null) {
             base.cancellations += 1;
-            await admin.from('aade_cancellations').insert({
+            // Idempotent: insert-or-ignore on the (invoice_mark, cancellation_mark) unique pair
+            await admin.from('aade_cancellations').upsert({
               invoice_mark: mark,
               cancellation_mark: cancelledBy,
-            }, { onConflict: 'invoice_mark,cancellation_mark' }).select().single().catch(() => null);
+            }, { onConflict: 'invoice_mark,cancellation_mark' });
             await admin.from('aade_documents').update({ status: 'cancelled' }).eq('mark', mark);
             await admin.from('invoices').update({ status: 'cancelled' }).eq('mark', String(mark));
             continue;
