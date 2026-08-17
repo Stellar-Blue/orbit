@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff, Terminal, ChevronDown } from 'lucide-react';
 import { IntegrationSettings } from '@/lib/integrations/types';
+import { AttioSettings } from '@/components/settings/attio-settings';
 
 interface OutlookSettings {
   enabled: boolean;
@@ -50,7 +51,9 @@ export function IntegrationsSettings() {
     configured: boolean; username: string | null;
     lastCompletedMark: number; lastSuccessAt: string | null; lastError: string | null;
     docCount: number; invoiceCount: number;
-  }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0 });
+    logs: Array<{ id: string; created_at: string; level: string; message: string; detail?: string | null; mark?: number | null }>;
+  }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0, logs: [] });
+  const [showMyDataLogs, setShowMyDataLogs] = useState(true);
   const [mydataUsername, setMyDataUsername] = useState('');
   const [mydataKey, setMyDataKey] = useState('');
   const [showMyDataKey, setShowMyDataKey] = useState(false);
@@ -496,6 +499,9 @@ export function IntegrationsSettings() {
         )}
       </Card>
 
+      {/* Attio CRM section */}
+      <AttioSettings />
+
       {/* AADE myDATA issued-invoice import */}
       <Card className="p-5">
         <div className="flex items-center justify-between mb-1">
@@ -574,6 +580,45 @@ export function IntegrationsSettings() {
               {savingMyData ? 'Saving…' : 'Save Credentials'}
             </Button>
           </div>
+        </div>
+
+        {/* Helper / Communication log panel */}
+        <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowMyDataLogs(!showMyDataLogs)}
+            className="w-full flex items-center justify-between px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer text-left"
+          >
+            <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+              <Terminal className="w-3.5 h-3.5 text-[#3D87D3]" />
+              myDATA API Communication Log
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 font-mono">{mydata.logs.length} entries</span>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showMyDataLogs ? 'rotate-180' : ''}`} />
+            </span>
+          </button>
+          {showMyDataLogs && (
+            <div className="max-h-64 overflow-y-auto bg-slate-950 divide-y divide-slate-800/80">
+              {mydata.logs.length === 0 ? (
+                <div className="p-4 text-[11px] text-slate-500 font-mono italic">No sync activity logged yet. Hit Sync Now — every request/response is recorded here (secrets are never logged).</div>
+              ) : (
+                mydata.logs.map((log) => (
+                  <div key={log.id} className="px-3.5 py-2 flex items-start gap-2.5 text-[11px]">
+                    <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${log.level === 'error' ? 'bg-rose-500' : log.level === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-200">{log.message}</span>
+                        {log.mark != null && <span className="font-mono text-[10px] text-indigo-400 shrink-0">MARK {log.mark}</span>}
+                      </div>
+                      {log.detail && <div className="font-mono text-[10px] text-slate-400 mt-0.5 break-words">{log.detail}</div>}
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-500 shrink-0">{new Date(log.created_at).toLocaleTimeString()}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </Card>
 

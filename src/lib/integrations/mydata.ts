@@ -48,6 +48,31 @@ export async function clearMyDataCreds(admin: SupabaseClient): Promise<void> {
   await deleteVaultSecret(admin, KEY_SECRET);
 }
 
+// ---- Debug log ----
+// Only non-sensitive metadata is recorded (never the username, subscription key, AFMs, or raw payloads).
+export interface MyDataLogRow {
+  id: string;
+  created_at: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  detail?: string | null;
+  mark?: number | null;
+}
+
+async function logMyData(admin: SupabaseClient, level: MyDataLogRow['level'], message: string, detail?: string | null, mark?: number | null): Promise<void> {
+  try {
+    await admin.from('aade_sync_logs').insert({
+      level,
+      message,
+      detail: detail || null,
+      mark: mark ?? null,
+    });
+  } catch (e) {
+    // logging must never break the sync
+    console.warn('myDATA log insert failed:', e instanceof Error ? e.message : e);
+  }
+}
+
 export interface MyDataSyncResult {
   configured: boolean;
   ran: boolean;
@@ -155,6 +180,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
   const processedMarks = new Set<number>();
 
   const fail = async (error: string): Promise<MyDataSyncResult> => {
+    await logMyData(admin, 'error', 'Sync failed', error);
     await admin.from('aade_sync_state').update({ last_error: error }).eq('id', 1);
     return { ...base, ran: true, error, lastCompletedMark: cursor };
   };
@@ -162,6 +188,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
   try {
     let continuation: { pk?: string; rk?: string } | null = null;
     let pages = 0;
+    await logMyData(admin, 'info', 'Sync started', `endpoint=${USE_DEV ? 'dev' : 'prod'} cursor=${cursor}`);
 
     do {
       const url = new URL(endpoint);
@@ -172,8 +199,9 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       const res = await fetchWithRetry(url.toString(), headers);
       const xml = await res.text();
       if (!res.ok) {
-        // AADE carries business/validation errors in the XML body too
-        const msg = `HTTP ${res.status}: ${xml.slice(0, 300)}`;
+        // AADE carries business/validation errors in the XML body too — log status only, never the raw payload
+        const msg = `HTTP ${res.status} on page ${pages + 1}`;
+        await logMyData(admin, 'error', 'AADE request error', msg, null);
         await admin.from('aade_sync_state').update({ last_error: msg }).eq('id', 1);
         return { ...base, ran: true, pages, error: msg, lastCompletedMark: cursor };
       }
@@ -182,6 +210,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       const root = parsed.RequestedDoc || parsed;
       const invoices = asArray(root.invoices?.invoice as AadeInvoice[] | AadeInvoice | undefined);
       const continuationEl = root.continuationToken as { nextPartitionKey?: unknown; nextRowKey?: unknown } | undefined;
+      await logMyData(admin, 'info', `Page ${pages + 1}: ${invoices.length} document(s)`, `cursor=${cursor}${continuation?.pk ? ' (continued)' : ''}`);
 
       for (const inv of invoices) {
         const mark = asNum(inv.invoiceMark);
@@ -273,6 +302,8 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       last_success_at: new Date().toISOString(),
       last_error: null,
     }).eq('id', 1);
+    await logMyData(admin, 'info', 'Sync completed',
+      `pages=${pages} docsImported=${base.docsImported} invoicesCreated=${base.invoicesCreated} cancellations=${base.cancellations} unmatchedAfm=${base.unmatchedAfm} cursor=${cursor}`);
 
     return { ...base, ran: true, pages, lastCompletedMark: cursor };
   } catch (e) {
