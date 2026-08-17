@@ -503,7 +503,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             setInvoiceCategories(loadedCats);
           }
-          const loadedDocs: InvoiceDocument[] = docRes.data || [];
+          const loadedDocs: InvoiceDocument[] = (docRes.data || []).map((doc: any) => {
+            // Resolve the real public URL from storage so the preview modal renders the actual PDF,
+            // not the metadata fallback sheet. The table only persists storage_path, not url.
+            // MCP-mock records (mcp_invoices/*) have no backing object in storage, so leave those without a URL.
+            const isMockPath = typeof doc.storage_path === 'string' && doc.storage_path.startsWith('mcp_invoices/');
+            const { data: pubData } = isMockPath
+              ? { data: null }
+              : supabase.storage.from('invoices').getPublicUrl(doc.storage_path);
+            return { ...doc, url: pubData?.publicUrl || undefined };
+          });
           setInvoiceDocuments(loadedDocs);
           const loadedPays: InvoicePayment[] = payRes.data || [];
           setInvoicePayments(loadedPays);
