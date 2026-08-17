@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
-import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays } from 'lucide-react';
+import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { IntegrationSettings } from '@/lib/integrations/types';
 
 interface OutlookSettings {
@@ -45,6 +45,86 @@ export function IntegrationsSettings() {
   const [grantDays, setGrantDays] = useState(7);
   const [granting, setGranting] = useState(false);
 
+  // AADE myDATA issued-invoice import
+  const [mydata, setMyData] = useState<{
+    configured: boolean; username: string | null;
+    lastCompletedMark: number; lastSuccessAt: string | null; lastError: string | null;
+    docCount: number; invoiceCount: number;
+  }>({ configured: false, username: null, lastCompletedMark: 0, lastSuccessAt: null, lastError: null, docCount: 0, invoiceCount: 0 });
+  const [mydataUsername, setMyDataUsername] = useState('');
+  const [mydataKey, setMyDataKey] = useState('');
+  const [showMyDataKey, setShowMyDataKey] = useState(false);
+  const [savingMyData, setSavingMyData] = useState(false);
+  const [syncingMyData, setSyncingMyData] = useState(false);
+  const [mydataMsg, setMyDataMsg] = useState<string | null>(null);
+
+  const loadMyData = async () => {
+    try {
+      const res = await fetch('/api/integrations/mydata');
+      if (res.ok) {
+        const data = await res.json();
+        setMyData(data);
+        if (data.username) setMyDataUsername(data.username);
+      }
+    } catch (e) {
+      console.error('load mydata error:', e);
+    }
+  };
+
+  const flashMyData = (msg: string) => {
+    setMyDataMsg(msg);
+    setTimeout(() => setMyDataMsg(null), 4000);
+  };
+
+  const handleSaveMyData = async () => {
+    if (!mydataUsername.trim() || !mydataKey.trim()) { flashMyData('Username and Subscription Key are required.'); return; }
+    setSavingMyData(true);
+    try {
+      const res = await fetch('/api/integrations/mydata', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: mydataUsername, subscriptionKey: mydataKey }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      setMyDataKey('');
+      flashMyData('myDATA credentials saved (stored encrypted in the vault).');
+      await loadMyData();
+    } catch {
+      flashMyData('Failed to save myDATA credentials.');
+    } finally {
+      setSavingMyData(false);
+    }
+  };
+
+  const handleClearMyData = async () => {
+    if (!confirm('Clear the myDATA REST API credentials? Automatic import will stop until re-configured.')) return;
+    try {
+      await fetch('/api/integrations/mydata', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clear: true }),
+      });
+      setMyDataUsername(''); setMyDataKey('');
+      flashMyData('myDATA credentials cleared.');
+      await loadMyData();
+    } catch {
+      flashMyData('Failed to clear myDATA credentials.');
+    }
+  };
+
+  const handleSyncMyData = async () => {
+    setSyncingMyData(true);
+    try {
+      const res = await fetch('/api/integrations/mydata/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) flashMyData(`myDATA sync failed: ${data.error}`);
+      else flashMyData(`myDATA sync complete — ${data.docsImported ?? 0} imported, ${data.invoicesCreated ?? 0} AR invoices created, ${data.cancellations ?? 0} cancellations.`);
+      await loadMyData();
+    } catch {
+      flashMyData('myDATA sync request failed.');
+    } finally {
+      setSyncingMyData(false);
+    }
+  };
+
   const loadExemptions = async () => {
     try {
       const res = await fetch('/api/integrations/exemptions');
@@ -82,6 +162,7 @@ export function IntegrationsSettings() {
           setOutlookLoaded(true);
         }
       })();
+      loadMyData();
     }, 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,6 +494,87 @@ export function IntegrationsSettings() {
             ))}
           </div>
         )}
+      </Card>
+
+      {/* AADE myDATA issued-invoice import */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-[#3D87D3]" />
+            <h4 className="font-bold text-slate-900 text-sm">AADE myDATA — Automatic Issued-Invoice Import</h4>
+          </div>
+          <Badge variant={mydata.configured ? 'success' : 'warning'} className={mydata.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}>
+            {mydata.configured ? 'Configured' : 'Not configured'}
+          </Badge>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Automatically imports the company&apos;s <strong>issued invoices</strong> transmitted to AADE myDATA
+          (<code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">RequestTransmittedDocs</code>) as AR records,
+          keyed by AADE MARK and mirrored into the invoice registry. Sync runs automatically every day and can be triggered manually below.
+          Credentials are stored encrypted in the vault and never returned to the browser.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">myDATA API Username <span className="font-mono normal-case text-slate-400">(aade-user-id)</span></label>
+            <input
+              type="text"
+              value={mydataUsername}
+              onChange={e => setMyDataUsername(e.target.value)}
+              placeholder="Latin-alphanumeric API username"
+              className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Subscription Key <span className="font-mono normal-case text-slate-400">(ocp-apim-subscription-key)</span></label>
+            <div className="flex gap-2">
+              <input
+                type={showMyDataKey ? 'text' : 'password'}
+                value={mydataKey}
+                onChange={e => setMyDataKey(e.target.value)}
+                placeholder="ocp-apim-subscription-key"
+                className="flex-1 p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowMyDataKey(!showMyDataKey)}
+                className="px-2.5 border border-slate-300 rounded-lg text-slate-500 hover:text-slate-800 bg-white cursor-pointer"
+                title={showMyDataKey ? 'Hide key' : 'Show key'}
+              >
+                {showMyDataKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {mydataMsg && (
+          <div className="mt-3 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> {mydataMsg}
+          </div>
+        )}
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-4">
+          <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Docs: {mydata.docCount}</span>
+            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">AR invoices: {mydata.invoiceCount}</span>
+            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">MARK cursor: {mydata.lastCompletedMark}</span>
+            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Last sync: {mydata.lastSuccessAt ? new Date(mydata.lastSuccessAt).toLocaleString() : 'never'}</span>
+            {mydata.lastError && (
+              <span className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200" title={mydata.lastError}>Error: {mydata.lastError.slice(0, 80)}…</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button size="sm" variant="outline" onClick={handleClearMyData} disabled={!mydata.configured} className="text-rose-600 border-rose-200 bg-white cursor-pointer">
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear Credentials
+            </Button>
+            <Button size="sm" variant="primary" onClick={handleSyncMyData} disabled={syncingMyData || !mydata.configured} className="bg-indigo-600 text-white cursor-pointer">
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncingMyData ? 'animate-spin' : ''}`} /> {syncingMyData ? 'Syncing…' : 'Sync Now'}
+            </Button>
+            <Button size="sm" variant="primary" onClick={handleSaveMyData} disabled={savingMyData || !mydataUsername.trim() || !mydataKey.trim()} className="bg-[#3D87D3] text-white cursor-pointer">
+              {savingMyData ? 'Saving…' : 'Save Credentials'}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       <div className="text-[10px] text-slate-400 font-mono">

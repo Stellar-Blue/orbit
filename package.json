@@ -21,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "fast-xml-parser": "^4.5.7",
     "framer-motion": "^12.43.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.28.0",

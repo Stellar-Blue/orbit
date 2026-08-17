@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { athensToday, computeDayState, deliverSlackOutbox, enqueueOutbox, getAdminClient, getSlackSettings } from '@/lib/integrations/server';
 import { syncOutlookForProfile } from '@/lib/integrations/outlook';
+import { syncIssuedInvoices } from '@/lib/integrations/mydata';
 import { GATED_EMPLOYMENT_TYPES } from '@/lib/integrations/types';
 
 export async function GET(request: NextRequest) {
@@ -66,6 +67,14 @@ export async function GET(request: NextRequest) {
     description: 'Last nightly/morning integration reconciliation checkpoint',
   }, { onConflict: 'provider,key' });
 
+  // 5. AADE myDATA issued-invoice import (automatic, when credentials are configured)
+  let mydata;
+  try {
+    mydata = await syncIssuedInvoices(admin);
+  } catch (e) {
+    mydata = { configured: true, ran: true, error: e instanceof Error ? e.message : String(e) };
+  }
+
   return NextResponse.json({
     success: true,
     job: 'cron/integration-daily',
@@ -77,5 +86,6 @@ export async function GET(request: NextRequest) {
     enqueued,
     delivery: summary,
     outlook: outlookSummary,
+    mydata,
   });
 }
