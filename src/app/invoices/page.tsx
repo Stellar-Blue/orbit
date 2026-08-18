@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -27,6 +27,7 @@ export default function InvoicesRegistryPage() {
 
   const isAdmin = currentUser.role === 'admin';
   const params = useParams();
+  const router = useRouter();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -397,6 +398,9 @@ export default function InvoicesRegistryPage() {
                 });
               }
             }}
+            onOpenCounterparty={(inv) => {
+              if (inv.counterparty_id) router.push(`/counterparties/${inv.counterparty_id}`);
+            }}
           />
 
 
@@ -659,10 +663,25 @@ export default function InvoicesRegistryPage() {
                   const docs = currentInv?.documents || [];
                   if (docs.length === 0) {
                     return (
-                      <div className="p-5 rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
+                      <div className="p-5 rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-2">
                         <FileText className="w-7 h-7 mx-auto text-slate-400" />
                         <p className="font-extrabold text-slate-700">No PDF documents attached yet</p>
                         <p className="text-[11px]">Click &ldquo;Attach PDF / Receipt&rdquo; above to upload digital receipts for this bill.</p>
+                        {currentInv?.qr_url && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewDoc({
+                                name: `AADE Verification — ${currentInv.invoice_number}`,
+                                url: currentInv.qr_url || undefined,
+                                subtitle: `myDATA ${currentInv.mark} · ${currentInv.counterparty?.legal_name || 'Counterparty'}`
+                              });
+                            }}
+                            className="inline-flex items-center gap-1.5 mt-1 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[11px] px-3 py-1.5 rounded-lg hover:bg-sky-100 transition-colors cursor-pointer"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> View on AADE (myDATA verification)
+                          </button>
+                        )}
                       </div>
                     );
                   }

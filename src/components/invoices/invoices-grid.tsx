@@ -67,6 +67,7 @@ interface InvoicesGridProps {
   onUploadDocument: (inv: Invoice, file: File) => void;
   onPreviewDocument: (inv: Invoice) => void;
   onPreviewAade: (inv: Invoice) => void;
+  onOpenCounterparty: (inv: Invoice) => void;
 }
 
 export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
@@ -77,7 +78,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   onDelete,
   onUploadDocument,
   onPreviewDocument,
-  onPreviewAade
+  onPreviewAade,
+  onOpenCounterparty
 }) => {
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -126,19 +128,16 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
 
   const columnDefs = useMemo<ColDef<InvoiceRow>[]>(() => [
     {
-      headerName: 'Dir & Entity', field: 'entity', minWidth: 210, sortable: true, ...excelSetFilter(), pinned: groupBy === 'entity' ? undefined : 'left', rowGroup: groupBy === 'entity',
+      headerName: 'Counterparty', field: 'entity', minWidth: 210, sortable: true, ...excelSetFilter(), pinned: groupBy === 'entity' ? undefined : 'left', rowGroup: groupBy === 'entity',
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-extrabold text-[10px] border shrink-0 ${
-            p.data?.direction === 'outgoing' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#3D87D3] border-blue-200'
-          }`}>
-            {p.data?.direction === 'outgoing' ? 'AR' : 'AP'}
-          </div>
-          <div className="min-w-0">
-            <span className="font-bold text-slate-900 block truncate">{p.value}</span>
-            <span className="text-[11px] text-slate-500 font-normal block truncate">{p.data?.entitySub}</span>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); if (p.data) onOpenCounterparty(p.data.inv); }}
+          className="font-bold text-slate-900 block truncate hover:text-[#3D87D3] hover:underline text-left cursor-pointer"
+          title={`Open counterparty: ${p.value || ''}`}
+        >
+          {p.value}
+        </button>
       )
     },
     {
@@ -170,21 +169,23 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Type & Impact', field: 'type', width: 140, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'type',
+      headerName: 'Type', field: 'type', width: 120, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'type',
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => {
         const typeLabel = p.value?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Invoice';
-        const isDebit = p.data?.impact === 'Debit';
         return (
-          <div>
-            <span className="font-bold text-slate-800 text-xs block">{typeLabel}</span>
-            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded border inline-block mt-0.5 ${
-              isDebit ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
-            }`}>
-              {p.data?.impact}
-            </span>
-          </div>
+          <span className="font-bold text-slate-800 text-xs block">{typeLabel}</span>
         );
       }
+    },
+    {
+      headerName: 'Impact', field: 'impact', width: 90, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
+        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded border inline-block ${
+          p.data?.impact === 'Debit' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
+        }`}>
+          {p.data?.impact}
+        </span>
+      )
     },
     {
       headerName: 'Linkage', field: 'linkage', width: 180, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'linkage',
@@ -271,20 +272,33 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             <span>{(p.data?.docName || '').slice(0, 15)}...</span>
           </button>
         ) : (
-          <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-3 py-1 rounded-lg hover:bg-rose-100 cursor-pointer transition-colors" onClick={(e) => e.stopPropagation()}>
-            <Upload className="w-3.5 h-3.5" />
-            <span>Upload PDF</span>
-            <input
-              type="file"
-              accept="application/pdf,image/*"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0] && p.data) {
-                  onUploadDocument(p.data.inv, e.target.files[0]);
-                }
-              }}
-            />
-          </label>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {p.data?.inv.qr_url && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade(p.data.inv); }}
+                className="inline-flex items-center gap-1.5 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[11px] px-2.5 py-1 rounded-lg hover:bg-sky-100 transition-colors cursor-pointer"
+                title="View on AADE (myDATA verification page)"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>View on AADE</span>
+              </button>
+            )}
+            <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-3 py-1 rounded-lg hover:bg-rose-100 cursor-pointer transition-colors" onClick={(e) => e.stopPropagation()}>
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload PDF</span>
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0] && p.data) {
+                    onUploadDocument(p.data.inv, e.target.files[0]);
+                  }
+                }}
+              />
+            </label>
+          </div>
         )
       )
     },
@@ -304,16 +318,6 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 title="1-Click Fast Path Collection / Payment"
               >
                 Mark Paid Today
-              </button>
-            )}
-            {p.data.inv.qr_url && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade(p.data.inv); }}
-                className="p-1.5 h-8 w-8 text-slate-500 hover:text-[#3D87D3] hover:bg-blue-50 rounded-lg border border-transparent hover:border-blue-200 transition-colors cursor-pointer"
-                title="View on AADE (myDATA verification page)"
-              >
-                <ExternalLink className="w-4 h-4" />
               </button>
             )}
             <button
@@ -336,7 +340,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         );
       }
     }
-  ], [copiedId, groupBy, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade]);
+  ], [copiedId, groupBy, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">

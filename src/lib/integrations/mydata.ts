@@ -411,6 +411,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient, options?: { vatN
             try {
               await admin.from('invoices').update({
                 invoice_number: r.invoice_number,
+                qr_url: r.qr_url,
                 type: r.type,
                 issue_date: r.issue_date,
                 due_date: r.due_date,
@@ -482,6 +483,7 @@ interface InvoiceRowRec {
   type: 'invoice' | 'credit_note';
   invoice_number: string;
   mark: string;
+  qr_url?: string | null;
   issue_date: string;
   due_date: string;
   period_from: string;
@@ -548,6 +550,7 @@ function buildInvoiceRow(
       type,
       invoice_number: invoiceNumber,
       mark: String(r.mark),
+      qr_url: str(r.inv.qrCodeUrl) || null,
       issue_date: issueDate,
       due_date: dueDate,
       period_from: issueDate,

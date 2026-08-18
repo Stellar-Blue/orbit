@@ -551,25 +551,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const loadedAlloc: InvoiceAllocation[] = allocRes.data || [];
           setInvoiceAllocations(loadedAlloc);
 
-          // myDATA-mirrored invoices carry a public ΑΑΔΕ QR verification URL on the raw store.
-          // Map mark → qr_url so the invoices UI can offer a fast "View on AADE" preview.
-          const qrByMark = new Map<string, string>();
-          try {
-            const { data: aadeDocs } = await supabase.from('aade_documents').select('mark, qr_url');
-            (aadeDocs || []).forEach((d: any) => {
-              if (d.qr_url) qrByMark.set(String(d.mark), d.qr_url);
-            });
-          } catch {
-            // aade_documents may not exist on older environments — AADE preview is optional.
-          }
-
+          // myDATA-mirrored invoices carry qr_url on the invoice row itself (mirrored at sync time).
           const enrichedInvoices: Invoice[] = (invRes.data || []).map((inv: any) => {
             const cp = enrichedCounterparties.find(c => c.id === inv.counterparty_id);
             const cnt = enrichedContracts.find(c => c.id === inv.contract_id);
             const docs = loadedDocs.filter(d => d.invoice_id === inv.id);
             const pays = loadedPays.filter(p => p.invoice_id === inv.id);
             const allocs = loadedAlloc.filter(a => a.invoice_id === inv.id);
-            return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs, qr_url: inv.mark ? (qrByMark.get(String(inv.mark)) || null) : null };
+            return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs, qr_url: inv.qr_url || null };
           });
           setInvoices(enrichedInvoices);
         } catch (e) {
