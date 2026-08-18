@@ -3510,6 +3510,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUserId]);
 
+  const updateCompanyProfile = async (updates: Partial<CompanyProfile>): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error, data } = await supabase.from('company_profile').update(updates).eq('id', 1).select().single();
+      if (error) {
+        alert(`Error updating corporate profile: ${error.message}`);
+        return false;
+      }
+      setCompanyProfile(data);
+      return true;
+    } catch (err: any) {
+      alert(`Exception updating corporate profile: ${err.message}`);
+      return false;
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
