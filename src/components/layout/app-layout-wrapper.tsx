@@ -12,12 +12,22 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole, slackIntegration } = useAuth();
+  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole, slackIntegration, isLoading } = useAuth();
 
   if (isAuthPage) {
     return (
       <div className="flex-1 flex flex-col min-h-screen w-full bg-slate-50 selection:bg-[#3D87D3] selection:text-white">
         {children}
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="flex flex-col items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-4 border-[#3D87D3] border-t-transparent animate-spin" />
+        </div>
       </div>
     );
   }

@@ -59,6 +59,7 @@ interface AppState {
   isViewAsEmployee: boolean;
   setIsViewAsEmployee: (val: boolean | ((prev: boolean) => boolean)) => void;
   realUserRole: 'admin' | 'employee' | string;
+  isLoading: boolean;
   signOut: () => Promise<void> | void;
   
   // Actions for immediate optimistic mutation in UI
@@ -219,6 +220,7 @@ const generateUUID = (): string => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [isDevMode, setIsDevMode] = useState<boolean>(true);
@@ -608,7 +610,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             matchedId = match.id;
           }
         }
-        if (!matchedId && loadedProfiles.length > 0) {
+        if (!matchedId && loadedProfiles.length > 0 && isLocal) {
           matchedId = loadedProfiles[0].id;
         }
         if (matchedId) {
@@ -616,6 +618,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (err) {
         console.error("Live database sync exception:", err);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -3675,6 +3679,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       syncSlackStatus,
       revokeSlackConnection,
       refreshInvoices,
+      isLoading,
     }}>
       {children}
     </AuthContext.Provider>
