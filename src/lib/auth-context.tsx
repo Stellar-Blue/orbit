@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { 
@@ -202,6 +202,7 @@ interface AppState {
   refreshIntegrationState: () => Promise<void>;
   syncSlackStatus: (profileId: string, date: string, orbitId?: string) => Promise<void>;
   revokeSlackConnection: () => Promise<void>;
+  refreshInvoices: () => Promise<void>;
 }
 
 const AuthContext = createContext<AppState | undefined>(undefined);
@@ -3442,6 +3443,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshInvoices = async (): Promise<void> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const [invRes, docRes, payRes, allocRes] = await Promise.all([
+        supabase.from('invoices').select('*').order('issue_date', { ascending: false }),
+        supabase.from('invoice_documents').select('*'),
+        supabase.from('invoice_payments').select('*'),
+        supabase.from('invoice_allocations').select('*'),
+      ]);
+      
+      const loadedDocs: InvoiceDocument[] = (docRes.data || []).map((doc: any) => {
+        const isMockPath = typeof doc.storage_path === 'string' && doc.storage_path.startsWith('mcp_invoices/');
+        const { data: pubData } = isMockPath
+          ? { data: null }
+          : supabase.storage.from('invoices').getPublicUrl(doc.storage_path);
+        return { ...doc, url: pubData?.publicUrl || undefined };
+      });
+      setInvoiceDocuments(loadedDocs);
+      
+      const loadedPays: InvoicePayment[] = payRes.data || [];
+      setInvoicePayments(loadedPays);
+      const loadedAlloc: InvoiceAllocation[] = allocRes.data || [];
+      setInvoiceAllocations(loadedAlloc);
+
+      const enrichedInvoices: Invoice[] = (invRes.data || []).map((inv: any) => {
+        const cp = counterparties.find(c => c.id === inv.counterparty_id);
+        const cnt = contracts.find(c => c.id === inv.contract_id);
+        const docs = loadedDocs.filter(d => d.invoice_id === inv.id);
+        const pays = loadedPays.filter(p => p.invoice_id === inv.id);
+        const allocs = loadedAlloc.filter(a => a.invoice_id === inv.id);
+        return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs };
+      });
+      setInvoices(enrichedInvoices);
+    } catch (e) {
+      console.error('refreshInvoices error:', e);
+    }
+  };
+
+  const refreshInvoicesRef = useRef(refreshInvoices);
+  useEffect(() => {
+    refreshInvoicesRef.current = refreshInvoices;
+  }, [refreshInvoices]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const supabase = getSupabaseBrowserClient();
+    const channel = supabase.channel('realtime-invoices')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
+        refreshInvoicesRef.current();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId]);
+
   return (
     <AuthContext.Provider value={{
       currentUser,
@@ -3614,7 +3672,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       integrationLastReconciledAt,
       refreshIntegrationState,
       syncSlackStatus,
-      revokeSlackConnection
+      revokeSlackConnection,
+      refreshInvoices,
     }}>
       {children}
     </AuthContext.Provider>

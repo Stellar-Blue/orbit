@@ -12,7 +12,7 @@ import {
   Receipt, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
-  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2
+  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { CashflowBarChart } from '@/components/invoices/cashflow-chart';
@@ -25,7 +25,7 @@ const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 export default function InvoicesRegistryPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
-    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries
+    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -93,6 +93,11 @@ export default function InvoicesRegistryPage() {
   const [newNotes, setNewNotes] = useState<string>('');
   const [newFile, setNewFile] = useState<File | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<string>('');
+
+  // Sync Modal State
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncVatNumber, setSyncVatNumber] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Payment Record Modal
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
@@ -594,6 +599,25 @@ export default function InvoicesRegistryPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button 
+            onClick={() => {
+              setSyncVatNumber('');
+              setIsSyncModalOpen(true);
+            }} 
+            variant="outline"
+            className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
+          >
+            <CloudDownload className="w-4 h-4" />
+            Sync myDATA
+          </Button>
+          <Button 
+            onClick={() => refreshInvoices()} 
+            variant="outline"
+            className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Reload
+          </Button>
           <Button 
             onClick={() => {
               setEditingInvoiceId(null);
@@ -1928,6 +1952,58 @@ export default function InvoicesRegistryPage() {
           </div>
         </div>
       )}
+      {/* Sync myDATA Modal */}
+      <Modal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} title="Sync myDATA Invoices" size="md">
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-slate-500">
+            Enter the VAT number of the counterparty you want to sync invoices for. This will fetch all invoices issued by your company to this VAT number, or received by your company from this VAT number.
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-700">Counterparty VAT Number</label>
+            <input 
+              type="text" 
+              value={syncVatNumber} 
+              onChange={e => setSyncVatNumber(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              placeholder="e.g. 801431008"
+            />
+          </div>
+        </div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 rounded-b-2xl">
+          <Button onClick={() => setIsSyncModalOpen(false)} variant="outline" className="px-5 py-2.5 text-xs font-bold">
+            Cancel
+          </Button>
+          <Button
+            disabled={!syncVatNumber.trim() || isSyncing}
+            onClick={async () => {
+              setIsSyncing(true);
+              try {
+                const res = await fetch('/api/integrations/mydata/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ vatNumber: syncVatNumber.trim() })
+                });
+                if (!res.ok) {
+                  const data = await res.json().catch(() => null);
+                  throw new Error(data?.error || `HTTP ${res.status}`);
+                }
+                const result = await res.json();
+                notifySuccess(`Successfully synced ${result.docsImported} documents from myDATA.`);
+                setIsSyncModalOpen(false);
+              } catch (e) {
+                alert(`Sync failed: ${e instanceof Error ? e.message : String(e)}`);
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-sm text-xs flex items-center gap-2"
+          >
+            {isSyncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+            {isSyncing ? 'Syncing...' : 'Sync Now'}
+          </Button>
+        </div>
+      </Modal>
+
     </div>
   );
 }
