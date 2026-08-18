@@ -257,7 +257,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient, options?: { vatN
     do {
       const url = new URL(endpoint);
       url.searchParams.set('mark', String(cursor));
-      if (targetVat) url.searchParams.set('entityVatNumber', targetVat);
+      if (targetVat) url.searchParams.set('receiverVatNumber', targetVat);
       if (continuation?.pk) url.searchParams.set('nextPartitionKey', continuation.pk);
       if (continuation?.rk) url.searchParams.set('nextRowKey', continuation.rk);
 
@@ -285,6 +285,13 @@ export async function syncIssuedInvoices(admin: SupabaseClient, options?: { vatN
       }
 
       const parsed = parseAadeXml(xml);
+      
+      // AADE can return HTTP 200 with an XML body containing a ValidationError 
+      if (parsed.ResponseDoc?.response?.statusCode === 'ValidationError') {
+        const errMsg = parsed.ResponseDoc.response.errors?.error?.message || 'Unknown AADE Validation Error';
+        return await fail(`AADE Error: ${errMsg}`);
+      }
+
       const root = parsed.RequestedDoc || parsed;
       const invoices = asArray(root.invoicesDoc?.invoice as AadeInvoice[] | AadeInvoice | undefined);
       const continuationEl = root.continuationToken as { nextPartitionKey?: unknown; nextRowKey?: unknown } | undefined;
