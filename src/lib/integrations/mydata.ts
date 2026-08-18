@@ -246,6 +246,21 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
     let pages = 0;
     await logMyData(admin, 'info', 'Sync started', `endpoint=${USE_DEV ? 'dev' : 'prod'} cursor=${cursor}`);
 
+    // Load all active counterparties ONCE so per-invoice matching is an in-memory lookup.
+    // (Previously every invoice did a serial counterparty query — the main source of DB timeouts.)
+    const { data: activeCps } = await admin
+      .from('counterparties')
+      .select('id,legal_name,afm,vat_number')
+      .eq('status', 'active');
+    const cpByVat = new Map<string, { id: string; legal_name: string | null }>();
+    for (const cp of (activeCps || []) as { id: string; legal_name: string | null; afm: string | null; vat_number: string | null }[]) {
+      for (const v of [cp.afm, cp.vat_number]) {
+        const n = normAfm(v);
+        if (n) cpByVat.set(n, { id: cp.id, legal_name: cp.legal_name });
+      }
+    }
+    const seenCounterparties = new Set<string>();
+
     do {
       const url = new URL(endpoint);
       url.searchParams.set('mark', String(cursor));
@@ -283,84 +298,54 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
         `Page ${pages + 1} · ${invoices.length} document(s) · ${durationMs}ms` + (continuation?.pk ? ' · (continued)' : ''),
         null, reqLog);
 
+      // ---- Batch-process this page (in-memory build, then batched DB writes) ----
+      const pageRecs: Array<{ inv: AadeInvoice; mark: number; header: AadeInvoice['invoiceHeader']; summary: AadeInvoice['invoiceSummary']; receiverVat: string | null }> = [];
       for (const inv of invoices) {
         const mark = asNum(inv.mark);
         if (mark == null) continue;
         if (processedMarks.has(mark)) continue;
         processedMarks.add(mark);
         maxMark = Math.max(maxMark, mark);
+        pageRecs.push({ inv, mark, header: inv.invoiceHeader, summary: inv.invoiceSummary, receiverVat: normAfm(str(inv.counterpart?.vatNumber)) });
+      }
 
-        const header = inv.invoiceHeader;
-        const summary = inv.invoiceSummary;
-        const receiverVat = normAfm(str(inv.counterpart?.vatNumber));
-
-        try {
-          // Record raw doc (idempotent by mark)
-          const { data: existingDoc } = await admin
-            .from('aade_documents')
-            .select('id')
-            .eq('mark', mark)
-            .maybeSingle();
-
-          if (existingDoc) {
-            await admin.from('aade_documents').update({
-              uid: str(inv.uid),
-              issue_date: str(header?.issueDate)?.slice(0, 10) || null,
-              invoice_type_code: str(header?.invoiceType),
-              series: str(header?.series),
-              aa: str(header?.aa),
-              receiver_vat_number: receiverVat,
-              currency: str(header?.currency),
-              net: asNum(summary?.totalNetValue),
-              vat: asNum(summary?.totalVatAmount),
-              gross: asNum(summary?.totalGrossValue),
-              qr_url: str(inv.qrCodeUrl),
-              updated_at: new Date().toISOString(),
-            }).eq('mark', mark);
-            base.docsUpdated += 1;
-          } else {
-            await admin.from('aade_documents').insert({
-              mark,
-              uid: str(inv.uid),
-              issue_date: str(header?.issueDate)?.slice(0, 10) || null,
-              invoice_type_code: str(header?.invoiceType),
-              series: str(header?.series),
-              aa: str(header?.aa),
-              receiver_vat_number: receiverVat,
-              currency: str(header?.currency),
-              net: asNum(summary?.totalNetValue),
-              vat: asNum(summary?.totalVatAmount),
-              gross: asNum(summary?.totalGrossValue),
-              qr_url: str(inv.qrCodeUrl),
-            });
-            base.docsImported += 1;
-          }
-
-          const cancelledBy = asNum(inv.cancelledByMark);
-          if (cancelledBy != null) {
-            const pair = `${mark}:${cancelledBy}`;
-            if (cancelledPairs.has(pair)) continue;
-            cancelledPairs.add(pair);
-            base.cancellations += 1;
-            // Idempotent: insert-or-ignore on the (invoice_mark, cancellation_mark) unique pair
-            await admin.from('aade_cancellations').upsert({
-              invoice_mark: mark,
-              cancellation_mark: cancelledBy,
-            }, { onConflict: 'invoice_mark,cancellation_mark' });
-            await admin.from('aade_documents').update({ status: 'cancelled' }).eq('mark', mark);
-            await admin.from('invoices').update({ status: 'cancelled' }).eq('mark', String(mark));
-            continue;
-          }
-
-          await mirrorInvoice(admin, inv, mark, receiverVat, companyAfm, base);
-        } catch (e) {
-          base.skippedErrors += 1;
-          // swallow per-doc errors (e.g. unique-constraint collisions with manually registered invoices)
-          console.warn('myDATA per-doc sync error (mark ' + mark + '):', e instanceof Error ? e.message : e);
+      // Raw documents: one batched upsert per page (mark is UNIQUE on aade_documents).
+      if (pageRecs.length > 0) {
+        const docRows = pageRecs.map(r => ({
+          mark: r.mark,
+          uid: str(r.inv.uid),
+          issue_date: str(r.header?.issueDate)?.slice(0, 10) || null,
+          invoice_type_code: str(r.header?.invoiceType),
+          series: str(r.header?.series),
+          aa: str(r.header?.aa),
+          receiver_vat_number: r.receiverVat,
+          currency: str(r.header?.currency),
+          net: asNum(r.summary?.totalNetValue),
+          vat: asNum(r.summary?.totalVatAmount),
+          gross: asNum(r.summary?.totalGrossValue),
+          qr_url: str(r.inv.qrCodeUrl),
+          updated_at: new Date().toISOString(),
+        }));
+        const { data: existingDocs } = await admin.from('aade_documents').select('mark').in('mark', docRows.map(d => d.mark));
+        const existingDocMarks = new Set((existingDocs || []).map(d => Number(d.mark)));
+        const { error: docErr } = await admin.from('aade_documents').upsert(docRows, { onConflict: 'mark' });
+        if (docErr) throw docErr;
+        for (const d of docRows) {
+          if (existingDocMarks.has(d.mark)) base.docsUpdated += 1;
+          else base.docsImported += 1;
         }
       }
 
-      // Cancellations may arrive via <cancelledInvoicesDoc> instead of an inline <cancelledByMark>.
+      // Cancellations (inline <cancelledByMark> + <cancelledInvoicesDoc>) — collected then batched.
+      const cancellationPairs: Array<{ invoice_mark: number; cancellation_mark: number }> = [];
+      for (const r of pageRecs) {
+        const cancelledBy = asNum(r.inv.cancelledByMark);
+        if (cancelledBy == null) continue;
+        const pair = `${r.mark}:${cancelledBy}`;
+        if (cancelledPairs.has(pair)) continue;
+        cancelledPairs.add(pair);
+        cancellationPairs.push({ invoice_mark: r.mark, cancellation_mark: cancelledBy });
+      }
       const cancelledDocs = asArray((root.cancelledInvoicesDoc as { cancelledInvoice?: unknown } | undefined)?.cancelledInvoice as AadeCancelledInvoice[] | AadeCancelledInvoice | undefined);
       for (const c of cancelledDocs) {
         const invoiceMark = asNum(c.invoiceMark);
@@ -369,13 +354,87 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
         const pair = `${invoiceMark}:${cancellationMark}`;
         if (cancelledPairs.has(pair)) continue;
         cancelledPairs.add(pair);
-        base.cancellations += 1;
-        await admin.from('aade_cancellations').upsert({
-          invoice_mark: invoiceMark,
-          cancellation_mark: cancellationMark,
-        }, { onConflict: 'invoice_mark,cancellation_mark' });
-        await admin.from('aade_documents').update({ status: 'cancelled' }).eq('mark', invoiceMark);
-        await admin.from('invoices').update({ status: 'cancelled' }).eq('mark', String(invoiceMark));
+        cancellationPairs.push({ invoice_mark: invoiceMark, cancellation_mark: cancellationMark });
+      }
+      if (cancellationPairs.length > 0) {
+        base.cancellations += cancellationPairs.length;
+        await admin.from('aade_cancellations').upsert(cancellationPairs, { onConflict: 'invoice_mark,cancellation_mark' });
+        const cancelledMarks = [...new Set(cancellationPairs.map(p => p.invoice_mark))];
+        await admin.from('aade_documents').update({ status: 'cancelled' }).in('mark', cancelledMarks);
+        await admin.from('invoices').update({ status: 'cancelled' }).in('mark', cancelledMarks.map(String));
+      }
+
+      // Mirror non-cancelled invoices into the registry.
+      const cancelledMarkSet = new Set(cancellationPairs.map(p => p.invoice_mark));
+      const invRows: InvoiceRowRec[] = [];
+      const pageNewCounterparties: string[] = [];
+      for (const r of pageRecs) {
+        if (cancelledMarkSet.has(r.mark)) continue;
+        const built = buildInvoiceRow(r, companyAfm, cpByVat);
+        if (built === null) continue; // no issue date — nothing to place
+        if (!built.matched) {
+          base.unmatchedAfm += 1;
+          continue;
+        }
+        if (built.counterpartyName && !seenCounterparties.has(built.counterpartyName)) {
+          seenCounterparties.add(built.counterpartyName);
+          pageNewCounterparties.push(built.counterpartyName);
+        }
+        invRows.push(built.row);
+      }
+
+      if (invRows.length > 0) {
+        const invMarks = invRows.map(r => String(r.mark));
+        const { data: existingInv } = await admin.from('invoices').select('mark').in('mark', invMarks);
+        const existingInvMarks = new Set((existingInv || []).map(r => String(r.mark)));
+        const toInsert = invRows.filter(r => !existingInvMarks.has(String(r.mark)));
+        const toUpdate = invRows.filter(r => existingInvMarks.has(String(r.mark)));
+
+        if (toInsert.length > 0) {
+          // Single batched upsert: manually-registered invoices with the same
+          // (counterparty, direction, number) are ignored (preserved), the rest are inserted.
+          const { error: insErr } = await admin.from('invoices').upsert(toInsert, {
+            onConflict: 'counterparty_id,direction,invoice_number',
+            ignoreDuplicates: true,
+          });
+          if (insErr) throw insErr;
+          const { data: afterIns } = await admin.from('invoices').select('mark').in('mark', toInsert.map(r => String(r.mark)));
+          const insertedSet = new Set((afterIns || []).map(x => String(x.mark)));
+          const insertedCount = toInsert.filter(r => insertedSet.has(String(r.mark))).length;
+          base.invoicesCreated += insertedCount;
+          base.skippedErrors += toInsert.length - insertedCount;
+        }
+        if (toUpdate.length > 0) {
+          await runBatched(toUpdate, 15, async (r) => {
+            try {
+              await admin.from('invoices').update({
+                invoice_number: r.invoice_number,
+                type: r.type,
+                issue_date: r.issue_date,
+                due_date: r.due_date,
+                period_from: r.issue_date,
+                period_to: r.due_date,
+                currency: r.currency,
+                net: r.net,
+                vat_amount: r.vat_amount,
+                vat_rate: r.vat_rate,
+                gross: r.gross,
+                gross_eur: r.gross_eur,
+                missing_document: false,
+              }).eq('mark', String(r.mark));
+              base.invoicesUpdated += 1;
+            } catch (e) {
+              base.skippedErrors += 1;
+              console.warn('myDATA invoice update error (mark ' + r.mark + '):', e instanceof Error ? e.message : e);
+            }
+          });
+        }
+      }
+
+      // Log the counterparties newly registered on this page (concise, deduped per sync).
+      if (pageNewCounterparties.length > 0) {
+        await logMyData(admin, 'info', `Registered ${pageNewCounterparties.length} counterparty(ies)`,
+          pageNewCounterparties.slice(0, 12).join(' · ') + (pageNewCounterparties.length > 12 ? ' …' : ''));
       }
 
       pages += 1;
@@ -395,7 +454,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       last_error: null,
     }).eq('id', 1);
     await logMyData(admin, 'info', 'Sync completed',
-      `pages=${pages} docsImported=${base.docsImported} invoicesCreated=${base.invoicesCreated} cancellations=${base.cancellations} unmatchedAfm=${base.unmatchedAfm} cursor=${cursor}`);
+      `pages=${pages} docsImported=${base.docsImported} invoicesCreated=${base.invoicesCreated} cancellations=${base.cancellations} unmatchedAfm=${base.unmatchedAfm} counterparties=${seenCounterparties.size} cursor=${cursor}`);
 
     return { ...base, ran: true, pages, lastCompletedMark: cursor };
   } catch (e) {
@@ -403,82 +462,88 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
   }
 }
 
-// Mirror a transmitted invoice into the invoices registry as AR (outgoing).
-async function mirrorInvoice(
-  admin: SupabaseClient,
-  inv: AadeInvoice,
-  mark: number,
-  receiverVat: string | null,
+// Run a list of async operations in bounded-parallel batches (avoids hammering the DB with
+// hundreds of simultaneous writes, while staying far faster than fully serial execution).
+async function runBatched<T>(items: T[], batchSize: number, fn: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const chunk = items.slice(i, i + batchSize);
+    await Promise.all(chunk.map(fn));
+  }
+}
+
+// Shape of an invoices-registry row mirrored from an AADE document.
+interface InvoiceRowRec {
+  direction: 'outgoing' | 'incoming';
+  counterparty_id: string;
+  type: 'invoice' | 'credit_note';
+  invoice_number: string;
+  mark: string;
+  issue_date: string;
+  due_date: string;
+  period_from: string;
+  period_to: string;
+  currency: string;
+  fx_rate: number;
+  net: number;
+  vat_amount: number;
+  vat_rate: string;
+  gross: number;
+  gross_eur: number;
+  status: string;
+  missing_document: boolean;
+  created_via: string;
+  notes: string;
+}
+
+// Build the invoices-registry row for a transmitted doc, or null when it can't be placed
+// (no issue date). matched=false means no active counterparty matched the other party's AFM
+// (counted as unmatchedAfm by the caller).
+function buildInvoiceRow(
+  r: { inv: AadeInvoice; mark: number; header: AadeInvoice['invoiceHeader']; summary: AadeInvoice['invoiceSummary']; receiverVat: string | null },
   companyAfm: string | null,
-  base: MyDataSyncResult,
-): Promise<void> {
-  const header = inv.invoiceHeader;
-  const summary = inv.invoiceSummary;
+  cpByVat: Map<string, { id: string; legal_name: string | null }>,
+): { row: InvoiceRowRec; matched: boolean; counterpartyName: string | null } | null {
+  const header = r.header;
+  const summary = r.summary;
   const net = asNum(summary?.totalNetValue) ?? 0;
   const vat = asNum(summary?.totalVatAmount) ?? 0;
   const gross = asNum(summary?.totalGrossValue) ?? (net + vat);
   const issueDate = str(header?.issueDate)?.slice(0, 10);
-  if (!issueDate) return; // cannot place an invoice without an issue date
+  if (!issueDate) return null; // cannot place an invoice without an issue date
   const currency = str(header?.currency) || 'EUR';
   const typeCode = str(header?.invoiceType) || '';
-  const type = typeCode.startsWith('5.') ? 'credit_note' : 'invoice';
+  const type: 'invoice' | 'credit_note' = typeCode.startsWith('5.') ? 'credit_note' : 'invoice';
   const series = str(header?.series) || '';
   const aa = str(header?.aa) || '';
-  const invoiceNumber = series ? `${series}-${aa}` : aa || String(mark);
+  const invoiceNumber = series ? `${series}-${aa}` : aa || String(r.mark);
   const dueDate = new Date(new Date(issueDate + 'T00:00:00').getTime() + 30 * 86400000).toISOString().slice(0, 10);
 
   // Direction: we ISSUED it when our AFM is the issuer → outgoing (AR), other party = counterpart.
   // Otherwise we RECEIVED it → incoming (AP), other party = issuer. Without a configured company
-  // AFM we fall back to treating everything as issued (previous behaviour).
-  const issuerVat = normAfm(str(inv.issuer?.vatNumber));
+  // AFM we fall back to treating everything as issued.
+  const issuerVat = normAfm(str(r.inv.issuer?.vatNumber));
   const myAfm = companyAfm ? normAfm(companyAfm) : null;
   const outgoing = myAfm ? issuerVat === myAfm : true;
   const direction: 'outgoing' | 'incoming' = outgoing ? 'outgoing' : 'incoming';
-  const matchVat = outgoing ? receiverVat : issuerVat;
+  const matchVat = outgoing ? r.receiverVat : issuerVat;
   const vatRate = net > 0 ? `${Math.round((vat / net) * 1000) / 10}%` : '0%';
 
-  // Match the other party by AFM to an existing counterparty
   let counterpartyId: string | null = null;
+  let counterpartyName: string | null = null;
   if (matchVat) {
-    const { data: cp } = await admin
-      .from('counterparties')
-      .select('id')
-      .or(`afm.eq.${matchVat},vat_number.eq.${matchVat},vat_number.eq.EL${matchVat},vat_number.eq.GR${matchVat}`)
-      .eq('status', 'active')
-      .limit(1)
-      .maybeSingle();
+    const cp = cpByVat.get(matchVat);
     counterpartyId = cp?.id || null;
+    counterpartyName = cp?.legal_name || null;
   }
-  if (!counterpartyId) {
-    base.unmatchedAfm += 1;
-    return;
-  }
+  if (!counterpartyId) return { row: {} as InvoiceRowRec, matched: false, counterpartyName: null };
 
-  const { data: existing } = await admin.from('invoices').select('id').eq('mark', String(mark)).maybeSingle();
-  if (existing) {
-    await admin.from('invoices').update({
-      invoice_number: invoiceNumber,
-      type,
-      issue_date: issueDate,
-      due_date: dueDate,
-      period_from: issueDate,
-      period_to: dueDate,
-      currency,
-      net,
-      vat_amount: vat,
-      vat_rate: vatRate,
-      gross,
-      gross_eur: gross,
-      missing_document: false,
-    }).eq('id', existing.id);
-    base.invoicesUpdated += 1;
-  } else {
-    await admin.from('invoices').insert({
+  return {
+    row: {
       direction,
       counterparty_id: counterpartyId,
       type,
       invoice_number: invoiceNumber,
-      mark: String(mark),
+      mark: String(r.mark),
       issue_date: issueDate,
       due_date: dueDate,
       period_from: issueDate,
@@ -493,8 +558,9 @@ async function mirrorInvoice(
       status: 'sent_received',
       missing_document: false,
       created_via: 'api',
-      notes: `Imported automatically from AADE myDATA (MARK ${mark}).`,
-    });
-    base.invoicesCreated += 1;
-  }
+      notes: `Imported automatically from AADE myDATA (MARK ${r.mark}).`,
+    },
+    matched: true,
+    counterpartyName,
+  };
 }
