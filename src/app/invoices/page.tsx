@@ -388,6 +388,15 @@ export default function InvoicesRegistryPage() {
                 });
               }
             }}
+            onPreviewAade={(inv) => {
+              if (inv.qr_url) {
+                setPreviewDoc({
+                  name: `AADE Verification — ${inv.invoice_number}`,
+                  url: inv.qr_url,
+                  subtitle: `myDATA ${inv.mark} · ${inv.counterparty?.legal_name || 'Counterparty'}`
+                });
+              }
+            }}
           />
 
 

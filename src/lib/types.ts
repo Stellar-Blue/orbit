@@ -714,6 +714,9 @@ export interface Invoice {
   credits_invoice?: Invoice;
   invoice_number: string;
   mark?: string | null;
+  // AADE myDATA QR verification-page URL (myDATA-mirrored invoices only; opens the public
+  // ΑΑΔΕ "Επιβεβαίωση Παραστατικού" page — the only document AADE serves for ERP-channel docs).
+  qr_url?: string | null;
   internal_ref?: string | null;
   category?: string | null;
   issue_date: string;

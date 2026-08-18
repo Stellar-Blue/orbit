@@ -325,6 +325,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient, options?: { vatN
           vat: asNum(r.summary?.totalVatAmount),
           gross: asNum(r.summary?.totalGrossValue),
           qr_url: str(r.inv.qrCodeUrl),
+          downloading_invoice_url: str(r.inv.downloadingInvoiceUrl) || null,
           updated_at: new Date().toISOString(),
         }));
         const { data: existingDocs } = await admin.from('aade_documents').select('mark').in('mark', docRows.map(d => d.mark));

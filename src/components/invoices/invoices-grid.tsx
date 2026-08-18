@@ -6,7 +6,7 @@ import { type ColDef, type ICellRendererParams, type ValueFormatterParams } from
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { Invoice, InvoiceStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
-import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search } from 'lucide-react';
+import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search, ExternalLink } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, string> = {
   paid: 'bg-emerald-50 text-emerald-800 border-emerald-300',
@@ -66,6 +66,7 @@ interface InvoicesGridProps {
   onDelete: (inv: Invoice) => void;
   onUploadDocument: (inv: Invoice, file: File) => void;
   onPreviewDocument: (inv: Invoice) => void;
+  onPreviewAade: (inv: Invoice) => void;
 }
 
 export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
@@ -75,7 +76,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   onMarkPaid,
   onDelete,
   onUploadDocument,
-  onPreviewDocument
+  onPreviewDocument,
+  onPreviewAade
 }) => {
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -304,6 +306,16 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 Mark Paid Today
               </button>
             )}
+            {p.data.inv.qr_url && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade(p.data.inv); }}
+                className="p-1.5 h-8 w-8 text-slate-500 hover:text-[#3D87D3] hover:bg-blue-50 rounded-lg border border-transparent hover:border-blue-200 transition-colors cursor-pointer"
+                title="View on AADE (myDATA verification page)"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); if (p.data) onOpen(p.data.inv); }}
@@ -324,7 +336,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         );
       }
     }
-  ], [copiedId, groupBy, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument]);
+  ], [copiedId, groupBy, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
