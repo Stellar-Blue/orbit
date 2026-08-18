@@ -10,12 +10,6 @@ export async function GET() {
   const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark,last_success_at,last_error,company_afm').eq('id', 1).maybeSingle();
   const { count: docCount } = await admin.from('aade_documents').select('id', { count: 'exact', head: true });
   const { count: invoiceCount } = await admin.from('invoices').select('id', { count: 'exact', head: true }).eq('created_via', 'api');
-  const { data: logs, error: logsError } = await admin
-    .from('aade_sync_logs')
-    .select('id,created_at,level,message,detail,mark,method,url,request_headers,response_status,response_body,duration_ms')
-    .order('created_at', { ascending: false })
-    .limit(50);
-
   return NextResponse.json({
     configured: creds.configured,
     username: creds.username,
@@ -25,9 +19,9 @@ export async function GET() {
     lastError: state?.last_error ?? null,
     docCount: docCount ?? 0,
     invoiceCount: invoiceCount ?? 0,
-    logs: logs || [],
-    logsTableAvailable: !logsError,
-    logsError: logsError?.message || null,
+    logs: [],
+    logsTableAvailable: false,
+    logsError: null,
   });
 }
 

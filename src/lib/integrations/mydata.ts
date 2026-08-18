@@ -80,22 +80,13 @@ export interface MyDataRequestLog {
 }
 
 async function logMyData(admin: SupabaseClient, level: MyDataLogRow['level'], message: string, detail?: string | null, mark?: number | null, req?: MyDataRequestLog): Promise<void> {
-  try {
-    await admin.from('aade_sync_logs').insert({
-      level,
-      message,
-      detail: detail || null,
-      mark: mark ?? null,
-      method: req?.method ?? null,
-      url: req?.url ?? null,
-      request_headers: req?.requestHeaders ?? null,
-      response_status: req?.responseStatus ?? null,
-      response_body: req?.responseBody ?? null,
-      duration_ms: req?.durationMs ?? null,
-    });
-  } catch (e) {
-    // logging must never break the sync
-    console.warn('myDATA log insert failed:', e instanceof Error ? e.message : e);
+  // AADE logs table was removed to save space. We just log to console now.
+  if (level === 'error') {
+    console.error(`[myDATA] ${message}`, detail);
+  } else if (level === 'warn') {
+    console.warn(`[myDATA] ${message}`, detail);
+  } else {
+    console.info(`[myDATA] ${message}`, detail);
   }
 }
 
