@@ -14,7 +14,7 @@ export interface AttioSyncCompany {
   country_code: string;
   vat_number: string;
   domain: string;
-  suggested_role: 'client' | 'supplier' | 'both';
+  suggested_roles: string[];
   estimated_arr: number;
   qualified?: boolean;
   email?: string;
@@ -24,6 +24,7 @@ interface AttioCompanyRow {
   comp: AttioSyncCompany;
   legalName: string;
   relationship: string;
+  roles: string[];
   qualified: boolean;
   country: string;
   vat: string;
@@ -55,6 +56,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
       comp,
       legalName: comp.legal_name,
       relationship: comp.relationship_status || '—',
+      roles: comp.suggested_roles || [],
       qualified: comp.qualified !== false,
       country: comp.country_code || '—',
       vat: comp.vat_number || '—',
@@ -78,9 +80,22 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
       {
         headerName: 'Relationship Type', field: 'relationship', width: 160, sortable: true, ...excelSetFilter(),
         cellRenderer: (p: ICellRendererParams<AttioCompanyRow, string>) => (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-indigo-500/10 text-indigo-700 border border-indigo-300">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-indigo-500/10 text-indigo-700 border border-indigo-300 truncate" title={p.value || undefined}>
             {p.value}
           </span>
+        )
+      },
+      {
+        headerName: 'Suggested Roles', field: 'roles', width: 140, sortable: true,
+        valueGetter: (p) => p.data?.comp.suggested_roles?.join(', '),
+        cellRenderer: (p: ICellRendererParams<AttioCompanyRow, string>) => (
+          <div className="flex gap-1 flex-wrap items-center">
+            {(p.data?.comp.suggested_roles || []).map(r => (
+              <span key={r} className={`px-1.5 py-0.5 text-[9px] font-bold rounded uppercase ${r === 'client' ? 'bg-emerald-100 text-emerald-800' : r === 'supplier' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800'}`}>
+                {r}
+              </span>
+            ))}
+          </div>
         )
       },
       {

@@ -11,7 +11,8 @@ import {
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
   EmployeeContract, SalaryBonus,
-  JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod
+  JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
+  Role, CounterpartyRole
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -37,6 +38,8 @@ interface AppState {
   remoteAmendmentRequests: RemoteAmendmentRequest[];
   remoteQuotaRequests: RemoteQuotaRequest[];
   counterparties: Counterparty[];
+  counterpartyRoles: Role[];
+  counterpartyRoleLinks: CounterpartyRole[];
   attioEvents: AttioEvent[];
   contracts: Contract[];
   catalogModules: CatalogModule[];
@@ -100,6 +103,7 @@ interface AppState {
   updateCounterparty: (cp: Counterparty) => Promise<boolean>;
   deleteCounterparty: (id: string) => Promise<boolean>;
   deleteAllCounterparties: () => Promise<boolean>;
+  syncAttioRoles: () => Promise<boolean>;
   linkToAttio: (counterpartyId: string, attioRecordId: string) => Promise<boolean>;
   processAttioReviewEvent: (eventId: string, action: 'confirm' | 'link' | 'skip', targetCpId?: string) => Promise<boolean>;
   reconcileAttio: () => Promise<void>;
@@ -245,6 +249,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
   const [remoteQuotaRequests, setRemoteQuotaRequests] = useState<RemoteQuotaRequest[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [counterpartyRoles, setCounterpartyRoles] = useState<Role[]>([]);
+  const [counterpartyRoleLinks, setCounterpartyRoleLinks] = useState<CounterpartyRole[]>([]);
   const [attioEvents, setAttioEvents] = useState<AttioEvent[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [catalogModules, setCatalogModules] = useState<CatalogModule[]>([]);
@@ -292,7 +298,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const [
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
-          holidaysRes, remoteDaysRes, remotePatternsRes, timesheetsRes, counterpartiesRes, contractsRes, remotePoliciesRes,
+          holidaysRes, remoteDaysRes, remotePatternsRes, timesheetsRes, counterpartiesRes, cpRolesTableRes, cpRoleLinksRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
           integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes,
@@ -314,6 +320,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('remote_patterns').select('*'),
           supabase.from('contract_timesheets').select('*'),
           supabase.from('counterparties').select('*'),
+          supabase.from('roles').select('*'),
+          supabase.from('counterparty_roles').select('*'),
           supabase.from('contracts').select('*'),
           supabase.from('remote_policies').select('*'),
           supabase.from('catalog_modules').select('*').order('sort_order', { ascending: true }),
@@ -346,6 +354,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('time_entries').select('*'),
           supabase.from('timesheet_periods').select('*')
         ]);
+
+        const loadedCpRoles: Role[] = cpRolesTableRes?.data || [];
+        const loadedCpRoleLinks: CounterpartyRole[] = cpRoleLinksRes?.data || [];
+        setCounterpartyRoles(loadedCpRoles);
+        setCounterpartyRoleLinks(loadedCpRoleLinks);
 
         const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
         const loadedContacts: CounterpartyContact[] = (cpContactsRes.data || []) as CounterpartyContact[];
@@ -437,12 +450,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const cpContracts = (contractsRes.data || []).filter((cnt: any) => cnt.counterparty_id === cp.id && cnt.status !== 'archived');
           const hasRevenue = cpContracts.some((cnt: any) => cnt.direction === 'revenue');
           const hasCost = cpContracts.some((cnt: any) => cnt.direction === 'cost' || cnt.direction === 'supplier');
+          
+          const cpLinks = loadedCpRoleLinks.filter(l => l.counterparty_id === cp.id);
+          const explicitRoles = cpLinks.map(l => loadedCpRoles.find(r => r.id === l.role_id)).filter(Boolean) as Role[];
+          
+          // Map to lowercase slugs for easier derived calculations
+          const explicitSlugs = explicitRoles.map(r => r.slug.toLowerCase());
+          const combinedSlugs = new Set(explicitSlugs);
+          
+          if (hasRevenue) combinedSlugs.add('client');
+          if (hasCost) combinedSlugs.add('supplier');
+          
+          const finalSlugs = Array.from(combinedSlugs);
+          
           let derived_role: 'client' | 'supplier' | 'both' | 'none yet' = 'none yet';
-          if (hasRevenue && hasCost) derived_role = 'both';
-          else if (hasRevenue) derived_role = 'client';
-          else if (hasCost) derived_role = 'supplier';
+          if (finalSlugs.includes('client') && finalSlugs.includes('supplier')) derived_role = 'both';
+          else if (finalSlugs.includes('client')) derived_role = 'client';
+          else if (finalSlugs.includes('supplier')) derived_role = 'supplier';
+          
+          // Resolve the final slugs back to Role objects to pass to the UI
+          const finalRoles = finalSlugs.map(slug => loadedCpRoles.find(r => r.slug === slug)).filter(Boolean) as Role[];
+          
           const tier = attachTierToCounterparty(cp, loadedTierVersions, loadedTierStates, loadedTierOverrides);
-          return { ...cp, attio_link, contacts, derived_role, tier };
+          return { ...cp, attio_link, contacts, derived_role, roles: finalRoles, tier };
         });
         setCounterparties(enrichedCounterparties);
 
@@ -1823,10 +1853,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (lData) attio_link = lData as AttioLink;
       }
 
+      if (cp.roles && cp.roles.length > 0) {
+        const roleInserts = cp.roles.map(r => ({ counterparty_id: id, role_id: r.id }));
+        await supabase.from('counterparty_roles').insert(roleInserts);
+        setCounterpartyRoleLinks(prev => [...prev, ...roleInserts]);
+      }
+
       const newCp: Counterparty = {
         ...(data || row),
         attio_link,
         contacts: [],
+        roles: cp.roles || [],
         derived_role: 'none yet'
       };
       setCounterparties(prev => [newCp, ...prev]);
@@ -1840,8 +1877,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateCounterparty = async (cp: Counterparty): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
-      const { attio_link, contacts, derived_role, ...cleanRow } = cp as any;
+      const { attio_link, contacts, derived_role, roles, tier, ...cleanRow } = cp as any;
       await supabase.from('counterparties').update(cleanRow).eq('id', cp.id);
+      
+      const newRoles = roles || [];
+      await supabase.from('counterparty_roles').delete().eq('counterparty_id', cp.id);
+      if (newRoles.length > 0) {
+        const roleInserts = newRoles.map((r: Role) => ({ counterparty_id: cp.id, role_id: r.id }));
+        await supabase.from('counterparty_roles').insert(roleInserts);
+        setCounterpartyRoleLinks(prev => [...prev.filter(l => l.counterparty_id !== cp.id), ...roleInserts]);
+      } else {
+        setCounterpartyRoleLinks(prev => prev.filter(l => l.counterparty_id !== cp.id));
+      }
+      
       setCounterparties(prev => prev.map(c => c.id === cp.id ? cp : c));
       return true;
     } catch (e) {
@@ -1876,6 +1924,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return true;
     } catch (e) {
       console.error('Error deleting all counterparties:', e);
+      return false;
+    }
+  };
+
+  const syncAttioRoles = async (): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { data: mcpTokens } = await supabase.from('mcp_oauth_tokens').select('*').eq('provider', 'attio').limit(1);
+      const token = mcpTokens && mcpTokens.length > 0 ? mcpTokens[0].access_token : undefined;
+      
+      const res = await fetch('/api/v1/attio/attributes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const data = await res.json();
+      if (data.success && data.attributes) {
+        const relationshipAttr = data.attributes.find((a: any) => a.api_slug === 'relationship_type');
+        if (relationshipAttr && relationshipAttr.options) {
+          const options = relationshipAttr.options;
+          const roleInserts = options.map((opt: any) => ({
+            id: generateUUID(),
+            attio_id: opt.id,
+            name: opt.title,
+            slug: (opt.title || opt.id).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+          }));
+          
+          for (const row of roleInserts) {
+            await supabase.from('roles').upsert({
+              attio_id: row.attio_id,
+              name: row.name,
+              slug: row.slug
+            }, { onConflict: 'slug' });
+          }
+          
+          // Re-fetch roles
+          const { data: newRoles } = await supabase.from('roles').select('*');
+          if (newRoles) setCounterpartyRoles(newRoles);
+          
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to sync attio roles:', e);
       return false;
     }
   };
@@ -3383,6 +3476,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       remoteAmendmentRequests,
       remoteQuotaRequests,
       counterparties,
+      counterpartyRoles,
+      counterpartyRoleLinks,
       attioEvents,
       contracts,
       catalogModules,
@@ -3440,6 +3535,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateCounterparty,
       deleteCounterparty,
       deleteAllCounterparties,
+      syncAttioRoles,
       linkToAttio,
       processAttioReviewEvent,
       reconcileAttio,

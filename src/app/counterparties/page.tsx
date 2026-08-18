@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
-import { Counterparty, AttioLink, CounterpartyContact, Contract } from '@/lib/types';
+import { Counterparty, AttioLink, CounterpartyContact, Contract, Role } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { TierOverrideForm } from '@/components/counterparties/tier-override-form';
@@ -23,7 +23,7 @@ const CounterpartiesGrid = dynamic(() => import('@/components/counterparties/cou
 
 export default function CounterpartiesRegistryPage() {
   const { 
-    counterparties, contracts, attioEvents, addCounterparty, updateCounterparty, 
+    counterparties, counterpartyRoles, contracts, attioEvents, addCounterparty, updateCounterparty, 
     linkToAttio, processAttioReviewEvent, reconcileAttio, reassignContracts, mergeCounterparties,
     addCounterpartyContact, deleteCounterparty, deleteAllCounterparties, currentUser, invoices, catalogModules, catalogItems,
     tierStates, recomputeTiers
@@ -91,6 +91,10 @@ export default function CounterpartiesRegistryPage() {
   const [editCountry, setEditCountry] = useState("");
   const [editDomain, setEditDomain] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editRoles, setEditRoles] = useState<Role[]>([]);
+
+  // New Entity Modal state
+  const [newRoles, setNewRoles] = useState<Role[]>([]);
 
   // Attio manual link inputs
   const [linkRecordId, setLinkRecordId] = useState("");
@@ -131,16 +135,19 @@ export default function CounterpartiesRegistryPage() {
 
   // KPIs
   const totalEntities = counterparties.filter(c => c.status !== 'archived').length;
-  const clientCount = counterparties.filter(c => c.status !== 'archived' && (c.derived_role === 'client' || c.derived_role === 'both')).length;
-  const supplierCount = counterparties.filter(c => c.status !== 'archived' && (c.derived_role === 'supplier' || c.derived_role === 'both')).length;
+  const clientCount = counterparties.filter(c => c.status !== 'archived' && (c.roles || []).some(r => r.slug === 'client')).length;
+  const supplierCount = counterparties.filter(c => c.status !== 'archived' && (c.roles || []).some(r => r.slug === 'supplier')).length;
   const linkedCount = counterparties.filter(c => c.status !== 'archived' && c.attio_link?.link_status === 'linked').length;
   const pendingReviewCount = attioEvents.filter(e => e.status === 'pending_review').length;
 
   const filteredRegistry = useMemo(() => {
     return counterparties.filter(cp => {
-      if (roleFilter === 'clients' && cp.derived_role !== 'client' && cp.derived_role !== 'both') return false;
-      if (roleFilter === 'suppliers' && cp.derived_role !== 'supplier' && cp.derived_role !== 'both') return false;
-      if (roleFilter === 'both' && cp.derived_role !== 'both') return false;
+      const roles = cp.roles || [];
+      const hasClient = roles.some(r => r.slug === 'client');
+      const hasSupplier = roles.some(r => r.slug === 'supplier');
+      if (roleFilter === 'clients' && !hasClient) return false;
+      if (roleFilter === 'suppliers' && !hasSupplier) return false;
+      if (roleFilter === 'both' && !(hasClient && hasSupplier)) return false;
       if (roleFilter === 'unlinked' && cp.attio_link?.link_status === 'linked') return false;
       if (roleFilter === 'archived' && cp.status !== 'archived') return false;
       if (roleFilter !== 'archived' && cp.status === 'archived') return false;
@@ -172,6 +179,7 @@ export default function CounterpartiesRegistryPage() {
     setEditCountry(cp.country || "Greece");
     setEditDomain(cp.website_domain || "");
     setEditNotes(cp.notes || "");
+    setEditRoles(cp.roles || []);
     setLinkRecordId(cp.attio_link?.attio_record_id || `attio_rec_orbit_${cp.id.slice(0, 8)}`);
   };
 
@@ -185,10 +193,11 @@ export default function CounterpartiesRegistryPage() {
       afm: editVat.trim(),
       country: editCountry,
       website_domain: editDomain.trim(),
-      notes: editNotes.trim()
+      notes: editNotes.trim(),
+      roles: editRoles
     });
     if (success) {
-      setSelectedEntity(prev => prev ? { ...prev, legal_name: editLegalName, trade_name: editTradeName, vat_number: editVat, afm: editVat, country: editCountry, website_domain: editDomain, notes: editNotes } : null);
+      setSelectedEntity(prev => prev ? { ...prev, legal_name: editLegalName, trade_name: editTradeName, vat_number: editVat, afm: editVat, country: editCountry, website_domain: editDomain, notes: editNotes, roles: editRoles } : null);
       setIsEditMode(false);
     }
   };
@@ -207,19 +216,24 @@ export default function CounterpartiesRegistryPage() {
       website_domain: newDomain.trim() || undefined,
       notes: newNotes.trim() || undefined,
       sync_to_attio: syncToAttio,
-      status: 'active'
+      status: 'active',
+      roles: newRoles
     });
     setShowNewModal(false);
-    setNewLegalName(""); setNewTradeName(""); setNewVat(""); setNewDomain(""); setNewNotes("");
+    setNewLegalName(""); setNewTradeName(""); setNewVat(""); setNewDomain(""); setNewNotes(""); setNewRoles([]);
   };
 
-  const getRoleBadge = (role?: string) => {
-    switch(role) {
-      case 'client': return <Badge variant="info">Client</Badge>;
-      case 'supplier': return <Badge variant="warning">Supplier</Badge>;
-      case 'both': return <Badge variant="info" className="bg-purple-500/10 text-purple-600 border border-purple-300">Client & Supplier</Badge>;
-      default: return <Badge variant="neutral">No Contracts Yet</Badge>;
-    }
+  const getRoleBadge = (roles?: Role[]) => {
+    if (!roles || roles.length === 0) return <Badge variant="neutral">No Roles</Badge>;
+    return (
+      <div className="flex gap-1 flex-wrap">
+        {roles.map(r => {
+           if (r.slug === 'client') return <Badge key={r.id} variant="info">Client</Badge>;
+           if (r.slug === 'supplier') return <Badge key={r.id} variant="warning">Supplier</Badge>;
+           return <Badge key={r.id} variant="info" className="bg-slate-500/10 text-slate-600 border border-slate-300 capitalize">{r.name}</Badge>;
+        })}
+      </div>
+    );
   };
 
   const getContractVal = (c: Contract) => calculateContractValuation(
@@ -291,7 +305,7 @@ export default function CounterpartiesRegistryPage() {
         afm: cleanVat && comp.country_code === 'GR' ? cleanVat : undefined,
         vat_valid: !!cleanVat,
         status: 'active',
-        derived_role: comp.suggested_role || 'client',
+        roles: (comp.suggested_roles || []).map((slug: string) => counterpartyRoles.find(r => r.slug === slug.toLowerCase())).filter(Boolean) as Role[],
         website_domain: comp.domain,
         sync_to_attio: true,
         notes: `Imported via Attio CRM sync (${comp.relationship_status})`
@@ -739,7 +753,7 @@ export default function CounterpartiesRegistryPage() {
                         <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       )}
                     </button>
-                    {getRoleBadge(selectedEntity.derived_role)}
+                    {getRoleBadge(selectedEntity.roles)}
                   </div>
                 </div>
               </div>
@@ -992,6 +1006,25 @@ export default function CounterpartiesRegistryPage() {
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Country Jurisdiction</label>
                     <input type="text" value={editCountry} onChange={(e) => setEditCountry(e.target.value)} className="w-full p-2 bg-white border rounded text-slate-800 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Manual Roles</label>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {counterpartyRoles.map(roleOption => (
+                        <label key={roleOption.id} className="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700 bg-white border border-slate-200 px-2 py-1 rounded shadow-sm hover:bg-slate-50 transition-colors">
+                          <input 
+                            type="checkbox" 
+                            checked={editRoles.some(r => r.id === roleOption.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) setEditRoles([...editRoles, roleOption]);
+                              else setEditRoles(editRoles.filter(r => r.id !== roleOption.id));
+                            }}
+                            className="rounded border-slate-300 text-[#3D87D3] focus:ring-[#3D87D3]"
+                          />
+                          <span>{roleOption.name}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   <div className="col-span-2">
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Website Domain</label>
@@ -1394,6 +1427,25 @@ export default function CounterpartiesRegistryPage() {
                   placeholder="volue.com"
                   className="w-full p-2 bg-white border border-slate-300 rounded text-sm text-slate-800"
                 />
+              </div>
+              <div className="col-span-2">
+                <label className="block font-semibold uppercase text-slate-500 mb-1">Roles</label>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {counterpartyRoles.map(roleOption => (
+                    <label key={roleOption.id} className="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded shadow-sm hover:bg-slate-50 transition-colors">
+                      <input 
+                        type="checkbox" 
+                        checked={newRoles.some(r => r.id === roleOption.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setNewRoles([...newRoles, roleOption]);
+                          else setNewRoles(newRoles.filter(r => r.id !== roleOption.id));
+                        }}
+                        className="rounded border-slate-300 text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                      />
+                      <span>{roleOption.name}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="col-span-2">
                 <label className="block font-semibold uppercase text-slate-500 mb-1">Internal Accounting Notes</label>

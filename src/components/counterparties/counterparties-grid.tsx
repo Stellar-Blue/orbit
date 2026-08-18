@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
-import { Counterparty, Contract, CatalogModule, CatalogItem } from '@/lib/types';
+import { Counterparty, Contract, CatalogModule, CatalogItem, Role } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, MapPin, ShieldCheck, RefreshCw, ExternalLink, Unlink, Trash2, Search, Pin } from 'lucide-react';
 
@@ -16,7 +16,7 @@ interface CpRow {
   country: string;
   vat: string;
   vatValid: boolean;
-  role: string;
+  roles: Role[];
   activeCount: number;
   arr: number;
   attioLinked: boolean;
@@ -33,11 +33,17 @@ interface CounterpartiesGridProps {
   getContractArr: (cpId: string) => number;
 }
 
-const roleBadge = (role: string | undefined) => {
-  if (role === 'client') return <Badge variant="success">CLIENT</Badge>;
-  if (role === 'supplier') return <Badge variant="warning">SUPPLIER</Badge>;
-  if (role === 'both') return <Badge variant="info">CLIENT + SUPPLIER</Badge>;
-  return <Badge variant="neutral">UNCATEGORIZED</Badge>;
+const roleBadge = (roles: Role[]) => {
+  if (!roles || roles.length === 0) return <Badge variant="neutral">NO ROLES</Badge>;
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {roles.map(r => {
+        if (r.slug === 'client') return <Badge key={r.id} variant="success">CLIENT</Badge>;
+        if (r.slug === 'supplier') return <Badge key={r.id} variant="warning">SUPPLIER</Badge>;
+        return <Badge key={r.id} variant="info" className="uppercase">{r.name}</Badge>;
+      })}
+    </div>
+  );
 };
 
 export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
@@ -68,7 +74,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
         country: cp.country || '—',
         vat: cp.vat_number || cp.afm || '',
         vatValid: !!cp.vat_valid,
-        role: cp.derived_role || 'none yet',
+        roles: cp.roles || [],
         activeCount: getContractCount(cp.id),
         arr: getContractArr(cp.id),
         attioLinked: cp.attio_link?.link_status === 'linked',
@@ -135,9 +141,10 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
       )
     },
     {
-      headerName: 'Derived Role', field: 'role', width: 160, sortable: true,
-      filter: 'agSetColumnFilter', filterParams: { values: ['client', 'supplier', 'both', 'none yet'], excelMode: 'windows' },
-      cellRenderer: (p: ICellRendererParams<CpRow, string>) => roleBadge(p.value || '')
+      headerName: 'Roles', field: 'roles', width: 180, sortable: true,
+      valueGetter: (p) => p.data?.roles.map(r => r.name).join(', '),
+      filter: 'agTextColumnFilter',
+      cellRenderer: (p: ICellRendererParams<CpRow, string>) => roleBadge(p.data?.roles || [])
     },
     {
       headerName: 'Active Agreements & ARR', field: 'arr', width: 160, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',

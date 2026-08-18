@@ -307,6 +307,21 @@ export interface CounterpartyContact {
   created_at?: string;
 }
 
+export interface Role {
+  id: string;
+  name: string;
+  slug: string;
+  attio_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CounterpartyRole {
+  counterparty_id: string;
+  role_id: string;
+  role?: Role;
+}
+
 export interface Counterparty {
   id: string;
   legal_name: string;
@@ -330,6 +345,8 @@ export interface Counterparty {
   derived_role?: 'client' | 'supplier' | 'both' | 'none yet';
   // Computed tiering state (enriched client-side)
   tier?: CounterpartyTierState;
+  // Multiple explicit roles
+  roles?: Role[];
 }
 
 export type TierModel = 'client' | 'supplier';

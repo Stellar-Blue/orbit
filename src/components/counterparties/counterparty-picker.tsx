@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Counterparty } from '@/lib/types';
+import { Counterparty, Role } from '@/lib/types';
 import { Search, Plus, Check, ShieldCheck, Building2, ExternalLink, RefreshCw, X, Globe, MapPin } from 'lucide-react';
 
 interface CounterpartyPickerProps {
@@ -107,13 +107,17 @@ export const CounterpartyPicker: React.FC<CounterpartyPickerProps> = ({
     }
   };
 
-  const getRoleBadge = (role?: string) => {
-    switch(role) {
-      case 'client': return <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-blue-500/15 text-blue-300 border border-blue-500/30 rounded-full uppercase">Client</span>;
-      case 'supplier': return <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-orange-500/15 text-orange-300 border border-orange-500/30 rounded-full uppercase">Supplier</span>;
-      case 'both': return <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-purple-500/15 text-purple-300 border border-purple-500/30 rounded-full uppercase">Client & Supplier</span>;
-      default: return <span className="px-2 py-0.5 text-[10px] font-medium tracking-wide bg-slate-500/15 text-slate-400 border border-slate-500/30 rounded-full uppercase">No Contracts Yet</span>;
-    }
+  const getRoleBadge = (roles?: Role[]) => {
+    if (!roles || roles.length === 0) return <span className="px-2 py-0.5 text-[10px] font-medium tracking-wide bg-slate-500/15 text-slate-400 border border-slate-500/30 rounded-full uppercase">No Roles</span>;
+    return (
+      <div className="flex gap-1 flex-wrap">
+        {roles.map(r => {
+          if (r.slug === 'client') return <span key={r.id} className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-blue-500/15 text-blue-300 border border-blue-500/30 rounded-full uppercase">Client</span>;
+          if (r.slug === 'supplier') return <span key={r.id} className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-orange-500/15 text-orange-300 border border-orange-500/30 rounded-full uppercase">Supplier</span>;
+          return <span key={r.id} className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-purple-500/15 text-purple-300 border border-purple-500/30 rounded-full uppercase">{r.name}</span>;
+        })}
+      </div>
+    );
   };
 
   return (
@@ -136,7 +140,7 @@ export const CounterpartyPicker: React.FC<CounterpartyPickerProps> = ({
                 {selectedCounterparty.trade_name && selectedCounterparty.trade_name !== selectedCounterparty.legal_name && (
                   <span className="text-xs text-slate-400 font-normal">({selectedCounterparty.trade_name})</span>
                 )}
-                {getRoleBadge(selectedCounterparty.derived_role)}
+                {getRoleBadge(selectedCounterparty.roles)}
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5 flex-wrap">
                 <span className="flex items-center gap-1">
@@ -221,7 +225,7 @@ export const CounterpartyPicker: React.FC<CounterpartyPickerProps> = ({
                       {cp.trade_name && cp.trade_name !== cp.legal_name && (
                         <span className="text-xs text-slate-400">({cp.trade_name})</span>
                       )}
-                      {getRoleBadge(cp.derived_role)}
+                      {getRoleBadge(cp.roles)}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 flex-wrap">
                       <span>{cp.country}</span>

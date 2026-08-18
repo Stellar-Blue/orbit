@@ -77,6 +77,18 @@ function getValue(record: RawAttioRecord, slugs: string[]): string {
   return '';
 }
 
+function getValues(record: RawAttioRecord, slugs: string[]): string[] {
+  if (!record.values) return [];
+  for (const slug of slugs) {
+    const field = record.values[slug];
+    if (Array.isArray(field) && field.length > 0) {
+      const extracted = field.map(extractValue).filter(Boolean);
+      if (extracted.length > 0) return extracted;
+    }
+  }
+  return [];
+}
+
 async function queryAttioCompanies(token: string, objectSlug: string, offset: number): Promise<{ ok: boolean; status: number; records: RawAttioRecord[] }> {
   const response = await fetch(`https://api.attio.com/v2/objects/${objectSlug}/records/query`, {
     method: 'POST',
@@ -137,19 +149,27 @@ export async function POST(request: Request) {
       const recordId = typeof rec.id === 'string' ? rec.id : (rec.id?.record_id || 'attio_unknown_id');
 
       const name = getValue(rec, ['name', 'company_name', 'title', 'legal_name', 'company']) || `Attio Entity (${String(recordId).slice(-6)})`;
-      const relationship = getValue(rec, [targetSlug, 'relationship_type', 'relationship_status', 'status', 'type', 'category']) || '';
+      const relationships = getValues(rec, [targetSlug, 'relationship_type', 'relationship_status', 'status', 'type', 'category']);
+      const relationship = relationships.join(', ') || '';
       const countryRaw = getValue(rec, ['country', 'billing_country', 'country_code', 'hq_country']) || 'Europe';
       const vat = getValue(rec, ['vat', 'vat_number', 'tax_id', 'registration_number', 'afm', 'tax_code']) || '';
       const domain = getValue(rec, ['domain', 'website', 'url', 'company_domain', 'web_address', 'domains']) || '';
       const arrRaw = getValue(rec, ['arr', 'estimated_arr', 'mrr', 'revenue', 'value', 'contract_value', 'estimated_arr_usd']);
 
-      let role: 'client' | 'supplier' | 'both' = 'client';
-      const relLow = relationship.toLowerCase();
-      if (relLow.includes('suppl') || relLow.includes('vendor') || relLow.includes('cost')) {
-        role = 'supplier';
-      } else if (relLow.includes('both') || relLow.includes('partner') || relLow.includes('joint')) {
-        role = 'both';
+      let roles: string[] = [];
+      const relsLow = relationships.map(r => r.toLowerCase());
+      
+      if (relsLow.some(r => r.includes('suppl') || r.includes('vendor') || r.includes('cost'))) {
+        roles.push('supplier');
       }
+      if (relsLow.some(r => r.includes('client') || r.includes('customer') || r.includes('revenue'))) {
+        roles.push('client');
+      }
+      if (relsLow.some(r => r.includes('both') || r.includes('partner') || r.includes('joint'))) {
+        if (!roles.includes('client')) roles.push('client');
+        if (!roles.includes('supplier')) roles.push('supplier');
+      }
+      if (roles.length === 0) roles.push('client'); // default fallback
 
       let estArr = 0;
       if (arrRaw && !isNaN(Number(arrRaw))) {
@@ -157,10 +177,10 @@ export async function POST(request: Request) {
       }
 
       const qualifies = targetWhitelist.length > 0
-        ? targetWhitelist.some((val: string) =>
-            relationship.toLowerCase() === val.toLowerCase() ||
-            relationship.toLowerCase().includes(val.toLowerCase())
-          )
+        ? relationships.some(rel => targetWhitelist.some((val: string) =>
+            rel.toLowerCase() === val.toLowerCase() ||
+            rel.toLowerCase().includes(val.toLowerCase())
+          )) || (relationships.length === 0 && targetWhitelist.length === 0)
         : true;
 
       return {
@@ -170,7 +190,7 @@ export async function POST(request: Request) {
         country_code: countryRaw.length === 2 ? countryRaw.toUpperCase() : countryRaw,
         vat_number: vat || 'N/A in Attio',
         domain: domain,
-        suggested_role: role,
+        suggested_roles: roles,
         estimated_arr: estArr,
         qualified: qualifies
       };
