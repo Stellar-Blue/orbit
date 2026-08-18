@@ -12,7 +12,7 @@ import {
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
   EmployeeContract, SalaryBonus,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
-  Role, CounterpartyRole
+  Role, CounterpartyRole, CompanyProfile
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
