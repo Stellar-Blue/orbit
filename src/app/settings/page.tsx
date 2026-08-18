@@ -12,6 +12,7 @@ import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem
 import { TieringSettings } from '@/components/settings/tiering-settings';
 import { IntegrationsSettings } from '@/components/settings/integrations-settings';
 import { PaymentDocumentTypesSettings } from '@/components/settings/payment-document-types-settings';
+import { GeneralSettings } from '@/components/settings/general-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
@@ -1633,13 +1634,7 @@ export default function CompanySettingsPage() {
         <IntegrationsSettings />
       )}
       {selectedTab === 'general' && (
-        <Card className="p-12 text-center border-dashed border-slate-300 bg-slate-50/50 rounded-2xl">
-          <Sliders className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-          <h3 className="text-base font-bold text-slate-700">General Company Profile Under Architecture</h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-            We are structuring database schemas for corporate tax registry, HQ legal addresses, and default billing parameter settings.
-          </p>
-        </Card>
+        <GeneralSettings />
       )}
       </div>
 

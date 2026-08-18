@@ -88,7 +88,6 @@ export function IntegrationsSettings() {
   };
   const [mydataUsername, setMyDataUsername] = useState('');
   const [mydataKey, setMyDataKey] = useState('');
-  const [mydataCompanyAfm, setMyDataCompanyAfm] = useState('');
   const [showMyDataKey, setShowMyDataKey] = useState(false);
   const [savingMyData, setSavingMyData] = useState(false);
   const [syncingMyData, setSyncingMyData] = useState(false);
@@ -103,7 +102,6 @@ export function IntegrationsSettings() {
         const data = await res.json();
         setMyData(data);
         if (data.username) setMyDataUsername(data.username);
-        if (data.companyAfm) setMyDataCompanyAfm(data.companyAfm);
       }
     } catch (e) {
       console.error('load mydata error:', e);
@@ -123,7 +121,7 @@ export function IntegrationsSettings() {
     try {
       const res = await fetch('/api/integrations/mydata', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: mydataUsername, subscriptionKey: mydataKey, companyAfm: mydataCompanyAfm }),
+        body: JSON.stringify({ username: mydataUsername, subscriptionKey: mydataKey }),
       });
       if (!res.ok) throw new Error('save failed');
       setMyDataKey('');
@@ -684,16 +682,6 @@ export function IntegrationsSettings() {
                     {showMyDataKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Company AFM <span className="font-mono normal-case text-slate-400">(tax number)</span></label>
-                <input
-                  type="text"
-                  value={mydataCompanyAfm}
-                  onChange={e => setMyDataCompanyAfm(e.target.value)}
-                  placeholder="e.g. 802309756"
-                  className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 font-mono"
-                />
               </div>
             </div>
 

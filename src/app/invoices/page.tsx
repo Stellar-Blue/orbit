@@ -642,20 +642,41 @@ export default function InvoicesRegistryPage() {
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">AADE digital vouchers and tax receipt attachments linked to this invoice</p>
                   </div>
-                  <label className="inline-flex items-center gap-1.5 bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/20 hover:bg-[#3D87D3]/20 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Attach PDF / Receipt</span>
-                    <input
-                      type="file"
-                      accept="application/pdf,image/*,.doc,.docx"
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          handleUploadDocument(editingInvoiceId, e.target.files[0]);
-                        }
-                      }}
-                    />
-                  </label>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {(() => {
+                      const inv = invoices.find(i => i.id === editingInvoiceId);
+                      return inv?.qr_url ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewDoc({
+                              name: `AADE Verification — ${inv.invoice_number}`,
+                              url: inv.qr_url || undefined,
+                              subtitle: `myDATA ${inv.mark} · ${inv.counterparty?.legal_name || 'Counterparty'}`
+                            });
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-sky-50 text-[#3D87D3] border border-sky-200 hover:bg-sky-100 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs"
+                          title="Open the public ΑΑΔΕ verification page for this invoice"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> View on AADE
+                        </button>
+                      ) : null;
+                    })()}
+                    <label className="inline-flex items-center gap-1.5 bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/20 hover:bg-[#3D87D3]/20 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Attach PDF / Receipt</span>
+                      <input
+                        type="file"
+                        accept="application/pdf,image/*,.doc,.docx"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleUploadDocument(editingInvoiceId, e.target.files[0]);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {(() => {
@@ -667,21 +688,6 @@ export default function InvoicesRegistryPage() {
                         <FileText className="w-7 h-7 mx-auto text-slate-400" />
                         <p className="font-extrabold text-slate-700">No PDF documents attached yet</p>
                         <p className="text-[11px]">Click &ldquo;Attach PDF / Receipt&rdquo; above to upload digital receipts for this bill.</p>
-                        {currentInv?.qr_url && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewDoc({
-                                name: `AADE Verification — ${currentInv.invoice_number}`,
-                                url: currentInv.qr_url || undefined,
-                                subtitle: `myDATA ${currentInv.mark} · ${currentInv.counterparty?.legal_name || 'Counterparty'}`
-                              });
-                            }}
-                            className="inline-flex items-center gap-1.5 mt-1 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[11px] px-3 py-1.5 rounded-lg hover:bg-sky-100 transition-colors cursor-pointer"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" /> View on AADE (myDATA verification)
-                          </button>
-                        )}
                       </div>
                     );
                   }

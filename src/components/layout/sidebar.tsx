@@ -18,7 +18,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen }) => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
@@ -90,11 +90,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         <div className="px-6 py-4 border-b border-slate-200/80 flex items-center justify-between shrink-0">
           <Link href="/" onClick={handleNavClick} className="flex items-center space-x-3 group pr-8 md:pr-0">
             <div className="w-9 h-9 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex items-center justify-center p-1.5 shadow-xs group-hover:scale-105 transition-transform shrink-0">
-              <img src="/icon.png" alt="StellarBlue Icon" className="w-6 h-6 object-contain" />
+              <img src={companyProfile?.logo_url || "/icon.png"} alt={`${companyProfile?.name || 'Company'} Icon`} className="w-6 h-6 object-contain" />
             </div>
             <div className="truncate">
               <span className="font-extrabold text-lg text-slate-900 tracking-tight block leading-tight truncate">Orbit</span>
-              <span className="text-[10px] uppercase font-bold text-[#3D87D3] tracking-widest block truncate">StellarBlue</span>
+              <span className="text-[10px] uppercase font-bold text-[#3D87D3] tracking-widest block truncate">{companyProfile?.name || 'StellarBlue'}</span>
             </div>
           </Link>
           {isMobile && (

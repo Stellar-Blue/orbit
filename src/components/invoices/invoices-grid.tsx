@@ -258,21 +258,36 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
       {
-        headerName: 'Archive', field: 'hasDoc', width: 150, sortable: true,
+        headerName: 'Archive', field: 'hasDoc', width: 220, sortable: true,
         ...excelSetFilter(['Yes', 'No']),
         cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
-          p.value === 'Yes' ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewDocument(p.data.inv); }}
-            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
-            title="Click to Preview or Download Document"
-          >
-            <Eye className="w-3.5 h-3.5 text-[#3D87D3]" />
-            <span>{(p.data?.docName || '').slice(0, 15)}...</span>
-          </button>
-        ) : (
           <div className="flex items-center gap-1.5 flex-wrap">
+            {p.value === 'Yes' ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewDocument(p.data.inv); }}
+                className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+                title="Click to Preview or Download Document"
+              >
+                <Eye className="w-3.5 h-3.5 text-[#3D87D3]" />
+                <span>PDF: {(p.data?.docName || '').slice(0, 12)}...</span>
+              </button>
+            ) : (
+              <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-3 py-1 rounded-lg hover:bg-rose-100 cursor-pointer transition-colors" onClick={(e) => e.stopPropagation()}>
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload PDF</span>
+                <input
+                  type="file"
+                  accept="application/pdf,image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0] && p.data) {
+                      onUploadDocument(p.data.inv, e.target.files[0]);
+                    }
+                  }}
+                />
+              </label>
+            )}
             {p.data?.inv.qr_url && (
               <button
                 type="button"
@@ -284,23 +299,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 <span>View on AADE</span>
               </button>
             )}
-            <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-3 py-1 rounded-lg hover:bg-rose-100 cursor-pointer transition-colors" onClick={(e) => e.stopPropagation()}>
-              <Upload className="w-3.5 h-3.5" />
-              <span>Upload PDF</span>
-              <input
-                type="file"
-                accept="application/pdf,image/*"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0] && p.data) {
-                    onUploadDocument(p.data.inv, e.target.files[0]);
-                  }
-                }}
-              />
-            </label>
           </div>
         )
-      )
     },
     {
       headerName: '', field: 'inv.id', width: 250, sortable: false, filter: false, pinned: 'right',

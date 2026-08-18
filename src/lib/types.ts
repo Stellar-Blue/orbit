@@ -14,6 +14,15 @@ export interface Team {
   lead_profile_id?: string;
 }
 
+export interface CompanyProfile {
+  id: number;
+  name: string;
+  vat_number: string | null;
+  logo_url: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ProfileSensitive {
   profile_id: string;
   afm: string;

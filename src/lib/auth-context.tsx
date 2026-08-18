@@ -61,6 +61,8 @@ interface AppState {
   realUserRole: 'admin' | 'employee' | string;
   isLoading: boolean;
   signOut: () => Promise<void> | void;
+  companyProfile: CompanyProfile | null;
+  updateCompanyProfile: (profile: Partial<CompanyProfile>) => Promise<boolean>;
   
   // Actions for immediate optimistic mutation in UI
   switchUser: (profileId: string) => void;
@@ -248,6 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [timesheetPeriods, setTimesheetPeriods] = useState<TimesheetPeriod[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
   const [remoteQuotaRequests, setRemoteQuotaRequests] = useState<RemoteQuotaRequest[]>([]);
@@ -305,7 +308,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
           integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes,
-          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes
+          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes, companyProfileRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           supabase.from('profiles').select('*'),
@@ -355,7 +358,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('project_assignments').select('*'),
           supabase.from('project_role_forecasts').select('*'),
           supabase.from('time_entries').select('*'),
-          supabase.from('timesheet_periods').select('*')
+          supabase.from('timesheet_periods').select('*'),
+          supabase.from('company_profile').select('*').eq('id', 1).maybeSingle()
         ]);
 
         const loadedCpRoles: Role[] = cpRolesTableRes?.data || [];
@@ -582,6 +586,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProjectRoleForecasts((projectRoleForecastsRes?.data || []) as ProjectRoleForecast[]);
         setTimeEntries((timeEntriesRes?.data || []) as TimeEntry[]);
         setTimesheetPeriods((timesheetPeriodsRes?.data || []) as TimesheetPeriod[]);
+        setCompanyProfile(companyProfileRes?.data || null);
 
         const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
         setEmployeeIntegrations(myIntegrationRows);
@@ -3508,6 +3513,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{
       currentUser,
+      companyProfile,
+      updateCompanyProfile,
       isViewAsEmployee,
       setIsViewAsEmployee,
       realUserRole,

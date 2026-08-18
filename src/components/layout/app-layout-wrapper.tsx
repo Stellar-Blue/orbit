@@ -12,7 +12,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole, slackIntegration, isLoading } = useAuth();
+  const { isViewAsEmployee, setIsViewAsEmployee, realUserRole, slackIntegration, isLoading, companyProfile } = useAuth();
 
   if (isAuthPage) {
     return (
@@ -48,7 +48,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
               <Menu className="w-5 h-5 text-slate-800" />
             </button>
             <div className="flex items-center space-x-1 sm:space-x-2 truncate font-sans">
-              <span className="font-extrabold text-[#3D87D3] tracking-tight truncate">StellarBlue</span>
+              <span className="font-extrabold text-[#3D87D3] tracking-tight truncate">{companyProfile?.name || 'StellarBlue'}</span>
               <span className="text-slate-300">/</span>
               <span className="text-slate-900 font-extrabold tracking-tight truncate">Orbit Workspace</span>
             </div>

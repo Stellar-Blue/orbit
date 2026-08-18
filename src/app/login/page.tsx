@@ -11,7 +11,7 @@ function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isDevMode } = useAuth();
+  const { isDevMode, companyProfile } = useAuth();
 
   const errorCode = searchParams ? searchParams.get("error") : null;
   const errorDesc = searchParams ? searchParams.get("error_description") : null;
@@ -84,7 +84,7 @@ function LoginContent() {
       {/* Branding & Header */}
       <div className="mb-8 flex flex-col items-center text-center">
         <div className="mb-4 flex items-center justify-center">
-          <img src="/logo.png" alt="StellarBlue" className="h-10 object-contain drop-shadow-2xs" />
+          <img src={companyProfile?.logo_url || "/logo.png"} alt={companyProfile?.name || "StellarBlue"} className="h-10 object-contain drop-shadow-2xs" />
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-800 md:text-3xl">
           Orbit Workspace
