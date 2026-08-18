@@ -578,28 +578,9 @@ export default function InvoicesRegistryPage() {
 
   return (
     <div className="w-full px-6 py-6 space-y-6 max-w-[1600px] mx-auto">
-      {/* Header & Main Navigation Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-900 p-6 rounded-3xl text-white shadow-xl">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-inner">
-              <Receipt className="w-7 h-7" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                Invoices & Financial Operations
-                <Badge variant="success" className="bg-emerald-500 text-slate-900 font-extrabold text-[10px] uppercase tracking-wider px-2 py-0.5">
-                  AADE myDATA Compatible
-                </Badge>
-              </h1>
-              <p className="text-xs text-slate-300 font-medium mt-1">
-                The corporate Common Truth archive for client billing, vendor bills, contract schedule reconciliation, and real-time budgeting.
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button 
+      {/* Header Actions */}
+      <div className="flex items-center justify-end gap-3 pb-2">
+        <Button 
             onClick={() => {
               setSyncVatNumber('');
               setIsSyncModalOpen(true);
@@ -648,7 +629,6 @@ export default function InvoicesRegistryPage() {
             Register New Invoice
           </Button>
         </div>
-      </div>
 
       {/* Module Tabs */}
       <div className="flex items-center space-x-2 border-b border-slate-200 pb-3 overflow-x-auto">
