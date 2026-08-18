@@ -82,6 +82,7 @@ export function IntegrationsSettings() {
   const [syncingMyData, setSyncingMyData] = useState(false);
   const [resettingMyData, setResettingMyData] = useState(false);
   const [mydataMsg, setMyDataMsg] = useState<string | null>(null);
+  const [syncVat, setSyncVat] = useState('');
 
   const loadMyData = async () => {
     try {
@@ -141,7 +142,11 @@ export function IntegrationsSettings() {
   const handleSyncMyData = async () => {
     setSyncingMyData(true);
     try {
-      const res = await fetch('/api/integrations/mydata/sync', { method: 'POST' });
+      const res = await fetch('/api/integrations/mydata/sync', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vatNumber: syncVat.trim() || undefined }),
+      });
       const data = await res.json();
       if (data.error) flashMyData(`myDATA sync failed: ${data.error}`);
       else flashMyData(`myDATA sync complete — ${data.docsImported ?? 0} imported, ${data.invoicesCreated ?? 0} invoices created, ${data.cancellations ?? 0} cancellations.`);
@@ -665,9 +670,19 @@ export function IntegrationsSettings() {
                 <Button size="sm" variant="outline" onClick={handleClearMyData} disabled={!mydata.configured} className="text-rose-600 border-rose-200 bg-white cursor-pointer">
                   <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear Credentials
                 </Button>
-                <Button size="sm" variant="primary" onClick={handleSyncMyData} disabled={syncingMyData || resettingMyData || !mydata.configured} className="bg-indigo-600 text-white cursor-pointer">
-                  <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncingMyData ? 'animate-spin' : ''}`} /> {syncingMyData ? 'Syncing…' : 'Sync Now'}
-                </Button>
+                <div className="flex items-center gap-1 border border-slate-300 rounded-lg bg-white pr-1">
+                  <input
+                    type="text"
+                    value={syncVat}
+                    onChange={e => setSyncVat(e.target.value)}
+                    placeholder="Specific VAT"
+                    className="w-28 p-1 px-2 bg-transparent text-[11px] text-slate-800 font-mono outline-none"
+                    disabled={syncingMyData || resettingMyData || !mydata.configured}
+                  />
+                  <Button size="sm" variant="primary" onClick={handleSyncMyData} disabled={syncingMyData || resettingMyData || !mydata.configured} className="bg-indigo-600 text-white cursor-pointer py-1 h-7">
+                    <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncingMyData ? 'animate-spin' : ''}`} /> {syncingMyData ? 'Syncing…' : 'Sync'}
+                  </Button>
+                </div>
                 <Button size="sm" variant="outline" onClick={handleResetMyData} disabled={resettingMyData || syncingMyData || !mydata.configured} className="text-amber-700 border-amber-300 bg-white cursor-pointer" title="Reset the sync cursor to MARK 0 and fully re-import every AADE document">
                   <RotateCcw className={`w-3.5 h-3.5 mr-1 ${resettingMyData ? 'animate-spin' : ''}`} /> {resettingMyData ? 'Resetting…' : 'Reset & Full Resync'}
                 </Button>

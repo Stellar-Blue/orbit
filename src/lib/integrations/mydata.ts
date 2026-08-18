@@ -200,7 +200,7 @@ interface AadeCancelledInvoice {
  * - Receiver AFM is matched to an existing counterparty; unmatched docs are counted and skipped
  *   (no phantom counterparties are created).
  */
-export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataSyncResult> {
+export async function syncIssuedInvoices(admin: SupabaseClient, options?: { vatNumber?: string }): Promise<MyDataSyncResult> {
   const creds = await getMyDataCreds(admin);
   const base: MyDataSyncResult = {
     configured: creds.configured,
@@ -228,8 +228,10 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
     Accept: 'application/xml',
   };
 
+  const targetVat = options?.vatNumber ? normAfm(options.vatNumber) : null;
+
   const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark,company_afm').eq('id', 1).maybeSingle();
-  let cursor = Number(state?.last_completed_mark || 0);
+  let cursor = targetVat ? 0 : Number(state?.last_completed_mark || 0);
   const companyAfm = (state?.company_afm as string | null | undefined) || null;
   let maxMark = cursor;
   const processedMarks = new Set<number>();
@@ -237,14 +239,14 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
 
   const fail = async (error: string): Promise<MyDataSyncResult> => {
     await logMyData(admin, 'error', 'Sync failed', error);
-    await admin.from('aade_sync_state').update({ last_error: error }).eq('id', 1);
+    if (!targetVat) await admin.from('aade_sync_state').update({ last_error: error }).eq('id', 1);
     return { ...base, ran: true, error, lastCompletedMark: cursor };
   };
 
   try {
     let continuation: { pk?: string; rk?: string } | null = null;
     let pages = 0;
-    await logMyData(admin, 'info', 'Sync started', `endpoint=${USE_DEV ? 'dev' : 'prod'} cursor=${cursor}`);
+    await logMyData(admin, 'info', 'Sync started', `endpoint=${USE_DEV ? 'dev' : 'prod'} cursor=${cursor}${targetVat ? ` targetedVat=${targetVat}` : ''}`);
 
     // Load all active counterparties ONCE so per-invoice matching is an in-memory lookup.
     // (Previously every invoice did a serial counterparty query — the main source of DB timeouts.)
@@ -264,6 +266,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
     do {
       const url = new URL(endpoint);
       url.searchParams.set('mark', String(cursor));
+      if (targetVat) url.searchParams.set('entityVatNumber', targetVat);
       if (continuation?.pk) url.searchParams.set('nextPartitionKey', continuation.pk);
       if (continuation?.rk) url.searchParams.set('nextRowKey', continuation.rk);
 
@@ -286,7 +289,7 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
         // AADE carries business/validation errors in the XML body too
         const msg = `HTTP ${res.status} on page ${pages + 1}`;
         await logMyData(admin, 'error', 'AADE request error', msg, null, reqLog);
-        await admin.from('aade_sync_state').update({ last_error: msg }).eq('id', 1);
+        if (!targetVat) await admin.from('aade_sync_state').update({ last_error: msg }).eq('id', 1);
         return { ...base, ran: true, pages, error: msg, lastCompletedMark: cursor };
       }
 
@@ -446,15 +449,17 @@ export async function syncIssuedInvoices(admin: SupabaseClient): Promise<MyDataS
       }
     } while (continuation);
 
-    // Advance the durable cursor only after the whole chain committed
+    // Advance the durable cursor only after the whole chain committed (if not targeted)
     cursor = maxMark;
-    await admin.from('aade_sync_state').update({
-      last_completed_mark: cursor,
-      last_success_at: new Date().toISOString(),
-      last_error: null,
-    }).eq('id', 1);
+    if (!targetVat) {
+      await admin.from('aade_sync_state').update({
+        last_completed_mark: cursor,
+        last_success_at: new Date().toISOString(),
+        last_error: null,
+      }).eq('id', 1);
+    }
     await logMyData(admin, 'info', 'Sync completed',
-      `pages=${pages} docsImported=${base.docsImported} invoicesCreated=${base.invoicesCreated} cancellations=${base.cancellations} unmatchedAfm=${base.unmatchedAfm} counterparties=${seenCounterparties.size} cursor=${cursor}`);
+      `pages=${pages} docsImported=${base.docsImported} invoicesCreated=${base.invoicesCreated} cancellations=${base.cancellations} unmatchedAfm=${base.unmatchedAfm} counterparties=${seenCounterparties.size} cursor=${cursor}${targetVat ? ` targetedVat=${targetVat}` : ''}`);
 
     return { ...base, ran: true, pages, lastCompletedMark: cursor };
   } catch (e) {
