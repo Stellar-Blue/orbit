@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
-  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock
+  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock, BarChart3
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -42,8 +42,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
   const companyItems = [
     { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-blue-500" />, show: true, adminOnly: false },
     { label: 'Leave Management', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: isAdmin, adminOnly: true },
-    { label: 'Contract Management', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Invoices & Budgeting', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-3 text-emerald-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-3 text-emerald-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Reports', path: '/reports', icon: <BarChart3 className="w-4 h-4 mr-3 text-rose-400" />, show: isAdmin, adminOnly: true },
     { label: 'Counterparties & Attio', path: '/counterparties', icon: <Building2 className="w-4 h-4 mr-3 text-cyan-400" />, show: isAdmin, adminOnly: true },
     { label: 'Compensation & Payroll', path: '/payroll', icon: <Briefcase className="w-4 h-4 mr-3 text-purple-500" />, show: isAdmin, adminOnly: true },
   ];
