@@ -36,6 +36,8 @@ interface InvoiceRow {
   entity: string;
   entitySub: string;
   direction: string;
+  type: string;
+  impact: 'Debit' | 'Credit';
   invoiceNumber: string;
   mark: string;
   linkage: string;
@@ -96,6 +98,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         entity: inv.counterparty?.legal_name || 'Unmapped Entity',
         entitySub: inv.counterparty?.trade_name || inv.counterparty?.country || 'Greece',
         direction: inv.direction,
+        type: inv.type || 'invoice',
+        impact: (inv.direction === 'outgoing' ? (inv.type === 'credit_note' ? 'Credit' : 'Debit') : (inv.type === 'credit_note' ? 'Debit' : 'Credit')),
         invoiceNumber: inv.invoice_number,
         mark: inv.mark || '',
         linkage: inv.contract ? (inv.contract.product || 'Agreement') : (inv.category || 'General Operating'),
@@ -162,6 +166,23 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           )}
         </div>
       )
+    },
+    {
+      headerName: 'Type & Impact', field: 'type', width: 140, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'type',
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => {
+        const typeLabel = p.value?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Invoice';
+        const isDebit = p.data?.impact === 'Debit';
+        return (
+          <div>
+            <span className="font-bold text-slate-800 text-xs block">{typeLabel}</span>
+            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded border inline-block mt-0.5 ${
+              isDebit ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
+            }`}>
+              {p.data?.impact}
+            </span>
+          </div>
+        );
+      }
     },
     {
       headerName: 'Linkage', field: 'linkage', width: 180, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'linkage',
