@@ -22,24 +22,12 @@ CREATE POLICY "Enable update for admins"
 ON public.company_profile
 AS PERMISSIVE FOR UPDATE
 TO authenticated
-USING (
-  EXISTS (
-    SELECT 1 FROM user_roles
-    WHERE user_roles.profile_id = auth.uid()
-    AND user_roles.role = 'admin'
-  )
-)
-WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM user_roles
-    WHERE user_roles.profile_id = auth.uid()
-    AND user_roles.role = 'admin'
-  )
-);
+USING (is_admin())
+WITH CHECK (is_admin());
 
 -- Seed initial data based on user request
 INSERT INTO company_profile (id, name, vat_number, logo_url)
-VALUES (1, 'StellarBlue', '802309756', '/logo.png')
+VALUES (1, 'StellarBlue', '802309756', '/icon.png')
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   vat_number = EXCLUDED.vat_number,
