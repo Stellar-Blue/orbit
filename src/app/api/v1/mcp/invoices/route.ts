@@ -113,8 +113,8 @@ export async function POST(request: Request) {
       const supabase = isBearer ? await getSupabaseAdminClient() : await getSupabaseServerClient();
       
       // Authentication & Role verification via OAuth Bearer Token or Cookie Session (§3)
-      let userId = '00000000-0000-0000-0000-000000000001'; // Fallback admin UI session in dev mode
-      let isUserAdmin = true;
+      let userId = '';
+      let isUserAdmin = false;
 
       if (isBearer) {
         const token = authHeader.replace('Bearer ', '').trim();
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
             }, { status: 401, headers: CORS_HEADERS });
           }
           userId = tokenRecord.user_id;
-        } else if (token !== 'mcp_token_dev' && !token.startsWith('mcp_access_')) {
+        } else {
           return NextResponse.json({
             jsonrpc: '2.0',
             id,
@@ -142,12 +142,20 @@ export async function POST(request: Request) {
         }
       }
 
+      if (!userId) {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32001, message: 'Authentication required. Missing or invalid token/session.' }
+        }, { status: 401, headers: CORS_HEADERS });
+      }
+
       // Check role in user_roles database & verify profile status is not departed
       const { data: profile } = await supabase.from('profiles').select('id, status').or(`id.eq.${userId},auth_user_id.eq.${userId}`).maybeSingle();
       const canonicalId = profile?.id || userId;
       const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', canonicalId).eq('role', 'admin').maybeSingle();
-      if (!roleRow || (profile && profile.status === 'departed')) {
-        isUserAdmin = false;
+      if (roleRow && (!profile || profile.status !== 'departed')) {
+        isUserAdmin = true;
       }
       userId = canonicalId;
 
@@ -156,13 +164,17 @@ export async function POST(request: Request) {
         const forbiddenErr = McpErrors.forbidden();
         return NextResponse.json({
           jsonrpc: '2.0',
-          id,
-          error: {
-            code: -32001,
-            message: forbiddenErr.message,
-            data: forbiddenErr
+          id: id || 1,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(forbiddenErr, null, 2)
+              }
+            ],
+            isError: true
           }
-        }, { status: 403, headers: CORS_HEADERS });
+        }, { headers: CORS_HEADERS });
       }
 
       // Execute Tool with Audit logging and Idempotency guarantees

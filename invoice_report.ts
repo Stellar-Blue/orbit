@@ -86,15 +86,28 @@ async function main() {
       // Let's check if there's an invoice in Orbit without a mark that matches this
       // Filter by direction: if it's AP, look for 'incoming', if AR, look for 'outgoing'
       const expectedDirection = isAP ? 'incoming' : 'outgoing';
+      const expectedVat = isAP ? invData.issuerVat : invData.vatNumber;
       
       const orbitMatches = (orbitInvoices || []).filter(oi => {
-         if (!oi.invoice_number) return false;
-         const expected = `${invData.series}${invData.aa}`;
-         const expected2 = `${invData.series}-${invData.aa}`;
-         const expected3 = String(invData.aa);
-         const matchesNumber = oi.invoice_number === expected || oi.invoice_number === expected2 || oi.invoice_number === expected3;
          const matchesDirection = oi.direction === expectedDirection;
-         return matchesNumber && matchesDirection;
+         
+         const cp: any = Array.isArray(oi.counterparty) ? oi.counterparty[0] : oi.counterparty;
+         const oiVat = cp?.vat_number || cp?.afm || '';
+         const matchesVat = Boolean(oiVat && expectedVat && (oiVat === expectedVat || oiVat.endsWith(expectedVat) || expectedVat.endsWith(oiVat)));
+         
+         const diff = Math.abs((oi.gross || 0) - invData.grossValue);
+         const matchesAmount = diff < 0.1;
+         
+         let matchesNumber = false;
+         if (oi.invoice_number) {
+           const expected = `${invData.series}${invData.aa}`;
+           const expected2 = `${invData.series}-${invData.aa}`;
+           const expected3 = String(invData.aa);
+           matchesNumber = oi.invoice_number === expected || oi.invoice_number === expected2 || oi.invoice_number === expected3;
+         }
+
+         // A match is either a strong match on VAT+Amount, or a direct match on the invoice number
+         return matchesDirection && ((matchesVat && matchesAmount) || matchesNumber);
       });
       
       invData.isAP = isAP;
@@ -107,20 +120,39 @@ async function main() {
   
   let md = `# Missing Invoices Report\n\n`;
   md += `Found ${missingInvoices.length} invoices transmitted to myDATA that are missing a corresponding 'mark' in Orbit.\n\n`;
-  md += `| myDATA MARK | AP/AR | Series / AA | Issue Date | Net | Gross | Counterparty VAT | Orbit Match Suggestion |\n`;
-  md += `|---|---|---|---|---|---|---|---|\n`;
+  md += `| myDATA MARK | AP/AR | Series / AA | Issue Date | Net | Gross | Issuer VAT | Receiver (Counterpart) VAT | Orbit Match Suggestion |\n`;
+  md += `|---|---|---|---|---|---|---|---|---|\n`;
   
   for (const inv of missingInvoices) {
     let suggestion = '';
     if (inv.orbitMatches && inv.orbitMatches.length > 0) {
-      suggestion = inv.orbitMatches.map((m: any) => `Found in Orbit without mark (ID: ${m.id}, Inv: ${m.invoice_number})`).join('<br>');
+      suggestion = inv.orbitMatches.map((m: any) => `Found in Orbit without mark (ID: ${m.id}, Inv: ${m.invoice_number})`).join(' | ');
     }
-    const type = inv.isAP ? '**AP (Incoming)**' : 'AR (Outgoing)';
-    md += `| ${inv.mark} | ${type} | ${inv.series} ${inv.aa} | ${inv.issueDate} | ${inv.netValue} | ${inv.grossValue} | ${inv.vatNumber} (${inv.name}) | ${suggestion} |\n`;
+    const type = inv.isAP ? 'AP (Incoming)' : 'AR (Outgoing)';
+    md += `| ${inv.mark} | ${type} | ${inv.series} ${inv.aa} | ${inv.issueDate} | ${inv.netValue} | ${inv.grossValue} | ${inv.issuerVat} | ${inv.vatNumber} (${inv.name}) | ${suggestion} |\n`;
   }
   
   fs.writeFileSync('/Users/zafeirisbampos/.gemini/antigravity-ide/brain/d74822a6-3755-4422-9557-8b24ad922a8c/missing_invoices.md', md);
   console.log("Wrote artifact to missing_invoices.md");
+
+  // Create CSV Output
+  let csv = 'myDATA MARK,AP/AR,Series / AA,Issue Date,Net,Gross,Issuer VAT,Receiver VAT,Counterpart Name,Orbit Match Suggestion\n';
+  for (const inv of missingInvoices) {
+    let suggestion = '';
+    if (inv.orbitMatches && inv.orbitMatches.length > 0) {
+      suggestion = inv.orbitMatches.map((m: any) => `ID: ${m.id} Inv: ${m.invoice_number}`).join(' | ');
+    }
+    const type = inv.isAP ? 'AP (Incoming)' : 'AR (Outgoing)';
+    const escapeCsv = (str: string) => `"${str.replace(/"/g, '""')}"`;
+    
+    csv += `${inv.mark},${type},${escapeCsv(`${inv.series} ${inv.aa}`)},${inv.issueDate},${inv.netValue},${inv.grossValue},${inv.issuerVat},${inv.vatNumber},${escapeCsv(inv.name)},${escapeCsv(suggestion)}\n`;
+  }
+  
+  // Add UTF-8 BOM so Excel opens it correctly with Greek characters
+  const bom = '\\uFEFF';
+  const csvPath = '/Users/zafeirisbampos/Downloads/missing_invoices.csv';
+  fs.writeFileSync(csvPath, bom + csv, { encoding: 'utf8' });
+  console.log("Wrote CSV to " + csvPath);
 }
 
 main().catch(console.error);

@@ -9,7 +9,7 @@ import { McpErrors } from '@/lib/mcp/errors';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { client_id, redirect_uri, state, scope = 'invoices.admin', userId = '00000000-0000-0000-0000-000000000001' } = body;
+    const { client_id, redirect_uri, state, scope = 'invoices.admin' } = body;
 
     if (!client_id || !redirect_uri) {
       return NextResponse.json({
@@ -22,21 +22,26 @@ export async function POST(request: Request) {
     const supabase = await getSupabaseServerClient();
 
     // Verify user authentication and Admin role enforcement (§3)
-    let authenticatedUserId = userId;
-    let isAdmin = true;
-    let email = 'admin@stellarblue.eu';
-
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      authenticatedUserId = session.user.id;
-      email = session.user.email || 'admin@stellarblue.eu';
-      const { data: profile } = await supabase.from('profiles').select('id, work_email').or(`id.eq.${authenticatedUserId},auth_user_id.eq.${authenticatedUserId}`).maybeSingle();
-      if (profile?.work_email) email = profile.work_email;
-      const canonicalId = profile?.id || authenticatedUserId;
-      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', canonicalId).eq('role', 'admin').maybeSingle();
-      if (!roleRow) isAdmin = false;
-      authenticatedUserId = canonicalId;
+    
+    if (!session?.user) {
+      return NextResponse.json({
+        success: false,
+        error: 'unauthenticated',
+        error_description: 'User must be authenticated to authorize MCP connections.'
+      }, { status: 401 });
     }
+
+    let authenticatedUserId = session.user.id;
+    let email = session.user.email || '';
+    let isAdmin = false;
+
+    const { data: profile } = await supabase.from('profiles').select('id, work_email').or(`id.eq.${authenticatedUserId},auth_user_id.eq.${authenticatedUserId}`).maybeSingle();
+    if (profile?.work_email) email = profile.work_email;
+    const canonicalId = profile?.id || authenticatedUserId;
+    const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', canonicalId).eq('role', 'admin').maybeSingle();
+    if (roleRow) isAdmin = true;
+    authenticatedUserId = canonicalId;
 
     // Strict role gating: standard employees cannot connect financial MCP operators
     if (!isAdmin) {

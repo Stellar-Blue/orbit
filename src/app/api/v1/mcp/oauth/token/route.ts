@@ -56,7 +56,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'invalid_request', error_description: 'Missing required code parameter.' }, { status: 400 });
       }
 
-      let userId = '00000000-0000-0000-0000-000000000001'; // Fallback admin session for developer simulator
+      let userId = '';
       
       // Look up authorization code in database
       const { data: codeRecord } = await supabase.from('mcp_oauth_codes').select('*').eq('code', code).single();
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         
         // Invalidate single-use authorization code
         await supabase.from('mcp_oauth_codes').delete().eq('code', code);
-      } else if (!code.startsWith('orb_code_')) {
+      } else {
         return NextResponse.json({ error: 'invalid_grant', error_description: 'Invalid or unknown OAuth authorization code.' }, { status: 400 });
       }
 
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'invalid_request', error_description: 'Missing refresh_token parameter.' }, { status: 400 });
       }
 
-      let userId = '00000000-0000-0000-0000-000000000001';
+      let userId = '';
 
       const { data: tokenRecord } = await supabase.from('mcp_oauth_tokens').select('*').eq('refresh_token', refresh_token).single();
       if (tokenRecord) {
@@ -124,7 +124,7 @@ export async function POST(request: Request) {
         client_id = tokenRecord.client_id;
         scope = tokenRecord.scope;
         await supabase.from('mcp_oauth_tokens').delete().eq('refresh_token', refresh_token);
-      } else if (!refresh_token.startsWith('mcp_refresh_')) {
+      } else {
         return NextResponse.json({ error: 'invalid_grant', error_description: 'Expired or invalid refresh token.' }, { status: 400 });
       }
 
