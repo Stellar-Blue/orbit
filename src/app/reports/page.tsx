@@ -16,16 +16,18 @@ import {
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { CashflowBarChart } from '@/components/invoices/cashflow-chart';
+import { calculateContractValuation } from '@/lib/pricing-engine';
 import * as XLSX from 'xlsx';
 
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
+const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function ReportsPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
-    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices
+    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices, catalogModules, catalogItems, deleteContract
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -58,7 +60,7 @@ export default function ReportsPage() {
   }, []);
 
   // Navigation tabs within Financial Hub
-  const [activeTab, setActiveTab] = useState<'reconciliation' | 'cashflow' | 'accountant'>('reconciliation');
+  const [activeTab, setActiveTab] = useState<'reconciliation' | 'cashflow' | 'accountant' | 'revenue'>('reconciliation');
 
   // AR/AP reporting period selector (default: current month & year; month 0 = All Year)
   const [statYear, setStatYear] = useState<number>(new Date().getFullYear());
@@ -459,7 +461,18 @@ export default function ReportsPage() {
           }`}
         >
           <Terminal className="w-4 h-4 text-cyan-600" />
-          <span>AI Operator & Compliance Hub</span>
+          <span>Accountant Compliance</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('revenue')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'revenue'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-emerald-600" />
+          <span>Revenue Schedule & MRR</span>
         </button>
       </div>
 
@@ -825,6 +838,86 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+
+
+      {/* VIEW 3: EXECUTIVE REVENUE SCHEDULE & MRR LANDING */}
+      {activeTab === 'revenue' && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shadow-xl border border-slate-700/80">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-emerald-400" />
+                  <span className="text-xs font-mono font-black tracking-widest text-emerald-300 uppercase">Executive Financial Monitor</span>
+                </div>
+                <h3 className="text-2xl font-black text-white mt-1">Modular Revenue & MRR Schedule</h3>
+                <p className="text-xs text-slate-300 max-w-2xl mt-0.5">
+                  Real-time aggregation of net monthly recurring rates and total contract valuation across active commercial agreements.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-6 bg-slate-900/90 px-6 py-4 rounded-xl border border-slate-700/60 shadow-lg">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-emerald-400 block tracking-wider">Total Portfolio ARR</span>
+                  <span className="text-2xl font-mono font-black text-emerald-300 mt-0.5 block">
+                    €{contracts.reduce((acc, c) => {
+                      const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                      return acc + (c.direction === 'revenue' ? val.netARR : 0);
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Strictly excludes one-time payments</span>
+                </div>
+                <div className="border-l border-slate-700/80 pl-6">
+                  <span className="text-[10px] font-bold uppercase text-amber-400 block tracking-wider">Additional One-Off Revenue</span>
+                  <span className="text-2xl font-mono font-black text-amber-300 mt-0.5 block">
+                    +€{contracts.reduce((acc, c) => {
+                      const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                      return acc + (c.direction === 'revenue' ? val.oneTimeValue : 0);
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Setup, implementation & workshops</span>
+                </div>
+                <div className="border-l border-slate-700/80 pl-6">
+                  <span className="text-[10px] font-bold uppercase text-blue-400 block tracking-wider">Total Portfolio TCV</span>
+                  <span className="text-2xl font-mono font-black text-white mt-0.5 block">
+                    €{contracts.reduce((acc, c) => {
+                      const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
+                      return acc + (c.direction === 'revenue' ? val.totalContractValue : 0);
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Real committed deal valuation</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-sm font-extrabold text-slate-800 flex items-center">
+                <TrendingUp className="w-4 h-4 mr-2 text-indigo-600" /> Active Contract Pricing breakdown ({contracts.length})
+              </span>
+              <span className="text-xs text-slate-500 font-mono">Snapshots preserved independently per agreement</span>
+            </div>
+            <div className="overflow-x-auto">
+              <RevenueGrid
+                contracts={contracts}
+                catalogModules={catalogModules}
+                catalogItems={catalogItems}
+                isAdmin={isAdmin}
+                onEditPricing={(c) => {
+                  window.location.href = '/contracts';
+                  //
+                }}
+                onDelete={async (c) => {
+                  if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
+                    await deleteContract(c.id);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
 
     </div>
   );

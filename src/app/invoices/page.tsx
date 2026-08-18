@@ -256,59 +256,6 @@ export default function InvoicesRegistryPage() {
 
   return (
     <div className="w-full px-6 py-6 space-y-6 max-w-[1600px] mx-auto">
-      {/* Header Actions */}
-      <div className="flex items-center justify-end gap-3 pb-2">
-        <Button 
-            onClick={() => {
-              setSyncVatNumber('');
-              setIsSyncModalOpen(true);
-            }} 
-            variant="outline"
-            className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
-          >
-            <CloudDownload className="w-4 h-4" />
-            Sync myDATA
-          </Button>
-          <Button 
-            onClick={() => refreshInvoices()} 
-            variant="outline"
-            className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Reload
-          </Button>
-          <Button 
-            onClick={() => {
-              setEditingInvoiceId(null);
-              setNewDirection('outgoing');
-              setNewType('invoice');
-              setNewStatus('sent_received');
-              setNewCpId('');
-              setNewContractId('');
-              setNewCatName('');
-              setNewInvNumber('');
-              setNewMark('');
-              setNewIssueDate(new Date().toISOString().split('T')[0]);
-              const d = new Date();
-              d.setDate(d.getDate() + 30);
-              setNewDueDate(d.toISOString().split('T')[0]);
-              setNewPeriodFrom(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
-              setNewPeriodTo(new Date().toISOString().split('T')[0]);
-              setNewReferencePeriod(new Date().toISOString().slice(0, 7));
-              setNewNet(1000);
-              setNewVatRate('24%');
-              setNewNotes('');
-              setDuplicateWarning('');
-              setIsRegisterModalOpen(true);
-            }} 
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-500/20 text-xs flex items-center gap-2 transition-all transform hover:scale-[1.02]"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            Register New Invoice
-          </Button>
-        </div>
-
-
 
           {/* Filter Bar */}
           <Card className="p-4 bg-white border-slate-200 shadow-sm rounded-2xl flex flex-wrap items-center justify-between gap-4">
@@ -360,7 +307,57 @@ export default function InvoicesRegistryPage() {
                 ))}
               </select>
             </div>
-
+            
+            <div className="flex items-center justify-end gap-3 flex-wrap">
+              <Button 
+                onClick={() => {
+                  setSyncVatNumber('');
+                  setIsSyncModalOpen(true);
+                }} 
+                variant="outline"
+                className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
+              >
+                <CloudDownload className="w-4 h-4" />
+                Sync myDATA
+              </Button>
+              <Button 
+                onClick={() => refreshInvoices()} 
+                variant="outline"
+                className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Reload
+              </Button>
+              <Button 
+                onClick={() => {
+                  setEditingInvoiceId(null);
+                  setNewDirection('outgoing');
+                  setNewType('invoice');
+                  setNewStatus('sent_received');
+                  setNewCpId('');
+                  setNewContractId('');
+                  setNewCatName('');
+                  setNewInvNumber('');
+                  setNewMark('');
+                  setNewIssueDate(new Date().toISOString().split('T')[0]);
+                  const d = new Date();
+                  d.setDate(d.getDate() + 30);
+                  setNewDueDate(d.toISOString().split('T')[0]);
+                  setNewPeriodFrom(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
+                  setNewPeriodTo(new Date().toISOString().split('T')[0]);
+                  setNewReferencePeriod(new Date().toISOString().slice(0, 7));
+                  setNewNet(1000);
+                  setNewVatRate('24%');
+                  setNewNotes('');
+                  setDuplicateWarning('');
+                  setIsRegisterModalOpen(true);
+                }} 
+                className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-500/20 text-xs flex items-center gap-2 transition-all transform hover:scale-[1.02]"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                Register New Invoice
+              </Button>
+            </div>
           </Card>
 
           {/* Table View (AG Grid) */}
