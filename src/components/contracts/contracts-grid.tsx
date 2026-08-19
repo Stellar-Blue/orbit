@@ -60,6 +60,7 @@ interface ContractsGridProps {
   isAdmin: boolean;
   onSelect: (contract: Contract) => void;
   onDelete: (contract: Contract) => void;
+  onOpenCounterparty: (contract: Contract) => void;
 }
 
 export const ContractsGrid: React.FC<ContractsGridProps> = ({
@@ -68,7 +69,8 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
   catalogItems,
   isAdmin,
   onSelect,
-  onDelete
+  onDelete,
+  onOpenCounterparty
 }) => {
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -129,7 +131,14 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Counterparty', field: 'counterparty', minWidth: 190, sortable: true,
         ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <a href={`/counterparties?id=${p.data?.contract.counterparty_id}`} className="font-bold text-[#3D87D3] hover:underline cursor-pointer" onClick={e => e.stopPropagation()}>{p.value}</a>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); if (p.data) onOpenCounterparty(p.data.contract); }}
+            className="font-bold text-slate-900 block truncate hover:text-[#3D87D3] hover:underline text-left cursor-pointer"
+            title={`Open counterparty: ${p.value || ''}`}
+          >
+            {p.value}
+          </button>
         )
       },
       {

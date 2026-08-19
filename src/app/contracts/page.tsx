@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -25,6 +25,7 @@ const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard } = useAuth();
   const params = useParams();
+  const router = useRouter();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   
   const [directionFilter, setDirectionFilter] = useState<ContractDirection | 'all'>('all');
@@ -532,6 +533,9 @@ export default function ContractsRegistryPage() {
             if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
               deleteContract(c.id);
             }
+          }}
+          onOpenCounterparty={(c) => {
+            if (c.counterparty_id) router.push(`/counterparties/${c.counterparty_id}`);
           }}
         />
       )}
