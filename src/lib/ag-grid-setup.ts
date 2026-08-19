@@ -50,5 +50,5 @@ export const excelSetFilter = (values?: Array<string | number>): Pick<ColDef, 'f
  * Only active when the license key is present; safely ignored in community mode.
  */
 export const GROUPING_OPTIONS: Partial<GridOptions> = HAS_AG_GRID_LICENSE
-  ? { rowGroupPanelShow: 'always', groupDefaultExpanded: 1 }
+  ? { rowGroupPanelShow: 'always', groupDefaultExpanded: 1, sideBar: true }
   : {};

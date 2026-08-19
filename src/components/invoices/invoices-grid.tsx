@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { type ColDef, type ICellRendererParams, type ValueFormatterParams } from 'ag-grid-community';
+import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type GridApi } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { Invoice, InvoiceStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
@@ -84,6 +84,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<string>('none');
+  const [gridApi, setGridApi] = useState<GridApi | null>(null);
 
   const copyUuid = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -371,6 +372,22 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             <option value="periodRange">Group by: Ref Period</option>
             <option value="invoiceNumber">Group by: Invoice #</option>
           </select>
+          {groupBy !== 'none' && HAS_AG_GRID_LICENSE && (
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+              <button
+                onClick={() => gridApi?.expandAll()}
+                className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+              >
+                Expand All
+              </button>
+              <button
+                onClick={() => gridApi?.collapseAll()}
+                className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+              >
+                Collapse All
+              </button>
+            </div>
+          )}
         </div>
         <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
           {invoices.length} invoices · double-click a row to open · use column filters for Excel-style options
@@ -378,10 +395,11 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       </div>
       <div className="h-[560px]">
         <AgGridReact<InvoiceRow>
+          onGridReady={params => setGridApi(params.api)}
           theme={orbitGridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
-          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true }}
+          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
           quickFilterText={quickFilter}
           rowHeight={56}
           headerHeight={36}
