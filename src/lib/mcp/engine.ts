@@ -176,6 +176,36 @@ export const MCP_TOOL_SCHEMAS = [
       },
       required: ['invoice_id', 'links', 'idempotency_key']
     }
+  },
+  {
+    name: 'update_invoice',
+    description: 'Update an existing verified tax invoice. Follows partial update semantics (only provided fields are modified).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string' },
+        direction: { type: 'string', enum: ['outgoing', 'incoming'] },
+        counterparty_id: { type: 'string' },
+        contract_id: { type: 'string' },
+        type: { type: 'string', enum: ['invoice', 'credit_note', 'proforma', 'debit_note'] },
+        credits_invoice_id: { type: 'string' },
+        invoice_number: { type: 'string' },
+        mark: { type: 'string' },
+        category: { type: 'string' },
+        issue_date: { type: 'string', format: 'date' },
+        due_date: { type: 'string', format: 'date' },
+        currency: { type: 'string' },
+        fx_rate: { type: 'number' },
+        net: { type: 'number' },
+        vat_amount: { type: 'number' },
+        vat_rate: { type: 'string' },
+        gross: { type: 'number' },
+        notes: { type: 'string' },
+        status: { type: 'string', enum: ['registered', 'paid', 'cancelled'] },
+        idempotency_key: { type: 'string' }
+      },
+      required: ['invoice_id', 'idempotency_key']
+    }
   }
 ];
 
@@ -187,7 +217,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
 
   try {
     // 1. Idempotency Pre-Check for Write Tools
-    if (args.idempotency_key && ['create_invoice', 'upload_invoice_document', 'record_payment', 'update_invoice_links'].includes(toolName)) {
+    if (args.idempotency_key && ['create_invoice', 'update_invoice', 'upload_invoice_document', 'record_payment', 'update_invoice_links'].includes(toolName)) {
       const { data: existingIdem } = await supabase
         .from('mcp_idempotency')
         .select('*')
@@ -357,6 +387,33 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         await supabase.from('mcp_idempotency').insert([{
           idempotency_key: args.idempotency_key,
           tool_name: 'create_invoice',
+          response_body: responseData
+        }]);
+        break;
+      }
+
+      case 'update_invoice': {
+        const { invoice_id, idempotency_key, ...updates } = args;
+        
+        // Convert fx gross if gross and fx_rate are passed, following ponytail rule: minimum that works
+        if (updates.gross !== undefined) {
+          updates.gross_eur = Number((updates.gross * (updates.fx_rate || 1)).toFixed(2));
+        }
+
+        const { data: updatedInv, error: updErr } = await supabase
+          .from('invoices')
+          .update(updates)
+          .eq('id', invoice_id)
+          .select()
+          .single();
+
+        if (updErr) throw updErr;
+
+        responseData = { updated: true, invoice: updatedInv };
+
+        await supabase.from('mcp_idempotency').insert([{
+          idempotency_key,
+          tool_name: 'update_invoice',
           response_body: responseData
         }]);
         break;
