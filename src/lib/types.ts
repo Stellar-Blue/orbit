@@ -711,6 +711,15 @@ export interface InvoiceAllocation {
   created_at?: string;
 }
 
+export interface InvoiceLink {
+  id: string;
+  invoice_id: string;
+  title: string | null;
+  url: string;
+  created_at: string;
+  created_by?: string;
+}
+
 export interface Invoice {
   id: string;
   direction: InvoiceDirection;
@@ -748,6 +757,7 @@ export interface Invoice {
   created_at?: string;
   documents?: InvoiceDocument[];
   payments?: InvoicePayment[];
+  links?: InvoiceLink[];
   allocations?: InvoiceAllocation[];
 }
 

@@ -6,7 +6,7 @@ import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type 
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { Invoice, InvoiceStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
-import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search, ExternalLink } from 'lucide-react';
+import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search, ExternalLink, Link as LinkIcon } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, string> = {
   paid: 'bg-emerald-50 text-emerald-800 border-emerald-300',
@@ -310,6 +310,32 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             )}
           </div>
         )
+      },
+      {
+        headerName: 'Links', field: 'inv.links', width: 200, sortable: false, filter: false,
+        cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => {
+          const links = p.data?.inv?.links || [];
+          if (links.length === 0) return <span className="text-[10px] text-slate-400 italic">—</span>;
+          
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap h-full py-1">
+              {links.map((link, idx) => (
+                <a
+                  key={idx}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-slate-700 hover:text-[#3D87D3] hover:border-[#3D87D3] font-bold text-[10px] px-2 py-0.5 rounded transition-colors"
+                  title={link.title || link.url}
+                >
+                  <LinkIcon className="w-3 h-3" />
+                  <span className="truncate max-w-[80px]">{link.title || 'Link'}</span>
+                </a>
+              ))}
+            </div>
+          );
+        }
     },
     {
       headerName: '', field: 'inv.id', width: 250, sortable: false, filter: false, pinned: 'right',

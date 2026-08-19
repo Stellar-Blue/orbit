@@ -129,6 +129,29 @@ export const MCP_TOOL_SCHEMAS = [
       },
       required: ['invoice_id', 'paid_on', 'amount', 'idempotency_key']
     }
+  },
+  {
+    name: 'update_invoice_links',
+    description: 'Update or set the external URL links connected to a specific invoice.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string' },
+        links: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Optional title of the link' },
+              url: { type: 'string', description: 'The URL' }
+            },
+            required: ['url']
+          }
+        },
+        idempotency_key: { type: 'string' }
+      },
+      required: ['invoice_id', 'links', 'idempotency_key']
+    }
   }
 ];
 
@@ -140,7 +163,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
 
   try {
     // 1. Idempotency Pre-Check for Write Tools
-    if (args.idempotency_key && ['create_invoice', 'upload_invoice_document', 'record_payment'].includes(toolName)) {
+    if (args.idempotency_key && ['create_invoice', 'upload_invoice_document', 'record_payment', 'update_invoice_links'].includes(toolName)) {
       const { data: existingIdem } = await supabase
         .from('mcp_idempotency')
         .select('*')
@@ -214,7 +237,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
       }
 
       case 'search_invoices': {
-        let queryBuilder = supabase.from('invoices').select('*');
+        let queryBuilder = supabase.from('invoices').select('*, links:invoice_links(*)');
         if (args.counterparty_id) queryBuilder = queryBuilder.eq('counterparty_id', args.counterparty_id);
         if (args.contract_id) queryBuilder = queryBuilder.eq('contract_id', args.contract_id);
         if (args.direction) queryBuilder = queryBuilder.eq('direction', args.direction);
@@ -292,6 +315,34 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         await supabase.from('mcp_idempotency').insert([{
           idempotency_key: args.idempotency_key,
           tool_name: 'create_invoice',
+          response_body: responseData
+        }]);
+        break;
+      }
+
+      case 'update_invoice_links': {
+        const { invoice_id, links, idempotency_key } = args;
+        
+        // Delete existing links
+        const { error: delErr } = await supabase.from('invoice_links').delete().eq('invoice_id', invoice_id);
+        if (delErr) throw delErr;
+
+        if (links && links.length > 0) {
+          const toInsert = links.map((l: any) => ({
+            invoice_id,
+            title: l.title || null,
+            url: l.url,
+            created_by: userId
+          }));
+          const { error: insErr } = await supabase.from('invoice_links').insert(toInsert);
+          if (insErr) throw insErr;
+        }
+
+        responseData = { success: true, message: `Updated links for invoice ${invoice_id}` };
+
+        await supabase.from('mcp_idempotency').insert([{
+          idempotency_key,
+          tool_name: 'update_invoice_links',
           response_body: responseData
         }]);
         break;

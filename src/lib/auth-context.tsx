@@ -546,7 +546,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         try {
           const [invRes, catRes, docRes, payRes, allocRes] = await Promise.all([
-            isAdmin ? supabase.from('invoices').select('*').order('issue_date', { ascending: false }) : Promise.resolve(emptyRes),
+            isAdmin ? supabase.from('invoices').select('*, links:invoice_links(*)').order('issue_date', { ascending: false }) : Promise.resolve(emptyRes),
             supabase.from('invoice_categories').select('*').order('name', { ascending: true }),
             isAdmin ? supabase.from('invoice_documents').select('*') : Promise.resolve(emptyRes),
             isAdmin ? supabase.from('invoice_payments').select('*') : Promise.resolve(emptyRes),
@@ -3181,6 +3181,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setInvoices(prev => prev.filter(inv => inv.id !== id));
         return null;
       }
+      
+      if (inv.links && inv.links.length > 0) {
+        const toInsert = inv.links.map(l => ({
+          invoice_id: id,
+          title: l.title || null,
+          url: l.url
+        }));
+        await supabase.from('invoice_links').insert(toInsert);
+      }
     } catch (e: any) {
       console.error(e);
       alert(`Error saving invoice: ${e.message || e}`);
@@ -3213,6 +3222,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       delete payload.documents;
       delete payload.payments;
       delete payload.allocations;
+      delete payload.links;
 
       const { error } = await supabase.from('invoices').update(payload).eq('id', id);
       if (error) {
@@ -3220,6 +3230,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         alert(`Database Error updating invoice: ${error.message}`);
         setInvoices(previousInvoices);
         return false;
+      }
+
+      if (updates.links !== undefined) {
+        await supabase.from('invoice_links').delete().eq('invoice_id', id);
+        if (updates.links.length > 0) {
+          const toInsert = updates.links.map(l => ({
+            invoice_id: id,
+            title: l.title || null,
+            url: l.url
+          }));
+          await supabase.from('invoice_links').insert(toInsert);
+        }
       }
     } catch (e: any) {
       console.error("updateInvoice exception:", e);
@@ -3464,7 +3486,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const supabase = getSupabaseBrowserClient();
       const [invRes, docRes, payRes, allocRes] = await Promise.all([
-        supabase.from('invoices').select('*').order('issue_date', { ascending: false }),
+        supabase.from('invoices').select('*, links:invoice_links(*)').order('issue_date', { ascending: false }),
         supabase.from('invoice_documents').select('*'),
         supabase.from('invoice_payments').select('*'),
         supabase.from('invoice_allocations').select('*'),
