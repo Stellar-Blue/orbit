@@ -3186,7 +3186,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const toInsert = inv.links.map(l => ({
           invoice_id: id,
           title: l.title || null,
-          url: l.url
+          url: l.url,
+          created_by: user?.id || null
         }));
         await supabase.from('invoice_links').insert(toInsert);
       }
@@ -3238,7 +3239,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const toInsert = updates.links.map(l => ({
             invoice_id: id,
             title: l.title || null,
-            url: l.url
+            url: l.url,
+            created_by: user?.id || null
           }));
           await supabase.from('invoice_links').insert(toInsert);
         }
