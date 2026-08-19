@@ -104,6 +104,43 @@ export function CounterpartyEvaluationView({ statYear, statMonth }: Counterparty
   const renderClients = [...clients, ...both].sort((a, b) => b.expectedAmount - a.expectedAmount);
   const renderSuppliers = suppliers.sort((a, b) => b.expectedAmount - a.expectedAmount);
 
+  // Chart Data
+  const topClients = [...renderClients].sort((a, b) => b.invoicedAmount - a.invoicedAmount).slice(0, 5);
+  const maxClientInvoiced = Math.max(...topClients.map(c => c.invoicedAmount), 1);
+  const topSuppliers = [...renderSuppliers].sort((a, b) => b.invoicedAmount - a.invoicedAmount).slice(0, 5);
+  const maxSupplierInvoiced = Math.max(...topSuppliers.map(s => s.invoicedAmount), 1);
+
+  const renderBarChart = (data: typeof topClients, maxVal: number, title: string, colorClass: string) => (
+    <Card className="p-5 flex flex-col h-full">
+      <h3 className="font-semibold text-slate-900 mb-4">{title}</h3>
+      <div className="flex-1 flex flex-col justify-end space-y-4">
+        {data.length === 0 ? (
+          <div className="text-sm text-slate-500 text-center py-8">No data available</div>
+        ) : (
+          data.map(item => {
+            const pct = (item.invoicedAmount / maxVal) * 100;
+            return (
+              <div key={item.counterparty.id} className="relative">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="font-medium text-slate-700 truncate max-w-[150px]">
+                    {item.counterparty.legal_name || item.counterparty.trade_name}
+                  </span>
+                  <span className="text-slate-500 font-medium">{formatCurrency(item.invoicedAmount)}</span>
+                </div>
+                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-1000 ${colorClass}`} 
+                    style={{ width: `${Math.max(pct, 1)}%` }} 
+                  />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </Card>
+  );
+
   const renderTable = (stats: typeof evaluationStats, title: string) => (
     <Card className="overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
@@ -166,6 +203,11 @@ export function CounterpartyEvaluationView({ statYear, statMonth }: Counterparty
 
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {renderBarChart(topClients, maxClientInvoiced, 'Top Clients by Billed Amount', 'bg-indigo-500')}
+        {renderBarChart(topSuppliers, maxSupplierInvoiced, 'Top Suppliers by Billed Amount', 'bg-rose-500')}
+      </div>
+      
       {renderTable(renderClients, 'Client Evaluation')}
       {renderTable(renderSuppliers, 'Supplier Evaluation')}
     </div>

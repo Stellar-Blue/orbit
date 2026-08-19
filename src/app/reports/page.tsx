@@ -22,7 +22,6 @@ import * as XLSX from 'xlsx';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 import { LinkageModal } from '@/components/invoices/linkage-modal';
-import { BudgetingView } from '@/components/reports/budgeting-view';
 import { CounterpartyEvaluationView } from '@/components/reports/counterparty-evaluation-view';
 
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -65,7 +64,7 @@ export default function ReportsPage() {
   }, []);
 
   // Navigation tabs within Financial Hub
-  const [activeTab, setActiveTab] = useState<'budgeting' | 'evaluation' | 'reconciliation' | 'cashflow' | 'accountant' | 'revenue' | 'linkage'>('budgeting');
+  const [activeTab, setActiveTab] = useState<'evaluation' | 'reconciliation' | 'cashflow' | 'accountant' | 'revenue' | 'linkage'>('evaluation');
 
   // AR/AP reporting period selector (default: current month & year; month 0 = All Year)
   const [statYear, setStatYear] = useState<number>(new Date().getFullYear());
@@ -433,15 +432,15 @@ export default function ReportsPage() {
       {/* Module Tabs */}
       <div className="flex items-center space-x-2 border-b border-slate-200 pb-3 overflow-x-auto">
         <button
-          onClick={() => setActiveTab('budgeting')}
+          onClick={() => setActiveTab('evaluation')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'budgeting'
+            activeTab === 'evaluation'
               ? 'bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/30 shadow-sm'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
           <BarChart3 className="w-4 h-4 text-[#3D87D3]" />
-          <span>Budget vs. Actuals</span>
+          <span>Counterparty Evaluation</span>
         </button>
         <button
           onClick={() => setActiveTab('reconciliation')}
@@ -502,11 +501,6 @@ export default function ReportsPage() {
           <span>Linkage Reconciliation</span>
         </button>
       </div>
-
-        {/* --- BUDGETING & PLANNING --- */}
-      {activeTab === 'budgeting' && (
-        <BudgetingView statYear={statYear} statMonth={statMonth} />
-      )}
 
       {activeTab === 'evaluation' && (
         <CounterpartyEvaluationView statYear={statYear} statMonth={statMonth} />
