@@ -4,7 +4,8 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type GridApi, type GetContextMenuItemsParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
-import { Invoice, InvoiceStatus } from '@/lib/types';
+import { Invoice, InvoiceStatus, BudgetCategory } from '@/lib/types';
+import { useAuth } from '@/lib/auth-context';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search, ExternalLink, Link as LinkIcon } from 'lucide-react';
 
@@ -60,15 +61,17 @@ interface InvoiceRow {
 
 interface InvoicesGridProps {
   invoices: Invoice[];
-  onOpen: (inv: Invoice) => void;
-  onStatusChange: (inv: Invoice, status: InvoiceStatus) => void;
-  onMassStatusChange: (invoices: Invoice[], status: InvoiceStatus) => void;
-  onMarkPaid: (inv: Invoice, remaining: number) => void;
-  onDelete: (inv: Invoice) => void;
-  onUploadDocument: (inv: Invoice, file: File) => void;
-  onPreviewDocument: (inv: Invoice) => void;
-  onPreviewAade: (inv: Invoice) => void;
-  onOpenCounterparty: (inv: Invoice) => void;
+  onOpen?: (inv: Invoice) => void;
+  onStatusChange?: (inv: Invoice, status: InvoiceStatus) => void;
+  onMassStatusChange?: (invoices: Invoice[], status: InvoiceStatus) => void;
+  onMarkPaid?: (inv: Invoice, remaining: number) => void;
+  onDelete?: (inv: Invoice) => void;
+  onUploadDocument?: (inv: Invoice, file: File) => void;
+  onPreviewDocument?: (inv: Invoice) => void;
+  onPreviewAade?: (inv: Invoice) => void;
+  onOpenCounterparty?: (inv: Invoice) => void;
+  hideToolbar?: boolean;
+  compact?: boolean;
 }
 
 export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
@@ -81,8 +84,11 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   onUploadDocument,
   onPreviewDocument,
   onPreviewAade,
-  onOpenCounterparty
+  onOpenCounterparty,
+  hideToolbar,
+  compact
 }) => {
+  const { budgetCategories, updateInvoiceCategory } = useAuth();
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
@@ -154,7 +160,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       subMenu: statuses.map(s => ({
         name: s.label,
         action: () => {
-          onMassStatusChange(selectedRows.map(r => r.inv), s.value);
+          onMassStatusChange?.(selectedRows.map(r => r.inv), s.value);
         }
       }))
     };
@@ -168,7 +174,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); if (p.data) onOpenCounterparty(p.data.inv); }}
+          onClick={(e) => { e.stopPropagation(); if (p.data) onOpenCounterparty?.(p.data.inv); }}
           className="font-bold text-slate-900 block truncate hover:text-[#3D87D3] hover:underline text-left cursor-pointer"
           title={`Open counterparty: ${p.value || ''}`}
         >
@@ -261,7 +267,31 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Issue Date', field: 'issueDate', width: 110, sortable: true, filter: 'agDateColumnFilter',
+      headerName: 'Category', field: 'inv.budget_category.name', width: 160, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => {
+        const inv = p.data?.inv;
+        if (!inv) return null;
+        return (
+          <select
+            className={`w-full bg-transparent border-none text-xs font-medium cursor-pointer focus:ring-0 ${!inv.category_id ? 'text-amber-600 font-bold' : 'text-slate-700'}`}
+            value={inv.category_id || ''}
+            onClick={e => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation();
+              const val = e.target.value;
+              updateInvoiceCategory(inv.id, val === '' ? null : val);
+            }}
+          >
+            <option value="">Uncategorized</option>
+            {budgetCategories.map(cat => (
+              <option key={cat.id} value={cat.id}>{cat.name}</option>
+            ))}
+          </select>
+        );
+      }
+    },
+    {
+      headerName: 'Amount', field: 'gross', width: 120, sortable: true, filter: 'agNumberColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] }
     },
     {
@@ -270,18 +300,13 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       cellClass: (params) => params.data?.overdue ? 'font-bold text-red-600' : ''
     },
     {
-      headerName: 'Gross EUR', field: 'gross', width: 120, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
-      cellClass: 'font-extrabold text-slate-900 font-mono',
-      valueFormatter: eurFormatter
-    },
-    {
       headerName: 'Status', field: 'status', width: 150, sortable: true,
       filter: 'agSetColumnFilter', filterParams: { values: ['draft', 'registered', 'sent_received', 'partially_paid', 'paid', 'disputed', 'resolved', 'cancelled'], excelMode: 'windows' },
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <select
           value={p.value || ''}
           onClick={(e) => e.stopPropagation()}
-          onChange={(e) => { if (p.data) onStatusChange(p.data.inv, e.target.value as InvoiceStatus); }}
+          onChange={(e) => { if (p.data) onStatusChange?.(p.data.inv, e.target.value as InvoiceStatus); }}
           className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded border focus:outline-none cursor-pointer transition-all leading-tight h-[20px] ${STATUS_STYLES[p.value || ''] || 'bg-slate-50 text-slate-700 border-slate-300'}`}
           title="Click to change invoice status"
         >
@@ -304,7 +329,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             {p.value === 'Yes' ? (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewDocument(p.data.inv); }}
+                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewDocument?.(p.data.inv); }}
                 className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-emerald-100 transition-colors cursor-pointer"
                 title="Click to Preview or Download Document"
               >
@@ -321,7 +346,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0] && p.data) {
-                      onUploadDocument(p.data.inv, e.target.files[0]);
+                      onUploadDocument?.(p.data.inv, e.target.files[0]);
                     }
                   }}
                 />
@@ -337,7 +362,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             {p.data?.inv.qr_url ? (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade(p.data.inv); }}
+                onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade?.(p.data.inv); }}
                 className="inline-flex items-center gap-1 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-sky-100 transition-colors cursor-pointer"
                 title="View on AADE (myDATA verification page)"
               >
@@ -387,7 +412,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             {!settled && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onMarkPaid(p.data!.inv, p.data!.remaining); }}
+                onClick={(e) => { e.stopPropagation(); onMarkPaid?.(p.data!.inv, p.data!.remaining); }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] leading-none px-2 py-1 rounded transition-all cursor-pointer"
                 title="1-Click Fast Path Collection / Payment"
               >
@@ -396,7 +421,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             )}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); if (p.data) onOpen(p.data.inv); }}
+              onClick={(e) => { e.stopPropagation(); if (p.data) onOpen?.(p.data.inv); }}
               className="p-1.5 h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-transparent hover:border-blue-200 transition-colors cursor-pointer"
               title="Edit Invoice Details"
             >
@@ -404,7 +429,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
             </button>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); if (p.data) onDelete(p.data.inv); }}
+              onClick={(e) => { e.stopPropagation(); if (p.data) onDelete?.(p.data.inv); }}
               className="p-1.5 h-8 w-8 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
               title="Delete Invoice Record"
             >
@@ -414,44 +439,46 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         );
       }
     }
-  ], [copiedId, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty]);
+  ], [copiedId, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty, updateInvoiceCategory, budgetCategories]);
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/60">
-        <div className="flex items-center gap-2 w-full max-w-xl">
-          <div className="relative w-full max-w-sm">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search invoices across all columns..."
-              value={quickFilter}
-              onChange={e => setQuickFilter(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
-            />
-          </div>
-          {HAS_AG_GRID_LICENSE && (
-            <div className="flex items-center gap-2 pl-1">
-              <button
-                onClick={() => gridApi?.expandAll()}
-                className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
-              >
-                Expand All
-              </button>
-              <button
-                onClick={() => gridApi?.collapseAll()}
-                className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
-              >
-                Collapse All
-              </button>
+    <div className="flex flex-col w-full bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      {!hideToolbar && (
+        <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/60">
+          <div className="flex items-center gap-2 w-full max-w-xl">
+            <div className="relative w-full max-w-sm">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search invoices across all columns..."
+                value={quickFilter}
+                onChange={e => setQuickFilter(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+              />
             </div>
-          )}
+            {HAS_AG_GRID_LICENSE && (
+              <div className="flex items-center gap-2 pl-1">
+                <button
+                  onClick={() => gridApi?.expandAll()}
+                  className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+                >
+                  Expand All
+                </button>
+                <button
+                  onClick={() => gridApi?.collapseAll()}
+                  className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+                >
+                  Collapse All
+                </button>
+              </div>
+            )}
+          </div>
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {invoices.length} invoices · double-click a row to open · use column filters for Excel-style options
+          </span>
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {invoices.length} invoices · double-click a row to open · use column filters for Excel-style options
-        </span>
-      </div>
-      <div className="h-[calc(100vh-220px)] min-h-[600px]">
+      )}
+      <div className={compact ? "h-[calc(100vh-280px)] min-h-[400px]" : "h-[calc(100vh-220px)] min-h-[600px]"}>
         <AgGridReact<InvoiceRow>
           onGridReady={params => setGridApi(params.api)}
           theme={orbitGridTheme}
@@ -465,7 +492,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           groupDisplayType="groupRows"
           rowSelection={{ mode: 'multiRow' }}
           getContextMenuItems={getContextMenuItems}
-          onRowDoubleClicked={e => { if (e.data) onOpen(e.data.inv); }}
+          onRowDoubleClicked={e => { if (e.data) onOpen?.(e.data.inv); }}
           rowClassRules={{
             'invoice-row-overdue': (params) => !!params.data?.overdue
           }}

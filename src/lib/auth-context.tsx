@@ -10,6 +10,7 @@ import {
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
+  Budget, BudgetCategory, BudgetLine, RecurringCommitment,
   EmployeeContract, SalaryBonus,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile
@@ -55,6 +56,11 @@ interface AppState {
   invoiceDocuments: InvoiceDocument[];
   invoicePayments: InvoicePayment[];
   invoiceAllocations: InvoiceAllocation[];
+  budgets: Budget[];
+  budgetCategories: BudgetCategory[];
+  budgetLines: BudgetLine[];
+  recurringCommitments: RecurringCommitment[];
+  updateInvoiceCategory: (invoiceId: string, categoryId: string | null) => Promise<boolean>;
   isDevMode: boolean;
   isViewAsEmployee: boolean;
   setIsViewAsEmployee: (val: boolean | ((prev: boolean) => boolean)) => void;
@@ -276,6 +282,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
+  const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
+  const [recurringCommitments, setRecurringCommitments] = useState<RecurringCommitment[]>([]);
   const [slackIntegration, setSlackIntegration] = useState<EmployeeIntegration | null>(null);
   const [employeeIntegrations, setEmployeeIntegrations] = useState<EmployeeIntegration[]>([]);
   const [myIntegrationExemption, setMyIntegrationExemption] = useState<IntegrationExemption | null>(null);
@@ -545,6 +555,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Graceful fallback if remote_quota_requests table is not created yet
         }
 
+        let loadedBudgetCategories: BudgetCategory[] = [];
+        try {
+          if (isAdmin) {
+            const [bcRes, bRes, blRes, rcRes] = await Promise.all([
+              supabase.from('budget_categories').select('*').order('sort_order', { ascending: true }),
+              supabase.from('budgets').select('*').order('fiscal_year', { ascending: false }),
+              supabase.from('budget_lines').select('*'),
+              supabase.from('recurring_commitments').select('*')
+            ]);
+            
+            loadedBudgetCategories = bcRes.data || [];
+            setBudgetCategories(loadedBudgetCategories);
+            setBudgets(bRes.data || []);
+            setBudgetLines(blRes.data || []);
+            setRecurringCommitments(rcRes.data || []);
+          }
+        } catch (e) {
+          console.warn('Budgeting tables sync notice (migration pending):', e);
+        }
+
         try {
           const [invRes, catRes, docRes, payRes, allocRes] = await Promise.all([
             isAdmin ? supabase.from('invoices').select('*, links:invoice_links(*)').order('issue_date', { ascending: false }) : Promise.resolve(emptyRes),
@@ -587,7 +617,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const docs = loadedDocs.filter(d => d.invoice_id === inv.id);
             const pays = loadedPays.filter(p => p.invoice_id === inv.id);
             const allocs = loadedAlloc.filter(a => a.invoice_id === inv.id);
-            return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs, qr_url: inv.qr_url || null };
+            const budgetCat = loadedBudgetCategories.find(c => c.id === inv.category_id);
+            return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs, qr_url: inv.qr_url || null, budget_category: budgetCat };
           });
           setInvoices(enrichedInvoices);
         } catch (e) {
@@ -3420,6 +3451,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const updateInvoiceCategory = async (invoiceId: string, categoryId: string | null): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .update({ category_id: categoryId })
+        .eq('id', invoiceId);
+      if (error) throw error;
+      setInvoices(prev => prev.map(i => {
+        if (i.id !== invoiceId) return i;
+        const budgetCat = budgetCategories.find(c => c.id === categoryId);
+        return { ...i, category_id: categoryId, budget_category: budgetCat };
+      }));
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
   const saveInvoiceAllocation = async (invoiceId: string, contractId: string, period: string, amount: number): Promise<boolean> => {
     const allocId = generateUUID();
     const newAlloc: InvoiceAllocation = {
@@ -3661,6 +3712,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       invoiceDocuments,
       invoicePayments,
       invoiceAllocations,
+      budgets,
+      budgetCategories,
+      budgetLines,
+      recurringCommitments,
       isDevMode,
       signOut,
       switchUser,
@@ -3772,6 +3827,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       linkInvoiceToContract,
       recordInvoicePayment,
       addInvoiceDocument,
+      updateInvoiceCategory,
       saveInvoiceAllocation,
       addInvoiceCategory,
       deleteInvoiceCategory,

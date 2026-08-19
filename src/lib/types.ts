@@ -749,16 +749,57 @@ export interface Invoice {
   vat_rate: string;
   gross: number;
   gross_eur: number;
-  status: InvoiceStatus;
-  missing_document: boolean;
   notes?: string | null;
+  status: InvoiceStatus;
+  missing_document?: boolean;
+  links?: InvoiceLink[];
+  allocations?: InvoiceAllocation[];
+  payments?: InvoicePayment[];
+  category_id?: string | null;
+  budget_category?: BudgetCategory;
   created_by?: string | null;
   created_via?: 'ui' | 'mcp' | 'api';
   created_at?: string;
   documents?: InvoiceDocument[];
-  payments?: InvoicePayment[];
-  links?: InvoiceLink[];
-  allocations?: InvoiceAllocation[];
+}
+
+export interface BudgetCategory {
+  id: string;
+  name: string;
+  direction: 'expense' | 'income';
+  sort_order: number;
+  active: boolean;
+  created_at?: string;
+}
+
+export interface Budget {
+  id: string;
+  fiscal_year: number;
+  status: 'draft' | 'active' | 'archived';
+  revision_of?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BudgetLine {
+  id: string;
+  budget_id: string;
+  category_id: string;
+  period: string; // YYYY-MM
+  amount: number;
+  currency: string;
+  created_at?: string;
+}
+
+export interface RecurringCommitment {
+  id: string;
+  category_id: string;
+  name: string;
+  amount: number;
+  frequency: 'monthly' | 'quarterly' | 'yearly';
+  start_date: string;
+  end_date?: string | null;
+  created_at?: string;
 }
 
 // Orbit Invoice MCP Server & AI Operator Types (§2, §4, §5)
