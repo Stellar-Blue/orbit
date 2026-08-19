@@ -11,6 +11,8 @@ import { getVaultSecret, setVaultSecret, deleteVaultSecret } from './server';
 
 const MYDATA_PROD = 'https://mydatapi.aade.gr/myDATA/RequestTransmittedDocs';
 const MYDATA_DEV = 'https://mydataapidev.aade.gr/RequestTransmittedDocs';
+const MYDATA_DOCS_PROD = 'https://mydatapi.aade.gr/myDATA/RequestDocs';
+const MYDATA_DOCS_DEV = 'https://mydataapidev.aade.gr/RequestDocs';
 const USE_DEV = process.env.MYDATA_DEV === 'true';
 
 const USERNAME_SECRET = 'mydata:username';
@@ -570,4 +572,88 @@ function buildInvoiceRow(
     matched: true,
     counterpartyName,
   };
+}
+
+export async function fetchMyDataInvoices(admin: SupabaseClient, vatNumbers: string[], dateFrom?: string, dateTo?: string): Promise<any[]> {
+  const creds = await getMyDataCreds(admin);
+  if (!creds.configured || !creds.username) throw new Error('myDATA credentials not configured');
+  const key = await getVaultSecret(admin, KEY_SECRET);
+  if (!key) throw new Error('myDATA subscription key not found');
+
+  const headers = {
+    'aade-user-id': creds.username,
+    'ocp-apim-subscription-key': key,
+    Accept: 'application/xml',
+  };
+
+  const results: any[] = [];
+  const normalizedVats = vatNumbers.map(v => normAfm(v)).filter(Boolean) as string[];
+
+  const fetchEndpoint = async (endpoint: string, receiverVat: string | null) => {
+    let continuation: { pk?: string; rk?: string } | null = null;
+    let mark = 0;
+    do {
+      const url = new URL(endpoint);
+      url.searchParams.set('mark', String(mark));
+      if (receiverVat) url.searchParams.set('receiverVatNumber', receiverVat);
+      if (dateFrom) url.searchParams.set('dateFrom', dateFrom);
+      if (dateTo) url.searchParams.set('dateTo', dateTo);
+      if (continuation?.pk) url.searchParams.set('nextPartitionKey', continuation.pk);
+      if (continuation?.rk) url.searchParams.set('nextRowKey', continuation.rk);
+
+      const res = await fetchWithRetry(url.toString(), headers);
+      if (!res.ok) throw new Error(`AADE request failed: ${res.status}`);
+      const xml = await res.text();
+      const parsed = parseAadeXml(xml);
+
+      if (parsed.ResponseDoc?.response?.statusCode === 'ValidationError') {
+        const errMsg = parsed.ResponseDoc.response.errors?.error?.message || 'Validation Error';
+        throw new Error(`AADE Error: ${errMsg}`);
+      }
+
+      const root = parsed.RequestedDoc || parsed;
+      const invoices = asArray(root.invoicesDoc?.invoice);
+      
+      // Filter out invoices that do not match our target VATs
+      for (const inv of invoices) {
+        const issuerVat = normAfm(str(inv.issuer?.vatNumber));
+        const recvVat = normAfm(str(inv.counterpart?.vatNumber));
+        
+        // If it's a match, add it to our results
+        if (normalizedVats.includes(issuerVat || '') || normalizedVats.includes(recvVat || '')) {
+          results.push(inv);
+        }
+      }
+
+      const continuationEl = root.continuationToken;
+      if (continuationEl && continuationEl.nextPartitionKey && continuationEl.nextRowKey) {
+        continuation = { pk: String(continuationEl.nextPartitionKey), rk: String(continuationEl.nextRowKey) };
+      } else {
+        continuation = null;
+      }
+    } while (continuation);
+  };
+
+  // We need to fetch both issued and received docs
+  const endpointTransmitted = USE_DEV ? MYDATA_DEV : MYDATA_PROD;
+  const endpointDocs = USE_DEV ? MYDATA_DOCS_DEV : MYDATA_DOCS_PROD;
+
+  for (const vat of normalizedVats) {
+    // 1. Fetch issued docs (where Orbit is issuer, target is receiver)
+    await fetchEndpoint(endpointTransmitted, vat);
+    
+    // 2. Fetch received docs (where target is issuer). Since RequestDocs doesn't easily filter by issuer VAT,
+    // we just fetch with date filters and filter locally in the loop. 
+    // To prevent massive payloads, we strongly recommend date bounds.
+    await fetchEndpoint(endpointDocs, null);
+  }
+
+  // Deduplicate by mark
+  const uniqueResults = new Map<number, any>();
+  for (const inv of results) {
+    const mark = asNum(inv.mark);
+    if (mark != null) uniqueResults.set(mark, inv);
+  }
+
+  return Array.from(uniqueResults.values());
 }

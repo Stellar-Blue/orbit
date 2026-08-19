@@ -1,6 +1,7 @@
 import { McpErrors } from './errors';
 import { validateInvoiceCreation, normalizeAfm, InvoiceCreationPayload } from './validation';
 import { Invoice, Counterparty, Contract } from '@/lib/types';
+import { fetchMyDataInvoices } from '@/lib/integrations/mydata';
 
 /**
  * Orbit Invoice MCP Server Execution Engine (§2 & §3 & §4)
@@ -8,6 +9,29 @@ import { Invoice, Counterparty, Contract } from '@/lib/types';
  */
 
 export const MCP_TOOL_SCHEMAS = [
+  {
+    name: 'fetch_mydata_invoices',
+    description: 'Fetch raw invoice data directly from the AADE myDATA API for a list of VAT numbers. Useful for cross-referencing and validating local Orbit records against the tax authority.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vat_numbers: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of VAT numbers (ΑΦΜ) to fetch invoices for.'
+        },
+        date_from: {
+          type: 'string',
+          description: 'Optional start date filter (DD/MM/YYYY).'
+        },
+        date_to: {
+          type: 'string',
+          description: 'Optional end date filter (DD/MM/YYYY).'
+        }
+      },
+      required: ['vat_numbers']
+    }
+  },
   {
     name: 'search_counterparties',
     description: "Search Orbit's verified Counterparty Registry by legal/trade name query or Greek/EU tax VAT number (ΑΦΜ).",
@@ -179,6 +203,24 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
 
     // 2. Dispatch tool handler
     switch (toolName) {
+      case 'fetch_mydata_invoices': {
+        const { vat_numbers, date_from, date_to } = args;
+        if (!vat_numbers || !Array.isArray(vat_numbers) || vat_numbers.length === 0) {
+          outcomeCode = 'INVALID_ARGUMENTS';
+          errorDetails = McpErrors.internalError('vat_numbers must be a non-empty array of strings.');
+          break;
+        }
+        
+        try {
+          const invoices = await fetchMyDataInvoices(supabase, vat_numbers, date_from, date_to);
+          responseData = { count: invoices.length, invoices };
+        } catch (e: any) {
+          outcomeCode = 'API_ERROR';
+          errorDetails = { code: 500, message: `Failed to fetch from myDATA: ${e.message}` };
+        }
+        break;
+      }
+
       case 'search_counterparties': {
         let queryBuilder = supabase.from('counterparties').select('*');
         if (args.afm || args.vat_number) {
