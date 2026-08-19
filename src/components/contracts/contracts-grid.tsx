@@ -154,11 +154,11 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           <button
             type="button"
             onClick={(e) => copyUuid(p.value || '', e)}
-            className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] leading-none transition-colors cursor-pointer"
             title="Click to copy Contract UUID"
           >
             <span>{(p.value || '').slice(0, 8)}...{(p.value || '').slice(-4)}</span>
-            {copiedId === p.value ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-400" />}
+            {copiedId === p.value ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 text-slate-400" />}
           </button>
         )
       },
@@ -166,7 +166,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Direction', field: 'direction', width: 105, sortable: true,
         ...excelSetFilter(['revenue', 'cost']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <Badge variant={p.value === 'revenue' ? 'success' : 'warning'} className="text-[10px]">{String(p.value).toUpperCase()}</Badge>
+          <Badge variant={p.value === 'revenue' ? 'success' : 'warning'} className="text-[10px] leading-none px-1.5 py-0.5">{String(p.value).toUpperCase()}</Badge>
         )
       },
       { headerName: 'Product', field: 'product', width: 170, sortable: true, ...excelSetFilter() },
@@ -174,13 +174,13 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Status', field: 'status', width: 120, sortable: true,
         ...excelSetFilter(['draft', 'in_negotiation', 'active', 'expiring', 'expired', 'terminated']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <Badge variant={STATUS_VARIANT[p.value || ''] || 'neutral'} className="text-[10px]">{String(p.value || '').toUpperCase().replace('_', ' ')}</Badge>
+          <Badge variant={STATUS_VARIANT[p.value || ''] || 'neutral'} className="text-[10px] leading-none px-1.5 py-0.5">{String(p.value || '').toUpperCase().replace('_', ' ')}</Badge>
         )
       },
       {
         headerName: 'Counterparty Tier', field: 'cpTierLabel', width: 140, sortable: true, ...excelSetFilter(),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border"
+          <span className="inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold border leading-none h-4"
             style={{ color: p.data?.cpTierColor || '#94a3b8', borderColor: `${p.data?.cpTierColor || '#94a3b8'}55`, backgroundColor: `${p.data?.cpTierColor || '#94a3b8'}14` }}>
             {p.value}
           </span>
@@ -210,27 +210,27 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Commercials & Tier', field: 'tcv', width: 250, sortable: true, filter: 'agNumberColumnFilter',
         tooltipField: 'tier',
         cellRenderer: (p: ICellRendererParams<ContractRow, number>) => (
-          <div className="space-y-1.5 py-0.5">
-            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 space-y-1">
+          <div className="space-y-0.5 py-0">
+            <div className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 space-y-0 text-[10px]">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">ARR (Recurring)</span>
-                <span className="font-mono font-black text-xs text-emerald-700">
+                <span className="font-bold text-slate-500 uppercase leading-none">ARR</span>
+                <span className="font-mono font-black text-emerald-700 leading-none">
                   €{(p.data?.arr || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr
                 </span>
               </div>
               {(p.data?.oneOff || 0) > 0 && (
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500 font-medium">One-off additional:</span>
-                  <span className="font-mono font-bold text-amber-600">+€{(p.data?.oneOff || 0).toLocaleString()}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium leading-none">One-off:</span>
+                  <span className="font-mono font-bold text-amber-600 leading-none">+€{(p.data?.oneOff || 0).toLocaleString()}</span>
                 </div>
               )}
-              <div className="flex items-center justify-between border-t border-slate-200/80 pt-1 text-[11px]">
-                <span className="font-extrabold text-slate-700">Real Deal TCV:</span>
-                <span className="font-mono font-extrabold text-slate-900">€{(p.data?.tcv || 0).toLocaleString()}</span>
+              <div className="flex items-center justify-between border-t border-slate-200/80 mt-0.5 pt-0.5">
+                <span className="font-extrabold text-slate-700 leading-none">TCV:</span>
+                <span className="font-mono font-extrabold text-slate-900 leading-none">€{(p.data?.tcv || 0).toLocaleString()}</span>
               </div>
             </div>
             <div>
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-block ${p.data?.tierClass || ''}`}>
+              <span className={`px-1.5 py-0 rounded text-[9px] leading-none font-bold border inline-flex items-center h-[14px] ${p.data?.tierClass || ''}`}>
                 {p.data?.tier || '—'}
               </span>
             </div>

@@ -230,12 +230,12 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       headerName: 'Linkage', field: 'linkage', width: 180, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <div>
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg w-fit border font-bold text-[11px] ${p.data?.linkageType === 'contract' ? 'text-indigo-700 bg-indigo-50 border-indigo-100' : 'text-purple-700 bg-purple-50 border-purple-100'}`}>
-            {p.data?.linkageType === 'contract' ? <FileText className="w-3.5 h-3.5" /> : <Tag className="w-3.5 h-3.5" />}
+          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded w-fit border font-bold text-[10px] leading-none h-[18px] ${p.data?.linkageType === 'contract' ? 'text-indigo-700 bg-indigo-50 border-indigo-100' : 'text-purple-700 bg-purple-50 border-purple-100'}`}>
+            {p.data?.linkageType === 'contract' ? <FileText className="w-3 h-3" /> : <Tag className="w-3 h-3" />}
             <span>{p.value}</span>
           </div>
           {p.data?.referencePeriod && (
-            <div className="text-[10px] text-amber-800 font-mono bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60 font-black mt-1.5 w-fit">Ref: {p.data.referencePeriod}</div>
+            <div className="text-[9px] leading-none text-amber-800 font-mono bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60 font-black mt-0.5 w-fit">Ref: {p.data.referencePeriod}</div>
           )}
         </div>
       )
@@ -282,7 +282,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           value={p.value || ''}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => { if (p.data) onStatusChange(p.data.inv, e.target.value as InvoiceStatus); }}
-          className={`text-xs font-extrabold px-2 py-1 rounded-lg border focus:outline-none cursor-pointer transition-all ${STATUS_STYLES[p.value || ''] || 'bg-slate-50 text-slate-700 border-slate-300'}`}
+          className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded border focus:outline-none cursor-pointer transition-all leading-tight h-[20px] ${STATUS_STYLES[p.value || ''] || 'bg-slate-50 text-slate-700 border-slate-300'}`}
           title="Click to change invoice status"
         >
           <option value="draft">Draft</option>
