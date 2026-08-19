@@ -964,7 +964,7 @@ export default function ReportsPage() {
               </div>
               <Badge variant="warning">{invoices.filter(i => !i.contract_id && i.status !== 'cancelled').length} Unlinked</Badge>
             </div>
-            <div className="overflow-x-auto h-[600px]">
+            <div className="w-full">
               <InvoicesGrid
                 invoices={invoices.filter(i => !i.contract_id && i.status !== 'cancelled')}
                 hideToolbar={false}
