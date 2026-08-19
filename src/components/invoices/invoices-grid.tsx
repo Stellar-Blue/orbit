@@ -83,7 +83,6 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
 }) => {
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<string>('none');
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
 
   const copyUuid = (id: string, e: React.MouseEvent) => {
@@ -129,7 +128,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
 
   const columnDefs = useMemo<ColDef<InvoiceRow>[]>(() => [
     {
-      headerName: 'Counterparty', field: 'entity', minWidth: 210, sortable: true, ...excelSetFilter(), pinned: groupBy === 'entity' ? undefined : 'left', rowGroup: groupBy === 'entity',
+      headerName: 'Counterparty', field: 'entity', minWidth: 210, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <button
           type="button"
@@ -157,7 +156,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Invoice # & MARK', field: 'invoiceNumber', width: 170, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'invoiceNumber',
+      headerName: 'Invoice # & MARK', field: 'invoiceNumber', width: 170, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <div>
           <span className="font-extrabold text-slate-900 text-sm block font-mono">{p.value}</span>
@@ -170,7 +169,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Type', field: 'type', width: 120, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'type',
+      headerName: 'Type', field: 'type', width: 120, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => {
         const typeLabel = p.value?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Invoice';
         return (
@@ -189,7 +188,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Linkage', field: 'linkage', width: 180, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'linkage',
+      headerName: 'Linkage', field: 'linkage', width: 180, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <div>
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg w-fit border font-bold text-[11px] ${p.data?.linkageType === 'contract' ? 'text-indigo-700 bg-indigo-50 border-indigo-100' : 'text-purple-700 bg-purple-50 border-purple-100'}`}>
@@ -203,7 +202,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Year · Qtr', field: 'yearQuarter', width: 120, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'yearQuarter',
+      headerName: 'Year · Qtr', field: 'yearQuarter', width: 120, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         p.value && p.value !== '—' ? (
           <span className="inline-flex items-center px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-md font-bold text-[11px] font-mono">{p.value}</span>
@@ -213,7 +212,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Ref Period', field: 'periodRange', width: 210, sortable: true, ...excelSetFilter(), rowGroup: groupBy === 'periodRange',
+      headerName: 'Ref Period', field: 'periodRange', width: 210, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         p.value ? (
           <span className="text-[11px] text-slate-600 font-mono">{p.value}</span>
@@ -237,7 +236,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       valueFormatter: eurFormatter
     },
     {
-      headerName: 'Status', field: 'status', width: 150, sortable: true, rowGroup: groupBy === 'status',
+      headerName: 'Status', field: 'status', width: 150, sortable: true,
       filter: 'agSetColumnFilter', filterParams: { values: ['draft', 'registered', 'sent_received', 'partially_paid', 'paid', 'disputed', 'resolved', 'cancelled'], excelMode: 'windows' },
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <select
@@ -341,7 +340,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         );
       }
     }
-  ], [copiedId, groupBy, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty]);
+  ], [copiedId, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -357,23 +356,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
               className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
             />
           </div>
-          <select
-            value={groupBy}
-            onChange={e => setGroupBy(e.target.value)}
-            disabled={!HAS_AG_GRID_LICENSE}
-            title={HAS_AG_GRID_LICENSE ? 'Group rows by a column (clear to ungroup)' : 'Row grouping requires the AG Grid Enterprise license — set NEXT_PUBLIC_AG_GRID_LICENSE_KEY'}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] cursor-pointer shrink-0"
-          >
-            <option value="none">Group by: None</option>
-            <option value="entity">Group by: Entity</option>
-            <option value="status">Group by: Status</option>
-            <option value="yearQuarter">Group by: Year · Quarter</option>
-            <option value="linkage">Group by: Linkage</option>
-            <option value="periodRange">Group by: Ref Period</option>
-            <option value="invoiceNumber">Group by: Invoice #</option>
-          </select>
-          {groupBy !== 'none' && HAS_AG_GRID_LICENSE && (
-            <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+          {HAS_AG_GRID_LICENSE && (
+            <div className="flex items-center gap-2 pl-1">
               <button
                 onClick={() => gridApi?.expandAll()}
                 className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
@@ -393,7 +377,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           {invoices.length} invoices · double-click a row to open · use column filters for Excel-style options
         </span>
       </div>
-      <div className="h-[560px]">
+      <div className="h-[calc(100vh-220px)] min-h-[600px]">
         <AgGridReact<InvoiceRow>
           onGridReady={params => setGridApi(params.api)}
           theme={orbitGridTheme}
