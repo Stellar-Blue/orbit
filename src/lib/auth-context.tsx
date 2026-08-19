@@ -3187,7 +3187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           invoice_id: id,
           title: l.title || null,
           url: l.url,
-          created_by: user?.id || null
+          created_by: currentUser?.id || null
         }));
         await supabase.from('invoice_links').insert(toInsert);
       }
@@ -3240,7 +3240,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             invoice_id: id,
             title: l.title || null,
             url: l.url,
-            created_by: user?.id || null
+            created_by: currentUser?.id || null
           }));
           await supabase.from('invoice_links').insert(toInsert);
         }
