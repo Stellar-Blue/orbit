@@ -129,7 +129,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Counterparty', field: 'counterparty', minWidth: 190, sortable: true,
         ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <div className="font-bold text-slate-800">{p.value}</div>
+          <a href={`/counterparties?id=${p.data?.contract.counterparty_id}`} className="font-bold text-[#3D87D3] hover:underline cursor-pointer" onClick={e => e.stopPropagation()}>{p.value}</a>
         )
       },
       {
@@ -280,7 +280,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
-          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80 }}
+          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true }}
           quickFilterText={quickFilter}
           rowHeight={52}
           headerHeight={36}
