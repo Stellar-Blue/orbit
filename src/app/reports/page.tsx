@@ -973,6 +973,7 @@ export default function ReportsPage() {
                     window.location.href = `/counterparties?id=${inv.counterparty_id}`;
                   }
                 }}
+                onLinkToContract={(inv) => setLinkingInvoice(inv)}
               />
             </div>
           </div>

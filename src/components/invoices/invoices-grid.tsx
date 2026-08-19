@@ -70,6 +70,7 @@ interface InvoicesGridProps {
   onPreviewDocument?: (inv: Invoice) => void;
   onPreviewAade?: (inv: Invoice) => void;
   onOpenCounterparty?: (inv: Invoice) => void;
+  onLinkToContract?: (inv: Invoice) => void;
   hideToolbar?: boolean;
   compact?: boolean;
 }
@@ -85,6 +86,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   onPreviewDocument,
   onPreviewAade,
   onOpenCounterparty,
+  onLinkToContract,
   hideToolbar,
   compact
 }) => {
@@ -409,14 +411,24 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         const settled = p.data.status === 'paid' || p.data.status === 'cancelled';
         return (
           <div className="flex items-center justify-end gap-2">
-            {!settled && (
+            {!settled && onMarkPaid && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onMarkPaid?.(p.data!.inv, p.data!.remaining); }}
+                onClick={(e) => { e.stopPropagation(); onMarkPaid(p.data!.inv, p.data!.remaining); }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] leading-none px-2 py-1 rounded transition-all cursor-pointer"
                 title="1-Click Fast Path Collection / Payment"
               >
                 Mark Paid Today
+              </button>
+            )}
+            {onLinkToContract && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onLinkToContract(p.data!.inv); }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] leading-none px-2 py-1 rounded transition-all cursor-pointer"
+                title="Link this invoice to a contract"
+              >
+                Link to Contract
               </button>
             )}
             <button
@@ -439,7 +451,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         );
       }
     }
-  ], [copiedId, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty, updateInvoiceCategory, budgetCategories]);
+  ], [copiedId, onOpen, onStatusChange, onMarkPaid, onDelete, onUploadDocument, onPreviewDocument, onPreviewAade, onOpenCounterparty, onLinkToContract, updateInvoiceCategory, budgetCategories]);
 
   return (
     <div className="flex flex-col w-full bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
