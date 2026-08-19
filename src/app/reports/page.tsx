@@ -21,6 +21,7 @@ import * as XLSX from 'xlsx';
 
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
+import { LinkageModal } from '@/components/invoices/linkage-modal';
 
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -37,6 +38,7 @@ export default function ReportsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; invoice: Invoice } | null>(null);
+  const [linkingInvoice, setLinkingInvoice] = useState<Invoice | null>(null);
 
   const copyToClipboard = (text: string, label: string, id?: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -60,7 +62,7 @@ export default function ReportsPage() {
   }, []);
 
   // Navigation tabs within Financial Hub
-  const [activeTab, setActiveTab] = useState<'reconciliation' | 'cashflow' | 'accountant' | 'revenue'>('reconciliation');
+  const [activeTab, setActiveTab] = useState<'reconciliation' | 'cashflow' | 'accountant' | 'revenue' | 'linkage'>('reconciliation');
 
   // AR/AP reporting period selector (default: current month & year; month 0 = All Year)
   const [statYear, setStatYear] = useState<number>(new Date().getFullYear());
@@ -473,6 +475,17 @@ export default function ReportsPage() {
         >
           <Sparkles className="w-4 h-4 text-emerald-600" />
           <span>Revenue Schedule & MRR</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('linkage')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'linkage'
+              ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }`}
+        >
+          <Tag className="w-4 h-4 text-rose-600" />
+          <span>Linkage Reconciliation</span>
         </button>
       </div>
 
@@ -918,7 +931,75 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {activeTab === 'linkage' && (
+        <div className="space-y-6 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-rose-600" />
+                  Unlinked Historical Invoices
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Invoices synced from myDATA (or uploaded manually) that are not yet linked to a specific contract.
+                </p>
+              </div>
+              <Badge variant="warning">{invoices.filter(i => !i.contract_id && i.status !== 'cancelled').length} Unlinked</Badge>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-50 text-xs uppercase font-bold text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3">Invoice Number</th>
+                    <th className="px-4 py-3">Counterparty</th>
+                    <th className="px-4 py-3">Issue Date</th>
+                    <th className="px-4 py-3 text-right">Gross Amount</th>
+                    <th className="px-4 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {invoices
+                    .filter(i => !i.contract_id && i.status !== 'cancelled')
+                    .sort((a, b) => b.issue_date.localeCompare(a.issue_date))
+                    .map(inv => (
+                      <tr key={inv.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3 font-mono font-black text-[#3D87D3]">{inv.invoice_number}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{inv.counterparty?.legal_name || 'Unknown'}</td>
+                        <td className="px-4 py-3">{inv.issue_date}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold">€{inv.gross_eur.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-center">
+                          <Button 
+                            variant="primary" 
+                            size="sm" 
+                            className="text-[10px] px-2 py-1 leading-none"
+                            onClick={() => setLinkingInvoice(inv)}
+                          >
+                            Link to Contract
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  {invoices.filter(i => !i.contract_id && i.status !== 'cancelled').length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-12 text-center text-slate-500 italic">
+                        All active invoices have been successfully linked to contracts! 🎉
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {linkingInvoice && (
+        <LinkageModal 
+          invoice={linkingInvoice} 
+          onClose={() => setLinkingInvoice(null)} 
+        />
+      )}
     </div>
   );
 }

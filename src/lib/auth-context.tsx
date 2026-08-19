@@ -192,6 +192,7 @@ interface AppState {
   updateInvoice: (id: string, updates: Partial<Invoice>) => Promise<boolean>;
   deleteInvoice: (id: string) => Promise<boolean>;
   updateInvoiceStatus: (id: string, status: Invoice['status'], notes?: string) => Promise<boolean>;
+  linkInvoiceToContract: (invoiceId: string, contractId: string, allocations: { period: string; amount: number }[], markAsPaid: boolean) => Promise<boolean>;
   recordInvoicePayment: (invoiceId: string, paidOn: string, amount: number, bankRef?: string, note?: string) => Promise<boolean>;
   addInvoiceDocument: (invoiceId: string, doc: Omit<InvoiceDocument, 'id' | 'uploaded_at'>) => Promise<boolean>;
   saveInvoiceAllocation: (invoiceId: string, contractId: string, period: string, amount: number) => Promise<boolean>;
@@ -3293,6 +3294,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const linkInvoiceToContract = async (invoiceId: string, contractId: string, allocations: { period: string; amount: number }[], markAsPaid: boolean): Promise<boolean> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      
+      // 1. Prepare invoice update
+      const updatePayload: any = { contract_id: contractId };
+      if (markAsPaid) updatePayload.status = 'paid';
+
+      // 2. Perform DB updates
+      const { error: invErr } = await supabase.from('invoices').update(updatePayload).eq('id', invoiceId);
+      if (invErr) throw invErr;
+
+      const newAllocations: InvoiceAllocation[] = allocations.map(a => ({
+        id: generateUUID(),
+        invoice_id: invoiceId,
+        contract_id: contractId,
+        period: a.period,
+        amount: a.amount,
+        created_at: new Date().toISOString()
+      }));
+
+      if (newAllocations.length > 0) {
+        const { error: allocErr } = await supabase.from('invoice_allocations').insert(
+          newAllocations.map(a => ({
+            id: a.id, invoice_id: a.invoice_id, contract_id: a.contract_id, period: a.period, amount: a.amount
+          }))
+        );
+        if (allocErr) throw allocErr;
+      }
+
+      // 3. Update local state
+      setInvoices(prev => prev.map(inv => {
+        if (inv.id !== invoiceId) return inv;
+        return {
+          ...inv,
+          contract_id: contractId,
+          ...(markAsPaid ? { status: 'paid' as Invoice['status'] } : {}),
+          allocations: [...(inv.allocations || []), ...newAllocations]
+        };
+      }));
+      setInvoiceAllocations(prev => [...prev, ...newAllocations]);
+
+      return true;
+    } catch (e: any) {
+      console.error('linkInvoiceToContract error:', e);
+      alert(`Error linking invoice: ${e.message || e}`);
+      return false;
+    }
+  };
+
   const recordInvoicePayment = async (invoiceId: string, paidOn: string, amount: number, bankRef?: string, note?: string): Promise<boolean> => {
     const payId = generateUUID();
     const newPay: InvoicePayment = {
@@ -3718,6 +3769,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateInvoice,
       deleteInvoice,
       updateInvoiceStatus,
+      linkInvoiceToContract,
       recordInvoicePayment,
       addInvoiceDocument,
       saveInvoiceAllocation,
