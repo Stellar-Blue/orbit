@@ -23,6 +23,7 @@ const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid')
 const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 import { LinkageModal } from '@/components/invoices/linkage-modal';
 import { BudgetingView } from '@/components/reports/budgeting-view';
+import { CounterpartyEvaluationView } from '@/components/reports/counterparty-evaluation-view';
 
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -64,7 +65,7 @@ export default function ReportsPage() {
   }, []);
 
   // Navigation tabs within Financial Hub
-  const [activeTab, setActiveTab] = useState<'budgeting' | 'reconciliation' | 'cashflow' | 'accountant' | 'revenue' | 'linkage'>('budgeting');
+  const [activeTab, setActiveTab] = useState<'budgeting' | 'evaluation' | 'reconciliation' | 'cashflow' | 'accountant' | 'revenue' | 'linkage'>('budgeting');
 
   // AR/AP reporting period selector (default: current month & year; month 0 = All Year)
   const [statYear, setStatYear] = useState<number>(new Date().getFullYear());
@@ -505,6 +506,10 @@ export default function ReportsPage() {
         {/* --- BUDGETING & PLANNING --- */}
       {activeTab === 'budgeting' && (
         <BudgetingView statYear={statYear} statMonth={statMonth} />
+      )}
+
+      {activeTab === 'evaluation' && (
+        <CounterpartyEvaluationView statYear={statYear} statMonth={statMonth} />
       )}
 
       {/* --- MONTH END & EXPECTED VS ACTUAL --- */}
