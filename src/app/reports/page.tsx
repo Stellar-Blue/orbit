@@ -964,49 +964,16 @@ export default function ReportsPage() {
               </div>
               <Badge variant="warning">{invoices.filter(i => !i.contract_id && i.status !== 'cancelled').length} Unlinked</Badge>
             </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-600">
-                <thead className="bg-slate-50 text-xs uppercase font-bold text-slate-500 border-b border-slate-200">
-                  <tr>
-                    <th className="px-4 py-3">Invoice Number</th>
-                    <th className="px-4 py-3">Counterparty</th>
-                    <th className="px-4 py-3">Issue Date</th>
-                    <th className="px-4 py-3 text-right">Gross Amount</th>
-                    <th className="px-4 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {invoices
-                    .filter(i => !i.contract_id && i.status !== 'cancelled')
-                    .sort((a, b) => b.issue_date.localeCompare(a.issue_date))
-                    .map(inv => (
-                      <tr key={inv.id} className="hover:bg-slate-50/50">
-                        <td className="px-4 py-3 font-mono font-black text-[#3D87D3]">{inv.invoice_number}</td>
-                        <td className="px-4 py-3 font-medium text-slate-900">{inv.counterparty?.legal_name || 'Unknown'}</td>
-                        <td className="px-4 py-3">{inv.issue_date}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold">€{inv.gross_eur.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-center">
-                          <Button 
-                            variant="primary" 
-                            size="sm" 
-                            className="text-[10px] px-2 py-1 leading-none"
-                            onClick={() => setLinkingInvoice(inv)}
-                          >
-                            Link to Contract
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  {invoices.filter(i => !i.contract_id && i.status !== 'cancelled').length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-slate-500 italic">
-                        All active invoices have been successfully linked to contracts! 🎉
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="overflow-x-auto h-[600px]">
+              <InvoicesGrid
+                invoices={invoices.filter(i => !i.contract_id && i.status !== 'cancelled')}
+                hideToolbar={false}
+                onOpenCounterparty={(inv) => {
+                  if (inv.counterparty_id) {
+                    window.location.href = `/counterparties?id=${inv.counterparty_id}`;
+                  }
+                }}
+              />
             </div>
           </div>
         </div>
