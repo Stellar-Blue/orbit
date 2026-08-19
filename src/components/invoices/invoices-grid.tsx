@@ -219,7 +219,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
     {
       headerName: 'Impact', field: 'impact', width: 90, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
-        <span className={`text-[10px] font-extrabold px-1.5 py-[1px] rounded-sm border inline-block ${
+        <span className={`text-[10px] leading-none font-extrabold px-1.5 py-0.5 rounded border inline-block ${
           p.data?.impact === 'Debit' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
         }`}>
           {p.data?.impact}
@@ -244,7 +244,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       headerName: 'Year · Qtr', field: 'yearQuarter', width: 120, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         p.value && p.value !== '—' ? (
-          <span className="inline-flex items-center px-1.5 py-[1px] bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-sm font-bold text-[11px] font-mono">{p.value}</span>
+          <span className="inline-flex items-center px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded font-bold text-[10px] leading-none font-mono">{p.value}</span>
         ) : (
           <span className="text-slate-400 text-[11px] italic">Not set</span>
         )
@@ -305,15 +305,15 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewDocument(p.data.inv); }}
-                className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] px-2 py-0.5 rounded-md hover:bg-emerald-100 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-emerald-100 transition-colors cursor-pointer"
                 title="Click to Preview or Download Document"
               >
-                <Eye className="w-3.5 h-3.5 text-[#3D87D3]" />
+                <Eye className="w-3 h-3 text-[#3D87D3]" />
                 <span>PDF: {(p.data?.docName || '').slice(0, 12)}...</span>
               </button>
             ) : (
-              <label className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] px-2 py-0.5 rounded-md hover:bg-rose-100 cursor-pointer transition-colors" onClick={(e) => e.stopPropagation()}>
-                <Upload className="w-3.5 h-3.5" />
+              <label className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-rose-100 cursor-pointer transition-colors" onClick={(e) => e.stopPropagation()}>
+                <Upload className="w-3 h-3" />
                 <span>Upload PDF</span>
                 <input
                   type="file"
@@ -338,10 +338,10 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade(p.data.inv); }}
-                className="inline-flex items-center gap-1.5 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[11px] px-2 py-0.5 rounded-md hover:bg-sky-100 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-sky-100 transition-colors cursor-pointer"
                 title="View on AADE (myDATA verification page)"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
+                <ExternalLink className="w-3 h-3" />
                 <span>View on AADE</span>
               </button>
             ) : (
@@ -388,7 +388,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onMarkPaid(p.data!.inv, p.data!.remaining); }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-2 py-1 rounded-lg transition-all cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] leading-none px-2 py-1 rounded transition-all cursor-pointer"
                 title="1-Click Fast Path Collection / Payment"
               >
                 Mark Paid Today
