@@ -202,6 +202,9 @@ interface AppState {
   recordInvoicePayment: (invoiceId: string, paidOn: string, amount: number, bankRef?: string, note?: string) => Promise<boolean>;
   addInvoiceDocument: (invoiceId: string, doc: Omit<InvoiceDocument, 'id' | 'uploaded_at'>) => Promise<boolean>;
   saveInvoiceAllocation: (invoiceId: string, contractId: string, period: string, amount: number) => Promise<boolean>;
+  generateBudgetFromContracts: (budgetId: string, fiscalYear: number) => Promise<boolean>;
+  generateBudgetFromPayroll: (budgetId: string, fiscalYear: number) => Promise<boolean>;
+  refreshBudget: (fiscalYear: number) => Promise<boolean>;
   addInvoiceCategory: (name: string, description?: string) => Promise<boolean>;
   deleteInvoiceCategory: (id: string) => Promise<boolean>;
   slackIntegration: EmployeeIntegration | null;
@@ -3330,8 +3333,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const supabase = getSupabaseBrowserClient();
       
       // 1. Prepare invoice update
+      const invoice = invoices.find(i => i.id === invoiceId);
+      const contract = contracts.find(c => c.id === contractId);
+      
       const updatePayload: any = { contract_id: contractId };
       if (markAsPaid) updatePayload.status = 'paid';
+      
+      let inheritedCategoryId = invoice?.category_id;
+      if (contract && (!inheritedCategoryId || invoice?.category_id === null)) {
+        const isRevenue = contract.direction === 'revenue';
+        const defaultCat = budgetCategories.find(c => c.direction === (isRevenue ? 'income' : 'expense'));
+        if (defaultCat) {
+          inheritedCategoryId = defaultCat.id;
+          updatePayload.category_id = defaultCat.id;
+        }
+      }
 
       // 2. Perform DB updates
       const { error: invErr } = await supabase.from('invoices').update(updatePayload).eq('id', invoiceId);
@@ -3362,6 +3378,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...inv,
           contract_id: contractId,
           ...(markAsPaid ? { status: 'paid' as Invoice['status'] } : {}),
+          ...(inheritedCategoryId ? { category_id: inheritedCategoryId } : {}),
           allocations: [...(inv.allocations || []), ...newAllocations]
         };
       }));
@@ -3464,6 +3481,191 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const budgetCat = budgetCategories.find(c => c.id === categoryId);
         return { ...i, category_id: categoryId, budget_category: budgetCat };
       }));
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const generateBudgetFromContracts = async (budgetId: string, fiscalYear: number): Promise<boolean> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      
+      // 1. Get active contracts for the year
+      const activeContracts = contracts.filter(c => c.status === 'active');
+      
+      // 2. Prepare budget lines
+      const newBudgetLines: Omit<BudgetLine, 'id' | 'created_at'>[] = [];
+      
+      activeContracts.forEach(contract => {
+        const isRevenue = contract.direction === 'revenue';
+        
+        // If contract has explicit schedules in DB, use them
+        const schedules = contract.schedule || [];
+        if (schedules.length > 0) {
+          schedules.forEach(sched => {
+            if (sched.period.startsWith(fiscalYear.toString())) {
+              // We need to map to a budget_category. For auto-gen, we use a fallback category based on direction
+              // Ideally, the contract itself should have a budget_category, but we'll use a default mapping
+              const defaultCat = budgetCategories.find(c => c.direction === (isRevenue ? 'income' : 'expense'));
+              if (defaultCat) {
+                newBudgetLines.push({
+                  budget_id: budgetId,
+                  category_id: defaultCat.id,
+                  period: sched.period,
+                  amount: sched.amount,
+                  currency: contract.currency || 'EUR',
+                  source_type: 'contract',
+                  source_id: sched.id
+                });
+              }
+            }
+          });
+        } else {
+          // No schedule. Generate dynamically based on value & cadence for the given year
+          if (!contract.value || !contract.starts_on) return;
+          
+          let monthlyAmount = contract.value;
+          if (contract.billing_cadence === 'annual') monthlyAmount = contract.value / 12;
+          if (contract.billing_cadence === 'quarterly') monthlyAmount = contract.value / 3;
+
+          const defaultCat = budgetCategories.find(c => c.direction === (isRevenue ? 'income' : 'expense'));
+          if (defaultCat) {
+            for (let m = 1; m <= 12; m++) {
+              const periodStr = `${fiscalYear}-${m.toString().padStart(2, '0')}`;
+              // Simple check if period is after starts_on
+              if (periodStr >= contract.starts_on.substring(0, 7)) {
+                newBudgetLines.push({
+                  budget_id: budgetId,
+                  category_id: defaultCat.id,
+                  period: periodStr,
+                  amount: monthlyAmount,
+                  currency: contract.currency || 'EUR',
+                  source_type: 'contract',
+                  source_id: contract.id // Using contract.id as source_id for dynamic schedules
+                });
+              }
+            }
+          }
+        }
+      });
+      
+      if (newBudgetLines.length === 0) return true;
+
+      // 3. Delete existing contract-sourced lines for this budget
+      await supabase.from('budget_lines')
+        .delete()
+        .eq('budget_id', budgetId)
+        .eq('source_type', 'contract');
+
+      // 4. Insert new lines
+      const { error } = await supabase.from('budget_lines').insert(
+        newBudgetLines.map(l => ({ ...l, id: generateUUID() }))
+      );
+      
+      if (error) throw error;
+      
+      // Update local state
+      const { data: updatedLines } = await supabase.from('budget_lines').select('*');
+      if (updatedLines) setBudgetLines(updatedLines);
+
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const generateBudgetFromPayroll = async (budgetId: string, fiscalYear: number): Promise<boolean> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const personnelCategory = budgetCategories.find(c => c.name.toLowerCase().includes('payroll') || c.name.toLowerCase().includes('personnel'));
+      if (!personnelCategory) return false;
+
+      const newBudgetLines: Omit<BudgetLine, 'id' | 'created_at'>[] = [];
+      const activeSalaries = salaries.filter(s => {
+        if (s.valid_to) {
+          const endDate = new Date(s.valid_to);
+          return endDate >= new Date(`${fiscalYear}-01-01`);
+        }
+        return true;
+      });
+
+      activeSalaries.forEach(salary => {
+        const baseGross = salary.gross_amount;
+        const multiplier = salary.employer_cost_multiplier || 1;
+        const baseCost = baseGross * multiplier;
+
+        for (let m = 1; m <= 12; m++) {
+          let monthMultiplier = 1.0;
+          if (m === 4) monthMultiplier += 0.5; // Easter
+          if (m === 7) monthMultiplier += 0.5; // Summer
+          if (m === 12) monthMultiplier += 1.0; // Christmas
+
+          const periodAmount = baseCost * monthMultiplier;
+          const periodStr = `${fiscalYear}-${m.toString().padStart(2, '0')}`;
+
+          newBudgetLines.push({
+            budget_id: budgetId,
+            category_id: personnelCategory.id,
+            period: periodStr,
+            amount: periodAmount,
+            currency: salary.currency || 'EUR',
+            source_type: 'payroll',
+            source_id: salary.id
+          });
+        }
+      });
+
+      if (newBudgetLines.length === 0) return true;
+
+      // Delete existing payroll lines
+      await supabase.from('budget_lines')
+        .delete()
+        .eq('budget_id', budgetId)
+        .eq('source_type', 'payroll');
+
+      // Insert new lines
+      const { error } = await supabase.from('budget_lines').insert(
+        newBudgetLines.map(l => ({ ...l, id: generateUUID() }))
+      );
+
+      if (error) throw error;
+
+      // Update local state
+      const { data: updatedLines } = await supabase.from('budget_lines').select('*');
+      if (updatedLines) setBudgetLines(updatedLines);
+
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const refreshBudget = async (fiscalYear: number): Promise<boolean> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      let activeBudget = budgets.find(b => b.fiscal_year === fiscalYear && b.status === 'active');
+      
+      if (!activeBudget) {
+        const newBudget = {
+          id: generateUUID(),
+          fiscal_year: fiscalYear,
+          status: 'active'
+        };
+        const { error } = await supabase.from('budgets').insert([newBudget]);
+        if (error) throw error;
+        activeBudget = newBudget as any;
+        setBudgets(prev => [...prev, activeBudget!]);
+      }
+
+      if (activeBudget) {
+        await generateBudgetFromContracts(activeBudget.id, fiscalYear);
+        await generateBudgetFromPayroll(activeBudget.id, fiscalYear);
+      }
+      
       return true;
     } catch (e) {
       console.error(e);
@@ -3829,6 +4031,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addInvoiceDocument,
       updateInvoiceCategory,
       saveInvoiceAllocation,
+      generateBudgetFromContracts,
+      generateBudgetFromPayroll,
+      refreshBudget,
       addInvoiceCategory,
       deleteInvoiceCategory,
       slackIntegration,

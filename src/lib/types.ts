@@ -788,6 +788,8 @@ export interface BudgetLine {
   period: string; // YYYY-MM
   amount: number;
   currency: string;
+  source_type: 'manual' | 'contract' | 'payroll';
+  source_id?: string | null;
   created_at?: string;
 }
 

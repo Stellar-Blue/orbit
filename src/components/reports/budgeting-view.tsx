@@ -19,9 +19,10 @@ interface BudgetingViewProps {
 }
 
 export function BudgetingView({ statYear, statMonth }: BudgetingViewProps) {
-  const { invoices, budgetCategories, budgetLines, recurringCommitments, budgets } = useAuth();
+  const { invoices, budgetCategories, budgetLines, recurringCommitments, budgets, refreshBudget } = useAuth();
   
   const [showUncategorized, setShowUncategorized] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const activeBudget = budgets.find(b => b.fiscal_year === statYear && b.status === 'active');
   const monthStr = statMonth > 0 ? statMonth.toString().padStart(2, '0') : null;
@@ -188,14 +189,37 @@ export function BudgetingView({ statYear, statMonth }: BudgetingViewProps) {
       {!activeBudget && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
           <h3 className="text-slate-900 font-semibold mb-2">No Active Budget</h3>
-          <p className="text-slate-500 text-sm max-w-md mx-auto">
-            There is no active budget set up for {statYear}. Please create and activate a budget to see variance reporting.
+          <p className="text-slate-500 text-sm max-w-md mx-auto mb-6">
+            There is no active budget set up for {statYear}. Generate it automatically from your active contracts and payroll data.
           </p>
+          <Button 
+            disabled={isGenerating}
+            onClick={async () => {
+              setIsGenerating(true);
+              await refreshBudget(statYear);
+              setIsGenerating(false);
+            }}
+          >
+            {isGenerating ? 'Generating...' : `Generate Budget for ${statYear}`}
+          </Button>
         </div>
       )}
 
       {activeBudget && (
         <>
+          <div className="flex justify-end">
+            <Button 
+              variant="outline" 
+              disabled={isGenerating}
+              onClick={async () => {
+                setIsGenerating(true);
+                await refreshBudget(statYear);
+                setIsGenerating(false);
+              }}
+            >
+              {isGenerating ? 'Refreshing...' : 'Refresh Budget from Sources'}
+            </Button>
+          </div>
           {renderTable(incomes, 'Income & Revenues')}
           {renderTable(expenses, 'Operating Expenses (OpEx)')}
         </>
