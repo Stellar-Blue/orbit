@@ -420,7 +420,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
           quickFilterText={quickFilter}
-          rowHeight={56}
+          rowHeight={40}
           headerHeight={36}
           {...GROUPING_OPTIONS}
           groupDisplayType="groupRows"

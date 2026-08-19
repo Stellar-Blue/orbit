@@ -291,7 +291,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
           quickFilterText={quickFilter}
-          rowHeight={52}
+          rowHeight={40}
           headerHeight={36}
           {...GROUPING_OPTIONS}
           onRowDoubleClicked={e => { if (e.data) onSelect(e.data.contract); }}
