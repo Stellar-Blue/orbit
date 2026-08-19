@@ -301,6 +301,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const fetchLiveSupabaseData = async () => {
       try {
         const supabase = getSupabaseBrowserClient();
+        
+        // 1. Authenticate and determine admin status to prevent data leakage
+        let matchedId = '';
+        let isAdmin = false;
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const initialProfilesRes = await supabase.from('profiles').select('*');
+        const loadedProfiles: Profile[] = initialProfilesRes.data || [];
+        
+        if (session?.user?.email) {
+          const email = session.user.email.toLowerCase();
+          const match = loadedProfiles.find(p => p.work_email?.toLowerCase() === email);
+          if (match) matchedId = match.id;
+        }
+        if (!matchedId && loadedProfiles.length > 0 && isLocal) {
+          matchedId = loadedProfiles[0].id;
+        }
+        
+        if (matchedId) {
+          const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', matchedId).eq('role', 'admin').maybeSingle();
+          isAdmin = !!roleRow;
+          setCurrentUserId(matchedId);
+        }
+        
+        const emptyRes = { data: [] as any[] };
+
+        // 2. Fetch data selectively based on authorization clearance
         const [
           teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
           paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
@@ -311,43 +338,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes, companyProfileRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
-          supabase.from('profiles').select('*'),
+          Promise.resolve(initialProfilesRes),
           supabase.from('user_roles').select('*'),
-          supabase.from('profile_sensitive').select('*'),
+          isAdmin ? supabase.from('profile_sensitive').select('*') : (matchedId ? supabase.from('profile_sensitive').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('payment_types').select('*').order('sort_order', { ascending: true }),
-          supabase.from('salary_history').select('*'),
-          supabase.from('payments').select('*'),
+          isAdmin ? supabase.from('salary_history').select('*') : (matchedId ? supabase.from('salary_history').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('payments').select('*') : (matchedId ? supabase.from('payments').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('leave_types').select('*').order('sort_order', { ascending: true }),
-          supabase.from('leave_entitlements').select('*'),
+          isAdmin ? supabase.from('leave_entitlements').select('*') : (matchedId ? supabase.from('leave_entitlements').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('mandatory_leaves').select('*'),
-          supabase.from('leave_requests').select('*'),
+          isAdmin ? supabase.from('leave_requests').select('*') : (matchedId ? supabase.from('leave_requests').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('public_holidays').select('*'),
-          supabase.from('remote_days').select('*'),
-          supabase.from('remote_patterns').select('*'),
-          supabase.from('contract_timesheets').select('*'),
-          supabase.from('counterparties').select('*'),
+          isAdmin ? supabase.from('remote_days').select('*') : (matchedId ? supabase.from('remote_days').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('remote_patterns').select('*') : (matchedId ? supabase.from('remote_patterns').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('contract_timesheets').select('*') : (matchedId ? supabase.from('contract_timesheets').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('counterparties').select('*') : Promise.resolve(emptyRes),
           supabase.from('roles').select('*'),
-          supabase.from('counterparty_roles').select('*'),
-          supabase.from('contracts').select('*'),
+          isAdmin ? supabase.from('counterparty_roles').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('contracts').select('*') : Promise.resolve(emptyRes),
           supabase.from('remote_policies').select('*'),
           supabase.from('catalog_modules').select('*').order('sort_order', { ascending: true }),
           supabase.from('catalog_items').select('*'),
-          supabase.from('contract_lines').select('*'),
-          supabase.from('contract_line_groups').select('*'),
-          supabase.from('contract_schedule').select('*').order('period', { ascending: true }),
-          supabase.from('attio_links').select('*'),
-          supabase.from('counterparty_contacts').select('*'),
-          supabase.from('attio_events').select('*'),
-          supabase.from('tier_model_versions').select('*'),
-          supabase.from('counterparty_tiers').select('*'),
-          supabase.from('counterparty_tier_history').select('*').order('changed_at', { ascending: false }).limit(300),
-          supabase.from('counterparty_tier_overrides').select('*'),
-          supabase.from('employee_integrations').select('*'),
-          supabase.from('integration_exemptions').select('*'),
+          isAdmin ? supabase.from('contract_lines').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('contract_line_groups').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('contract_schedule').select('*').order('period', { ascending: true }) : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('attio_links').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('counterparty_contacts').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('attio_events').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('tier_model_versions').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('counterparty_tiers').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('counterparty_tier_history').select('*').order('changed_at', { ascending: false }).limit(300) : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('counterparty_tier_overrides').select('*') : Promise.resolve(emptyRes),
+          isAdmin ? supabase.from('employee_integrations').select('*') : (matchedId ? supabase.from('employee_integrations').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('integration_exemptions').select('*') : (matchedId ? supabase.from('integration_exemptions').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('integration_settings').select('*'),
           supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true }),
-          supabase.from('employee_contracts').select('*'),
-          supabase.from('salary_bonuses').select('*'),
+          isAdmin ? supabase.from('employee_contracts').select('*') : (matchedId ? supabase.from('employee_contracts').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('salary_bonuses').select('*') : (matchedId ? supabase.from('salary_bonuses').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('job_roles').select('*').order('sort_order', { ascending: true }),
           supabase.from('seniority_levels').select('*').order('rank', { ascending: true }),
           supabase.from('profile_role_history').select('*'),
@@ -355,9 +382,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('rate_card_entries').select('*'),
           supabase.from('projects').select('*'),
           supabase.from('work_items').select('*'),
-          supabase.from('project_assignments').select('*'),
+          isAdmin ? supabase.from('project_assignments').select('*') : (matchedId ? supabase.from('project_assignments').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('project_role_forecasts').select('*'),
-          supabase.from('time_entries').select('*'),
+          isAdmin ? supabase.from('time_entries').select('*') : (matchedId ? supabase.from('time_entries').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('timesheet_periods').select('*'),
           supabase.from('company_profile').select('*').eq('id', 1).maybeSingle()
         ]);
@@ -413,18 +440,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const loadedCounterparties: Counterparty[] = counterpartiesRes.data || [];
         setCounterparties(loadedCounterparties);
 
-        let loadedProfiles: Profile[] = [];
-        if (profilesRes.data && profilesRes.data.length > 0) {
+        if (loadedProfiles.length > 0) {
           const roles = rolesRes.data || [];
           const sensitives = sensitiveRes.data || [];
-          loadedProfiles = profilesRes.data.map((p: any) => {
+          const finalProfiles = loadedProfiles.map((p: any) => {
             const userRoles = roles.filter((r: any) => r.profile_id === p.id);
             const role = userRoles.some((r: any) => r.role === 'admin') ? 'admin' : 'employee';
             const sensitive = sensitives.find((s: any) => s.profile_id === p.id);
             const team = loadedTeams.find(t => t.id === p.team_id);
             return { ...p, role, sensitive, team };
           });
-          setProfiles(loadedProfiles);
+          setProfiles(finalProfiles);
         }
 
         const enrichedPayments = (paymentsRes.data || []).map((pay: any) => {
@@ -520,11 +546,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         try {
           const [invRes, catRes, docRes, payRes, allocRes] = await Promise.all([
-            supabase.from('invoices').select('*').order('issue_date', { ascending: false }),
+            isAdmin ? supabase.from('invoices').select('*').order('issue_date', { ascending: false }) : Promise.resolve(emptyRes),
             supabase.from('invoice_categories').select('*').order('name', { ascending: true }),
-            supabase.from('invoice_documents').select('*'),
-            supabase.from('invoice_payments').select('*'),
-            supabase.from('invoice_allocations').select('*'),
+            isAdmin ? supabase.from('invoice_documents').select('*') : Promise.resolve(emptyRes),
+            isAdmin ? supabase.from('invoice_payments').select('*') : Promise.resolve(emptyRes),
+            isAdmin ? supabase.from('invoice_allocations').select('*') : Promise.resolve(emptyRes),
           ]);
           
           const loadedCats: InvoiceCategory[] = catRes.data || [];
@@ -542,9 +568,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setInvoiceCategories(loadedCats);
           }
           const loadedDocs: InvoiceDocument[] = (docRes.data || []).map((doc: any) => {
-            // Resolve the real public URL from storage so the preview modal renders the actual PDF,
-            // not the metadata fallback sheet. The table only persists storage_path, not url.
-            // MCP-mock records (mcp_invoices/*) have no backing object in storage, so leave those without a URL.
             const isMockPath = typeof doc.storage_path === 'string' && doc.storage_path.startsWith('mcp_invoices/');
             const { data: pubData } = isMockPath
               ? { data: null }
@@ -557,7 +580,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const loadedAlloc: InvoiceAllocation[] = allocRes.data || [];
           setInvoiceAllocations(loadedAlloc);
 
-          // myDATA-mirrored invoices carry qr_url on the invoice row itself (mirrored at sync time).
           const enrichedInvoices: Invoice[] = (invRes.data || []).map((inv: any) => {
             const cp = enrichedCounterparties.find(c => c.id === inv.counterparty_id);
             const cnt = enrichedContracts.find(c => c.id === inv.contract_id);
@@ -605,22 +627,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           half_day_label: settingsMap.half_day_label ?? DEFAULT_SLACK_SETTINGS.half_day_label,
         });
         setIntegrationLastReconciledAt(settingsMap.last_reconciled_at ?? null);
-
-        let matchedId = '';
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session && session.user && session.user.email) {
-          const email = session.user.email.toLowerCase();
-          const match = loadedProfiles.find(p => p.work_email?.toLowerCase() === email);
-          if (match) {
-            matchedId = match.id;
-          }
-        }
-        if (!matchedId && loadedProfiles.length > 0 && isLocal) {
-          matchedId = loadedProfiles[0].id;
-        }
-        if (matchedId) {
-          setCurrentUserId(matchedId);
-        }
       } catch (err) {
         console.error("Live database sync exception:", err);
       } finally {
@@ -3454,6 +3460,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshInvoices = async (): Promise<void> => {
+    if (currentUser?.role !== 'admin') return;
     try {
       const supabase = getSupabaseBrowserClient();
       const [invRes, docRes, payRes, allocRes] = await Promise.all([
