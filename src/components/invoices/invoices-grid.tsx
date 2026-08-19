@@ -258,7 +258,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
       {
-        headerName: 'Archive', field: 'hasDoc', width: 220, sortable: true,
+        headerName: 'Archive', field: 'hasDoc', width: 140, sortable: true,
         ...excelSetFilter(['Yes', 'No']),
         cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -288,7 +288,14 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 />
               </label>
             )}
-            {p.data?.inv.qr_url && (
+          </div>
+        )
+      },
+      {
+        headerName: 'AADE', field: 'inv.qr_url', width: 150, sortable: false, filter: false,
+        cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
+          <div className="flex items-center h-full">
+            {p.data?.inv.qr_url ? (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade(p.data.inv); }}
@@ -298,6 +305,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>View on AADE</span>
               </button>
+            ) : (
+              <span className="text-[10px] text-slate-400 italic">—</span>
             )}
           </div>
         )
