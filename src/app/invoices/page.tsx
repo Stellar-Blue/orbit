@@ -369,6 +369,21 @@ export default function InvoicesRegistryPage() {
             invoices={filteredInvoices}
             onOpen={(inv) => openInvoiceModal(inv)}
             onStatusChange={(inv, status) => updateInvoiceStatus(inv.id, status)}
+            onMassStatusChange={async (selectedInvoices, status) => {
+              if (selectedInvoices.length === 0) return;
+              if (!confirm(`Are you sure you want to change the status of ${selectedInvoices.length} invoices to "${status.replace('_', ' ')}"?`)) return;
+              
+              let successCount = 0;
+              for (const inv of selectedInvoices) {
+                const ok = await updateInvoiceStatus(inv.id, status);
+                if (ok) successCount++;
+              }
+              if (successCount === selectedInvoices.length) {
+                notifySuccess(`Successfully updated ${successCount} invoices.`);
+              } else {
+                alert(`Warning: Only updated ${successCount} out of ${selectedInvoices.length} invoices.`);
+              }
+            }}
             onMarkPaid={(inv, remaining) => {
               setPayingInvoice(inv);
               setPayAmount(remaining);

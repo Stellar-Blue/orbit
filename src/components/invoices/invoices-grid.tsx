@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type GridApi } from 'ag-grid-community';
+import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type GridApi, type GetContextMenuItemsParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { Invoice, InvoiceStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
@@ -62,6 +62,7 @@ interface InvoicesGridProps {
   invoices: Invoice[];
   onOpen: (inv: Invoice) => void;
   onStatusChange: (inv: Invoice, status: InvoiceStatus) => void;
+  onMassStatusChange: (invoices: Invoice[], status: InvoiceStatus) => void;
   onMarkPaid: (inv: Invoice, remaining: number) => void;
   onDelete: (inv: Invoice) => void;
   onUploadDocument: (inv: Invoice, file: File) => void;
@@ -74,6 +75,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   invoices,
   onOpen,
   onStatusChange,
+  onMassStatusChange,
   onMarkPaid,
   onDelete,
   onUploadDocument,
@@ -125,6 +127,40 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       };
     });
   }, [invoices]);
+
+  const getContextMenuItems = React.useCallback((params: GetContextMenuItemsParams): any[] => {
+    const selectedRows = params.api.getSelectedRows();
+    
+    // Default context menu items
+    const defaultItems = ['copy', 'copyWithHeaders', 'separator', 'export'];
+    
+    if (!selectedRows || selectedRows.length === 0) {
+      return defaultItems;
+    }
+
+    const statuses: { label: string, value: InvoiceStatus }[] = [
+      { label: 'Draft', value: 'draft' },
+      { label: 'Registered', value: 'registered' },
+      { label: 'Sent / Received', value: 'sent_received' },
+      { label: 'Partially Paid', value: 'partially_paid' },
+      { label: 'Paid in Full', value: 'paid' },
+      { label: 'Disputed', value: 'disputed' },
+      { label: 'Resolved', value: 'resolved' },
+      { label: 'Cancelled', value: 'cancelled' },
+    ];
+
+    const massUpdateItem = {
+      name: `Mass Update Status (${selectedRows.length} selected)`,
+      subMenu: statuses.map(s => ({
+        name: s.label,
+        action: () => {
+          onMassStatusChange(selectedRows.map(r => r.inv), s.value);
+        }
+      }))
+    };
+
+    return [massUpdateItem, 'separator', ...defaultItems];
+  }, [onMassStatusChange]);
 
   const columnDefs = useMemo<ColDef<InvoiceRow>[]>(() => [
     {
@@ -427,6 +463,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           headerHeight={36}
           {...GROUPING_OPTIONS}
           groupDisplayType="groupRows"
+          rowSelection={{ mode: 'multiRow' }}
+          getContextMenuItems={getContextMenuItems}
           onRowDoubleClicked={e => { if (e.data) onOpen(e.data.inv); }}
           rowClassRules={{
             'invoice-row-overdue': (params) => !!params.data?.overdue
