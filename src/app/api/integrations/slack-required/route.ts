@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/integrations/server';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 
+const PROFILE_COLUMNS = 'id, first_name, last_name, work_email, employment_type, onboarding_completed_at, status';
+
 /**
  * Admin control over which users must connect Slack.
- * GET  → list of active profiles with their current slack_required flag + connection state.
+ * GET  → active profiles with their slack_required flag, plus the authoritative
+ *        Slack connection state for every profile. Both are read with the service
+ *        role so RLS/column grants on employee_integrations can never blank them out.
  * POST → set slack_required for a single profile (admin only, audited).
  */
 export async function GET(request: NextRequest) {
@@ -15,13 +19,45 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = getAdminClient();
-  const { data: profiles } = await admin
+
+  // slack_required may not exist yet if migration 0050 has not been applied to this
+  // database — fall back to the base columns so the roster still lists everyone.
+  type ProfileRow = Record<string, unknown> & { id: string; slack_required?: boolean };
+  let slackRequiredAvailable = true;
+  let profiles: ProfileRow[] = [];
+
+  const primary = await admin
     .from('profiles')
-    .select('id, first_name, last_name, work_email, employment_type, slack_required, onboarding_completed_at, status')
+    .select(`${PROFILE_COLUMNS}, slack_required`)
     .eq('status', 'active')
     .order('first_name', { ascending: true });
 
-  return NextResponse.json({ profiles: profiles || [] });
+  if (primary.error) {
+    slackRequiredAvailable = false;
+    const retry = await admin
+      .from('profiles')
+      .select(PROFILE_COLUMNS)
+      .eq('status', 'active')
+      .order('first_name', { ascending: true });
+    if (retry.error) {
+      return NextResponse.json({ error: retry.error.message }, { status: 500 });
+    }
+    profiles = (retry.data || []) as ProfileRow[];
+  } else {
+    profiles = (primary.data || []) as ProfileRow[];
+  }
+
+  // Authoritative connection state (never expose token_ref).
+  const { data: integrations } = await admin
+    .from('employee_integrations')
+    .select('id, profile_id, provider, external_user_id, status, connected_at, last_synced_at, revoked_at')
+    .eq('provider', 'slack');
+
+  return NextResponse.json({
+    profiles: profiles.map(p => ({ ...p, slack_required: !!p.slack_required })),
+    integrations: integrations || [],
+    slackRequiredAvailable,
+  });
 }
 
 export async function POST(request: NextRequest) {

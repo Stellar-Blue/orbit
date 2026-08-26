@@ -27,7 +27,7 @@ export function IntegrationsSettings() {
   type IntegrationTab = 'slack' | 'outlook' | 'attio' | 'mydata' | 'mcp';
   const [activeTab, setActiveTab] = useState<IntegrationTab>('slack');
 
-  const { profiles, integrationSettings, integrationExceptions, integrationLastReconciledAt, refreshIntegrationState } = useAuth();
+  const { profiles, employeeIntegrations, integrationSettings, integrationExceptions, integrationLastReconciledAt, refreshIntegrationState } = useAuth();
   const [settings, setSettings] = useState<IntegrationSettings>(integrationSettings);
   const [outlook, setOutlook] = useState<OutlookSettings>(DEFAULT_OUTLOOK);
 
@@ -58,17 +58,11 @@ export function IntegrationsSettings() {
   const [grantDays, setGrantDays] = useState(7);
   const [granting, setGranting] = useState(false);
 
-  // Per-user "must connect Slack" requirement (admin chooses who is gated)
-  const [requiredList, setRequiredList] = useState<Array<{
-    id: string;
-    first_name: string;
-    last_name: string;
-    work_email: string;
-    employment_type: string;
-    slack_required: boolean;
-    onboarding_completed_at: string | null;
-  }>>([]);
-  const [requiredLoaded, setRequiredLoaded] = useState(false);
+  // Per-user "must connect Slack" requirement (admin chooses who is gated).
+  // The roster is built from the profiles already loaded in auth-context so it can
+  // never render empty because of an API/session hiccup; the server response only
+  // supplies authoritative overrides on top.
+  const [requiredOverrides, setRequiredOverrides] = useState<Record<string, boolean>>({});
   const [requiredSearch, setRequiredSearch] = useState('');
   const [requiredFilter, setRequiredFilter] = useState<'all' | 'required' | 'optional'>('all');
   const [savingRequiredId, setSavingRequiredId] = useState<string | null>(null);
@@ -224,39 +218,41 @@ export function IntegrationsSettings() {
     return () => es.close();
   }, []);
 
+  // Pull the authoritative slack_required flags; failure is non-fatal because the
+  // roster below is built from the profiles auth-context already loaded.
   const loadRequired = async () => {
     try {
       const res = await fetch('/api/integrations/slack-required');
-      if (res.ok) {
-        const data = await res.json();
-        setRequiredList(data.profiles || []);
-      }
+      if (!res.ok) return;
+      const data = await res.json();
+      const server: Record<string, boolean> = {};
+      (data.profiles || []).forEach((p: { id: string; slack_required?: boolean }) => {
+        server[p.id] = !!p.slack_required;
+      });
+      setRequiredOverrides(server);
     } catch (e) {
       console.error('loadRequired error:', e);
-    } finally {
-      setRequiredLoaded(true);
     }
   };
 
-  const toggleRequired = async (profileId: string, required: boolean) => {
-    setSavingRequiredId(profileId);
-    // Optimistic update
-    setRequiredList(prev => prev.map(p => p.id === profileId ? { ...p, slack_required: required } : p));
-    try {
-      const res = await fetch('/api/integrations/slack-required', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_id: profileId, required }),
-      });
-      if (!res.ok) throw new Error('save failed');
-    } catch (e) {
-      console.error('toggleRequired error:', e);
-      // Revert on failure
-      setRequiredList(prev => prev.map(p => p.id === profileId ? { ...p, slack_required: !required } : p));
-    } finally {
-      setSavingRequiredId(null);
-    }
+  const slackStatusFor = (profileId: string): 'connected' | 'revoked' | 'none' => {
+    const integ = employeeIntegrations.find(i => i.profile_id === profileId && i.provider === 'slack');
+    if (!integ) return 'none';
+    return integ.status === 'revoked' ? 'revoked' : integ.status === 'connected' ? 'connected' : 'none';
   };
+
+  const requiredList = profiles
+    .filter(p => p.status === 'active')
+    .map(p => ({
+      id: p.id,
+      first_name: p.first_name,
+      last_name: p.last_name,
+      work_email: p.work_email,
+      employment_type: p.employment_type,
+      slack_required: requiredOverrides[p.id] ?? !!p.slack_required,
+      slack_status: slackStatusFor(p.id),
+    }))
+    .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
 
   const visibleRequiredList = requiredList.filter(p => {
     const q = requiredSearch.trim().toLowerCase();
@@ -266,6 +262,26 @@ export function IntegrationsSettings() {
     return true;
   });
 
+  const toggleRequired = async (profileId: string, required: boolean) => {
+    setSavingRequiredId(profileId);
+    const previous = requiredList.find(p => p.id === profileId)?.slack_required ?? false;
+    setRequiredOverrides(prev => ({ ...prev, [profileId]: required }));
+    try {
+      const res = await fetch('/api/integrations/slack-required', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId, required }),
+      });
+      if (!res.ok) throw new Error('save failed');
+    } catch (e) {
+      console.error('toggleRequired error:', e);
+      setRequiredOverrides(prev => ({ ...prev, [profileId]: previous }));
+      alert('Failed to update the Slack requirement. Please try again.');
+    } finally {
+      setSavingRequiredId(null);
+    }
+  };
+
   const bulkSetRequired = async (required: boolean) => {
     const targets = visibleRequiredList.filter(p => p.slack_required !== required);
     if (targets.length === 0) return;
@@ -273,8 +289,11 @@ export function IntegrationsSettings() {
     const verb = required ? 'Require' : 'Stop requiring';
     if (!confirm(`${verb} Slack for ${targets.length} employee${targets.length === 1 ? '' : 's'}${scoped}?`)) return;
     setBulkSaving(true);
-    const ids = new Set(targets.map(p => p.id));
-    setRequiredList(prev => prev.map(p => ids.has(p.id) ? { ...p, slack_required: required } : p));
+    setRequiredOverrides(prev => {
+      const next = { ...prev };
+      targets.forEach(p => { next[p.id] = required; });
+      return next;
+    });
     try {
       await Promise.all(targets.map(p =>
         fetch('/api/integrations/slack-required', {
@@ -513,14 +532,14 @@ export function IntegrationsSettings() {
 
       {/* Per-user Slack requirement — admin chooses who must connect */}
       <Card className="p-5 border-t-4 border-t-indigo-500 shadow-sm transition-shadow hover:shadow-md">
-        {!requiredLoaded ? <SectionLoader text="Loading Slack requirement roster..." /> : (
+        {(
           <>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-indigo-500" />
                 <h4 className="font-bold text-slate-900 text-sm">Who Must Connect Slack</h4>
               </div>
-              <button onClick={loadRequired} className="text-[11px] font-bold text-[#3D87D3] flex items-center gap-1 cursor-pointer">
+              <button onClick={() => { loadRequired(); refreshIntegrationState(); }} className="text-[11px] font-bold text-[#3D87D3] flex items-center gap-1 cursor-pointer">
                 <RefreshCw className="w-3 h-3" /> Refresh
               </button>
             </div>
@@ -586,11 +605,13 @@ export function IntegrationsSettings() {
                     <div className="min-w-0">
                       <div className="font-bold text-slate-800 text-xs flex items-center gap-2">
                         {p.first_name} {p.last_name}
-                        {p.slack_required && (
-                          p.onboarding_completed_at
-                            ? <Badge variant="success" className="text-[9px] px-1.5 py-0">connected</Badge>
-                            : <Badge variant="warning" className="text-[9px] px-1.5 py-0">not connected</Badge>
-                        )}
+                        {p.slack_status === 'connected'
+                          ? <Badge variant="success" className="text-[9px] px-1.5 py-0">connected</Badge>
+                          : p.slack_status === 'revoked'
+                            ? <Badge variant="error" className="text-[9px] px-1.5 py-0">revoked</Badge>
+                            : p.slack_required
+                              ? <Badge variant="warning" className="text-[9px] px-1.5 py-0">not connected</Badge>
+                              : null}
                       </div>
                       <div className="text-[11px] text-slate-500 mt-0.5 font-mono truncate">{p.work_email} · {p.employment_type}</div>
                     </div>

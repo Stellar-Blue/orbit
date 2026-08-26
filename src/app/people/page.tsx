@@ -481,7 +481,7 @@ export default function PeopleDirectoryPage() {
                           const connStatus = !integ ? 'not connected' : integ.status === 'revoked' ? 'revoked' : integ.status === 'connected' ? 'connected' : integ.status;
                           return selectedProfile.slack_required
                             ? `Required — currently ${connStatus}.`
-                            : 'Optional — this employee is not required to connect Slack.';
+                            : `Optional — not required to connect. Slack is currently ${connStatus}.`;
                         })()}
                       </div>
                     </div>
