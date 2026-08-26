@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { GATED_EMPLOYMENT_TYPES } from '@/lib/integrations/types';
 
 /**
- * Mandatory Slack-onboarding gate (§2.1):
- * routes any profile without onboarding_completed_at (or with a revoked Slack token)
- * to /onboarding for every app route, preserving the intended destination.
- * Contractors are exempt. Active admin exemptions (incl. outage grace) lift the gate.
+ * Slack-onboarding gate (§2.1):
+ * routes any profile the admin has marked slack_required (and without
+ * onboarding_completed_at, or with a revoked Slack token) to /onboarding for
+ * every app route, preserving the intended destination.
+ * Users the admin has not flagged as required skip the flow entirely.
+ * Active admin exemptions (incl. outage grace) also lift the gate.
  * Disabled entirely in DEV_AUTH_MODE so local mock sessions are unaffected.
  */
 export async function proxy(request: NextRequest) {
@@ -38,7 +39,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, employment_type, onboarding_completed_at')
+    .select('id, slack_required, onboarding_completed_at')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
@@ -46,8 +47,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Contractors and non-gated types skip the flow entirely
-  if (!GATED_EMPLOYMENT_TYPES.includes(profile.employment_type as unknown as (typeof GATED_EMPLOYMENT_TYPES)[number])) {
+  // Only users the admin has marked as required are gated
+  if (!profile.slack_required) {
     return NextResponse.next();
   }
 

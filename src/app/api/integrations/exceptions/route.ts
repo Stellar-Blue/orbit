@@ -28,9 +28,9 @@ export async function GET(request: NextRequest) {
   const { count: notConnected } = await admin
     .from('profiles')
     .select('id', { count: 'exact', head: true })
-    .in('employment_type', ['full_time', 'part_time', 'intern'])
+    .eq('slack_required', true)
     .eq('status', 'active')
-    .not('onboarding_completed_at', 'is', null);
+    .is('onboarding_completed_at', null);
 
   return NextResponse.json({
     exceptions: (outboxExceptions || []).map((e: { id: string; payload?: Record<string, unknown> | null; last_error?: string | null; created_at: string; orbit_kind: string; operation: string }) => ({

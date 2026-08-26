@@ -230,7 +230,8 @@ function MyProfileInner() {
             )}
           </Card>
 
-          {/* Slack connection */}
+          {/* Slack connection — only for users the admin requires, or who already have a connection to manage */}
+          {(currentUser.slack_required || isConnected || isRevoked) && (
           <Card className="p-6">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
               <MessageSquare className="w-4 h-4 text-[#3D87D3]" /> Slack Status Mirroring
@@ -287,6 +288,7 @@ function MyProfileInner() {
               </div>
             )}
           </Card>
+          )}
           {msalError && MSAL_ERRORS[msalError] && (
             <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800 flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { enqueueOutbox, getAdminClient } from '@/lib/integrations/server';
-import { GATED_EMPLOYMENT_TYPES } from '@/lib/integrations/types';
 
 interface SyncRequest {
   profile_id: string;
@@ -22,7 +21,7 @@ export async function POST(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, employment_type')
+    .select('id')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
@@ -45,9 +44,16 @@ export async function POST(request: NextRequest) {
   }
   const syncProfileId = targetProfileId || profile.id;
 
-  if (!GATED_EMPLOYMENT_TYPES.includes(profile.employment_type as unknown as (typeof GATED_EMPLOYMENT_TYPES)[number])) {
-    // Contractors and admins mirror nothing; nothing to do.
-    return NextResponse.json({ ok: true, enqueued: 0, skipped: 'not_gated' });
+  const admin = getAdminClient();
+
+  // Only mirror for users the admin has marked as required to connect Slack.
+  const { data: target } = await admin
+    .from('profiles')
+    .select('slack_required')
+    .eq('id', syncProfileId)
+    .maybeSingle();
+  if (!target?.slack_required) {
+    return NextResponse.json({ ok: true, enqueued: 0, skipped: 'not_required' });
   }
 
   const date = body.date;
@@ -55,7 +61,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
   }
 
-  const admin = getAdminClient();
   const idempotencyKey = `slack:status:${syncProfileId}:${date}:${crypto.randomUUID()}`;
   const enqueued = await enqueueOutbox(admin, [{
     provider: 'slack',
