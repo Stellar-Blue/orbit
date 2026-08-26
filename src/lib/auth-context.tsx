@@ -230,23 +230,6 @@ const generateUUID = (): string => {
   });
 };
 
-/**
- * Authoritative Slack connection state for every employee, read server-side with the
- * service role. The browser read of employee_integrations can come back empty for an
- * admin (RLS / column-level grants on token_ref), which would make everyone look
- * "not connected" in People. This is the fallback for that case.
- */
-const fetchAdminSlackIntegrations = async (): Promise<EmployeeIntegration[]> => {
-  try {
-    const res = await fetch('/api/integrations/slack-required');
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.integrations || []) as EmployeeIntegration[];
-  } catch {
-    return [];
-  }
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -662,13 +645,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setTimesheetPeriods((timesheetPeriodsRes?.data || []) as TimesheetPeriod[]);
         setCompanyProfile(companyProfileRes?.data || null);
 
-        let myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
-        if (isAdmin && myIntegrationRows.length === 0) {
-          // Browser read was blocked/empty — fall back to the service-role view so the
-          // People directory shows real Slack connection state instead of "not connected".
-          const authoritative = await fetchAdminSlackIntegrations();
-          if (authoritative.length > 0) myIntegrationRows = authoritative;
-        }
+        const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
         setEmployeeIntegrations(myIntegrationRows);
         const myExemptions: IntegrationExemption[] = (exemptionsRes?.data || []) as IntegrationExemption[];
         // Scope to my own row — an admin loads every employee's rows here.
@@ -3769,11 +3746,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('integration_exemptions').select('*'),
         supabase.from('integration_settings').select('*'),
       ]);
-      let rows = (integRows || []) as EmployeeIntegration[];
-      if (currentUser.role === 'admin' && rows.length === 0) {
-        const authoritative = await fetchAdminSlackIntegrations();
-        if (authoritative.length > 0) rows = authoritative;
-      }
+      const rows = (integRows || []) as EmployeeIntegration[];
       setEmployeeIntegrations(rows);
       // Scope to my own row — an admin loads every employee's rows here.
       const mine = rows.find(i => i.provider === 'slack' && i.profile_id === currentUser.id) || null;

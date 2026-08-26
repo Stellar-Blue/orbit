@@ -17,6 +17,11 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // getUser() below rotates the Supabase refresh token. Those new cookies must reach
+  // BOTH the route handler (via request) and the browser (via the returned response),
+  // or every API route sees a stale token and 401s once the access token expires.
+  let response = NextResponse.next({ request });
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dev-placeholder',
@@ -27,6 +32,10 @@ export async function proxy(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
         },
       },
     }
@@ -34,7 +43,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.next();
+    return response;
   }
 
   const { data: profile } = await supabase
@@ -44,12 +53,12 @@ export async function proxy(request: NextRequest) {
     .maybeSingle();
 
   if (!profile) {
-    return NextResponse.next();
+    return response;
   }
 
   // Only users the admin has marked as required are gated
   if (!profile.slack_required) {
-    return NextResponse.next();
+    return response;
   }
 
   // Active exemption (admin deferral or outage grace) lifts the gate
@@ -63,7 +72,7 @@ export async function proxy(request: NextRequest) {
     .limit(1)
     .maybeSingle();
   if (exemption) {
-    return NextResponse.next();
+    return response;
   }
 
   if (profile.onboarding_completed_at) {
@@ -75,14 +84,17 @@ export async function proxy(request: NextRequest) {
       .eq('provider', 'slack')
       .maybeSingle();
     if (!integration || integration.status !== 'revoked') {
-      return NextResponse.next();
+      return response;
     }
   }
 
   const next = pathname + (request.nextUrl.search || '');
   const url = new URL('/onboarding', request.url);
   url.searchParams.set('next', next === '/' ? '/' : next);
-  return NextResponse.redirect(url);
+  const redirect = NextResponse.redirect(url);
+  // Carry any refreshed auth cookies onto the redirect, or this hop drops them.
+  response.cookies.getAll().forEach(c => redirect.cookies.set(c));
+  return redirect;
 }
 
 export const config = {
