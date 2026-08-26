@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { slackOAuthUrl } from '@/lib/integrations/server';
-import { GATED_EMPLOYMENT_TYPES } from '@/lib/integrations/types';
 
 export async function GET(request: NextRequest) {
   const supabase = await getSupabaseServerClient();
@@ -12,7 +11,7 @@ export async function GET(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, employment_type')
+    .select('id, slack_required')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
@@ -20,7 +19,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (!GATED_EMPLOYMENT_TYPES.includes(profile.employment_type as unknown as (typeof GATED_EMPLOYMENT_TYPES)[number])) {
+  // Only users the admin has marked as required go through the Slack connect flow.
+  if (!profile.slack_required) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

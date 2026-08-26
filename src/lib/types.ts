@@ -55,6 +55,7 @@ export interface Profile {
   seniority_level?: 'junior' | 'mid' | 'senior';
   contracted_weekly_hours?: number | null;
   onboarding_completed_at?: string | null; // integration onboarding gate marker
+  slack_required?: boolean; // admin-controlled: must this user connect Slack?
   sensitive?: ProfileSensitive; // admin only
 }
 

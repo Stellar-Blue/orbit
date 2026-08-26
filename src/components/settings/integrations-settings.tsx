@@ -58,6 +58,20 @@ export function IntegrationsSettings() {
   const [grantDays, setGrantDays] = useState(7);
   const [granting, setGranting] = useState(false);
 
+  // Per-user "must connect Slack" requirement (admin chooses who is gated)
+  const [requiredList, setRequiredList] = useState<Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    work_email: string;
+    employment_type: string;
+    slack_required: boolean;
+    onboarding_completed_at: string | null;
+  }>>([]);
+  const [requiredLoaded, setRequiredLoaded] = useState(false);
+  const [requiredSearch, setRequiredSearch] = useState('');
+  const [savingRequiredId, setSavingRequiredId] = useState<string | null>(null);
+
   // AADE myDATA issued/received invoice import
   const [mydata, setMyData] = useState<{
     configured: boolean; username: string | null; companyAfm: string | null;
@@ -208,6 +222,40 @@ export function IntegrationsSettings() {
     return () => es.close();
   }, []);
 
+  const loadRequired = async () => {
+    try {
+      const res = await fetch('/api/integrations/slack-required');
+      if (res.ok) {
+        const data = await res.json();
+        setRequiredList(data.profiles || []);
+      }
+    } catch (e) {
+      console.error('loadRequired error:', e);
+    } finally {
+      setRequiredLoaded(true);
+    }
+  };
+
+  const toggleRequired = async (profileId: string, required: boolean) => {
+    setSavingRequiredId(profileId);
+    // Optimistic update
+    setRequiredList(prev => prev.map(p => p.id === profileId ? { ...p, slack_required: required } : p));
+    try {
+      const res = await fetch('/api/integrations/slack-required', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId, required }),
+      });
+      if (!res.ok) throw new Error('save failed');
+    } catch (e) {
+      console.error('toggleRequired error:', e);
+      // Revert on failure
+      setRequiredList(prev => prev.map(p => p.id === profileId ? { ...p, slack_required: !required } : p));
+    } finally {
+      setSavingRequiredId(null);
+    }
+  };
+
   const loadExemptions = async () => {
     try {
       const res = await fetch('/api/integrations/exemptions');
@@ -225,6 +273,7 @@ export function IntegrationsSettings() {
   useEffect(() => {
     const t = setTimeout(() => {
       loadExemptions();
+      loadRequired();
       refreshIntegrationState();
       (async () => {
         try {
@@ -423,6 +472,75 @@ export function IntegrationsSettings() {
               {field('remote_label', 'Remote status text', 'Shown on remote days')}
               {field('remote_emoji', 'Remote emoji', 'Slack emoji, e.g. :house:')}
             </div>
+          </>
+        )}
+      </Card>
+
+      {/* Per-user Slack requirement — admin chooses who must connect */}
+      <Card className="p-5 border-t-4 border-t-indigo-500 shadow-sm transition-shadow hover:shadow-md">
+        {!requiredLoaded ? <SectionLoader text="Loading Slack requirement roster..." /> : (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-indigo-500" />
+                <h4 className="font-bold text-slate-900 text-sm">Who Must Connect Slack</h4>
+              </div>
+              <button onClick={loadRequired} className="text-[11px] font-bold text-[#3D87D3] flex items-center gap-1 cursor-pointer">
+                <RefreshCw className="w-3 h-3" /> Refresh
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              Slack connection is not mandatory for everyone. Turn it on for the users who should mirror their leave &amp; remote
+              days to Slack — they&apos;ll be prompted to connect at their next sign-in. Users left off can use Orbit without connecting.
+            </p>
+
+            <input
+              type="text"
+              placeholder="Search by name or email…"
+              value={requiredSearch}
+              onChange={e => setRequiredSearch(e.target.value)}
+              className="w-full p-2 mb-3 bg-white border border-slate-300 rounded-lg text-xs text-slate-800"
+            />
+
+            {requiredList.length === 0 ? (
+              <div className="text-center py-6 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                No active employees found.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden bg-white max-h-96 overflow-y-auto">
+                {requiredList
+                  .filter(p => {
+                    const q = requiredSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return `${p.first_name} ${p.last_name} ${p.work_email}`.toLowerCase().includes(q);
+                  })
+                  .map(p => (
+                    <div key={p.id} className="p-3.5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                          {p.first_name} {p.last_name}
+                          {p.slack_required && (
+                            p.onboarding_completed_at
+                              ? <Badge variant="success" className="text-[9px] px-1.5 py-0">connected</Badge>
+                              : <Badge variant="warning" className="text-[9px] px-1.5 py-0">not connected</Badge>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 font-mono truncate">{p.work_email} · {p.employment_type}</div>
+                      </div>
+                      <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={p.slack_required}
+                          disabled={savingRequiredId === p.id}
+                          onChange={e => toggleRequired(p.id, e.target.checked)}
+                          className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
+                        />
+                        {p.slack_required ? 'Required' : 'Optional'}
+                      </label>
+                    </div>
+                  ))}
+              </div>
+            )}
           </>
         )}
       </Card>

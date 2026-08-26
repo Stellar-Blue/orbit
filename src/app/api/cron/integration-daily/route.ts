@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { athensToday, computeDayState, deliverSlackOutbox, enqueueOutbox, getAdminClient, getSlackSettings } from '@/lib/integrations/server';
 import { syncOutlookForProfile } from '@/lib/integrations/outlook';
 import { syncIssuedInvoices } from '@/lib/integrations/mydata';
-import { GATED_EMPLOYMENT_TYPES } from '@/lib/integrations/types';
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -15,11 +14,11 @@ export async function GET(request: NextRequest) {
   const settings = await getSlackSettings(admin);
   const today = athensToday();
 
-  // 1. Enqueue today's status mirror for every active gated employee
+  // 1. Enqueue today's status mirror for every active Slack-required employee
   const { data: profiles } = await admin
     .from('profiles')
     .select('id, employment_type')
-    .in('employment_type', GATED_EMPLOYMENT_TYPES)
+    .eq('slack_required', true)
     .eq('status', 'active');
 
   const ops: Array<{ provider: 'slack'; operation: string; orbit_kind: string; orbit_id: string; payload: Record<string, unknown>; idempotency_key: string; ordering_key: string }> = [];
