@@ -70,7 +70,9 @@ export function IntegrationsSettings() {
   }>>([]);
   const [requiredLoaded, setRequiredLoaded] = useState(false);
   const [requiredSearch, setRequiredSearch] = useState('');
+  const [requiredFilter, setRequiredFilter] = useState<'all' | 'required' | 'optional'>('all');
   const [savingRequiredId, setSavingRequiredId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // AADE myDATA issued/received invoice import
   const [mydata, setMyData] = useState<{
@@ -253,6 +255,39 @@ export function IntegrationsSettings() {
       setRequiredList(prev => prev.map(p => p.id === profileId ? { ...p, slack_required: !required } : p));
     } finally {
       setSavingRequiredId(null);
+    }
+  };
+
+  const visibleRequiredList = requiredList.filter(p => {
+    const q = requiredSearch.trim().toLowerCase();
+    if (q && !`${p.first_name} ${p.last_name} ${p.work_email}`.toLowerCase().includes(q)) return false;
+    if (requiredFilter === 'required') return p.slack_required;
+    if (requiredFilter === 'optional') return !p.slack_required;
+    return true;
+  });
+
+  const bulkSetRequired = async (required: boolean) => {
+    const targets = visibleRequiredList.filter(p => p.slack_required !== required);
+    if (targets.length === 0) return;
+    const scoped = requiredSearch || requiredFilter !== 'all' ? ' (matching the current filter)' : '';
+    const verb = required ? 'Require' : 'Stop requiring';
+    if (!confirm(`${verb} Slack for ${targets.length} employee${targets.length === 1 ? '' : 's'}${scoped}?`)) return;
+    setBulkSaving(true);
+    const ids = new Set(targets.map(p => p.id));
+    setRequiredList(prev => prev.map(p => ids.has(p.id) ? { ...p, slack_required: required } : p));
+    try {
+      await Promise.all(targets.map(p =>
+        fetch('/api/integrations/slack-required', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_id: p.id, required }),
+        })
+      ));
+    } catch (e) {
+      console.error('bulkSetRequired error:', e);
+    } finally {
+      await loadRequired();
+      setBulkSaving(false);
     }
   };
 
@@ -490,55 +525,87 @@ export function IntegrationsSettings() {
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              Slack connection is not mandatory for everyone. Turn it on for the users who should mirror their leave &amp; remote
-              days to Slack — they&apos;ll be prompted to connect at their next sign-in. Users left off can use Orbit without connecting.
+              Slack connection is not mandatory for everyone. Check the users who should mirror their leave &amp; remote
+              days to Slack — they&apos;ll be prompted to connect at their next sign-in. Users left unchecked can use Orbit without connecting.
             </p>
 
-            <input
-              type="text"
-              placeholder="Search by name or email…"
-              value={requiredSearch}
-              onChange={e => setRequiredSearch(e.target.value)}
-              className="w-full p-2 mb-3 bg-white border border-slate-300 rounded-lg text-xs text-slate-800"
-            />
+            <div className="flex flex-col sm:flex-row gap-2 mb-3">
+              <input
+                type="text"
+                placeholder="Search by name or email…"
+                value={requiredSearch}
+                onChange={e => setRequiredSearch(e.target.value)}
+                className="flex-1 p-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800"
+              />
+              <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 shrink-0">
+                {(['all', 'required', 'optional'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setRequiredFilter(f)}
+                    className={`px-3 py-1 rounded-md text-[11px] font-bold capitalize transition-all cursor-pointer ${
+                      requiredFilter === f ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            {requiredList.length === 0 ? (
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] text-slate-400 font-mono">
+                {visibleRequiredList.length} shown · {requiredList.filter(p => p.slack_required).length} required of {requiredList.length} total
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => bulkSetRequired(true)}
+                  disabled={bulkSaving || visibleRequiredList.every(p => p.slack_required)}
+                  className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Check all shown
+                </button>
+                <span className="text-slate-300">·</span>
+                <button
+                  onClick={() => bulkSetRequired(false)}
+                  disabled={bulkSaving || visibleRequiredList.every(p => !p.slack_required)}
+                  className="text-[11px] font-bold text-slate-600 hover:text-slate-900 disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Uncheck all shown
+                </button>
+              </div>
+            </div>
+
+            {visibleRequiredList.length === 0 ? (
               <div className="text-center py-6 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                No active employees found.
+                No employees match this search/filter.
               </div>
             ) : (
               <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden bg-white max-h-96 overflow-y-auto">
-                {requiredList
-                  .filter(p => {
-                    const q = requiredSearch.trim().toLowerCase();
-                    if (!q) return true;
-                    return `${p.first_name} ${p.last_name} ${p.work_email}`.toLowerCase().includes(q);
-                  })
-                  .map(p => (
-                    <div key={p.id} className="p-3.5 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-bold text-slate-800 text-xs flex items-center gap-2">
-                          {p.first_name} {p.last_name}
-                          {p.slack_required && (
-                            p.onboarding_completed_at
-                              ? <Badge variant="success" className="text-[9px] px-1.5 py-0">connected</Badge>
-                              : <Badge variant="warning" className="text-[9px] px-1.5 py-0">not connected</Badge>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 font-mono truncate">{p.work_email} · {p.employment_type}</div>
+                {visibleRequiredList.map(p => (
+                  <div key={p.id} className="p-3.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                        {p.first_name} {p.last_name}
+                        {p.slack_required && (
+                          p.onboarding_completed_at
+                            ? <Badge variant="success" className="text-[9px] px-1.5 py-0">connected</Badge>
+                            : <Badge variant="warning" className="text-[9px] px-1.5 py-0">not connected</Badge>
+                        )}
                       </div>
-                      <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={p.slack_required}
-                          disabled={savingRequiredId === p.id}
-                          onChange={e => toggleRequired(p.id, e.target.checked)}
-                          className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
-                        />
-                        {p.slack_required ? 'Required' : 'Optional'}
-                      </label>
+                      <div className="text-[11px] text-slate-500 mt-0.5 font-mono truncate">{p.work_email} · {p.employment_type}</div>
                     </div>
-                  ))}
+                    <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={p.slack_required}
+                        disabled={savingRequiredId === p.id || bulkSaving}
+                        onChange={e => toggleRequired(p.id, e.target.checked)}
+                        className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
+                      />
+                      {p.slack_required ? 'Required' : 'Optional'}
+                    </label>
+                  </div>
+                ))}
               </div>
             )}
           </>
