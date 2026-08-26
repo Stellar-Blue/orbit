@@ -319,17 +319,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 1. Authenticate and determine admin status to prevent data leakage
         let matchedId = '';
         let isAdmin = false;
-        const { data: { session } } = await supabase.auth.getSession();
-        
+        // getUser() is server-verified; getSession() only reads the local cookie.
+        const { data: { user } } = await supabase.auth.getUser();
+
         const initialProfilesRes = await supabase.from('profiles').select('*');
         const loadedProfiles: Profile[] = initialProfilesRes.data || [];
-        
-        if (session?.user?.email) {
-          const email = session.user.email.toLowerCase();
-          const match = loadedProfiles.find(p => p.work_email?.toLowerCase() === email);
+
+        if (user) {
+          // auth_user_id is the authoritative binding written by /auth/callback.
+          // Email is only a fallback for a profile not linked yet.
+          const email = user.email?.toLowerCase();
+          const match = loadedProfiles.find(p => p.auth_user_id === user.id)
+            || (email ? loadedProfiles.find(p => p.work_email?.toLowerCase() === email) : undefined);
           if (match) matchedId = match.id;
         }
-        if (!matchedId && loadedProfiles.length > 0 && isLocal) {
+        // Local prototyping convenience only. Hostname alone is not enough: a production
+        // build served on localhost would impersonate the first profile (an admin).
+        if (!matchedId && loadedProfiles.length > 0 && isLocal && process.env.NODE_ENV !== 'production') {
           matchedId = loadedProfiles[0].id;
         }
         
@@ -691,7 +697,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
   };
 
-  const baseCurrentUser = profiles.find(p => p.id === currentUserId) || profiles[0] || fallbackProfile;
+  // NEVER fall back to another row. profiles[] holds every employee the directory can
+  // read, so `|| profiles[0]` adopted whoever was created first — an admin — whenever
+  // the session had not resolved yet. An unidentified session gets the inert
+  // fallbackProfile (no id, role employee), never someone else's identity.
+  const baseCurrentUser = profiles.find(p => p.id === currentUserId) || fallbackProfile;
   const realUserRole = baseCurrentUser.role;
   const currentUser = useMemo(() => {
     if (isViewAsEmployee && baseCurrentUser.role === 'admin') {
