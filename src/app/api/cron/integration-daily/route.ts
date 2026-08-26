@@ -14,18 +14,21 @@ export async function GET(request: NextRequest) {
   const settings = await getSlackSettings(admin);
   const today = athensToday();
 
-  // 1. Enqueue today's status mirror for every active Slack-required employee
-  const { data: profiles } = await admin
+  // Every active employee. Outlook mirroring applies to all of them; only the
+  // Slack-required subset gets a Slack status mirror.
+  const { data: activeProfiles } = await admin
     .from('profiles')
-    .select('id, employment_type')
-    .eq('slack_required', true)
+    .select('id, employment_type, slack_required')
     .eq('status', 'active');
+
+  // 1. Enqueue today's status mirror for every active Slack-required employee
+  const profiles = (activeProfiles || []).filter(p => (p as { slack_required?: boolean }).slack_required);
 
   const ops: Array<{ provider: 'slack'; operation: string; orbit_kind: string; orbit_id: string; payload: Record<string, unknown>; idempotency_key: string; ordering_key: string }> = [];
   let leaveCount = 0;
   let remoteCount = 0;
 
-  for (const profile of (profiles || []) as { id: string; employment_type: string }[]) {
+  for (const profile of profiles as { id: string; employment_type: string }[]) {
     const state = await computeDayState(admin, settings, profile.id, today);
     if (state.kind === 'none') continue;
     if (state.kind === 'leave') leaveCount += 1;
@@ -46,9 +49,10 @@ export async function GET(request: NextRequest) {
   // 2. Drain the outbox (morning set + any immediate ops that queued up)
   const summary = await deliverSlackOutbox(admin, 100);
 
-  // 3. Outlook calendar mirroring (leave + remote events, next 60 days per settings)
+  // 3. Outlook calendar mirroring (leave + remote events, next 60 days per settings).
+  //    Independent of the Slack requirement — every active employee is mirrored.
   const outlookSummary = { ok: 0, skipped: 0, errors: [] as string[] };
-  for (const profile of (profiles || []) as { id: string }[]) {
+  for (const profile of (activeProfiles || []) as { id: string }[]) {
     const r = await syncOutlookForProfile(admin, profile.id);
     if (r.ok) outlookSummary.ok += 1;
     else if (r.skipped && r.skipped !== 'no_credentials' && r.skipped !== 'disabled') {
@@ -79,7 +83,8 @@ export async function GET(request: NextRequest) {
     job: 'cron/integration-daily',
     timestamp: new Date().toISOString(),
     today,
-    profilesScanned: (profiles || []).length,
+    profilesScanned: (activeProfiles || []).length,
+    slackRequiredProfiles: profiles.length,
     leaveDaysToday: leaveCount,
     remoteDaysToday: remoteCount,
     enqueued,

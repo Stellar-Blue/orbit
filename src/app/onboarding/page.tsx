@@ -55,12 +55,17 @@ function OnboardingInner() {
 
   useEffect(() => {
     if (loading) return;
+    const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+    // Slack isn't required for this user — never hold them on the gate.
+    if (currentUser.id && !currentUser.slack_required) {
+      router.replace(safeNext);
+      return;
+    }
     // Already fully onboarded with a live token → open the app at the intended destination
     if (currentUser.onboarding_completed_at && integration?.status === 'connected') {
-      const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
       router.replace(safeNext);
     }
-  }, [loading, currentUser.onboarding_completed_at, integration, next, router]);
+  }, [loading, currentUser.id, currentUser.slack_required, currentUser.onboarding_completed_at, integration, next, router]);
 
   const isRevoked = integration?.status === 'revoked';
   const needsConnect = !integration || integration.status !== 'connected';

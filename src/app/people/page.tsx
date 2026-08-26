@@ -91,6 +91,8 @@ export default function PeopleDirectoryPage() {
 
   // Admin toggle: is this employee required to connect Slack?
   const [savingSlackRequired, setSavingSlackRequired] = useState(false);
+  const [slackRequiredOverrides, setSlackRequiredOverrides] = useState<Record<string, boolean>>({});
+  const isSlackRequired = (p: Profile) => slackRequiredOverrides[p.id] ?? !!p.slack_required;
   const toggleSlackRequired = async (profileId: string, required: boolean) => {
     setSavingSlackRequired(true);
     try {
@@ -101,6 +103,9 @@ export default function PeopleDirectoryPage() {
       });
       if (!res.ok) throw new Error('save failed');
       setSelectedProfile(prev => prev && prev.id === profileId ? { ...prev, slack_required: required } : prev);
+      // Remember it locally too: auth-context's `profiles` still holds the old flag, so
+      // without this, reopening the dossier would show the stale value.
+      setSlackRequiredOverrides(prev => ({ ...prev, [profileId]: required }));
     } catch (e) {
       console.error('toggleSlackRequired error:', e);
       alert('Failed to update the Slack requirement. Please try again.');
@@ -163,8 +168,12 @@ export default function PeopleDirectoryPage() {
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
-    updateProfile(editData);
-    setSelectedProfile(editData);
+    // slack_required is owned by the Slack toggle (and its audited endpoint), not this
+    // form — editData may hold a stale copy that would silently revert the admin's change.
+    const { slack_required, ...editable } = editData as Profile;
+    const merged = { ...editable, slack_required: isSlackRequired(editData as Profile) } as Profile;
+    updateProfile(editable as Profile);
+    setSelectedProfile(merged);
     setActiveTab('overview');
   };
 
@@ -479,7 +488,7 @@ export default function PeopleDirectoryPage() {
                         {(() => {
                           const integ = employeeIntegrations.find(i => i.profile_id === selectedProfile.id && i.provider === 'slack');
                           const connStatus = !integ ? 'not connected' : integ.status === 'revoked' ? 'revoked' : integ.status === 'connected' ? 'connected' : integ.status;
-                          return selectedProfile.slack_required
+                          return isSlackRequired(selectedProfile)
                             ? `Required — currently ${connStatus}.`
                             : `Optional — not required to connect. Slack is currently ${connStatus}.`;
                         })()}
@@ -490,16 +499,16 @@ export default function PeopleDirectoryPage() {
                     <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer shrink-0">
                       <input
                         type="checkbox"
-                        checked={!!selectedProfile.slack_required}
+                        checked={isSlackRequired(selectedProfile)}
                         disabled={savingSlackRequired}
                         onChange={e => toggleSlackRequired(selectedProfile.id, e.target.checked)}
                         className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
                       />
-                      {selectedProfile.slack_required ? 'Required' : 'Optional'}
+                      {isSlackRequired(selectedProfile) ? 'Required' : 'Optional'}
                     </label>
                   ) : (
-                    <Badge variant={selectedProfile.slack_required ? 'warning' : 'neutral'} className="shrink-0">
-                      {selectedProfile.slack_required ? 'REQUIRED' : 'OPTIONAL'}
+                    <Badge variant={isSlackRequired(selectedProfile) ? 'warning' : 'neutral'} className="shrink-0">
+                      {isSlackRequired(selectedProfile) ? 'REQUIRED' : 'OPTIONAL'}
                     </Badge>
                   )}
                 </div>

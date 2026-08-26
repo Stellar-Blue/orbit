@@ -20,7 +20,8 @@ function MyProfileInner() {
   const searchParams = useSearchParams();
   const msalError = searchParams.get('msal');
 
-  const m365Integration = employeeIntegrations.find(i => i.provider === 'm365') || null;
+  // Scope to my own row — an admin loads every employee's integration rows.
+  const m365Integration = employeeIntegrations.find(i => i.provider === 'm365' && i.profile_id === currentUser.id) || null;
 
   const MSAL_ERRORS: Record<string, string> = {
     error: 'Microsoft sign-in failed or was interrupted.',
@@ -230,8 +231,8 @@ function MyProfileInner() {
             )}
           </Card>
 
-          {/* Slack connection — only for users the admin requires, or who already have a connection to manage */}
-          {(currentUser.slack_required || isConnected || isRevoked) && (
+          {/* Slack connection. Always rendered: hiding it on a stale/blocked integration
+              read would strand a connected user with no way to disconnect. */}
           <Card className="p-6">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
               <MessageSquare className="w-4 h-4 text-[#3D87D3]" /> Slack Status Mirroring
@@ -273,22 +274,26 @@ function MyProfileInner() {
                       <Badge variant={isRevoked ? 'error' : 'neutral'} className="text-[9px] px-1.5 py-0">{isRevoked ? 'REVOKED' : 'OFF'}</Badge>
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      {myIntegrationExemption
-                        ? `Temporarily exempt${myIntegrationExemption.expires_at ? ` until ${new Date(myIntegrationExemption.expires_at).toLocaleString()}` : ''} (admin-granted)`
-                        : isRevoked
-                          ? 'Orbit can no longer mirror your status. Reconnect to keep the mirror active.'
-                          : 'Connect Slack so Orbit can mirror your leave & remote statuses.'}
+                      {!currentUser.slack_required
+                        ? 'Slack mirroring is not required for your account. An administrator can enable it if you want your status mirrored.'
+                        : myIntegrationExemption
+                          ? `Temporarily exempt${myIntegrationExemption.expires_at ? ` until ${new Date(myIntegrationExemption.expires_at).toLocaleString()}` : ''} (admin-granted)`
+                          : isRevoked
+                            ? 'Orbit can no longer mirror your status. Reconnect to keep the mirror active.'
+                            : 'Connect Slack so Orbit can mirror your leave & remote statuses.'}
                     </div>
                   </div>
                 </div>
-                <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
-                  {isRevoked ? <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> : <MessageSquare className="w-3.5 h-3.5 mr-1.5" />}
-                  {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}
-                </a>
+                {/* /api/slack/connect turns non-required users away, so don't offer a dead link. */}
+                {currentUser.slack_required && (
+                  <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
+                    {isRevoked ? <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> : <MessageSquare className="w-3.5 h-3.5 mr-1.5" />}
+                    {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}
+                  </a>
+                )}
               </div>
             )}
           </Card>
-          )}
           {msalError && MSAL_ERRORS[msalError] && (
             <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800 flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />

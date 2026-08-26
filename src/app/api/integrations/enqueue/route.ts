@@ -47,11 +47,15 @@ export async function POST(request: NextRequest) {
   const admin = getAdminClient();
 
   // Only mirror for users the admin has marked as required to connect Slack.
-  const { data: target } = await admin
+  const { data: target, error: targetError } = await admin
     .from('profiles')
     .select('slack_required')
     .eq('id', syncProfileId)
     .maybeSingle();
+  if (targetError) {
+    // Don't let a broken lookup masquerade as a deliberate skip.
+    return NextResponse.json({ error: targetError.message }, { status: 500 });
+  }
   if (!target?.slack_required) {
     return NextResponse.json({ ok: true, enqueued: 0, skipped: 'not_required' });
   }

@@ -32,6 +32,17 @@ export async function GET(request: NextRequest) {
     .eq('status', 'active')
     .order('first_name', { ascending: true });
 
+  // Only an actually-missing column justifies the degraded read (Postgres 42703 /
+  // PostgREST PGRST204). Any other error is real and must surface, not be reported
+  // as "everyone is Optional".
+  const columnMissing = primary.error
+    && (primary.error.code === '42703' || primary.error.code === 'PGRST204'
+      || /slack_required/.test(primary.error.message || ''));
+
+  if (primary.error && !columnMissing) {
+    return NextResponse.json({ error: primary.error.message }, { status: 500 });
+  }
+
   if (primary.error) {
     slackRequiredAvailable = false;
     const retry = await admin

@@ -22,7 +22,8 @@ export default function RemoteWorkLogPage() {
     employeeIntegrations 
   } = useAuth();
   
-  const m365Integration = employeeIntegrations.find(i => i.provider === 'm365') || null;
+  // Scope to my own row — an admin loads every employee's integration rows.
+  const m365Integration = employeeIntegrations.find(i => i.provider === 'm365' && i.profile_id === currentUser.id) || null;
   const outlookConnected = m365Integration?.status === 'connected';
   
   const isAdmin = currentUser.role === 'admin';

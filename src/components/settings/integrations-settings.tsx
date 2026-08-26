@@ -295,13 +295,25 @@ export function IntegrationsSettings() {
       return next;
     });
     try {
-      await Promise.all(targets.map(p =>
+      const results = await Promise.all(targets.map(p =>
         fetch('/api/integrations/slack-required', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ profile_id: p.id, required }),
-        })
+        }).then(r => r.ok).catch(() => false)
       ));
+      // fetch only rejects on network failure — a 4xx/5xx still resolves, so check
+      // res.ok explicitly or a wholly failed bulk save looks like a success.
+      const failedIds = targets.filter((_, i) => !results[i]).map(p => p.id);
+      if (failedIds.length > 0) {
+        // Roll the optimistic flip back for the ones that did not save.
+        setRequiredOverrides(prev => {
+          const next = { ...prev };
+          failedIds.forEach(id => { next[id] = !required; });
+          return next;
+        });
+        alert(`${failedIds.length} of ${targets.length} update${targets.length === 1 ? '' : 's'} failed and were reverted.`);
+      }
     } catch (e) {
       console.error('bulkSetRequired error:', e);
     } finally {
