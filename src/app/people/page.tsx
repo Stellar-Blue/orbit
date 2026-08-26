@@ -9,9 +9,9 @@ import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
-import { 
-  Users, Search, Filter, Download, Lock, ShieldAlert, 
-  Mail, Calendar, Briefcase, Plus, Edit2, Check, Trash2 
+import {
+  Users, Search, Filter, Download, Lock, ShieldAlert,
+  Mail, Calendar, Briefcase, Plus, Edit2, Check, Trash2, MessageSquare
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -88,6 +88,26 @@ export default function PeopleDirectoryPage() {
   const [newAddress, setNewAddress] = useState('');
 
   const activeContract = employeeContracts.find(c => c.profile_id === selectedProfile?.id) || null;
+
+  // Admin toggle: is this employee required to connect Slack?
+  const [savingSlackRequired, setSavingSlackRequired] = useState(false);
+  const toggleSlackRequired = async (profileId: string, required: boolean) => {
+    setSavingSlackRequired(true);
+    try {
+      const res = await fetch('/api/integrations/slack-required', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId, required }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      setSelectedProfile(prev => prev && prev.id === profileId ? { ...prev, slack_required: required } : prev);
+    } catch (e) {
+      console.error('toggleSlackRequired error:', e);
+      alert('Failed to update the Slack requirement. Please try again.');
+    } finally {
+      setSavingSlackRequired(false);
+    }
+  };
 
   const openContractEditor = () => {
     if (activeContract) {
@@ -445,6 +465,43 @@ export default function PeopleDirectoryPage() {
                       </Badge>
                     </div>
                   </div>
+                </div>
+
+                {/* Slack requirement — admin controls whether this employee must connect */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex items-center justify-center shrink-0">
+                      <MessageSquare className="w-4.5 h-4.5 text-[#3D87D3]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-800">Slack Connection Requirement</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {(() => {
+                          const integ = employeeIntegrations.find(i => i.profile_id === selectedProfile.id && i.provider === 'slack');
+                          const connStatus = !integ ? 'not connected' : integ.status === 'revoked' ? 'revoked' : integ.status === 'connected' ? 'connected' : integ.status;
+                          return selectedProfile.slack_required
+                            ? `Required — currently ${connStatus}.`
+                            : 'Optional — this employee is not required to connect Slack.';
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                  {isAdmin ? (
+                    <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={!!selectedProfile.slack_required}
+                        disabled={savingSlackRequired}
+                        onChange={e => toggleSlackRequired(selectedProfile.id, e.target.checked)}
+                        className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
+                      />
+                      {selectedProfile.slack_required ? 'Required' : 'Optional'}
+                    </label>
+                  ) : (
+                    <Badge variant={selectedProfile.slack_required ? 'warning' : 'neutral'} className="shrink-0">
+                      {selectedProfile.slack_required ? 'REQUIRED' : 'OPTIONAL'}
+                    </Badge>
+                  )}
                 </div>
               </div>
             )}
