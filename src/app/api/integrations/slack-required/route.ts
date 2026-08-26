@@ -95,10 +95,17 @@ export async function POST(request: NextRequest) {
     .update({ slack_required: body.required })
     .eq('id', body.profile_id)
     .select('id, slack_required')
-    .single();
+    .maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!data) {
+    // 0 rows: bad id, or the admin client fell back to the anon key and RLS blocked the write.
+    return NextResponse.json(
+      { error: `No profile updated for id ${body.profile_id}. Check the profile exists and SUPABASE_SERVICE_ROLE_KEY is set.` },
+      { status: 500 }
+    );
   }
 
   await admin.from('audit_log').insert({

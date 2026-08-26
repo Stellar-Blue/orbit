@@ -101,14 +101,14 @@ export default function PeopleDirectoryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_id: profileId, required }),
       });
-      if (!res.ok) throw new Error('save failed');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       setSelectedProfile(prev => prev && prev.id === profileId ? { ...prev, slack_required: required } : prev);
       // Remember it locally too: auth-context's `profiles` still holds the old flag, so
       // without this, reopening the dossier would show the stale value.
       setSlackRequiredOverrides(prev => ({ ...prev, [profileId]: required }));
     } catch (e) {
       console.error('toggleSlackRequired error:', e);
-      alert('Failed to update the Slack requirement. Please try again.');
+      alert(`Failed to update the Slack requirement: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSavingSlackRequired(false);
     }

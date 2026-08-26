@@ -272,11 +272,11 @@ export function IntegrationsSettings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_id: profileId, required }),
       });
-      if (!res.ok) throw new Error('save failed');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     } catch (e) {
       console.error('toggleRequired error:', e);
       setRequiredOverrides(prev => ({ ...prev, [profileId]: previous }));
-      alert('Failed to update the Slack requirement. Please try again.');
+      alert(`Failed to update the Slack requirement: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSavingRequiredId(null);
     }
