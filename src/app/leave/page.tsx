@@ -8,7 +8,7 @@ import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
   Users, ShieldCheck, FileText, Sparkles, Filter, HelpCircle, ArrowRight, ShieldAlert,
-  BarChart3, CalendarDays, ChevronLeft, ChevronRight, Table, Download
+  BarChart3, CalendarDays, ChevronLeft, ChevronRight, Table, Download, LayoutGrid
 } from 'lucide-react';
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -181,7 +181,7 @@ export default function LeaveManagementPage() {
   };
 
   // Grid View & Export state
-  const [viewMode, setViewMode] = useState<'calendar' | 'grid'>('calendar');
+  const [viewMode, setViewMode] = useState<'calendar' | 'grid' | 'category'>('calendar');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportTargetYear, setExportTargetYear] = useState<number>(() => new Date().getFullYear() || 2026);
@@ -433,6 +433,15 @@ export default function LeaveManagementPage() {
                     }`}
                   >
                     <Table className="w-3.5 h-3.5 mr-1.5" /> Grid View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('category')}
+                    className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center transition-all cursor-pointer ${
+                      viewMode === 'category' ? 'bg-[#3D87D3] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5 mr-1.5" /> Per Category View
                   </button>
                 </div>
 
@@ -732,16 +741,13 @@ export default function LeaveManagementPage() {
               />
             </div>
           </Card>
-        )}
-        </div>
-
-        {/* PER CATEGORY VIEW: LEAVE CATEGORY QUOTAS & POLICY RULES (FULL WIDTH) */}
-        <Card
-          title="Per Category View"
-          subtitle="Leave categories, policy rules, and quota utilization at a glance."
-          className="border-slate-200 shadow-sm"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-2">
+        ) : (
+          <Card
+            title="Per Category View"
+            subtitle="Leave categories, policy rules, and quota utilization at a glance."
+            className="border-slate-200 shadow-sm"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-2">
                   {leaveTypes.map(lt => {
                     const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id && r.origin !== 'mandatory');
                     const approvedDays = myCatLeaves.filter(r => r.status === 'approved' || r.status === 'taken').reduce((a, b) => a + getEffectiveDays(b), 0);
@@ -786,8 +792,10 @@ export default function LeaveManagementPage() {
                       </Card>
                     );
                   })}
-          </div>
-        </Card>
+            </div>
+          </Card>
+        )}
+        </div>
       </div>
 
       {/* FILE LEAVE REQUEST MODAL (WITH NOTICE PERIOD RULES) */}
