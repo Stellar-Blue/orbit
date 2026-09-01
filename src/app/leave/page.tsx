@@ -7,8 +7,8 @@ import { notifySuccess } from '@/lib/validation-modal';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
-  Users, ShieldCheck, FileText, Sparkles, Filter, Edit3, HelpCircle, ArrowRight, ShieldAlert,
-  BarChart3, CalendarDays, Briefcase, ChevronLeft, ChevronRight, Table, Download, Trash2
+  Users, ShieldCheck, FileText, Sparkles, Filter, HelpCircle, ArrowRight, ShieldAlert,
+  BarChart3, CalendarDays, ChevronLeft, ChevronRight, Table, Download
 } from 'lucide-react';
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -21,8 +21,8 @@ export default function LeaveManagementPage() {
   const { 
     currentUser, profiles, leaveTypes, 
     leaveRequests, mandatoryLeaves, publicHolidays, 
-    requestLeaveCancellation, splitAndAddLeaveRequest,
-    updateLeaveRequestStatus, getEmployeeLeaveBalance, deleteLeaveRequest
+    splitAndAddLeaveRequest,
+    getEmployeeLeaveBalance
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -411,10 +411,8 @@ export default function LeaveManagementPage() {
             </div>
           </div>
 
-          {/* TWO-COLUMN LAYOUT: CALENDAR ON LEFT, QUOTAS & HISTORY ON RIGHT */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* LEFT COLUMN: INTERACTIVE LEAVE CALENDAR (7 COLS) */}
-            <div className="lg:col-span-7 space-y-5" onMouseUp={handleCalendarMouseUp} onMouseLeave={() => { if (isDragging) { setIsDragging(false); setDragStart(null); setDragCurrent(null); } }}>
+          {/* FULL-WIDTH LAYOUT: INTERACTIVE LEAVE CALENDAR & ANNUAL LEAVE GRID */}
+          <div className="space-y-5" onMouseUp={handleCalendarMouseUp} onMouseLeave={() => { if (isDragging) { setIsDragging(false); setDragStart(null); setDragCurrent(null); } }}>
               {/* View Switcher & Year Export Top Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
                 <div className="flex items-center space-x-1.5 p-1 bg-slate-100 rounded-xl">
@@ -737,14 +735,13 @@ export default function LeaveManagementPage() {
         )}
         </div>
 
-        {/* RIGHT COLUMN: PERSONAL LEAVE HISTORY & LEAVE CATEGORY QUOTAS (5 COLS) */}
-        <div className="lg:col-span-5 space-y-6 flex flex-col">
-              {/* LEAVE CATEGORIES BREAKDOWN ("THE BIG PICTURE") */}
-              <div className="space-y-3 order-2">
-                <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center">
-                  <Briefcase className="w-4 h-4 mr-2 text-[#3D87D3]" /> Leave Category Quotas &amp; Policy Rules
-                </h3>
-                <div className="space-y-3">
+        {/* PER CATEGORY VIEW: LEAVE CATEGORY QUOTAS & POLICY RULES (FULL WIDTH) */}
+        <Card
+          title="Per Category View"
+          subtitle="Leave categories, policy rules, and quota utilization at a glance."
+          className="border-slate-200 shadow-sm"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-2">
                   {leaveTypes.map(lt => {
                     const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id && r.origin !== 'mandatory');
                     const approvedDays = myCatLeaves.filter(r => r.status === 'approved' || r.status === 'taken').reduce((a, b) => a + getEffectiveDays(b), 0);
@@ -789,104 +786,8 @@ export default function LeaveManagementPage() {
                       </Card>
                     );
                   })}
-                </div>
-              </div>
-
-              {/* MY PERSONAL LEAVE HISTORY & REQUESTS LOG */}
-              <Card 
-                title="My Personal Leave History" 
-                subtitle="Audit trail of all your applications (scroll to view full history)" 
-                className="border-slate-200 shadow-xs order-1"
-              >
-                <div className="space-y-2.5 mt-2.5 max-h-[320px] overflow-y-auto overflow-x-hidden pr-1.5 p-1 bg-slate-50/60 border border-slate-200/80 rounded-xl shadow-inner scrollbar-thin scrollbar-thumb-slate-300">
-                  {(() => {
-                    const myHistory = leaveRequests.filter(r => r.profile_id === currentUser.id);
-                    if (myHistory.length === 0) {
-                      return (
-                        <div className="p-8 text-center text-slate-500 text-xs border border-dashed border-slate-200 rounded-xl bg-white">
-                          You have not filed any leave requests yet. Click &amp; drag on the calendar to file your first holiday!
-                        </div>
-                      );
-                    }
-                    return myHistory.map(req => {
-                      const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
-                      const isMandatory = req.origin === 'mandatory';
-                      const isFuture = isAfter(parseISO(req.start_date), parseISO(todayStr));
-
-                      return (
-                        <div key={req.id} className={`p-3.5 rounded-xl bg-white border transition-all flex flex-col gap-2.5 shadow-2xs ${
-                          req.status === 'cancellation_requested' ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 hover:border-slate-300'
-                        }`}>
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between flex-wrap gap-1">
-                              <div className="flex items-center space-x-2">
-                                <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: lType?.colour }} />
-                                <span className="font-extrabold text-sm text-slate-900">{lType?.name_el || 'Leave'} ({lType?.name_en})</span>
-                              </div>
-                              <Badge variant={
-                                req.status === 'approved' || req.status === 'taken' ? 'success' : 
-                                req.status === 'rejected' ? 'error' : 
-                                req.status === 'cancelled' ? 'neutral' : 'warning'
-                              } className="text-[10px] py-0.5 px-2 uppercase font-extrabold">
-                                {req.status.replace('_', ' ')}
-                              </Badge>
-                            </div>
-
-                            <p className="text-xs text-slate-500 font-medium">
-                              Dates: <strong className="text-slate-800 font-mono font-bold">{req.start_date} &rarr; {req.end_date}</strong> &bull; Deduction: <strong className="text-[#3D87D3] font-black">{getEffectiveDays(req)}d</strong>
-                            </p>
-                            {req.note && <p className="text-[11px] text-slate-600 italic font-medium">&ldquo;{req.note}&rdquo;</p>}
-
-                            {req.rejection_reason && (
-                              <div className="mt-1 p-2 rounded bg-rose-50 border border-rose-200 text-[11px] text-rose-800 font-bold">
-                                <strong>Rejection:</strong> {req.rejection_reason}
-                              </div>
-                            )}
-                            {req.admin_edit_reason && (
-                              <div className="mt-1 p-2 rounded bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900 flex items-center font-bold">
-                                <Edit3 className="w-3 h-3 mr-1 text-indigo-600 shrink-0" />
-                                <span><strong>Mod Note:</strong> {req.admin_edit_reason}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
-                              req.ergani_status === 'submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                              req.ergani_status === 'needs_amendment' ? 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse font-black' :
-                              req.ergani_status === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'
-                            }`}>
-                              ΕΡΓΑΝΗ: {req.ergani_status}
-                            </span>
-
-                            {req.status === 'pending' && (
-                              <Button size="sm" variant="outline" className="text-[11px] py-1 px-2 font-bold text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer" onClick={() => updateLeaveRequestStatus(req.id, 'cancelled')}>
-                                Cancel Request
-                              </Button>
-                            )}
-                            {req.status === 'approved' && isFuture && (
-                              <Button size="sm" variant="outline" className="text-[11px] py-1 px-2 font-bold text-amber-700 border-amber-300 hover:bg-amber-50 cursor-pointer" onClick={() => requestLeaveCancellation(req.id)}>
-                                Request Cancellation
-                              </Button>
-                            )}
-                            {isAdmin && (
-                              <Button size="sm" variant="outline" className="text-[11px] py-1 px-2 font-bold text-rose-600 border-rose-300 hover:bg-rose-50 cursor-pointer flex items-center ml-auto" onClick={async () => {
-                                if (window.confirm("Are you sure you want to permanently delete this leave entry?")) {
-                                  await deleteLeaveRequest(req.id);
-                                }
-                              }}>
-                                <Trash2 className="w-3 h-3 mr-1" /> Delete
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </Card>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* FILE LEAVE REQUEST MODAL (WITH NOTICE PERIOD RULES) */}
