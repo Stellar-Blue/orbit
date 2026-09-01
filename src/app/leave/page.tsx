@@ -187,10 +187,6 @@ export default function LeaveManagementPage() {
   const [exportTargetYear, setExportTargetYear] = useState<number>(() => new Date().getFullYear() || 2026);
   const [exportScope, setExportScope] = useState<string>('me');
 
-  const exportYearBalance = useMemo(() => {
-    return getEmployeeLeaveBalance(currentUser.id, selectedYear);
-  }, [currentUser.id, selectedYear, getEmployeeLeaveBalance, leaveRequests]);
-
   const exportYearLeaves = useMemo(() => {
     return leaveRequests.filter(r => 
       r.profile_id === currentUser.id && r.start_date.startsWith(String(selectedYear))
@@ -727,26 +723,6 @@ export default function LeaveManagementPage() {
                   <option value={2026}>2026</option>
                   <option value={2025}>2025</option>
                 </select>
-              </div>
-
-              {/* Annual Quota Status Ribbon */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 p-4 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm border border-slate-700">
-                <div>
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-extrabold block mb-0.5">Total Allowance Quota</span>
-                  <strong className="text-xl font-mono font-extrabold text-white">{exportYearBalance.entitlement + exportYearBalance.carryOver} <span className="text-xs font-sans text-slate-300">days</span></strong>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">Annual entitlement</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-extrabold block mb-0.5">Consumed / Scheduled</span>
-                  <strong className="text-xl font-mono font-extrabold text-amber-300">{exportYearBalance.taken + exportYearBalance.reserved} <span className="text-xs font-sans text-slate-300">days</span></strong>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">Deducted working days</span>
-                </div>
-                <div className="p-2.5 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex flex-col justify-center">
-                  <span className="text-[10px] uppercase tracking-wider text-emerald-300 font-extrabold block mb-0.5 flex items-center">
-                    <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-400 shrink-0" /> Available Remaining
-                  </span>
-                  <strong className="text-2xl font-mono font-black text-emerald-300">{exportYearBalance.available} <span className="text-xs font-sans text-emerald-200 font-bold">working days</span></strong>
-                </div>
               </div>
 
               {/* Table Grid (AG Grid) */}
