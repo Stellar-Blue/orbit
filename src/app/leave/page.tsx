@@ -112,6 +112,19 @@ export default function LeaveManagementPage() {
     return calculateWorkingDays(startDate, endDate, currentUser.work_schedule);
   }, [startDate, endDate, currentUser, publicHolidays, mandatoryLeaves, leaveRequests]);
 
+  // Days already approved/pending for the current user — blocked in the request picker
+  const myBlockedLeaveDates = useMemo(() => {
+    const dates = new Set<string>();
+    leaveRequests
+      .filter(r => r.profile_id === currentUser.id && r.origin !== 'mandatory' && ['approved', 'pending', 'in_progress'].includes(r.status))
+      .forEach(r => {
+        eachDayOfInterval({ start: parseISO(r.start_date), end: parseISO(r.end_date) }).forEach(d => {
+          dates.add(format(d, 'yyyy-MM-dd'));
+        });
+      });
+    return Array.from(dates);
+  }, [leaveRequests, currentUser.id]);
+
   const selectedLeaveType = useMemo(() => {
     return leaveTypes.find(t => t.id === reqType) || leaveTypes[0];
   }, [reqType, leaveTypes]);
@@ -145,7 +158,7 @@ export default function LeaveManagementPage() {
       return !(isBefore(parseISO(endDate), parseISO(r.start_date)) || isAfter(parseISO(startDate), parseISO(r.end_date)));
     });
     if (hasOverlap) {
-      alert('VALIDATION ERROR: This leave request overlaps with another active or pending request in your register.');
+      alert('VALIDATION ERROR: This leave request overlaps with days you already have approved or pending in your register.');
       return;
     }
 
@@ -828,6 +841,7 @@ export default function LeaveManagementPage() {
               start={startDate}
               end={endDate}
               minDate={isAdmin ? undefined : earliestValidDate}
+              blockedDates={myBlockedLeaveDates}
               onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
             />
           </div>

@@ -8,6 +8,7 @@ interface DateRangePickerProps {
   end: string;
   onChange: (start: string, end: string) => void;
   minDate?: string;
+  blockedDates?: string[];
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -22,7 +23,7 @@ function toStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, onChange, minDate }) => {
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, onChange, minDate, blockedDates = [] }) => {
   const anchor = toDate(start) || toDate(end) || new Date();
   const [viewYear, setViewYear] = useState(anchor.getUTCFullYear());
   const [viewMonth, setViewMonth] = useState(anchor.getUTCMonth());
@@ -30,6 +31,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
 
   const startDate = toDate(start);
   const endDate = toDate(end);
+  const blockedSet = useMemo(() => new Set(blockedDates), [blockedDates]);
 
   const cells = useMemo(() => {
     const first = new Date(Date.UTC(viewYear, viewMonth, 1));
@@ -52,6 +54,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
 
   const handleDay = (d: Date) => {
     const str = toStr(d);
+    if (blockedSet.has(str)) return;
     if (minDate && str < minDate) return;
     if (pendingStart === null) {
       setPendingStart(str);
@@ -98,12 +101,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
           const range = inRange(d);
           const isToday = str === toStr(new Date());
           const isDisabled = !!minDate && str < minDate;
+          const isBlocked = blockedSet.has(str);
           return (
             <button
               key={str}
               type="button"
               onClick={() => handleDay(d)}
-              disabled={isDisabled}
+              disabled={isDisabled || isBlocked}
               className={`h-8 text-xs rounded-lg font-semibold transition-colors relative ${
                 isDisabled
                   ? 'text-slate-300 cursor-not-allowed'
@@ -111,14 +115,24 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
                     ? 'bg-[#3D87D3] text-white font-black shadow-sm cursor-pointer'
                     : range
                       ? 'bg-[#3D87D3]/15 text-[#3D87D3] cursor-pointer'
-                      : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
+                      : isBlocked
+                        ? 'text-slate-400 line-through cursor-not-allowed bg-rose-50/60'
+                        : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
               } ${isToday && !isStart && !isEnd ? 'ring-1 ring-[#3D87D3]/50' : ''}`}
             >
               {d.getUTCDate()}
+              {isBlocked && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-rose-500" />}
             </button>
           );
         })}
       </div>
+
+      {blockedDates.length > 0 && (
+        <div className="mt-2 text-[10px] font-bold text-slate-500 flex items-center">
+          <span className="w-2 h-2 rounded-full bg-rose-500 mr-1.5 inline-block" />
+          Approved / pending days are marked and blocked
+        </div>
+      )}
 
       <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
         <span className="font-mono font-bold text-slate-700">
