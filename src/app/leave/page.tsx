@@ -725,7 +725,7 @@ export default function LeaveManagementPage() {
               </div>
             </div>
           </Card>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <Card 
             title="Annual Leave Grid"
             subtitle="Detailed table breakdown of your scheduled leave records, status, and remaining available quota for the selected year."
