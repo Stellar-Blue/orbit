@@ -788,9 +788,6 @@ export default function LeaveManagementPage() {
                               Min Notice: <strong className="text-slate-800 font-bold">{lt.min_notice_days}d prior</strong> &bull; Quota Rule: <strong className="text-slate-800 font-bold">{lt.counts_against_balance ? 'Deducted from Allowance' : 'No Balance Deduction'}</strong>{lt.requires_document && <span className="text-amber-700 font-bold"> &bull; Doc Required</span>}
                             </p>
                           </div>
-                          <Badge variant={approvedDays > 0 ? "info" : "neutral"} className="text-xs shrink-0 font-bold py-1 px-2">
-                            {approvedDays}d Used
-                          </Badge>
                         </div>
 
                         {isAnnual ? (
