@@ -368,7 +368,7 @@ export default function LeaveManagementPage() {
             <div className="lg:col-span-5 flex">
               {(() => {
                 const myApprovedFuture = leaveRequests
-                  .filter(r => r.profile_id === currentUser.id && (r.status === 'approved' || r.status === 'in_progress') && isAfter(parseISO(r.end_date), parseISO('2026-07-30')))
+                  .filter(r => r.profile_id === currentUser.id && r.origin !== 'mandatory' && (r.status === 'approved' || r.status === 'in_progress') && isAfter(parseISO(r.end_date), parseISO(todayStr)))
                   .sort((a, b) => a.start_date.localeCompare(b.start_date));
 
                 if (myApprovedFuture.length > 0) {
@@ -378,7 +378,7 @@ export default function LeaveManagementPage() {
                     <div className="w-full p-4 rounded-xl bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-sm border border-emerald-700/80 flex flex-col justify-between">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-300 flex items-center">
-                          <CalendarDays className="w-3.5 h-3.5 mr-1.5 shrink-0" /> Next Holiday
+                          <CalendarDays className="w-3.5 h-3.5 mr-1.5 shrink-0" /> Next Leave
                         </span>
                         <Badge variant="success" className="bg-emerald-500/40 text-white border-emerald-300/60 text-[10px] py-0.5 px-2 font-black shadow-2xs shrink-0">
                           Confirmed
@@ -395,7 +395,7 @@ export default function LeaveManagementPage() {
                     <div className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs flex flex-col justify-between">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-extrabold text-slate-800 flex items-center">
-                          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3] shrink-0" /> No upcoming holiday
+                          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3] shrink-0" /> No leaves yet
                         </span>
                         <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-[11px] font-extrabold py-1 px-2.5 rounded-lg shadow-2xs cursor-pointer shrink-0">
                           <Plus className="w-3 h-3 mr-1" /> Plan Now
@@ -707,12 +707,11 @@ export default function LeaveManagementPage() {
           </Card>
         ) : (
           <Card 
-            title={`Annual Leave Grid (${selectedYear})`}
+            title="Annual Leave Grid"
             subtitle="Detailed table breakdown of your scheduled leave records, status, and remaining available quota for the selected year."
             className="border-slate-200 shadow-sm"
-          >
-            <div className="space-y-5 mt-3">
-              <div className="flex items-center justify-end space-x-2 pb-1">
+            action={
+              <div className="flex items-center space-x-2">
                 <span className="text-xs font-extrabold text-slate-600">Select Grid Year:</span>
                 <select
                   value={selectedYear}
@@ -724,7 +723,9 @@ export default function LeaveManagementPage() {
                   <option value={2025}>2025</option>
                 </select>
               </div>
-
+            }
+          >
+            <div className="space-y-5 mt-3">
               {/* Table Grid (AG Grid) */}
               <LeaveGrid
                 leaves={exportYearLeaves}
