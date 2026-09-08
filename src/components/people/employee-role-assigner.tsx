@@ -26,9 +26,13 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
     return rows[0] || null;
   }, [profileRoleHistory, profileId, today]);
 
-  const [roleId, setRoleId] = useState<string>(current?.job_role_id || '');
-  const [senId, setSenId] = useState<string>(current?.seniority_id || '');
-  const [validFrom, setValidFrom] = useState<string>(today);
+  // Until the admin edits something, the controls mirror the STORED current assignment
+  // (draft-over-current). This keeps them correct even if `current` changes async or after a save.
+  const [draft, setDraft] = useState<{ roleId?: string; senId?: string; validFrom?: string }>({});
+  const roleId = draft.roleId ?? current?.job_role_id ?? '';
+  const senId = draft.senId ?? current?.seniority_id ?? '';
+  const validFrom = draft.validFrom ?? today;
+
   const [flash, setFlash] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,11 +48,17 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
 
   const save = async () => {
     if (!roleId || !senId) { alert('Pick both a role and a seniority.'); return; }
+    // No-op: this exact assignment is already the current one — don't rewrite history.
+    if (current && current.job_role_id === roleId && current.seniority_id === senId) {
+      setDraft({});
+      showFlash('That is already the current assignment.');
+      return;
+    }
     setBusy(true);
     const ok = await setProfileRole(profileId, roleId, senId, validFrom);
     setBusy(false);
     if (ok) {
-      setValidFrom(today);
+      setDraft({}); // fall back to `current`, which now reflects the new assignment
       showFlash(`Assigned from ${validFrom}.`);
     }
   };
@@ -58,9 +68,7 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
     const ok = await setProfileRole(profileId, null, null, today);
     setBusy(false);
     if (ok) {
-      setRoleId('');
-      setSenId('');
-      setValidFrom(today);
+      setDraft({});
       showFlash('Assignment cleared.');
     }
   };
@@ -77,15 +85,15 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
         )}
       </div>
       <div className={`grid gap-2 ${compact ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'}`}>
-        <select value={roleId} onChange={e => setRoleId(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Job role">
+        <select value={roleId} onChange={e => setDraft(d => ({ ...d, roleId: e.target.value }))} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Job role">
           <option value="">Role…</option>
           {jobRoles.filter(r => r.active).sort((a, b) => a.sort_order - b.sort_order).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
-        <select value={senId} onChange={e => setSenId(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Seniority">
+        <select value={senId} onChange={e => setDraft(d => ({ ...d, senId: e.target.value }))} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Seniority">
           <option value="">Seniority…</option>
           {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <input type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Effective date" />
+        <input type="date" value={validFrom} onChange={e => setDraft(d => ({ ...d, validFrom: e.target.value }))} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Effective date" />
         <Button type="button" variant="primary" size="sm" disabled={busy} onClick={save} className={`cursor-pointer disabled:opacity-50 ${compact ? '' : 'sm:col-span-3'}`}>
           {busy ? (<><Save className="w-3 h-3 mr-1 animate-pulse" /> Saving…</>) : (<><Save className="w-3 h-3 mr-1" /> Assign</>)}
         </Button>
