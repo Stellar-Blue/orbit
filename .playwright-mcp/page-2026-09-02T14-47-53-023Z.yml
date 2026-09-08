@@ -1,0 +1,272 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e5]
+  - complementary [ref=e6]:
+    - generic [ref=e7]:
+      - link "StellarBlue Icon Orbit StellarBlue" [ref=e9] [cursor=pointer]:
+        - /url: /
+        - img "StellarBlue Icon" [ref=e11]
+        - generic [ref=e12]:
+          - generic [ref=e13]: Orbit
+          - generic [ref=e14]: StellarBlue
+      - generic [ref=e15]:
+        - navigation [ref=e16]:
+          - link "Home" [ref=e17] [cursor=pointer]:
+            - /url: /
+        - navigation [ref=e23]:
+          - generic [ref=e24]: Personal
+          - link "My Profile" [ref=e25] [cursor=pointer]:
+            - /url: /profile
+          - link "Leave Management" [ref=e31] [cursor=pointer]:
+            - /url: /leave
+          - link "Remote Work Log" [ref=e36] [cursor=pointer]:
+            - /url: /remote
+          - link "Timesheets" [ref=e42] [cursor=pointer]:
+            - /url: /timesheets
+          - link "Compensation & Payroll" [ref=e48] [cursor=pointer]:
+            - /url: /compensation
+        - navigation [ref=e53]:
+          - generic [ref=e54]: Company
+          - link "People Directory" [ref=e55] [cursor=pointer]:
+            - /url: /people
+          - link "Leave Management Admin" [ref=e63] [cursor=pointer]:
+            - /url: /company-leave
+            - generic [ref=e67]: Leave Management
+            - generic [ref=e68]: Admin
+          - link "Contracts Admin" [ref=e69] [cursor=pointer]:
+            - /url: /contracts
+            - generic [ref=e74]: Contracts
+            - generic [ref=e75]: Admin
+          - link "Invoices Admin" [ref=e76] [cursor=pointer]:
+            - /url: /invoices
+            - generic [ref=e81]: Invoices
+            - generic [ref=e82]: Admin
+          - link "Reports Admin" [ref=e83] [cursor=pointer]:
+            - /url: /reports
+            - generic [ref=e87]: Reports
+            - generic [ref=e88]: Admin
+          - link "Counterparties & Attio Admin" [ref=e89] [cursor=pointer]:
+            - /url: /counterparties
+            - generic [ref=e95]: Counterparties & Attio
+            - generic [ref=e96]: Admin
+          - link "Compensation & Payroll Admin" [ref=e97] [cursor=pointer]:
+            - /url: /payroll
+            - generic [ref=e102]: Compensation & Payroll
+            - generic [ref=e103]: Admin
+      - link "Settings" [ref=e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=e111]:
+      - button "View as Employee PREVIEW" [ref=e113] [cursor=pointer]:
+        - generic [ref=e114]: View as Employee
+        - generic [ref=e119]: PREVIEW
+      - button "ZB Zafeirios Bampos Founder & Back-End Engineer" [ref=e121] [cursor=pointer]:
+        - generic [ref=e122]:
+          - generic [ref=e123]: ZB
+          - generic [ref=e125]:
+            - paragraph [ref=e126]: Zafeirios Bampos
+            - paragraph [ref=e127]: Founder & Back-End Engineer
+  - generic [ref=e130]:
+    - banner [ref=e131]:
+      - generic [ref=e133]:
+        - generic [ref=e134]: StellarBlue
+        - generic [ref=e135]: /
+        - generic [ref=e136]: Orbit Workspace
+      - generic [ref=e137]:
+        - button "View as Employee" [ref=e138] [cursor=pointer]
+        - generic [ref=e143]:
+          - generic [ref=e147]: Press
+          - generic [ref=e148]: ⌘K
+          - generic [ref=e149]: to jump anywhere
+    - main [ref=e150]:
+      - generic [ref=e895]:
+        - generic [ref=e896]:
+          - generic [ref=e897]:
+            - heading "StellarBlue Team Directory" [level=1] [ref=e898]
+            - paragraph [ref=e904]:
+              - text: "Core people database. All downstream modules join to this registry. Total:"
+              - strong [ref=e905]: 5 active members
+              - text: .
+          - generic [ref=e906]:
+            - generic [ref=e907]:
+              - button "Dense Table" [ref=e908] [cursor=pointer]
+              - button "Grid" [ref=e909] [cursor=pointer]
+            - button "Export XLSX" [ref=e910] [cursor=pointer]
+            - button "CSV" [ref=e914] [cursor=pointer]
+            - button "Add Person" [ref=e915] [cursor=pointer]
+        - generic [ref=e917]:
+          - textbox "Search by name (Greek/English), title, or email..." [ref=e922]
+          - combobox [ref=e924]:
+            - option "All Teams" [selected]
+          - combobox [ref=e926]:
+            - option "All Employment Types" [selected]
+            - option "Full-Time (μισθωτός / ΙΚΑ)"
+            - option "Part-Time"
+            - option "Contractor (μπλοκάκι)"
+            - option "Intern / Affiliate"
+        - generic [ref=e927]:
+          - generic [ref=e928]:
+            - textbox "Search people across all columns..." [ref=e933]
+            - generic [ref=e934]: 5 members · use column filters for Excel-style options
+          - generic [ref=e939]:
+            - generic [ref=e940]: 1 to 5 of 5. Page 1 of 1
+            - generic "Row Groups" [ref=e942]: Drag here to set row groups
+            - grid [ref=e944]:
+              - rowgroup [ref=e945]:
+                - row "Employee Name Role / Title Team Employment Type" [ref=e946]:
+                  - columnheader "Employee Name" [ref=e947]:
+                    - generic [aria-hidden] [ref=e949] [cursor=pointer]
+                  - columnheader "Role / Title" [ref=e951]:
+                    - generic [aria-hidden] [ref=e953] [cursor=pointer]
+                  - columnheader "Team" [ref=e955]:
+                    - generic [aria-hidden] [ref=e957] [cursor=pointer]
+                  - columnheader "Employment Type" [ref=e959]:
+                    - generic [aria-hidden] [ref=e961] [cursor=pointer]
+                  - columnheader [ref=e963]:
+                    - generic [aria-hidden] [ref=e965] [cursor=pointer]
+                - row [ref=e966]:
+                  - gridcell [ref=e967]:
+                    - textbox "Employee Name Filter Input" [disabled]
+                    - button "Open Filter Menu" [ref=e969] [cursor=pointer]
+                  - gridcell [ref=e970]:
+                    - textbox "Role / Title Filter Input" [disabled]
+                    - button "Open Filter Menu" [ref=e972] [cursor=pointer]
+                  - gridcell [ref=e973]:
+                    - textbox "Team Filter Input" [disabled]
+                    - button "Open Filter Menu" [ref=e975] [cursor=pointer]
+                  - gridcell [ref=e976]:
+                    - textbox "Employment Type Filter Input" [disabled]
+                    - button "Open Filter Menu" [ref=e978] [cursor=pointer]
+                  - gridcell [ref=e979]
+                - row [ref=e980]:
+                  - gridcell "ZB Zafeirios Bampos Zafeirios Bampos • zbampos@stellarblue.eu" [ref=e981]:
+                    - generic [ref=e982]:
+                      - generic [ref=e983]: ZB
+                      - generic [ref=e984]:
+                        - paragraph [ref=e985]: Zafeirios Bampos
+                        - paragraph [ref=e986]: Zafeirios Bampos • zbampos@stellarblue.eu
+                  - gridcell "Founder & Back-End Engineer ADMIN" [ref=e987]:
+                    - generic [ref=e988]:
+                      - generic [ref=e989]: Founder & Back-End Engineer
+                      - generic [ref=e990]: ADMIN
+                  - gridcell "General" [ref=e991]
+                  - gridcell "FULL TIME" [ref=e992]
+                  - gridcell [ref=e994]:
+                    - button "View Profile →" [ref=e995] [cursor=pointer]
+                - row [ref=e996]:
+                  - gridcell "ED Elina Douni Elina Douni • edouni@stellarblue.eu" [ref=e997]:
+                    - generic [ref=e998]:
+                      - generic [ref=e999]: ED
+                      - generic [ref=e1000]:
+                        - paragraph [ref=e1001]: Elina Douni
+                        - paragraph [ref=e1002]: Elina Douni • edouni@stellarblue.eu
+                  - gridcell "Team Member EMPLOYEE" [ref=e1003]:
+                    - generic [ref=e1004]:
+                      - generic [ref=e1005]: Team Member
+                      - generic [ref=e1006]: EMPLOYEE
+                  - gridcell "General" [ref=e1007]
+                  - gridcell "FULL TIME" [ref=e1008]
+                  - gridcell [ref=e1010]:
+                    - button "View Profile →" [ref=e1011] [cursor=pointer]
+                - row [ref=e1012]:
+                  - gridcell "GC Georgios Chatzis Georgios Chatzis • gchatzis@stellarblue.eu" [ref=e1013]:
+                    - generic [ref=e1014]:
+                      - generic [ref=e1015]: GC
+                      - generic [ref=e1016]:
+                        - paragraph [ref=e1017]: Georgios Chatzis
+                        - paragraph [ref=e1018]: Georgios Chatzis • gchatzis@stellarblue.eu
+                  - gridcell "Founder & Managing Partner ADMIN" [ref=e1019]:
+                    - generic [ref=e1020]:
+                      - generic [ref=e1021]: Founder & Managing Partner
+                      - generic [ref=e1022]: ADMIN
+                  - gridcell "General" [ref=e1023]
+                  - gridcell "FULL TIME" [ref=e1024]
+                  - gridcell [ref=e1026]:
+                    - button "View Profile →" [ref=e1027] [cursor=pointer]
+                - row [ref=e1028]:
+                  - gridcell "GT Georgios Tsoumalis Georgios Tsoumalis • gtsoumalis@stellarblue.eu" [ref=e1029]:
+                    - generic [ref=e1030]:
+                      - generic [ref=e1031]: GT
+                      - generic [ref=e1032]:
+                        - paragraph [ref=e1033]: Georgios Tsoumalis
+                        - paragraph [ref=e1034]: Georgios Tsoumalis • gtsoumalis@stellarblue.eu
+                  - gridcell "Founder & Managing Partner ADMIN" [ref=e1035]:
+                    - generic [ref=e1036]:
+                      - generic [ref=e1037]: Founder & Managing Partner
+                      - generic [ref=e1038]: ADMIN
+                  - gridcell "General" [ref=e1039]
+                  - gridcell "FULL TIME" [ref=e1040]
+                  - gridcell [ref=e1042]:
+                    - button "View Profile →" [ref=e1043] [cursor=pointer]
+                - row [ref=e1044]:
+                  - gridcell "IP Ioannis Papakis Ιωάννης Παπάκης • ipapakis@stellarblue.eu" [ref=e1045]:
+                    - generic [ref=e1046]:
+                      - generic [ref=e1047]: IP
+                      - generic [ref=e1048]:
+                        - paragraph [ref=e1049]: Ioannis Papakis
+                        - paragraph [ref=e1050]: Ιωάννης Παπάκης • ipapakis@stellarblue.eu
+                  - gridcell "Team Member EMPLOYEE" [ref=e1051]:
+                    - generic [ref=e1052]:
+                      - generic [ref=e1053]: Team Member
+                      - generic [ref=e1054]: EMPLOYEE
+                  - gridcell "General" [ref=e1055]
+                  - gridcell "FULL TIME" [ref=e1056]
+                  - gridcell [ref=e1058]:
+                    - button "View Profile →" [ref=e1059] [cursor=pointer]
+            - generic [ref=e1063]:
+              - tablist [ref=e1064]:
+                - tab "Columns" [expanded] [ref=e1065] [cursor=pointer]
+                - tab "Filters" [ref=e1068] [cursor=pointer]
+              - tabpanel "Columns" [ref=e1071]:
+                - generic [ref=e1073]:
+                  - generic [ref=e1074]:
+                    - generic [ref=e1075]: Pivot Mode
+                    - checkbox "Pivot Mode" [ref=e1076] [cursor=pointer]
+                  - generic [ref=e1077]:
+                    - checkbox "Toggle All Columns Visibility" [checked] [ref=e1079] [cursor=pointer]
+                    - textbox "Filter Columns Input" [ref=e1081]:
+                      - /placeholder: Search...
+                    - tree "Column List 7 Columns" [ref=e1082]:
+                      - treeitem "Employee Name Column" [level=1] [ref=e1083]:
+                        - generic [ref=e1084]:
+                          - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1085] [cursor=pointer]
+                          - generic [ref=e1086]: Employee Name
+                      - treeitem "Role / Title Column" [level=1] [ref=e1087]:
+                        - generic [ref=e1088]:
+                          - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1089] [cursor=pointer]
+                          - generic [ref=e1090]: Role / Title
+                      - treeitem "Team Column" [level=1] [ref=e1091]:
+                        - generic [ref=e1092]:
+                          - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1093] [cursor=pointer]
+                          - generic [ref=e1094]: Team
+                      - treeitem "Employment Type Column" [level=1] [ref=e1095]:
+                        - generic [ref=e1096]:
+                          - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1097] [cursor=pointer]
+                          - generic [ref=e1098]: Employment Type
+                      - treeitem "Work Schedule Column" [level=1] [ref=e1099]:
+                        - generic [ref=e1100]:
+                          - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1101] [cursor=pointer]
+                          - generic [ref=e1102]: Work Schedule
+                      - treeitem "Slack Column" [level=1] [ref=e1103]:
+                        - generic [ref=e1104]:
+                          - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1105] [cursor=pointer]
+                          - generic [ref=e1106]: Slack
+                      - treeitem "Column" [level=1] [ref=e1107]:
+                        - checkbox "Press SPACE to toggle visibility (visible)" [checked] [ref=e1109] [cursor=pointer]
+                  - generic [ref=e1112]: Row Groups
+                  - generic "Row Groups" [ref=e1113]: Drag here to set row groups
+                  - generic [ref=e1117]: Values
+                  - generic "Values" [ref=e1118]: Drag here to aggregate
+            - generic [ref=e1122]:
+              - generic [ref=e1123]:
+                - generic [ref=e1124]: "Page Size:"
+                - combobox "Page Size" [ref=e1125]:
+                  - generic [ref=e1126]: "25"
+                  - generic [aria-hidden] [ref=e1127] [cursor=pointer]
+              - generic [ref=e1128]: 1 to 5 of 5
+              - button "First Page" [disabled] [ref=e1130]
+              - button "Previous Page" [disabled] [ref=e1131]
+              - generic [ref=e1132]:
+                - text: Page
+                - spinbutton "Page number, 1 of 1" [ref=e1133]: "1"
+                - text: of 1
+              - button "Next Page" [disabled] [ref=e1134]
+              - button "Last Page" [disabled] [ref=e1135]

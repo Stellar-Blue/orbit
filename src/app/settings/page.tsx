@@ -91,6 +91,7 @@ export default function CompanySettingsPage() {
   const [maxDays, setMaxDays] = useState<number>(8);
   const [periodType, setPeriodType] = useState<PolicyPeriod>('month');
   const [countsLeave, setCountsLeave] = useState(false);
+  const [advanceDays, setAdvanceDays] = useState<number>(0);
 
   // Local states for Team management
   const [newTeamName, setNewTeamName] = useState('');
@@ -127,6 +128,7 @@ export default function CompanySettingsPage() {
       setMaxDays(activeCompanyPolicy.max_days ?? activeCompanyPolicy.max_days_per_month ?? 8);
       setPeriodType(activeCompanyPolicy.period_type || 'month');
       setCountsLeave(activeCompanyPolicy.counts_leave ?? false);
+      setAdvanceDays(activeCompanyPolicy.registration_advance_days ?? 0);
     }
   }, [activeCompanyPolicy, remotePolicies]);
 
@@ -153,7 +155,8 @@ export default function CompanySettingsPage() {
       await updateRemotePolicy(activeCompanyPolicy.id, {
         max_days: maxDays,
         period_type: periodType,
-        counts_leave: countsLeave
+        counts_leave: countsLeave,
+        registration_advance_days: advanceDays
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
@@ -379,6 +382,35 @@ export default function CompanySettingsPage() {
                 >
                   <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${countsLeave ? 'left-[22px]' : 'left-0.5'}`} />
                 </button>
+              </div>
+
+              {/* Advance registration notice: remote days must be declared N days ahead */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <span className="text-xs font-extrabold text-slate-800 block">Remote days must be registered in advance</span>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Number of calendar days before the work date that employees must declare remote work. Days inside this window are blocked from declaration (and auto-fill turns them to office) unless an admin approves an exception. Set 0 to disable the rule.
+                  </p>
+                  {advanceDays > 0 && (
+                    <p className="text-[11px] text-[#3D87D3] mt-1.5 font-bold flex items-center">
+                      <Calendar className="w-3 h-3 mr-1" />
+                      Employees can only register remote days on or after {advanceDays} day{advanceDays === 1 ? '' : 's'} from today.
+                    </p>
+                  )}
+                </div>
+                <div className="relative shrink-0 w-36">
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={advanceDays}
+                    onChange={(e) => setAdvanceDays(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 text-left focus:outline-none focus:ring-2 focus:ring-[#3D87D3] focus:border-transparent shadow-2xs"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-[10px] text-slate-400 font-extrabold">
+                    DAYS AHEAD
+                  </div>
+                </div>
               </div>
 
               {/* Action Toolbar */}

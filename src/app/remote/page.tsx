@@ -90,6 +90,12 @@ export default function RemoteWorkLogPage() {
   const periodLabel = quotaPeriod === 'week' ? 'Weekly' : quotaPeriod === 'quarter' ? 'Quarterly' : quotaPeriod === 'year' ? 'Annual' : 'Monthly';
   const countsLeave = effectivePolicy?.counts_leave ?? false;
 
+  // Company-wide advance-registration rule: remote days must be declared at least N calendar days ahead.
+  const registrationAdvanceDays = companyPolicy?.registration_advance_days ?? 0;
+  const advanceCutoffDateStr = registrationAdvanceDays > 0
+    ? format(addDays(todayObj, registrationAdvanceDays), 'yyyy-MM-dd')
+    : todayStr;
+
   const getPolicyPeriodKey = (dateStr: string, period: string) => {
     try {
       const dObj = parseISO(dateStr);
@@ -247,20 +253,27 @@ export default function RemoteWorkLogPage() {
   const handleDateClick = (day: typeof calendarDays[number]) => {
     if (!day.isCurrentMonth || day.isWeekend || day.isHoliday || day.isOnLeave) return;
 
-    setSelectedDateForAction(day.dateStr);
+    // Past remote records are frozen for ΕΡΓΑΝΗ audit compliance — only admins may change them.
     if (day.isPast && !isAdmin) {
-      // Non-admin past date -> Must request amendment
-      setTargetMode(day.mode === 'office' ? 'remote_gr' : 'office');
-      setAbroadLocation(day.location || '');
-      setNoteOrReason('');
-      setActionModalMode('amend');
-    } else {
-      // Future date OR admin user -> Can directly declare / edit
-      setTargetMode(day.mode === 'office' ? 'remote_gr' : day.mode === 'remote_gr' ? 'remote_abroad' : 'office');
-      setAbroadLocation(day.location || '');
-      setNoteOrReason(day.note || '');
-      setActionModalMode('declare');
+      notifyValidation({
+        type: 'info',
+        title: 'Past record locked',
+        message: 'Past remote days are locked for audit compliance. Only administrators can modify past remote records.',
+        items: [
+          { label: 'Date', value: day.dateStr },
+          { label: 'Logged status', value: day.mode === 'office' ? 'Office HQ' : day.mode === 'remote_gr' ? 'Remote (GR)' : 'Other City' },
+          { label: 'Who can change', value: 'Admin only' },
+        ],
+      });
+      return;
     }
+
+    setSelectedDateForAction(day.dateStr);
+    // Admin user on a past date OR any user on a future date -> Can directly declare / edit
+    setTargetMode(day.mode === 'office' ? 'remote_gr' : day.mode === 'remote_gr' ? 'remote_abroad' : 'office');
+    setAbroadLocation(day.location || '');
+    setNoteOrReason(day.note || '');
+    setActionModalMode('declare');
   };
 
   // Auto-Fill helpers based on Recurring Pattern
@@ -315,8 +328,12 @@ export default function RemoteWorkLogPage() {
       const defaultMode = pattern[wStr] || 'office';
       const pKey = getPolicyPeriodKey(dStr, quotaPeriod);
       const curCount = periodCounts[pKey] || 0;
+      // Advance-registration window: days too close to today become office for non-admins.
+      const insideAdvanceWindow = !isAdmin && registrationAdvanceDays > 0 && dStr < advanceCutoffDateStr;
 
-      if (defaultMode !== 'office') {
+      if (defaultMode !== 'office' && insideAdvanceWindow) {
+        declarations.push({ date: dStr, mode: 'office', note: `Office (must be registered ${registrationAdvanceDays} day${registrationAdvanceDays === 1 ? '' : 's'} in advance)` });
+      } else if (defaultMode !== 'office') {
         if (curCount < quotaMaxDays || isAdmin) {
           declarations.push({ date: dStr, mode: defaultMode, note: `Auto-filled from default ${wStr} pattern` });
           periodCounts[pKey] = curCount + 1;
@@ -370,6 +387,34 @@ export default function RemoteWorkLogPage() {
       });
       alert(`Submitted amendment request for ${selectedDateForAction}. Pending admin approval.`);
     } else {
+      // Direct declare: strictly enforce the company advance-registration window.
+      if (targetMode !== 'office' && !isAdmin && registrationAdvanceDays > 0 && selectedDateForAction < advanceCutoffDateStr) {
+        notifyValidation({
+          type: 'warning',
+          title: 'Advance registration required',
+          message: `Remote work must be registered at least ${registrationAdvanceDays} day${registrationAdvanceDays === 1 ? '' : 's'} in advance. ${selectedDateForAction} is inside that window — pick a date on or after ${advanceCutoffDateStr}, or request an admin exception.`,
+          items: [
+            { label: 'Selected date', value: selectedDateForAction },
+            { label: 'Earliest registrable', value: advanceCutoffDateStr },
+            { label: 'Advance notice', value: `${registrationAdvanceDays} day${registrationAdvanceDays === 1 ? '' : 's'}` },
+          ],
+          action: {
+            label: 'Request admin approval',
+            onClick: async () => {
+              await requestRemoteQuotaOverride({
+                date: selectedDateForAction,
+                requested_mode: targetMode,
+                location: targetMode === 'remote_abroad' ? abroadLocation : undefined,
+                reason: noteOrReason || `Remote day inside the ${registrationAdvanceDays}-day advance-registration window`,
+              });
+              setActionModalMode(null);
+              setSelectedDateForAction(null);
+              notifySuccess('Your exception request has been submitted. An admin will review it shortly.', 'Request sent');
+            }
+          }
+        });
+        return;
+      }
       // Direct declare: strictly enforce admin-configured quota (weekly/monthly/etc.)
       if (targetMode !== 'office' && !isAdmin) {
         const remoteCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod);
@@ -624,6 +669,15 @@ export default function RemoteWorkLogPage() {
               </div>
             </div>
 
+            {registrationAdvanceDays > 0 && (
+              <div className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-semibold flex items-start space-x-2">
+                <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  Remote days must be registered at least <strong>{registrationAdvanceDays} day{registrationAdvanceDays === 1 ? '' : 's'}</strong> in advance (on or after <strong className="font-mono">{advanceCutoffDateStr}</strong>). Days inside this window stay Office unless an admin approves an exception.
+                </span>
+              </div>
+            )}
+
             {/* Weekday Header with Mobile Swipe Support */}
             <div className="overflow-x-auto mt-2">
               <div className="min-w-[700px] w-full">
@@ -652,7 +706,7 @@ export default function RemoteWorkLogPage() {
                     {/* Top Date Bar */}
                     <div className="flex items-center justify-between mb-1.5">
                       {day.isPast && day.isCurrentMonth && !day.isWeekend && (
-                        <span title="Past record locked. Click to request amendment." className="text-[10px] text-slate-400 flex items-center font-semibold">
+                        <span title={isAdmin ? 'Past record — click to edit directly (admin)' : 'Past record locked — only administrators can change it'} className="text-[10px] text-slate-400 flex items-center font-semibold">
                           <Lock className="w-3 h-3 mr-0.5 text-slate-400" /> Past
                         </span>
                       )}

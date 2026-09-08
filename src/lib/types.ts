@@ -249,6 +249,8 @@ export interface RemotePolicy {
   max_days: number;
   period_type: PolicyPeriod;
   counts_leave?: boolean;
+  /** Company-wide rule: remote days must be registered N calendar days in advance (0 = disabled). */
+  registration_advance_days?: number;
   created_at?: string;
 }
 
