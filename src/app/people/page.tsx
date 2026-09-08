@@ -82,6 +82,8 @@ export default function PeopleDirectoryPage() {
   const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('full_time');
   const [newSeniorityLevel, setNewSeniorityLevel] = useState<'junior' | 'mid' | 'senior'>('mid');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newStatus, setNewStatus] = useState<'active' | 'departed'>('active');
+  const [newEndDate, setNewEndDate] = useState('');
   const [newRole, setNewRole] = useState<'employee' | 'admin'>('employee');
   const [newAfm, setNewAfm] = useState('');
   const [newAmka, setNewAmka] = useState('');
@@ -133,6 +135,10 @@ export default function PeopleDirectoryPage() {
 
   const handleCreatePerson = (e: React.FormEvent) => {
     e.preventDefault();
+    if (newStatus === 'departed' && newEndDate && newEndDate < newStartDate) {
+      alert('End date cannot be before start date.');
+      return;
+    }
     const newProf: Profile = {
       id: '', // Will generate UUID in auth-context
       first_name: newFirstName,
@@ -145,7 +151,8 @@ export default function PeopleDirectoryPage() {
       employment_type: newEmploymentType,
       seniority_level: newSeniorityLevel,
       start_date: newStartDate,
-      status: 'active',
+      status: newStatus,
+      end_date: newStatus === 'departed' ? (newEndDate || undefined) : undefined,
       work_schedule: newEmploymentType === 'part_time' ? ['Mon', 'Wed', 'Fri'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
       role: newRole,
       sensitive: {
@@ -165,6 +172,7 @@ export default function PeopleDirectoryPage() {
     // Reset fields
     setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail(''); setNewPhone('');
     setNewTitle('Team Member'); setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress('');
+    setNewStartDate(new Date().toISOString().split('T')[0]); setNewStatus('active'); setNewEndDate('');
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -173,6 +181,10 @@ export default function PeopleDirectoryPage() {
     // slack_required is owned by the Slack toggle (and its audited endpoint), not this
     // form — editData may hold a stale copy that would silently revert the admin's change.
     const { slack_required, ...editable } = editData as Profile;
+    if (editable.status === 'departed' && editable.end_date && editable.start_date && editable.end_date < editable.start_date) {
+      alert('End date cannot be before start date.');
+      return;
+    }
     const merged = { ...editable, slack_required: isSlackRequired(editData as Profile) } as Profile;
     updateProfile(editable as Profile);
     setSelectedProfile(merged);
@@ -226,6 +238,7 @@ export default function PeopleDirectoryPage() {
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
       StartDate: p.start_date,
+      EndDate: p.end_date || '',
       Status: p.status.toUpperCase()
     }));
     const worksheet = XLSX.utils.json_to_sheet(cleanData);
@@ -240,10 +253,12 @@ export default function PeopleDirectoryPage() {
       LastName: p.last_name,
       GreekName: p.name_el,
       Email: p.work_email,
+      Phone: p.phone || '',
       Title: p.title,
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
       StartDate: p.start_date,
+      EndDate: p.end_date || '',
       Status: p.status.toUpperCase()
     }));
     const csv = Papa.unparse(cleanData);
@@ -474,6 +489,18 @@ export default function PeopleDirectoryPage() {
                       <span className="text-slate-500 uppercase font-semibold block">Start Date</span>
                       <span className="text-slate-700 font-medium">{selectedProfile.start_date}</span>
                     </div>
+                    <div>
+                      <span className="text-slate-500 uppercase font-semibold block">Employment Status</span>
+                      <Badge variant={selectedProfile.status === 'active' ? 'success' : selectedProfile.status === 'on_leave' ? 'warning' : 'error'} className="mt-0.5">
+                        {selectedProfile.status === 'on_leave' ? 'ON LEAVE' : selectedProfile.status.toUpperCase()}
+                      </Badge>
+                    </div>
+                    {selectedProfile.end_date && (
+                      <div>
+                        <span className="text-slate-500 uppercase font-semibold block">End Date</span>
+                        <span className="text-slate-700 font-medium">{selectedProfile.end_date}</span>
+                      </div>
+                    )}
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Role Permission</span>
                       <Badge variant={selectedProfile.role === 'admin' ? 'warning' : 'neutral'} className="mt-0.5">
@@ -882,6 +909,23 @@ export default function PeopleDirectoryPage() {
                       <option value="admin">Admin</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Start Date</label>
+                    <input type="date" value={editData.start_date || ''} onChange={e => setEditData({...editData, start_date: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" required />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Employment Status</label>
+                    <select value={editData.status || 'active'} onChange={e => { const s = e.target.value as Profile['status']; setEditData({ ...editData, status: s, ...(s !== 'departed' ? { end_date: undefined } : {}) }); }} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
+                      <option value="active">Active</option>
+                      <option value="departed">Departed (former employee)</option>
+                    </select>
+                  </div>
+                  {editData.status === 'departed' && (
+                    <div className="col-span-2">
+                      <label className="text-slate-600 font-semibold block mb-1">End Date (last working day)</label>
+                      <input type="date" value={editData.end_date || ''} onChange={e => setEditData({...editData, end_date: e.target.value || undefined})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                    </div>
+                  )}
                   <div className="col-span-2 pt-2 border-t border-slate-200">
                     <span className="text-slate-700 font-bold block mb-2">Sensitive Personal Information (PII)</span>
                     <div className="grid grid-cols-2 gap-4">
@@ -998,6 +1042,24 @@ export default function PeopleDirectoryPage() {
                 <option value="admin">Admin</option>
               </select>
             </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Start Date *</label>
+              <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" required />
+              <p className="text-[10px] text-slate-400 mt-1">Backdate to register existing / past employees.</p>
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Employment Status</label>
+              <select value={newStatus} onChange={e => { const s = e.target.value as 'active' | 'departed'; setNewStatus(s); if (s !== 'departed') setNewEndDate(''); }} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                <option value="active">Active</option>
+                <option value="departed">Departed (former employee)</option>
+              </select>
+            </div>
+            {newStatus === 'departed' && (
+              <div className="col-span-2">
+                <label className="text-slate-600 font-semibold block mb-1">End Date (last working day)</label>
+                <input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+              </div>
+            )}
             <div className="col-span-2 pt-2 border-t border-slate-200">
               <span className="text-slate-700 font-bold block mb-2">Sensitive Personal Information (PII)</span>
               <div className="grid grid-cols-2 gap-4">
