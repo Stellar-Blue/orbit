@@ -6,9 +6,9 @@ import { Project, WorkItem, TimeEntry } from '@/lib/types';
 import { Button, Badge } from '@/components/ui/primitives';
 import { Clock, ChevronLeft, ChevronRight, Plus, Trash2, Copy, Check, Send, Layers, Users, ClipboardCheck, X, Save } from 'lucide-react';
 import { ProjectForecastEditor } from '@/components/timesheets/project-forecast-editor';
+import { ProjectActualVsForecast } from '@/components/timesheets/actual-vs-forecast';
 
 // ---- helpers ----
-const DAY_MS = 86400000;
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const mondayOf = (d: Date) => {
   const x = new Date(d);
@@ -407,6 +407,7 @@ export default function TimesheetsPage() {
                     }} className="cursor-pointer"><Save className="w-3.5 h-3.5 mr-1" /> Add</Button>
                   </div>
                   <ProjectForecastEditor projectId={p.id} />
+                  <ProjectActualVsForecast projectId={p.id} />
                 </div>
               </div>
             ))}
