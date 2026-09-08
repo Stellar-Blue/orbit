@@ -950,6 +950,7 @@ export default function PeopleDirectoryPage() {
                 </div>
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                   <span className="text-slate-700 font-bold block text-xs">Timesheet Role & Seniority (effective-dated)</span>
+                  <p className="text-[10px] text-slate-400 leading-snug">Applied with the Assign button below (effective from the chosen date) — not part of Save Profile Changes.</p>
                   <EmployeeRoleAssigner profileId={selectedProfile.id} />
                 </div>
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">

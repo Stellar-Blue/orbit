@@ -63,7 +63,7 @@ export function EmployeeRemoteQuota({ profileId }: { profileId: string }) {
           </label>
         </div>
       )}
-      <Button variant="primary" size="sm" onClick={save} className="cursor-pointer"><Save className="w-3 h-3 mr-1" /> Save Remote Quota</Button>
+      <Button type="button" variant="primary" size="sm" onClick={save} className="cursor-pointer"><Save className="w-3 h-3 mr-1" /> Save Remote Quota</Button>
     </div>
   );
 }
