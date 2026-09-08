@@ -15,6 +15,7 @@ import { PaymentDocumentTypesSettings } from '@/components/settings/payment-docu
 import { GeneralSettings } from '@/components/settings/general-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
+import { LeaveDefaultsCard } from '@/components/settings/leave-defaults';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 
 export default function CompanySettingsPage() {
@@ -669,6 +670,7 @@ export default function CompanySettingsPage() {
       {/* TAB 3: LEAVE CATEGORIES CONFIGURATION */}
       {selectedTab === 'leaves' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          <div className="lg:col-span-3"><LeaveDefaultsCard /></div>
           {/* Active Leave Types List */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">

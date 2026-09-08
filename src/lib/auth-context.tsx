@@ -13,7 +13,7 @@ import {
   Budget, BudgetCategory, BudgetLine, RecurringCommitment,
   EmployeeContract, SalaryBonus,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
-  Role, CounterpartyRole, CompanyProfile
+  Role, CounterpartyRole, CompanyProfile, LeavePolicy
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -149,6 +149,12 @@ interface AppState {
   setProfileRole: (profileId: string, jobRoleId: string | null, seniorityId: string | null, validFrom: string) => Promise<boolean>;
   updateProfileRoleHistory: (id: string, patch: Partial<ProfileRoleHistory>) => Promise<boolean>;
   deleteProfileRoleHistory: (id: string) => Promise<boolean>;
+  leavePolicy: LeavePolicy | null;
+  /** Company default annual leave days (fallback when an employee has no per-year record). */
+  leaveDefaultDays: number;
+  saveLeavePolicy: (updates: Partial<LeavePolicy>) => Promise<boolean>;
+  saveLeaveEntitlement: (e: { id?: string; profile_id: string; year: number; entitlement_days: number; carried_over_days?: number; carryover_expires_on?: string | null }) => Promise<boolean>;
+  deleteLeaveEntitlement: (id: string) => Promise<boolean>;
   saveRateCard: (c: Partial<RateCard> & { name: string }) => Promise<boolean>;
   deleteRateCard: (id: string) => Promise<boolean>;
   ensureContractRateCard: (contractId: string) => Promise<string | null>;
@@ -263,6 +269,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [timesheetPeriods, setTimesheetPeriods] = useState<TimesheetPeriod[]>([]);
   const [remotePatterns, setRemotePatterns] = useState<RemotePattern[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [leavePolicy, setLeavePolicy] = useState<LeavePolicy | null>(null);
+  const leaveDefaultDays = Number(leavePolicy?.default_annual_days ?? 22);
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
   const [remoteQuotaRequests, setRemoteQuotaRequests] = useState<RemoteQuotaRequest[]>([]);
@@ -351,7 +359,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
           integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes,
-          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes, companyProfileRes
+          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes, companyProfileRes, leavePolicyRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
           Promise.resolve(initialProfilesRes),
@@ -402,7 +410,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isAdmin ? supabase.from('project_role_forecasts').select('*') : Promise.resolve(emptyRes),
           isAdmin ? supabase.from('time_entries').select('*') : (matchedId ? supabase.from('time_entries').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('timesheet_periods').select('*'),
-          supabase.from('company_profile').select('*').eq('id', 1).maybeSingle()
+          supabase.from('company_profile').select('*').eq('id', 1).maybeSingle(),
+          supabase.from('leave_policy').select('*').eq('id', true).maybeSingle()
         ]);
 
         const loadedCpRoles: Role[] = cpRolesTableRes?.data || [];
@@ -646,6 +655,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setTimeEntries((timeEntriesRes?.data || []) as TimeEntry[]);
         setTimesheetPeriods((timesheetPeriodsRes?.data || []) as TimesheetPeriod[]);
         setCompanyProfile(companyProfileRes?.data || null);
+        setLeavePolicy((leavePolicyRes?.data as LeavePolicy) || null);
 
         const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
         setEmployeeIntegrations(myIntegrationRows);
@@ -1042,7 +1052,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const getEmployeeLeaveBalance = (profileId: string, year: number) => {
     const ent = entitlements.find(e => e.profile_id === profileId && e.year === year);
-    const entitlement = ent?.entitlement_days ?? 22;
+    const entitlement = ent?.entitlement_days ?? leaveDefaultDays;
     const carryOver = ent?.carried_over_days ?? 0;
     const carryOverExpires = ent?.carryover_expires_on ?? `March 31, ${year}`;
 
@@ -3921,11 +3931,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Company-wide default annual leave days (used when an employee has no per-year record).
+  const saveLeavePolicy = async (updates: Partial<LeavePolicy>): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const payload = { ...updates, updated_at: new Date().toISOString(), updated_by: currentUser.id };
+      const { error, data } = await supabase.from('leave_policy').update(payload).eq('id', true).select().single();
+      if (error) {
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setLeavePolicy(data || null);
+      return true;
+    } catch (err: any) {
+      alert(`Exception saving leave policy: ${err.message}`);
+      return false;
+    }
+  };
+
+  // Upsert a per-employee per-year allowance (the ACTUAL days that employee gets that year).
+  const saveLeaveEntitlement = async (e: { id?: string; profile_id: string; year: number; entitlement_days: number; carried_over_days?: number; carryover_expires_on?: string | null }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const row: LeaveEntitlement = {
+      id: e.id || generateUUID(),
+      profile_id: e.profile_id,
+      year: e.year,
+      entitlement_days: Number(e.entitlement_days) || 0,
+      carried_over_days: Number(e.carried_over_days ?? 0) || 0,
+      carryover_expires_on: e.carryover_expires_on || undefined,
+    };
+    try {
+      const { error } = await supabase.from('leave_entitlements').upsert({ ...row, carryover_expires_on: row.carryover_expires_on || null }, { onConflict: 'profile_id,year' }).select();
+      if (error) {
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setEntitlements(prev => [...prev.filter(x => !(x.profile_id === row.profile_id && x.year === row.year)), row]);
+      return true;
+    } catch (err: any) {
+      alert(`Exception saving leave entitlement: ${err.message}`);
+      return false;
+    }
+  };
+
+  const deleteLeaveEntitlement = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('leave_entitlements').delete().eq('id', id);
+      if (error) {
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setEntitlements(prev => prev.filter(x => x.id !== id));
+      return true;
+    } catch (err: any) {
+      alert(`Exception deleting leave entitlement: ${err.message}`);
+      return false;
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       currentUser,
       companyProfile,
       updateCompanyProfile,
+      leavePolicy,
+      leaveDefaultDays,
+      saveLeavePolicy,
+      saveLeaveEntitlement,
+      deleteLeaveEntitlement,
       isViewAsEmployee,
       setIsViewAsEmployee,
       realUserRole,

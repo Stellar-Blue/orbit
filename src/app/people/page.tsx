@@ -8,6 +8,7 @@ import { Profile, EmploymentType } from '@/lib/types';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
+import { EmployeeLeaveEntitlement } from '@/components/people/employee-leave-entitlement';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import {
   Users, Search, Filter, Download, Lock, ShieldAlert,
@@ -956,6 +957,10 @@ export default function PeopleDirectoryPage() {
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                   <span className="text-slate-700 font-bold block text-xs">Remote Work Quota (per employee — falls back to company default)</span>
                   <EmployeeRemoteQuota profileId={selectedProfile.id} />
+                </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  <span className="text-slate-700 font-bold block text-xs">Annual Leave Entitlement (per year)</span>
+                  <EmployeeLeaveEntitlement profileId={selectedProfile.id} />
                 </div>
                 <div className="flex items-center justify-between pt-2">
                   {selectedProfile.id !== currentUser.id ? (

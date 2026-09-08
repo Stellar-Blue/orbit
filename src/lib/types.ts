@@ -178,6 +178,14 @@ export interface LeaveEntitlement {
   carryover_expires_on?: string;
 }
 
+/** Company-wide leave policy (singleton row). default_annual_days is the default per-year allowance. */
+export interface LeavePolicy {
+  id: boolean;
+  default_annual_days: number;
+  updated_at?: string;
+  updated_by?: string | null;
+}
+
 export interface MandatoryLeave {
   id: string;
   name: string;
