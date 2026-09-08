@@ -76,6 +76,7 @@ export default function PeopleDirectoryPage() {
   const [newLastName, setNewLastName] = useState('');
   const [newGreekName, setNewGreekName] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('');
   const [newTitle, setNewTitle] = useState('Team Member');
   const [newTeamId, setNewTeamId] = useState(teams[0]?.id || 'tm-ops');
   const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('full_time');
@@ -138,6 +139,7 @@ export default function PeopleDirectoryPage() {
       last_name: newLastName,
       name_el: newGreekName || `${newFirstName} ${newLastName}`,
       work_email: newEmail,
+      phone: newPhone.trim() || undefined,
       title: newTitle,
       team_id: newTeamId,
       employment_type: newEmploymentType,
@@ -161,7 +163,7 @@ export default function PeopleDirectoryPage() {
     addProfile(newProf);
     setIsAddOpen(false);
     // Reset fields
-    setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail('');
+    setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail(''); setNewPhone('');
     setNewTitle('Team Member'); setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress('');
   };
 
@@ -203,7 +205,7 @@ export default function PeopleDirectoryPage() {
   const isAdmin = currentUser.role === 'admin';
 
   const filteredProfiles = profiles.filter(p => {
-    const matchesSearch = `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email} ${p.title}`.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email} ${p.phone || ''} ${p.title}`.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTeam = teamFilter === 'all' || p.team_id === teamFilter;
     const matchesEmployment = employmentFilter === 'all' || p.employment_type === employmentFilter;
     return matchesSearch && matchesTeam && matchesEmployment;
@@ -219,6 +221,7 @@ export default function PeopleDirectoryPage() {
       LastName: p.last_name,
       GreekName: p.name_el,
       Email: p.work_email,
+      Phone: p.phone || '',
       Title: p.title,
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
@@ -439,6 +442,10 @@ export default function PeopleDirectoryPage() {
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Work Email</span>
                       <span className="text-[#3D87D3] font-mono">{selectedProfile.work_email}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase font-semibold block">Phone</span>
+                      <span className="text-slate-700 font-mono">{selectedProfile.phone || '—'}</span>
                     </div>
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Employment Type</span>
@@ -839,6 +846,10 @@ export default function PeopleDirectoryPage() {
                     <input type="email" value={editData.work_email || ''} onChange={e => setEditData({...editData, work_email: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
                   </div>
                   <div>
+                    <label className="text-slate-600 font-semibold block mb-1">Phone Number</label>
+                    <input type="tel" value={editData.phone || ''} onChange={e => setEditData({...editData, phone: e.target.value})} placeholder="+30 ..." className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" />
+                  </div>
+                  <div>
                     <label className="text-slate-600 font-semibold block mb-1">Job Title</label>
                     <input type="text" value={editData.title || ''} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
                   </div>
@@ -949,6 +960,10 @@ export default function PeopleDirectoryPage() {
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Work Email *</label>
               <input type="email" placeholder="e.g. mpapadopoulou@stellarblue.eu" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+            </div>
+            <div>
+              <label className="text-slate-600 font-semibold block mb-1">Phone Number</label>
+              <input type="tel" placeholder="e.g. +30 2310 ..." value={newPhone} onChange={e => setNewPhone(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" />
             </div>
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Job Title *</label>

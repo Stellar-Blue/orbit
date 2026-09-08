@@ -73,7 +73,7 @@ interface AppState {
   // Actions for immediate optimistic mutation in UI
   switchUser: (profileId: string) => void;
   updateProfile: (profile: Profile) => void;
-  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title'>> & { photo_url?: string | null }) => Promise<boolean>;
+  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & { photo_url?: string | null }) => Promise<boolean>;
   employeeIntegrations: EmployeeIntegration[];
   addProfile: (profile: Profile) => void;
   deleteProfile: (profileId: string) => Promise<boolean>;
@@ -745,7 +745,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title'>> & { photo_url?: string | null }): Promise<boolean> => {
+  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & { photo_url?: string | null }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
       const { error } = await supabase.from('profiles').update(edits).eq('id', currentUser.id);

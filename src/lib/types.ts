@@ -41,6 +41,8 @@ export interface Profile {
   last_name: string;
   name_el: string;
   work_email: string;
+  /** Directory-level contact phone (non-sensitive, visible to staff like work email). */
+  phone?: string | null;
   title: string;
   team_id: string;
   team?: Team;

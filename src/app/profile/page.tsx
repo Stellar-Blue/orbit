@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
-import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
+import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Phone, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
 
 export default function MyProfilePage() {
   return (
@@ -35,6 +35,7 @@ function MyProfileInner() {
   const [lastName, setLastName] = useState(currentUser.last_name);
   const [nameEl, setNameEl] = useState(currentUser.name_el);
   const [title, setTitle] = useState(currentUser.title);
+  const [phone, setPhone] = useState(currentUser.phone || '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [revoking, setRevoking] = useState(false);
@@ -70,6 +71,7 @@ function MyProfileInner() {
       last_name: lastName.trim(),
       name_el: nameEl.trim() || `${firstName.trim()} ${lastName.trim()}`,
       title: title.trim(),
+      phone: phone.trim() || null,
     });
     setSaving(false);
     if (ok) {
@@ -155,6 +157,12 @@ function MyProfileInner() {
               <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span className="font-mono truncate">{currentUser.work_email}</span>
             </div>
+            {currentUser.phone && (
+              <div className="flex items-center gap-2.5 text-xs text-slate-600">
+                <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="font-mono truncate">{currentUser.phone}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2.5 text-xs text-slate-600">
               <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span>{team}</span>
@@ -194,12 +202,16 @@ function MyProfileInner() {
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Job Title</label>
                   <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
                 </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Phone</label>
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+30 ..." className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
+                </div>
                 <div className="flex items-center gap-2 sm:col-span-2 pt-1">
                   <Button size="sm" variant="primary" onClick={handleSave} disabled={saving} className="bg-[#3D87D3] text-white cursor-pointer">
                     {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
                     {saving ? 'Saving…' : 'Save Changes'}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => { setEditing(false); setFirstName(currentUser.first_name); setLastName(currentUser.last_name); setNameEl(currentUser.name_el); setTitle(currentUser.title); }} className="cursor-pointer">
+                  <Button size="sm" variant="outline" onClick={() => { setEditing(false); setFirstName(currentUser.first_name); setLastName(currentUser.last_name); setNameEl(currentUser.name_el); setTitle(currentUser.title); setPhone(currentUser.phone || ''); }} className="cursor-pointer">
                     Cancel
                   </Button>
                 </div>
@@ -221,6 +233,10 @@ function MyProfileInner() {
                 <div>
                   <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Job Title</div>
                   <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.title || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Phone</div>
+                  <div className="text-sm font-bold text-slate-800 mt-0.5 font-mono">{currentUser.phone || '—'}</div>
                 </div>
                 <div className="sm:col-span-2 pt-2">
                   <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="cursor-pointer">
