@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Button } from '@/components/ui/primitives';
+import { Button, Badge } from '@/components/ui/primitives';
 import { Save, Trash2, Check } from 'lucide-react';
 
 /**
@@ -39,6 +39,21 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
 
   const roleName = current ? jobRoles.find(r => r.id === current.job_role_id)?.name : undefined;
   const senName = current ? seniorityLevels.find(s => s.id === current.seniority_id)?.name : undefined;
+
+  // Full effective-dated history, newest first. Coherent rows only (skips corrupt
+  // ranges where valid_to < valid_from, which earlier bugs could produce).
+  const history = useMemo(() => profileRoleHistory
+    .filter(h => h.profile_id === profileId)
+    .filter(h => !(h.valid_to && h.valid_to < h.valid_from))
+    .sort((a, b) => b.valid_from.localeCompare(a.valid_from))
+    .map(h => ({
+      id: h.id,
+      role: jobRoles.find(r => r.id === h.job_role_id)?.name || 'Role',
+      seniority: seniorityLevels.find(s => s.id === h.seniority_id)?.name || '—',
+      valid_from: h.valid_from,
+      valid_to: h.valid_to || null,
+      isCurrent: current?.id === h.id,
+    })), [profileRoleHistory, profileId, current, jobRoles, seniorityLevels]);
 
   const showFlash = (msg: string) => {
     setFlash(msg);
@@ -101,6 +116,22 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
       {flash && (
         <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 animate-in fade-in">
           <Check className="w-3 h-3 shrink-0" /> {flash}
+        </div>
+      )}
+      {history.length > 0 && (
+        <div className="border-t border-slate-200 pt-2 mt-1">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Assignment history ({history.length})</div>
+          <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
+            {history.map(h => (
+              <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded-md bg-white border border-slate-100">
+                <span className="min-w-0 truncate">
+                  <span className="font-semibold text-slate-800">{h.role} · {h.seniority}</span>
+                  <span className="text-slate-400 font-mono ml-2">{h.valid_from} → {h.valid_to || 'present'}</span>
+                </span>
+                {h.isCurrent && <Badge variant="success" className="shrink-0 text-[8px] px-1.5">CURRENT</Badge>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <p className="text-[10px] text-slate-400 leading-snug">
