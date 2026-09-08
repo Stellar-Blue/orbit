@@ -147,6 +147,8 @@ interface AppState {
   saveSeniorityLevel: (s: Partial<SeniorityLevel> & { name: string }) => Promise<boolean>;
   deleteSeniorityLevel: (id: string) => Promise<boolean>;
   setProfileRole: (profileId: string, jobRoleId: string | null, seniorityId: string | null, validFrom: string) => Promise<boolean>;
+  updateProfileRoleHistory: (id: string, patch: Partial<ProfileRoleHistory>) => Promise<boolean>;
+  deleteProfileRoleHistory: (id: string) => Promise<boolean>;
   saveRateCard: (c: Partial<RateCard> & { name: string }) => Promise<boolean>;
   deleteRateCard: (id: string) => Promise<boolean>;
   ensureContractRateCard: (contractId: string) => Promise<string | null>;
@@ -2860,6 +2862,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e: any) { console.error('setProfileRole error:', e); alert(`Database Error: ${e.message}`); return false; }
   };
 
+  // Directly edit one history row (role/seniority/dates) — used by the history table.
+  const updateProfileRoleHistory = async (id: string, patch: Partial<ProfileRoleHistory>): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('profile_role_history').update(patch).eq('id', id);
+      if (error) {
+        console.error('updateProfileRoleHistory error:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setProfileRoleHistory(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+      return true;
+    } catch (e: any) {
+      console.error('updateProfileRoleHistory error:', e);
+      alert(`Database Error: ${e.message}`);
+      return false;
+    }
+  };
+
+  const deleteProfileRoleHistory = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('profile_role_history').delete().eq('id', id);
+      if (error) {
+        console.error('deleteProfileRoleHistory error:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setProfileRoleHistory(prev => prev.filter(r => r.id !== id));
+      return true;
+    } catch (e: any) {
+      console.error('deleteProfileRoleHistory error:', e);
+      alert(`Database Error: ${e.message}`);
+      return false;
+    }
+  };
+
   const saveRateCard = async (c: Partial<RateCard> & { name: string }): Promise<boolean> => {
     const row = { id: c.id || generateUUID(), name: c.name, currency: c.currency || 'EUR', valid_from: c.valid_from || null, valid_to: c.valid_to || null, is_default: c.is_default ?? false, notes: c.notes || null };
     const ok = await upsertRow('rate_cards', row);
@@ -4010,6 +4049,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveSeniorityLevel,
       deleteSeniorityLevel,
       setProfileRole,
+      updateProfileRoleHistory,
+      deleteProfileRoleHistory,
       saveRateCard,
       deleteRateCard,
       ensureContractRateCard,

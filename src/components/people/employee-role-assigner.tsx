@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Button, Badge } from '@/components/ui/primitives';
-import { Save, Trash2, Check } from 'lucide-react';
+import { Save, Trash2, Check, X, Pencil } from 'lucide-react';
 
 /**
  * Assigns an employee a job role + seniority (effective-dated) via profile_role_history.
@@ -15,7 +15,7 @@ import { Save, Trash2, Check } from 'lucide-react';
  * applied by "Assign" here, not by "Save Profile Changes".
  */
 export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId: string; compact?: boolean }) {
-  const { jobRoles, seniorityLevels, profileRoleHistory, setProfileRole } = useAuth();
+  const { jobRoles, seniorityLevels, profileRoleHistory, setProfileRole, updateProfileRoleHistory, deleteProfileRoleHistory } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
 
   const current = useMemo(() => {
@@ -39,19 +39,18 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
 
   const roleName = current ? jobRoles.find(r => r.id === current.job_role_id)?.name : undefined;
   const senName = current ? seniorityLevels.find(s => s.id === current.seniority_id)?.name : undefined;
+  const roleLabel = (rid?: string) => jobRoles.find(r => r.id === rid)?.name;
+  const senLabel = (sid?: string) => seniorityLevels.find(s => s.id === sid)?.name;
 
-  // Full effective-dated history, newest first. Coherent rows only (skips corrupt
-  // ranges where valid_to < valid_from, which earlier bugs could produce).
+  // Full effective-dated history, newest first (all rows — so anything can be fixed/deleted).
   const history = useMemo(() => profileRoleHistory
     .filter(h => h.profile_id === profileId)
-    .filter(h => !(h.valid_to && h.valid_to < h.valid_from))
     .sort((a, b) => b.valid_from.localeCompare(a.valid_from))
     .map(h => ({
+      row: h,
       id: h.id,
-      role: jobRoles.find(r => r.id === h.job_role_id)?.name || 'Role',
-      seniority: seniorityLevels.find(s => s.id === h.seniority_id)?.name || '—',
-      valid_from: h.valid_from,
-      valid_to: h.valid_to || null,
+      roleName: roleLabel(h.job_role_id) || 'Role',
+      senName: senLabel(h.seniority_id) || '—',
       isCurrent: current?.id === h.id,
     })), [profileRoleHistory, profileId, current, jobRoles, seniorityLevels]);
 
@@ -88,6 +87,43 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
     }
   };
 
+  // Inline row editor
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ roleId: string; senId: string; validFrom: string; validTo: string }>({ roleId: '', senId: '', validFrom: '', validTo: '' });
+
+  const beginEdit = (h: (typeof history)[number]) => {
+    setEditingId(h.id);
+    setEdit({ roleId: h.row.job_role_id, senId: h.row.seniority_id, validFrom: h.row.valid_from, validTo: h.row.valid_to || '' });
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    if (!edit.roleId || !edit.senId) { alert('Pick both a role and a seniority.'); return; }
+    if (edit.validTo && edit.validTo < edit.validFrom) { alert('End date cannot be before start date.'); return; }
+    const ok = await updateProfileRoleHistory(editingId, {
+      job_role_id: edit.roleId,
+      seniority_id: edit.senId,
+      valid_from: edit.validFrom,
+      valid_to: edit.validTo ? edit.validTo : null,
+    });
+    if (ok) { setEditingId(null); showFlash('History entry updated.'); }
+  };
+
+  const removeRow = async (h: (typeof history)[number]) => {
+    if (!confirm(`Delete this history entry (${h.roleName} · ${h.senName}, ${h.row.valid_from} → ${h.row.valid_to || 'present'})? This cannot be undone.`)) return;
+    const ok = await deleteProfileRoleHistory(h.id);
+    if (ok) { if (editingId === h.id) setEditingId(null); showFlash('History entry deleted.'); }
+  };
+
+  const roleOptions = (includeId?: string) => jobRoles
+    .filter(r => r.active || r.id === includeId)
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map(r => <option key={r.id} value={r.id}>{r.name}</option>);
+  const senOptions = (includeId?: string) => seniorityLevels
+    .filter(s => s.active || s.id === includeId)
+    .sort((a, b) => a.rank - b.rank)
+    .map(s => <option key={s.id} value={s.id}>{s.name}</option>);
+
   return (
     // Enter inside this widget must never submit the surrounding profile form.
     <div className="space-y-2" onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}>
@@ -120,22 +156,71 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
       )}
       {history.length > 0 && (
         <div className="border-t border-slate-200 pt-2 mt-1">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Assignment history ({history.length})</div>
-          <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
-            {history.map(h => (
-              <div key={h.id} className="flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded-md bg-white border border-slate-100">
-                <span className="min-w-0 truncate">
-                  <span className="font-semibold text-slate-800">{h.role} · {h.seniority}</span>
-                  <span className="text-slate-400 font-mono ml-2">{h.valid_from} → {h.valid_to || 'present'}</span>
-                </span>
-                {h.isCurrent && <Badge variant="success" className="shrink-0 text-[8px] px-1.5">CURRENT</Badge>}
-              </div>
-            ))}
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
+            <span>Assignment history ({history.length})</span>
+            {editingId && <span className="text-[10px] font-bold normal-case text-[#3D87D3]">editing…</span>}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="text-slate-400 uppercase text-[9px] font-extrabold">
+                  <th className="py-1 pr-2 text-left font-extrabold">Role · Seniority</th>
+                  <th className="py-1 px-2 text-left font-extrabold">From</th>
+                  <th className="py-1 px-2 text-left font-extrabold">To</th>
+                  <th className="py-1 pl-2 text-right font-extrabold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {history.map(h => h.id === editingId ? (
+                  <tr key={h.id} className="bg-sky-50/50">
+                    <td className="py-1 pr-2">
+                      <div className="flex items-center gap-1.5">
+                        <select value={edit.roleId} onChange={e => setEdit(x => ({ ...x, roleId: e.target.value }))} className="w-full bg-white border border-slate-300 rounded px-1.5 py-1 text-[11px] min-w-0" title="Role">
+                          <option value="">Role…</option>
+                          {roleOptions(h.row.job_role_id)}
+                        </select>
+                        <select value={edit.senId} onChange={e => setEdit(x => ({ ...x, senId: e.target.value }))} className="w-full bg-white border border-slate-300 rounded px-1.5 py-1 text-[11px] min-w-0" title="Seniority">
+                          <option value="">Seniority…</option>
+                          {senOptions(h.row.seniority_id)}
+                        </select>
+                      </div>
+                    </td>
+                    <td className="py-1 px-2">
+                      <input type="date" value={edit.validFrom} onChange={e => setEdit(x => ({ ...x, validFrom: e.target.value }))} className="w-full bg-white border border-slate-300 rounded px-1 py-1 text-[11px] font-mono" title="Valid from" />
+                    </td>
+                    <td className="py-1 px-2">
+                      <input type="date" value={edit.validTo} onChange={e => setEdit(x => ({ ...x, validTo: e.target.value }))} className="w-full bg-white border border-slate-300 rounded px-1 py-1 text-[11px] font-mono" placeholder="present" title="Empty = still active (present)" />
+                    </td>
+                    <td className="py-1 pl-2 text-right whitespace-nowrap">
+                      <button type="button" onClick={saveEdit} className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 px-1.5 py-1 cursor-pointer" title="Save"><Check className="w-3.5 h-3.5" /> Save</button>
+                      <button type="button" onClick={() => setEditingId(null)} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 px-1.5 py-1 cursor-pointer" title="Cancel"><X className="w-3.5 h-3.5" /> Cancel</button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={h.id} className={h.isCurrent ? 'bg-emerald-50/40' : ''}>
+                    <td className="py-1.5 pr-2">
+                      <span className="font-semibold text-slate-800">{h.roleName} · {h.senName}</span>
+                      {h.isCurrent && <Badge variant="success" className="ml-1.5 text-[8px] px-1.5">CURRENT</Badge>}
+                    </td>
+                    <td className="py-1.5 px-2 font-mono text-slate-600 whitespace-nowrap">{h.row.valid_from}</td>
+                    <td className="py-1.5 px-2 font-mono text-slate-600 whitespace-nowrap">{h.row.valid_to || <span className="text-emerald-700 font-bold">present</span>}</td>
+                    <td className="py-1.5 pl-2 text-right whitespace-nowrap">
+                      <button type="button" onClick={() => beginEdit(h)} className="inline-flex items-center text-slate-400 hover:text-[#3D87D3] px-1 py-0.5 cursor-pointer" title="Edit entry"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={() => removeRow(h)} className="inline-flex items-center text-slate-400 hover:text-rose-600 px-1 py-0.5 cursor-pointer" title="Delete entry"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
+
+      {history.length === 0 && (
+        <p className="text-[10px] text-slate-400">No assignments yet — use Assign above to add the first one.</p>
+      )}
       <p className="text-[10px] text-slate-400 leading-snug">
-        Effective-dated — apply with <strong>Assign</strong> (separate from &ldquo;Save Profile Changes&rdquo;). Assigning closes the previous assignment the day before the chosen date.
+        Effective-dated: use <strong>Assign</strong> to add a new current role (it closes the previous open entry the day before the chosen date). Use the pencil/trash icons in the table to edit or delete any history entry. Leave an end date empty (&ldquo;present&rdquo;) for an ongoing entry.
       </p>
     </div>
   );
