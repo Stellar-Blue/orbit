@@ -18,7 +18,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen }) => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
@@ -149,7 +149,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
 
       {/* Footer / User Profile & Dev Mode Switcher */}
       <div className="p-4 border-t border-slate-200/80 bg-slate-50/60 shrink-0">
-        {realUserRole === 'admin' && (
+        {realUserRole === 'admin' && previewProfileId && (
+          <div className="mb-3">
+            <button
+              onClick={stopPreview}
+              className="w-full p-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer shadow-2xs border bg-amber-500 text-white border-amber-600 hover:bg-amber-600"
+              title="Return to Full Admin view"
+            >
+              <span className="flex items-center truncate">
+                <EyeOff className="w-3.5 h-3.5 mr-2 shrink-0 text-white" />
+                <span>Exit Preview — {currentUser.first_name} {currentUser.last_name}</span>
+              </span>
+              <Badge variant="neutral" className="text-[9px] px-1.5 py-0.5 font-black shrink-0 bg-white text-amber-950 border-amber-300">
+                ACTIVE
+              </Badge>
+            </button>
+          </div>
+        )}
+
+        {realUserRole === 'admin' && !previewProfileId && (
           <div className="mb-3">
             <button
               onClick={() => setIsViewAsEmployee(!isViewAsEmployee)}

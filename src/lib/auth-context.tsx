@@ -65,6 +65,10 @@ interface AppState {
   isViewAsEmployee: boolean;
   setIsViewAsEmployee: (val: boolean | ((prev: boolean) => boolean)) => void;
   realUserRole: 'admin' | 'employee' | string;
+  /** Id of the specific employee currently being previewed (admin-only preview). */
+  previewProfileId: string | null;
+  startPreviewAs: (profileId: string) => void;
+  stopPreview: () => void;
   isLoading: boolean;
   signOut: () => Promise<void> | void;
   companyProfile: CompanyProfile | null;
@@ -245,6 +249,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [isDevMode, setIsDevMode] = useState<boolean>(true);
   const [isViewAsEmployee, setIsViewAsEmployee] = useState<boolean>(false);
+  const [previewProfileId, setPreviewProfileId] = useState<string | null>(null);
+  const [realProfileId, setRealProfileId] = useState<string>('');
   const [teams, setTeams] = useState<Team[]>([]);
   const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);
   const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
@@ -347,6 +353,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', matchedId).eq('role', 'admin').maybeSingle();
           isAdmin = !!roleRow;
           setCurrentUserId(matchedId);
+          setRealProfileId(matchedId);
         }
         
         const emptyRes = { data: [] as any[] };
@@ -703,14 +710,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     work_schedule: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
   };
 
-  const baseCurrentUser = profiles.find(p => p.id === currentUserId) || profiles[0] || fallbackProfile;
-  const realUserRole = baseCurrentUser.role;
+  const baseCurrentUser = profiles.find(p => p.id === (previewProfileId || currentUserId)) || profiles[0] || fallbackProfile;
+  // While previewing a SPECIFIC employee, keep exposing the real (logged-in admin) role so the
+  // exit ribbon/controls stay available; otherwise the role follows the active identity.
+  const realUserRole = previewProfileId
+    ? (profiles.find(p => p.id === realProfileId)?.role || 'admin')
+    : baseCurrentUser.role;
   const currentUser = useMemo(() => {
+    if (previewProfileId) {
+      // Force an employee lens: preview never grants admin powers.
+      return { ...baseCurrentUser, role: 'employee' as const };
+    }
     if (isViewAsEmployee && baseCurrentUser.role === 'admin') {
       return { ...baseCurrentUser, role: 'employee' as const };
     }
     return baseCurrentUser;
-  }, [baseCurrentUser, isViewAsEmployee]);
+  }, [baseCurrentUser, isViewAsEmployee, previewProfileId]);
 
   const signOut = async () => {
     try {
@@ -725,6 +740,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const switchUser = (profileId: string) => {
     setCurrentUserId(profileId);
+    setIsViewAsEmployee(false);
+  };
+
+  // Admin preview of a SPECIFIC employee (e.g. to verify what that person can see).
+  const startPreviewAs = (profileId: string) => {
+    if (!profileId) return;
+    setPreviewProfileId(profileId);
+    setIsViewAsEmployee(true);
+  };
+  const stopPreview = () => {
+    setPreviewProfileId(null);
     setIsViewAsEmployee(false);
   };
 
@@ -4061,6 +4087,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isViewAsEmployee,
       setIsViewAsEmployee,
       realUserRole,
+      previewProfileId,
+      startPreviewAs,
+      stopPreview,
       profiles,
       teams,
       paymentTypes,
