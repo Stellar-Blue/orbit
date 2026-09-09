@@ -1110,6 +1110,99 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
 
+  // Local yyyy-mm-dd (avoids UTC date shifts from toISOString() in positive timezones).
+  const localIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  /**
+   * Correct + idempotent mandatory fan-out for one closure:
+   *  - only employees ACTIVE (non-contractor) and employed during the closure get a row;
+   *  - exactly one row each (skips existing; keeps admin 'detached' manual corrections);
+   *  - row range clipped to the employee's start date;
+   *  - working_days = the employee's scheduled weekdays in range that are NOT public holidays.
+   */
+  const syncMandatoryFanout = async (m: MandatoryLeave) => {
+    if (!m || m.status === 'cancelled') return;
+    const supabase = getSupabaseBrowserClient();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    try {
+      const eligible = profiles.filter(p =>
+        p.status === 'active' &&
+        p.employment_type !== 'contractor' &&
+        p.start_date <= m.end_date &&
+        (!p.end_date || p.end_date >= m.start_date)
+      );
+      const holidays = (publicHolidays || []).map(h => h.date);
+      const wdFor = (p: Profile) => {
+        const ws = (p.work_schedule && p.work_schedule.length ? p.work_schedule : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+        const from = new Date((m.start_date < p.start_date ? p.start_date : m.start_date) + 'T00:00:00');
+        const to = new Date(m.end_date + 'T00:00:00');
+        const d = new Date(from);
+        let count = 0;
+        while (d <= to) {
+          if (ws.includes(dayNames[d.getDay()]) && !holidays.includes(localIso(d))) count++;
+          d.setDate(d.getDate() + 1);
+        }
+        return count;
+      };
+      const note = `Company-wide mandatory leave: ${m.name}`;
+      const existing = leaveRequests.filter(r => r.mandatory_leave_id === m.id && r.origin === 'mandatory');
+
+      // 1) Drop rows whose employee is no longer eligible (never remove admin 'detached' corrections).
+      const toDelete = existing.filter(r => {
+        if (r.detached) return false;
+        const p = profiles.find(x => x.id === r.profile_id);
+        if (!p) return true;
+        return !(p.status === 'active' && p.employment_type !== 'contractor' &&
+                 p.start_date <= m.end_date && (!p.end_date || p.end_date >= m.start_date));
+      });
+      if (toDelete.length > 0) {
+        await supabase.from('leave_requests').delete().in('id', toDelete.map(r => r.id));
+        setLeaveRequests(prev => prev.filter(r => !toDelete.some(t => t.id === r.id)));
+      }
+
+      // 2) Ensure exactly one correct row per eligible employee.
+      for (const p of eligible) {
+        const start = m.start_date < p.start_date ? p.start_date : m.start_date;
+        const wd = wdFor(p);
+        const row = existing.find(r => r.profile_id === p.id && !r.detached);
+        if (row) {
+          const patch: Partial<LeaveRequest> = {};
+          if (row.working_days !== wd) patch.working_days = wd;
+          if (row.start_date !== start) patch.start_date = start;
+          if (row.end_date !== m.end_date) patch.end_date = m.end_date;
+          if (row.leave_type_id !== m.leave_type_id) patch.leave_type_id = m.leave_type_id;
+          if (row.note !== note) patch.note = note;
+          if (Object.keys(patch).length > 0) {
+            await supabase.from('leave_requests').update(patch).eq('id', row.id);
+            setLeaveRequests(prev => prev.map(r => r.id === row.id ? { ...r, ...patch } : r));
+          }
+        } else {
+          const newReq: LeaveRequest = {
+            id: generateUUID(),
+            profile_id: p.id,
+            leave_type_id: m.leave_type_id,
+            start_date: start,
+            end_date: m.end_date,
+            half_day_start: false,
+            half_day_end: false,
+            working_days: wd,
+            status: 'approved',
+            origin: 'mandatory',
+            mandatory_leave_id: m.id,
+            note,
+            ergani_status: 'not_required'
+          };
+          await supabase.from('leave_requests').insert(newReq);
+          setLeaveRequests(prev => [newReq, ...prev]);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('syncMandatoryFanout error:', e);
+      alert(`Mandatory fan-out failed: ${msg}`);
+    }
+  };
+
   const addMandatoryLeave = async (ml: Omit<MandatoryLeave, 'id'>) => {
     let finalTypeId = ml.leave_type_id;
     if (finalTypeId === 'lt-annual' || !leaveTypes.some(lt => lt.id === finalTypeId)) {
@@ -1126,68 +1219,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       setMandatoryLeaves(prev => [newMl, ...prev]);
-    } catch (e: any) {
+    } catch (e) {
       console.error('Failed to insert mandatory leave:', e);
       return;
     }
 
-    // Perform Idempotent Fan-out to all active non-contractors!
-    if (newMl.status === 'published') {
-      const eligible = profiles.filter(p => p.status === 'active' && p.employment_type !== 'contractor');
-      const newRequests: LeaveRequest[] = eligible.map(p => ({
-        id: generateUUID(),
-        profile_id: p.id,
-        leave_type_id: newMl.leave_type_id,
-        start_date: newMl.start_date,
-        end_date: newMl.end_date,
-        half_day_start: false,
-        half_day_end: false,
-        working_days: p.employment_type === 'part_time' ? 2 : 3,
-        status: 'approved',
-        origin: 'mandatory',
-        mandatory_leave_id: newMl.id,
-        note: `Company-wide mandatory leave: ${newMl.name}`,
-        ergani_status: 'not_required'
-      }));
-
-      try {
-        const cleanRequests = newRequests.map(({ leave_type, ...r }: any) => r);
-        const { error: reqError } = await supabase.from('leave_requests').insert(cleanRequests);
-        if (reqError) {
-          console.error('Failed to fan-out mandatory leave requests:', reqError);
-          alert(`Database Error fanning out leave requests: ${reqError.message}`);
-          return;
-        }
-        setLeaveRequests(prev => [...newRequests, ...prev]);
-      } catch (e: any) {
-        console.error('Failed to fan-out mandatory leave requests:', e);
-      }
-    }
+    // Fan out once (idempotent) — only when actually published.
+    if (newMl.status === 'published') await syncMandatoryFanout(newMl);
   };
 
   const updateMandatoryLeave = async (id: string, updated: Partial<MandatoryLeave>) => {
     const supabase = getSupabaseBrowserClient();
     try {
+      const prev = mandatoryLeaves.find(m => m.id === id);
+      const eff = prev ? ({ ...prev, ...updated } as MandatoryLeave) : null;
       const { error } = await supabase.from('mandatory_leaves').update(updated).eq('id', id);
       if (error) {
         console.error('Failed to update mandatory leave:', error);
         alert(`Database Error: ${error.message}`);
         return;
       }
-      setMandatoryLeaves(prev => prev.map(m => m.id === id ? { ...m, ...updated } : m));
-
-      const reqUpdates: any = {};
-      if (updated.start_date) reqUpdates.start_date = updated.start_date;
-      if (updated.end_date) reqUpdates.end_date = updated.end_date;
-      if (updated.leave_type_id) reqUpdates.leave_type_id = updated.leave_type_id;
-      if (updated.name) reqUpdates.note = `Company-wide mandatory leave: ${updated.name}`;
-
-      if (Object.keys(reqUpdates).length > 0) {
-        await supabase.from('leave_requests').update(reqUpdates).eq('mandatory_leave_id', id);
-        setLeaveRequests(prev => prev.map(r => r.mandatory_leave_id === id ? { ...r, ...reqUpdates } : r));
-      }
-    } catch (e: any) {
+      setMandatoryLeaves(prevList => prevList.map(m => m.id === id ? { ...m, ...updated } : m));
+      // Re-sync the fan-out after a date/type/name change (idempotent).
+      if (eff && eff.status !== 'cancelled') await syncMandatoryFanout(eff);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error('Failed to update mandatory leave:', e);
+      alert(`Database Error: ${msg}`);
     }
   };
 
