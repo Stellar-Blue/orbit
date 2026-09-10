@@ -16,6 +16,7 @@ import {
   Role, CounterpartyRole, CompanyProfile, LeavePolicy
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
+import { employerCostRatio, loadedMonthlyCost } from './compensation';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
@@ -1302,9 +1303,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const pt = paymentTypes.find(t => t.code === (prof.employment_type === 'contractor' ? 'contractor_invoice' : 'salary'));
     if (!pt) return { created: 0, skipped: 0 };
 
-    const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
     const isContractor = prof.employment_type === 'contractor';
-    const totalCost = Number((sal.gross_amount * mult).toFixed(2));
+    const totalCost = isContractor ? sal.gross_amount : loadedMonthlyCost(sal);
     const employerContrib = isContractor ? 0 : Number((totalCost - sal.gross_amount).toFixed(2));
     const net = isContractor ? sal.gross_amount : Number((sal.gross_amount * 0.72).toFixed(2));
 
@@ -1681,7 +1681,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         const ptSalary = paymentTypes.find(t => t.code === 'salary');
-        const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
+        const mult = employerCostRatio(sal);
         
         if (ptSalary) {
           const duplicate = payments.some(exist => exist.profile_id === p.id && exist.payment_type_id === ptSalary.id && exist.period === period);
@@ -3745,9 +3745,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       activeSalaries.forEach(salary => {
-        const baseGross = salary.gross_amount;
-        const multiplier = salary.employer_cost_multiplier || 1;
-        const baseCost = baseGross * multiplier;
+        const baseCost = loadedMonthlyCost(salary);
 
         for (let m = 1; m <= 12; m++) {
           let monthMultiplier = 1.0;

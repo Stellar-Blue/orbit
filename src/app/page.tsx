@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
+import { loadedMonthlyCost } from '@/lib/compensation';
 import { notifySuccess } from '@/lib/validation-modal';
 
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
@@ -77,8 +78,7 @@ export default function DashboardPage() {
   
   const monthlyCost = salaries.reduce((acc, sal) => {
     if (sal.valid_to) return acc;
-    const employerCont = sal.employer_cost_pct ? sal.gross_amount * (sal.employer_cost_pct / 100) : 0;
-    return acc + sal.gross_amount + employerCont;
+    return acc + loadedMonthlyCost(sal);
   }, 0);
 
   const urgentContracts = contracts.filter(c => getContractNoticeStatus(c).isUrgent).slice(0, 5);

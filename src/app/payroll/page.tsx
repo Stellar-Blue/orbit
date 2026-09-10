@@ -15,6 +15,7 @@ import {
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
+import { loadedMonthlyCost, employerCostRatio } from '@/lib/compensation';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
@@ -30,13 +31,13 @@ export default function PayrollPage() {
   const [backfillingId, setBackfillingId] = useState<string | null>(null);
   const [editSalaryId, setEditSalaryId] = useState<string | null>(null);
   const [salForm, setSalForm] = useState({
-    gross_amount: 0, multiplier: 1.24, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '',
+    gross_amount: 0, full_cost: 0, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '',
   });
 
   const openSalaryEditor = (sal: SalaryRecord) => {
     setSalForm({
       gross_amount: Number(sal.gross_amount || 0),
-      multiplier: Number(sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24)),
+      full_cost: loadedMonthlyCost(sal),
       valid_from: sal.valid_from || '',
       valid_to: sal.valid_to || '',
       basis: sal.basis || 'monthly_gross',
@@ -50,10 +51,12 @@ export default function PayrollPage() {
       alert('Valid from and a positive gross amount are required.');
       return;
     }
+    const fullCost = Number(salForm.full_cost) || Number(salForm.gross_amount);
     await updateSalaryRecord(editSalaryId, {
       gross_amount: Number(salForm.gross_amount),
-      employer_cost_pct: salForm.multiplier > 1 ? Number(((salForm.multiplier - 1) * 100).toFixed(2)) : undefined,
-      employer_cost_multiplier: Number(salForm.multiplier),
+      employer_cost_amount: Number(Math.max(0, fullCost - Number(salForm.gross_amount)).toFixed(2)),
+      employer_cost_multiplier: null,
+      employer_cost_pct: null,
       valid_from: salForm.valid_from,
       valid_to: salForm.valid_to || undefined,
       basis: salForm.basis as any,
@@ -187,7 +190,7 @@ export default function PayrollPage() {
   const [rsProfileId, setRsProfileId] = useState('');
   const [rsBasis, setRsBasis] = useState<'monthly_gross' | 'daily_rate' | 'fixed_fee' | 'fee'>('monthly_gross');
   const [rsGross, setRsGross] = useState<number>(3500);
-  const [rsMultiplier, setRsMultiplier] = useState<number>(1.24);
+  const [rsFullCost, setRsFullCost] = useState<number>(4340);
   const [rsValidFrom, setRsValidFrom] = useState<string>('2026-08-01');
   const [rsNote, setRsNote] = useState<string>('Annual compensation review');
 
@@ -354,12 +357,10 @@ export default function PayrollPage() {
       const monthStr = `${currentY}-${String(currentM).padStart(2, '0')}`;
       const monthLabel = `${monthNames[currentM - 1]} ${currentY}`;
 
-      // Regular Monthly Cost (Salaries + Contractor Fees using multiplier)
+      // Regular Monthly Cost (salaries + contractor fees, fully loaded)
       let regularCost = 0;
       activeSalaries.forEach(sal => {
-        const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
-        const loadedCost = Number((sal.gross_amount * mult).toFixed(2));
-        regularCost += loadedCost;
+        regularCost += loadedMonthlyCost(sal);
       });
 
       // Statutory Extras Cost for employees in matching default months (e.g., April Easter, July Holiday, Dec Christmas)
@@ -373,9 +374,8 @@ export default function PayrollPage() {
           activeSalaries.forEach(sal => {
             const prof = profiles.find(pr => pr.id === sal.profile_id);
             if (prof && prof.employment_type !== 'contractor') { // Contractors do not get Greek statutory bonuses
-              const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
               const statGross = sal.gross_amount * (st.default_multiplier ?? 1.0);
-              statutoryCost += Number((statGross * mult).toFixed(2));
+              statutoryCost += Number((statGross * employerCostRatio(sal)).toFixed(2));
             }
           });
         });
@@ -416,8 +416,7 @@ export default function PayrollPage() {
           setUpEfka(0);
           setUpNet(sal.gross_amount);
         } else {
-          const efka = sal.employer_cost_pct ? Number((sal.gross_amount * (sal.employer_cost_pct / 100)).toFixed(2)) : 0;
-          setUpEfka(efka);
+          setUpEfka(Number((loadedMonthlyCost(sal) - sal.gross_amount).toFixed(2)));
           setUpNet(Number((sal.gross_amount * 0.72).toFixed(2)));
         }
       } else {
@@ -440,8 +439,7 @@ export default function PayrollPage() {
         setUpEfka(0);
         setUpNet(sal.gross_amount);
       } else {
-        const efka = sal.employer_cost_pct ? Number((sal.gross_amount * (sal.employer_cost_pct / 100)).toFixed(2)) : 0;
-        setUpEfka(efka);
+        setUpEfka(Number((loadedMonthlyCost(sal) - sal.gross_amount).toFixed(2)));
         setUpNet(Number((sal.gross_amount * 0.72).toFixed(2)));
       }
     }
@@ -585,14 +583,16 @@ export default function PayrollPage() {
       alert('Please enter a valid gross amount and select an employee.');
       return;
     }
+    const fullCost = Number(rsFullCost) || Number(rsGross);
     await addSalaryRecord({
       profile_id: rsProfileId,
       valid_from: rsValidFrom,
       basis: rsBasis,
       gross_amount: Number(rsGross),
       currency: 'EUR',
-      employer_cost_pct: rsMultiplier > 1 ? Number(((rsMultiplier - 1) * 100).toFixed(2)) : undefined,
-      employer_cost_multiplier: Number(rsMultiplier),
+      employer_cost_amount: Number(Math.max(0, fullCost - Number(rsGross)).toFixed(2)),
+      employer_cost_multiplier: null,
+      employer_cost_pct: null,
       note: rsNote.trim() || undefined
     });
     setIsRaiseOpen(false);
@@ -821,7 +821,7 @@ export default function PayrollPage() {
       {tab === 'forecast' && (
         <div className="space-y-8">
           <Card 
-            title="Effective-Dated Salary Ledger & Multipliers" 
+            title="Effective-Dated Salary Ledger & Company Costs" 
             subtitle="Never edit salaries in place: recording a raise closes the old record with valid_to and adds a new row, generating complete salary histories automatically." 
             action={
               <Button size="sm" variant="primary" onClick={() => {
@@ -837,8 +837,8 @@ export default function PayrollPage() {
               {salaries.map(sal => {
                 const prof = profiles.find(p => p.id === sal.profile_id);
                 const isActive = !sal.valid_to;
-                const mult = sal.employer_cost_multiplier ?? (sal.employer_cost_pct ? Number((1 + sal.employer_cost_pct / 100).toFixed(4)) : 1.24);
-                const loadedMonthly = Number((sal.gross_amount * mult).toFixed(2));
+                const loadedMonthly = loadedMonthlyCost(sal);
+                const employerCost = Number((loadedMonthly - sal.gross_amount).toFixed(2));
 
                 return (
                   <div key={sal.id} className={`p-4 rounded-xl border transition-all text-xs ${isActive ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/70 border-slate-200 opacity-75'}`}>
@@ -849,8 +849,8 @@ export default function PayrollPage() {
                           <input type="number" step="0.01" value={salForm.gross_amount || ''} onChange={e => setSalForm({ ...salForm, gross_amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
                         </div>
                         <div>
-                          <label className="text-slate-500 font-semibold block mb-1">Employer Multiplier</label>
-                          <input type="number" step="0.01" value={salForm.multiplier || ''} onChange={e => setSalForm({ ...salForm, multiplier: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                          <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo)</label>
+                          <input type="number" step="0.01" value={salForm.full_cost || ''} onChange={e => setSalForm({ ...salForm, full_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
                         </div>
                         <div>
                           <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
@@ -894,8 +894,8 @@ export default function PayrollPage() {
                         </div>
                         <div className="text-right flex items-center space-x-6">
                           <div>
-                            <span className="text-xs text-slate-400 font-medium block">Employer Multiplier</span>
-                            <span className="font-mono font-bold text-[#3D87D3] text-sm">&times;{mult}</span>
+                            <span className="text-xs text-slate-400 font-medium block">Employer Cost</span>
+                            <span className="font-mono font-bold text-[#3D87D3] text-sm">€{employerCost.toLocaleString()}</span>
                           </div>
                           <div>
                             <span className="text-xs text-slate-400 font-medium block">Gross Base ({(sal.basis || 'monthly_gross').replace('_', ' ')})</span>
@@ -1034,12 +1034,13 @@ export default function PayrollPage() {
             <select value={rsProfileId} onChange={e => {
               setRsProfileId(e.target.value);
               const pr = profiles.find(p => p.id === e.target.value);
+              const gross = Number(rsGross) || 0;
               if (pr?.employment_type === 'contractor') {
                 setRsBasis('fixed_fee');
-                setRsMultiplier(1.0);
+                setRsFullCost(gross);
               } else {
                 setRsBasis('monthly_gross');
-                setRsMultiplier(1.24);
+                setRsFullCost(Number((gross * 1.24).toFixed(2)));
               }
             }} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-bold">
               {profiles.map(p => (
@@ -1060,15 +1061,19 @@ export default function PayrollPage() {
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">New Gross Amount (€)</label>
-              <input type="number" step="50" value={rsGross} onChange={e => setRsGross(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-base font-bold text-emerald-700" />
+              <input type="number" step="50" value={rsGross} onChange={e => {
+                const g = Number(e.target.value);
+                setRsFullCost(prev => (rsGross > 0 && prev > 0) ? Number((g * (prev / rsGross)).toFixed(2)) : (rsBasis === 'fixed_fee' || rsBasis === 'fee' ? g : Number((g * 1.24).toFixed(2))));
+                setRsGross(g);
+              }} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-base font-bold text-emerald-700" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Employer Cost Multiplier</label>
-              <input type="number" step="0.01" value={rsMultiplier} onChange={e => setRsMultiplier(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />
-              <p className="text-[10px] text-slate-400 mt-0.5">e.g. 1.24 for 24% employer EFKA, 1.0 for invoices</p>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Full Company Cost (€/mo)</label>
+              <input type="number" step="50" value={rsFullCost} onChange={e => setRsFullCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />
+              <p className="text-[10px] text-slate-400 mt-0.5">Gross + employer contributions / VAT, as the accountant bills it. Equal to gross for invoices.</p>
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Effective From Date</label>

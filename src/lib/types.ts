@@ -83,8 +83,10 @@ export interface SalaryRecord {
   basis: 'monthly_gross' | 'daily_rate' | 'fixed_fee' | 'fee';
   gross_amount: number;
   currency: string;
-  employer_cost_pct?: number;
-  employer_cost_multiplier?: number;
+  employer_cost_pct?: number | null;
+  employer_cost_multiplier?: number | null;
+  /** Absolute monthly employer cost in EUR (full company cost − gross). Preferred over the legacy multiplier. */
+  employer_cost_amount?: number | null;
   note?: string;
 }
 

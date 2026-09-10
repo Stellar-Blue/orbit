@@ -10,8 +10,9 @@ Each person has a **salary record** (what they're contracted to earn, with histo
 
 - One row per person per period of validity: gross monthly amount (or monthly fee / day rate for contractors), employer cost (see below), valid-from date, note ("hired", "annual review 2027").
 - **Never edit in place.** A raise = close the old row, add a new one. Salary history falls out for free, and past months stay reconstructible.
-- **Employer cost:** store it as a simple multiplier per person (e.g. ×1.24), editable, seeded by the accountant. Orbit never computes contributions — it just applies the number it was given. Fully-loaded monthly cost = gross × multiplier.
-- Contractors: same table, `basis = fee` instead of `salary`; multiplier 1.0.
+- **Employer cost:** entered **by hand as an absolute amount** (`employer_cost_amount`) — the admin records the gross and the full monthly company cost, and Orbit stores the difference. A single multiplier is not used because employer contributions and VAT treatment differ per person. Orbit never computes contributions — it just stores the number it was given. Fully-loaded monthly cost = gross + employer cost.
+- Contractors: same table, `basis = fee` instead of `salary`; company cost = the fee (no employer burden).
+- The legacy `employer_cost_multiplier` / `employer_cost_pct` columns remain only as a read fallback for historical rows that predate the absolute amount.
 
 ## 2. Payment types (a table, not code)
 
