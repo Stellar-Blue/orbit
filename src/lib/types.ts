@@ -114,6 +114,8 @@ export interface SalaryBonus {
   end_period?: string | null;
   period?: string | null;
   status: 'active' | 'paid' | 'expired' | 'inactive';
+  /** Optional Dynamic Payment Type (payment_types.id) this recurring extra is contractually part of. NULL = generic Bonus category. */
+  payment_type_id?: string | null;
   note?: string | null;
   created_at?: string;
 }

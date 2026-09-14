@@ -20,6 +20,7 @@ import { formatDate, formatDateTime } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
+const SalaryLedgerGrid = dynamic(() => import('@/components/payroll/salary-ledger-grid').then(m => m.SalaryLedgerGrid), { ssr: false });
 
 export default function PayrollPage() {
   const { 
@@ -65,6 +66,17 @@ export default function PayrollPage() {
     });
     setEditSalaryId(null);
     notifySuccess('Salary record updated.');
+  };
+
+  // Generate any missing payment rows for a salary record's validity window.
+  const handleBackfillSalary = async (sal: SalaryRecord) => {
+    const prof = profiles.find(p => p.id === sal.profile_id);
+    setBackfillingId(sal.id);
+    const res = await backfillSalaryPayments(sal.id);
+    setBackfillingId(null);
+    notifySuccess(res.created > 0
+      ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} (${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}).`
+      : 'All past payments already exist.');
   };
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
@@ -834,101 +846,14 @@ export default function PayrollPage() {
               </Button>
             }
           >
-            <div className="space-y-3 mt-3">
-              {salaries.map(sal => {
-                const prof = profiles.find(p => p.id === sal.profile_id);
-                const isActive = !sal.valid_to;
-                const loadedMonthly = loadedMonthlyCost(sal);
-
-                return (
-                  <div key={sal.id} className={`p-4 rounded-xl border transition-all text-xs ${isActive ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/70 border-slate-200 opacity-75'}`}>
-                    {editSalaryId === sal.id ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                        <div>
-                          <label className="text-slate-500 font-semibold block mb-1">Gross (€)</label>
-                          <input type="number" step="0.01" value={salForm.gross_amount || ''} onChange={e => setSalForm({ ...salForm, gross_amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
-                        </div>
-                        <div>
-                          <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo)</label>
-                          <input type="number" step="0.01" value={salForm.full_cost || ''} onChange={e => setSalForm({ ...salForm, full_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
-                        </div>
-                        <div>
-                          <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
-                          <input type="date" value={salForm.valid_from} onChange={e => setSalForm({ ...salForm, valid_from: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
-                        </div>
-                        <div>
-                          <label className="text-slate-500 font-semibold block mb-1">Valid To (empty = active)</label>
-                          <input type="date" value={salForm.valid_to} onChange={e => setSalForm({ ...salForm, valid_to: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
-                        </div>
-                        <div>
-                          <label className="text-slate-500 font-semibold block mb-1">Basis</label>
-                          <select value={salForm.basis} onChange={e => setSalForm({ ...salForm, basis: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
-                            <option value="monthly_gross">Monthly Gross</option>
-                            <option value="daily_rate">Daily Rate</option>
-                            <option value="fixed_fee">Fixed Fee</option>
-                            <option value="fee">Fee</option>
-                          </select>
-                        </div>
-                        <div className="flex items-end gap-2">
-                          <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#3D87D3] text-white cursor-pointer">
-                            <Check className="w-3.5 h-3.5 mr-1" /> Save
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => setEditSalaryId(null)} className="cursor-pointer">Cancel</Button>
-                        </div>
-                        <div className="col-span-2 sm:col-span-6">
-                          <label className="text-slate-500 font-semibold block mb-1">Note</label>
-                          <input type="text" value={salForm.note} onChange={e => setSalForm({ ...salForm, note: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3.5">
-                          <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'ACTIVE RATE' : 'PAST HISTORY'}</Badge>
-                          <div>
-                            <span className="font-bold text-slate-800 text-sm block">{prof?.first_name} {prof?.last_name} <span className="text-xs font-normal text-slate-500">({prof?.title})</span></span>
-                            <span className="text-slate-500 block mt-0.5">
-                              Validity: <strong className="font-mono text-slate-700">{sal.valid_from}</strong> &rarr; <strong className="font-mono text-slate-700">{sal.valid_to || 'Present'}</strong>
-                              {sal.note && <span className="ml-2 text-slate-400">&bull; {sal.note}</span>}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-right flex items-center space-x-6">
-                          <div>
-                            <span className="text-xs text-slate-400 font-medium block">Gross Base ({(sal.basis || 'monthly_gross').replace('_', ' ')})</span>
-                            <span className="font-mono font-bold text-slate-800 text-sm">€{(sal.gross_amount || 0).toLocaleString()}</span>
-                          </div>
-                          <div className="bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/80">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Fully-Loaded Cost</span>
-                            <span className="text-base font-mono font-extrabold text-emerald-700">€{loadedMonthly.toLocaleString()} <span className="text-[11px] text-slate-400 font-normal">/mo</span></span>
-                          </div>
-                          <div className="flex flex-col items-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={backfillingId === sal.id}
-                              onClick={async () => {
-                                setBackfillingId(sal.id);
-                                const res = await backfillSalaryPayments(sal.id);
-                                setBackfillingId(null);
-                                notifySuccess(res.created > 0
-                                  ? `Produced ${res.created} missing payment row(s) for ${prof?.first_name} ${prof?.last_name} (${sal.valid_from.slice(0, 7)}${sal.valid_to ? ` to ${sal.valid_to.slice(0, 7)}` : ' to date'}).`
-                                  : 'All past payments already exist.');
-                              }}
-                              className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
-                            >
-                              <Zap className={`w-3.5 h-3.5 mr-1 ${backfillingId === sal.id ? 'animate-pulse' : ''}`} />
-                              {backfillingId === sal.id ? 'Producing…' : 'Produce Past Payments'}
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => openSalaryEditor(sal)} className="text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer shrink-0">
-                              <Edit className="w-3.5 h-3.5 mr-1" /> Edit
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="mt-3">
+              <SalaryLedgerGrid
+                salaries={salaries}
+                profiles={profiles}
+                backfillingId={backfillingId}
+                onEdit={openSalaryEditor}
+                onBackfill={handleBackfillSalary}
+              />
             </div>
           </Card>
 
@@ -1019,6 +944,52 @@ export default function PayrollPage() {
       )}
 
       {/* RECORD RAISE MODAL */}
+      {/* EDIT EXISTING EFFECTIVE-DATED SALARY RECORD (opened from the salary ledger grid) */}
+      <Modal isOpen={!!editSalaryId} onClose={() => setEditSalaryId(null)} title="Edit Effective-Dated Salary Record">
+        <div className="space-y-4 text-xs">
+          <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium">
+            This edits the existing record in place. To record a <strong>raise</strong>, use &quot;Record Raise / New Contract&quot; instead, so the previous rate is closed with a valid-to date and the history stays complete.
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-slate-500 font-semibold block mb-1">Gross (€)</label>
+              <input type="number" step="0.01" value={salForm.gross_amount || ''} onChange={e => setSalForm({ ...salForm, gross_amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+            </div>
+            <div>
+              <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo)</label>
+              <input type="number" step="0.01" value={salForm.full_cost || ''} onChange={e => setSalForm({ ...salForm, full_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+            </div>
+            <div>
+              <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
+              <input type="date" value={salForm.valid_from} onChange={e => setSalForm({ ...salForm, valid_from: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+            </div>
+            <div>
+              <label className="text-slate-500 font-semibold block mb-1">Valid To (empty = active)</label>
+              <input type="date" value={salForm.valid_to} onChange={e => setSalForm({ ...salForm, valid_to: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+            </div>
+            <div>
+              <label className="text-slate-500 font-semibold block mb-1">Basis</label>
+              <select value={salForm.basis} onChange={e => setSalForm({ ...salForm, basis: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                <option value="monthly_gross">Monthly Gross</option>
+                <option value="daily_rate">Daily Rate</option>
+                <option value="fixed_fee">Fixed Fee</option>
+                <option value="fee">Fee</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-slate-500 font-semibold block mb-1">Note</label>
+              <input type="text" value={salForm.note} onChange={e => setSalForm({ ...salForm, note: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+            </div>
+          </div>
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button size="sm" variant="outline" onClick={() => setEditSalaryId(null)} className="cursor-pointer">Cancel</Button>
+            <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#3D87D3] text-white cursor-pointer">
+              <Check className="w-3.5 h-3.5 mr-1" /> Save Record
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal isOpen={isRaiseOpen} onClose={() => setIsRaiseOpen(false)} title="Record Compensation Raise / New Contract">
         <div className="space-y-4 text-xs">
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-slate-700">

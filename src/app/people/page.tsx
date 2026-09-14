@@ -24,7 +24,7 @@ const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(
 export default function PeopleDirectoryPage() {
   const { currentUser, profiles, teams, salaries, entitlements, addProfile, updateProfile, deleteProfile, employeeIntegrations,
     employeeContracts, addEmployeeContract, updateEmployeeContract, salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus,
-    jobRoles, seniorityLevels, profileRoleHistory } = useAuth();
+    paymentTypes, jobRoles, seniorityLevels, profileRoleHistory } = useAuth();
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -71,8 +71,12 @@ export default function PeopleDirectoryPage() {
   const [bonusForm, setBonusForm] = useState({
     name: '', amount: 0, kind: 'recurring' as 'recurring' | 'one_time',
     frequency: 'monthly' as 'monthly' | 'quarterly' | 'annual',
-    start_period: '', end_period: '', period: '',
+    start_period: '', end_period: '', period: '', payment_type_id: '',
   });
+
+  // Active recurring monthly extras — the employee's contractual monthly extras.
+  const monthlyExtrasFor = (profileId: string) => salaryBonuses.filter(b =>
+    b.profile_id === profileId && b.kind === 'recurring' && b.frequency === 'monthly' && b.status === 'active');
 
   // New Person Form Fields
   const [newFirstName, setNewFirstName] = useState('');
@@ -706,6 +710,22 @@ export default function PeopleDirectoryPage() {
                           <span><strong className="text-slate-800">Notice:</strong> {activeContract.notice_days} days</span>
                         </div>
                         {activeContract.notes && <div className="text-slate-500 mt-1.5 italic">{activeContract.notes}</div>}
+                        {monthlyExtrasFor(activeContract.profile_id).length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Contractual monthly extras</span>
+                            <ul className="mt-1 space-y-0.5">
+                              {monthlyExtrasFor(activeContract.profile_id).map(b => {
+                                const pt = b.payment_type_id ? paymentTypes.find(t => t.id === b.payment_type_id) : undefined;
+                                return (
+                                  <li key={b.id} className="text-slate-600">
+                                    <strong className="text-slate-800">€{Number(b.amount).toLocaleString()}</strong> per month &middot; {b.name}
+                                    {pt && <span className="ml-1.5 text-[10px] font-mono text-slate-400">[{pt.name_el} · {pt.name_en}]</span>}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg bg-white">
@@ -740,7 +760,7 @@ export default function PeopleDirectoryPage() {
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
                     <div className="flex items-center justify-between">
                       <h4 className="font-extrabold text-slate-900 text-sm">Salary Bonuses</h4>
-                      <span className="text-[10px] text-slate-400 font-mono">Recurring bonuses are auto-generated in payroll each period; one-time bonuses are entered manually with proof documents</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Recurring monthly extras can name a Dynamic Payment Type — the contract then states that category at that amount, and payroll files it under it</span>
                     </div>
 
                     {/* Add bonus form */}
@@ -789,14 +809,34 @@ export default function PeopleDirectoryPage() {
                               start_period: bonusForm.kind === 'recurring' ? (bonusForm.start_period || null) : null,
                               end_period: bonusForm.kind === 'recurring' ? (bonusForm.end_period || null) : null,
                               period: bonusForm.kind === 'one_time' ? (bonusForm.period || null) : null,
+                              payment_type_id: bonusForm.kind === 'recurring' && bonusForm.payment_type_id ? bonusForm.payment_type_id : null,
                               status: 'active',
                             });
-                            if (ok) setBonusForm({ name: '', amount: 0, kind: 'recurring', frequency: 'monthly', start_period: '', end_period: '', period: '' });
+                            if (ok) setBonusForm({ name: '', amount: 0, kind: 'recurring', frequency: 'monthly', start_period: '', end_period: '', period: '', payment_type_id: '' });
                           }}
                         >
                           <Plus className="w-3.5 h-3.5 mr-1" /> Add Bonus
                         </Button>
                       </div>
+                      {bonusForm.kind === 'recurring' && (
+                        <div className="col-span-3">
+                          <label className="text-slate-500 font-semibold block mb-1">Payment Category (optional — part of the contract)</label>
+                          <select
+                            value={bonusForm.payment_type_id}
+                            onChange={e => {
+                              const id = e.target.value;
+                              const pt = paymentTypes.find(t => t.id === id);
+                              setBonusForm({ ...bonusForm, payment_type_id: id, name: bonusForm.name.trim() ? bonusForm.name : (pt?.name_en || pt?.name_el || '') });
+                            }}
+                            className="w-full p-2 border rounded-md bg-white text-slate-800"
+                          >
+                            <option value="">— Generic Bonus category —</option>
+                            {paymentTypes.filter(pt => pt.active && pt.is_recurring_monthly).map(pt => (
+                              <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       {bonusForm.kind === 'recurring' && (
                         <div className="col-span-3">
                           <label className="text-slate-500 font-semibold block mb-1">Valid from / to period (YYYY-MM, empty = open)</label>
@@ -814,6 +854,7 @@ export default function PeopleDirectoryPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-800">{b.name}</span>
                             <Badge variant={b.kind === 'recurring' ? 'info' : 'warning'} className="text-[9px] px-1.5 py-0">{b.kind === 'recurring' ? `${(b.frequency || 'monthly').toUpperCase()} RECURRING` : 'ONE-TIME'}</Badge>
+                            {b.payment_type_id && (() => { const pt = paymentTypes.find(t => t.id === b.payment_type_id); return pt ? <Badge variant="neutral" className="text-[9px] px-1.5 py-0">{pt.name_en.toUpperCase()}</Badge> : null; })()}
                             <Badge variant={b.status === 'active' ? 'success' : 'neutral'} className="text-[9px] px-1.5 py-0">{b.status.toUpperCase()}</Badge>
                           </div>
                           <div className="text-slate-500 mt-0.5">

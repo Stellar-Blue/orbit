@@ -1733,7 +1733,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
 
-        // Recurring monthly bonuses defined on the salary contract — auto-generated each period
+        // Recurring monthly extras on the employee's contract — auto-generated each period.
+        // A bonus that names a Dynamic Payment Type is filed under that category; otherwise
+        // it falls back to the generic 'bonus' type (previous behaviour).
         const ptBonus = paymentTypes.find(t => t.code === 'bonus');
         if (ptBonus) {
           const activeMonthlyBonuses = salaryBonuses.filter(b =>
@@ -1743,11 +1745,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (!b.end_period || b.end_period >= period)
           );
           activeMonthlyBonuses.forEach(b => {
+            const payType = (b.payment_type_id ? paymentTypes.find(t => t.id === b.payment_type_id) : undefined) || ptBonus;
             const duplicateBonus = payments.some(exist =>
-              exist.profile_id === p.id && exist.payment_type_id === ptBonus.id &&
+              exist.profile_id === p.id && exist.payment_type_id === payType.id &&
               exist.period === period && exist.note === `Bonus: ${b.name}`
             );
-            if (duplicateBonus || newPays.some(n => n.profile_id === p.id && n.payment_type_id === ptBonus.id && n.note === `Bonus: ${b.name}`)) return;
+            if (duplicateBonus || newPays.some(n => n.profile_id === p.id && n.payment_type_id === payType.id && n.note === `Bonus: ${b.name}`)) return;
             const bonusAmount = Number(b.amount);
             const bonusTotalCost = Number((bonusAmount * mult).toFixed(2));
             const bonusEmployer = Number((bonusTotalCost - bonusAmount).toFixed(2));
@@ -1756,8 +1759,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: generateUUID(),
               profile_id: p.id,
               period,
-              payment_type_id: ptBonus.id,
-              payment_type: ptBonus,
+              payment_type_id: payType.id,
+              payment_type: payType,
               gross: bonusAmount,
               net: bonusNet,
               employer_contributions: bonusEmployer,
