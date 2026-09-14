@@ -34,7 +34,7 @@ const OptionsFilterBody: React.FC<OptionsFilterBodyProps> = ({
   onToggleAll,
   onSearch
 }) => (
-  <div className="w-[260px] bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden font-sans">
+  <div className="w-[420px] max-w-[90vw] bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden font-sans">
     <div className="px-3 py-2 border-b border-slate-200 bg-slate-50">
       <div className="relative">
         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
@@ -51,8 +51,11 @@ const OptionsFilterBody: React.FC<OptionsFilterBodyProps> = ({
     <div className="px-3 py-1.5 border-b border-slate-200 flex items-center gap-1.5 cursor-pointer select-none hover:bg-slate-50" onClick={onToggleAll}>
       {allSelected ? <CheckSquare className="w-3.5 h-3.5 text-[#3D87D3]" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
       <span className="text-[11px] font-bold text-slate-700">Select All</span>
+      <span className="ml-auto text-[10px] text-slate-400 font-mono">
+        {selected.size > 0 ? `${selected.size} selected` : `${values.length} value${values.length === 1 ? '' : 's'}`}
+      </span>
     </div>
-    <div className="max-h-[220px] overflow-y-auto py-1">
+    <div className="max-h-[280px] overflow-y-auto py-1">
       {values.length === 0 && (
         <div className="px-3 py-3 text-center text-[11px] text-slate-400 italic">No matching values</div>
       )}
@@ -61,16 +64,17 @@ const OptionsFilterBody: React.FC<OptionsFilterBodyProps> = ({
         return (
           <label
             key={value}
-            className="flex items-center gap-2 px-3 py-1 cursor-pointer hover:bg-blue-50/60 select-none"
+            title={value}
+            className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-blue-50/60 select-none"
           >
             <input
               type="checkbox"
               checked={checked}
               onChange={() => onToggle(value)}
-              className="accent-[#3D87D3] w-3.5 h-3.5 cursor-pointer"
+              className="accent-[#3D87D3] w-3.5 h-3.5 cursor-pointer mt-0.5 shrink-0"
             />
-            <span className={`text-xs truncate flex-1 ${checked ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{value}</span>
-            <span className="text-[10px] text-slate-400 font-mono shrink-0">{count}</span>
+            <span className={`text-xs break-words flex-1 ${checked ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{value}</span>
+            <span className="text-[10px] text-slate-400 font-mono shrink-0 mt-0.5">{count}</span>
           </label>
         );
       })}

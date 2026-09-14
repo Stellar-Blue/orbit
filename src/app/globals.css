@@ -19,3 +19,15 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* AG Grid filter popups (the community OptionsFilter is a React popup; these rules cover the
+   native set/date/number/text filters and the column menu). AG Grid's default popup width is
+   ~200px — and the set filter list caps at `min-width: max(200px, 100%)` — which is too narrow
+   to read the values before selecting them. Popups are kept on screen by the grid
+   (`keepWithinBounds`), so widening them is safe. */
+.ag-popup .ag-menu,
+.ag-popup .ag-filter,
+.ag-set-filter-list,
+.ag-filter-menu .ag-set-filter-list {
+  min-width: min(340px, 92vw);
+}
