@@ -17,6 +17,7 @@ import {
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
+import { startRealtimeSync } from './realtime-sync';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
@@ -263,6 +264,8 @@ const signInvoiceDocuments = async (
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  /** Real Supabase auth user id — gates the live row-change subscription (anon has no rows to hear about). */
+  const [liveSessionUserId, setLiveSessionUserId] = useState<string>('');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [isDevMode, setIsDevMode] = useState<boolean>(true);
@@ -352,6 +355,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let matchedId = '';
         let isAdmin = false;
         const { data: { session } } = await supabase.auth.getSession();
+        setLiveSessionUserId(session?.user?.id || '');
         
         const initialProfilesRes = await supabase.from('profiles').select('*');
         const loadedProfiles: Profile[] = initialProfilesRes.data || [];
@@ -3834,6 +3838,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshBudget = async (fiscalYear: number): Promise<boolean> => {
     try {
+      liveBudgetYearRef.current = fiscalYear;
       const supabase = getSupabaseBrowserClient();
       let activeBudget = budgets.find(b => b.fiscal_year === fiscalYear && b.status === 'active');
       
@@ -4015,19 +4020,252 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshInvoicesRef.current = refreshInvoices;
   }, [refreshInvoices]);
 
-  useEffect(() => {
-    if (!currentUserId) return;
-    const supabase = getSupabaseBrowserClient();
-    const channel = supabase.channel('realtime-invoices')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
-        refreshInvoicesRef.current();
-      })
-      .subscribe();
+  /* ---------------------------------------------------------------------------
+   * Live data sync — Supabase Realtime, i.e. this stack's equivalent of a SignalR hub.
+   *
+   * Every grid in Orbit renders from this context, so pushing row changes straight into the
+   * matching slice keeps every screen current without a full refresh: one WebSocket carries
+   * postgres_changes for the published tables (migration 0068), each event reloads only the
+   * slice it feeds, and bursts of writes per table are debounced into a single reload.
+   *
+   * This covers writes by any client — this tab, another user, a cron route or the MCP server —
+   * and delivery still obeys RLS, so an employee only hears about rows they may read.
+   * ------------------------------------------------------------------------- */
+  const liveReloadersRef = useRef<Record<string, Array<() => void | Promise<void>>>>({});
+  /** Fiscal year the budget screen last asked for, so a budget change reloads the same year. */
+  const liveBudgetYearRef = useRef(0);
+  const liveIsAdmin = !!realProfileId && profiles.some(p => p.id === realProfileId && p.role === 'admin');
+  const liveProfileId = realProfileId || currentUserId || '';
+  const liveAdminRef = useRef(liveIsAdmin);
+  const liveProfileIdRef = useRef(liveProfileId);
+  liveAdminRef.current = liveIsAdmin;
+  liveProfileIdRef.current = liveProfileId;
 
-    return () => {
-      supabase.removeChannel(channel);
+  /** Re-runs one table's query with the same admin / own-row gating the first load used. */
+  // Returns loosely-typed rows: callers map them onto the entity shape they already know.
+  const reloadLiveTable = async (table: string, gate: 'all' | 'own' | 'admin'): Promise<any[]> => {
+    const admin = liveAdminRef.current;
+    const myId = liveProfileIdRef.current;
+    if (gate === 'admin' && !admin) return [];
+    if (gate === 'own' && !admin && !myId) return [];
+    try {
+      const supabase = getSupabaseBrowserClient();
+      let query = supabase.from(table).select('*');
+      if (gate === 'own' && !admin) query = query.eq('profile_id', myId);
+      const { data, error } = await query;
+      if (error) {
+        console.warn(`[live] reload of ${table} failed:`, error.message);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      console.warn(`[live] reload of ${table} threw:`, e);
+      return [];
+    }
+  };
+
+  // Profiles embed their role, sensitive record and team, so all three tables feed one reloader.
+  const reloadLiveProfiles = async () => {
+    const [rows, roleRows, sensitiveRows, teamRows] = await Promise.all([
+      reloadLiveTable('profiles', 'all'),
+      reloadLiveTable('user_roles', 'all'),
+      reloadLiveTable('profile_sensitive', 'own'),
+      reloadLiveTable('teams', 'all'),
+    ]);
+    setProfiles(rows.map(p => ({
+      ...p,
+      role: roleRows.some(r => r.profile_id === p.id && r.role === 'admin') ? 'admin' : 'employee',
+      sensitive: sensitiveRows.find(s => s.profile_id === p.id),
+      team: teamRows.find(t => t.id === p.team_id),
+    })));
+  };
+
+  const reloadLivePayments = async () => {
+    const [rows, types] = await Promise.all([
+      reloadLiveTable('payments', 'own'),
+      reloadLiveTable('payment_types', 'all'),
+    ]);
+    setPayments(rows.map(p => ({ ...p, documents: p.documents || [], payment_type: types.find(t => t.id === p.payment_type_id) })));
+  };
+
+  const reloadLiveLeaveRequests = async () => {
+    const [rows, types] = await Promise.all([
+      reloadLiveTable('leave_requests', 'own'),
+      reloadLiveTable('leave_types', 'all'),
+    ]);
+    setLeaveRequests(rows.map(r => ({ ...r, leave_type: types.find(t => t.id === r.leave_type_id) })));
+  };
+
+  // Counterparties and contracts are enriched from each other plus their child rows, so one
+  // reloader keeps the whole commercial picture consistent.
+  const reloadLiveCommercial = async () => {
+    const [cpRows, attioLinks, contacts, roleLinks, cpRoles, tierStates, tierVersions, tierOverrides,
+      contractRows, lineRows, groupRows, scheduleRows, profileRows] = await Promise.all([
+      reloadLiveTable('counterparties', 'admin'),
+      reloadLiveTable('attio_links', 'admin'),
+      reloadLiveTable('counterparty_contacts', 'admin'),
+      reloadLiveTable('counterparty_roles', 'admin'),
+      reloadLiveTable('roles', 'all'),
+      reloadLiveTable('counterparty_tiers', 'admin'),
+      reloadLiveTable('tier_model_versions', 'admin'),
+      reloadLiveTable('counterparty_tier_overrides', 'admin'),
+      reloadLiveTable('contracts', 'admin'),
+      reloadLiveTable('contract_lines', 'admin'),
+      reloadLiveTable('contract_line_groups', 'admin'),
+      reloadLiveTable('contract_schedule', 'admin'),
+      reloadLiveTable('profiles', 'all'),
+    ]);
+
+    const enrichedCps = cpRows.map(cp => {
+      const cpContracts = contractRows.filter(c => c.counterparty_id === cp.id && c.status !== 'archived');
+      const explicitSlugs = roleLinks
+        .filter(l => l.counterparty_id === cp.id)
+        .map(l => cpRoles.find(r => r.id === l.role_id)?.slug?.toLowerCase())
+        .filter(Boolean) as string[];
+      const slugs = new Set<string>(explicitSlugs);
+      if (cpContracts.some(c => c.direction === 'revenue')) slugs.add('client');
+      if (cpContracts.some(c => c.direction === 'cost' || c.direction === 'supplier')) slugs.add('supplier');
+      const finalSlugs = Array.from(slugs);
+      let derived_role: 'client' | 'supplier' | 'both' | 'none yet' = 'none yet';
+      if (finalSlugs.includes('client') && finalSlugs.includes('supplier')) derived_role = 'both';
+      else if (finalSlugs.includes('client')) derived_role = 'client';
+      else if (finalSlugs.includes('supplier')) derived_role = 'supplier';
+      return {
+        ...cp,
+        attio_link: attioLinks.find(l => l.counterparty_id === cp.id),
+        contacts: contacts.filter(ct => ct.counterparty_id === cp.id),
+        derived_role,
+        roles: finalSlugs.map(slug => cpRoles.find(r => r.slug === slug)).filter(Boolean),
+        tier: attachTierToCounterparty(cp, tierVersions, tierStates, tierOverrides),
+      };
+    });
+    setCounterparties(enrichedCps);
+    setContracts(contractRows.map(cnt => ({
+      ...cnt,
+      counterparty: enrichedCps.find(c => c.id === cnt.counterparty_id),
+      owner_profile: profileRows.find(p => p.id === cnt.owner_profile_id),
+      lines: lineRows.filter(l => l.contract_id === cnt.id),
+      groups: groupRows.filter(g => g.contract_id === cnt.id),
+      schedule: scheduleRows.filter(s => s.contract_id === cnt.id),
+    })));
+  };
+
+  const reloadLiveCompanyProfile = async () => {
+    const { data } = await getSupabaseBrowserClient().from('company_profile').select('*').eq('id', 1).maybeSingle();
+    if (data) setCompanyProfile(data as CompanyProfile);
+  };
+
+  const reloadLiveLeavePolicy = async () => {
+    const { data } = await getSupabaseBrowserClient().from('leave_policy').select('*').eq('id', true).maybeSingle();
+    if (data) setLeavePolicy(data as LeavePolicy);
+  };
+
+  const reloadLiveRemoteRequests = async () => {
+    const [amendments, quotas] = await Promise.all([
+      reloadLiveTable('remote_amendments', 'own') as Promise<RemoteAmendmentRequest[]>,
+      reloadLiveTable('remote_quota_requests', 'own') as Promise<RemoteQuotaRequest[]>,
+    ]);
+    setRemoteAmendmentRequests(amendments);
+    setRemoteQuotaRequests(quotas);
+  };
+
+  const reloadLiveBudget = async () => {
+    const year = liveBudgetYearRef.current;
+    if (year) await refreshBudget(year);
+  };
+
+  // Rebuilt every render so the reloaders always join against the latest state. Running without a
+  // dependency list is deliberate: the reloaders are only ever *called* from the channel handler,
+  // and a stale closure here would write old data back over fresh state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const map: Record<string, Array<() => void | Promise<void>>> = {};
+    const on = (table: string, reload: () => void | Promise<void>) => {
+      (map[table] ||= []).push(reload);
     };
-  }, [currentUserId]);
+
+    /** Flat slices: one table, one state slice. */
+    (
+      [
+        ['teams', 'all', setTeams],
+        ['payment_types', 'all', setPaymentTypes],
+        ['salary_history', 'own', setSalaries],
+        ['leave_types', 'all', setLeaveTypes],
+        ['leave_entitlements', 'own', setEntitlements],
+        ['mandatory_leaves', 'all', setMandatoryLeaves],
+        ['public_holidays', 'all', setPublicHolidays],
+        ['remote_days', 'own', setRemoteDays],
+        ['remote_patterns', 'own', setRemotePatterns],
+        ['contract_timesheets', 'own', setTimesheets],
+        ['roles', 'all', setCounterpartyRoles],
+        ['counterparty_roles', 'admin', setCounterpartyRoleLinks],
+        ['catalog_modules', 'admin', setCatalogModules],
+        ['catalog_items', 'admin', setCatalogItems],
+        ['contract_lines', 'admin', setContractLines],
+        ['contract_schedule', 'admin', setContractSchedules],
+        ['attio_events', 'admin', setAttioEvents],
+        ['tier_model_versions', 'admin', setTierModelVersions],
+        ['counterparty_tiers', 'admin', setTierStates],
+        ['counterparty_tier_history', 'admin', setTierHistory],
+        ['counterparty_tier_overrides', 'admin', setTierOverrides],
+        ['employee_integrations', 'own', setEmployeeIntegrations],
+        ['integration_exemptions', 'own', setIntegrationExceptions],
+        ['integration_settings', 'all', setIntegrationSettings],
+        ['payment_document_types', 'all', setDocumentTypes],
+        ['employee_contracts', 'own', setEmployeeContracts],
+        ['job_roles', 'all', setJobRoles],
+        ['seniority_levels', 'all', setSeniorityLevels],
+        ['profile_role_history', 'all', setProfileRoleHistory],
+        ['rate_cards', 'admin', setRateCards],
+        ['rate_card_entries', 'admin', setRateCardEntries],
+        ['projects', 'all', setProjects],
+        ['work_items', 'all', setWorkItems],
+        ['project_assignments', 'own', setProjectAssignments],
+        ['project_role_forecasts', 'admin', setProjectRoleForecasts],
+        ['time_entries', 'own', setTimeEntries],
+        ['timesheet_periods', 'all', setTimesheetPeriods],
+        ['remote_policies', 'all', setRemotePolicies],
+        ['invoice_categories', 'all', setInvoiceCategories],
+      ] as Array<[string, 'all' | 'own' | 'admin', (rows: any[]) => void]>
+    ).forEach(([table, gate, apply]) => on(table, async () => apply(await reloadLiveTable(table, gate))));
+
+    // Derived / enriched slices (see each reloader).
+    on('profiles', reloadLiveProfiles);
+    on('user_roles', reloadLiveProfiles);
+    on('profile_sensitive', reloadLiveProfiles);
+    on('teams', reloadLiveProfiles);
+    on('payments', reloadLivePayments);
+    on('leave_requests', reloadLiveLeaveRequests);
+    ['counterparties', 'counterparty_contacts', 'counterparty_tiers', 'counterparty_tier_history',
+      'counterparty_tier_overrides', 'tier_model_versions', 'attio_links', 'contracts',
+      'contract_lines', 'contract_line_groups', 'contract_schedule', 'counterparty_roles',
+    ].forEach(table => on(table, reloadLiveCommercial));
+    ['invoices', 'invoice_documents', 'invoice_payments', 'invoice_allocations', 'invoice_links']
+      .forEach(table => on(table, () => refreshInvoicesRef.current()));
+    ['budgets', 'budget_lines', 'budget_categories', 'recurring_commitments']
+      .forEach(table => on(table, reloadLiveBudget));
+    on('company_profile', reloadLiveCompanyProfile);
+    on('leave_policy', reloadLiveLeavePolicy);
+    on('remote_amendments', reloadLiveRemoteRequests);
+    on('remote_quota_requests', reloadLiveRemoteRequests);
+
+    liveReloadersRef.current = map;
+  });
+
+  useEffect(() => {
+    if (!liveSessionUserId) return;
+    const supabase = getSupabaseBrowserClient();
+    const tables = Object.keys(liveReloadersRef.current);
+    return startRealtimeSync(
+      supabase,
+      tables.map(table => ({
+        table,
+        onChange: () => {
+          (liveReloadersRef.current[table] || []).forEach(reload => { void reload(); });
+        },
+      }))
+    );
+  }, [liveSessionUserId]);
 
   const updateCompanyProfile = async (updates: Partial<CompanyProfile>): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
