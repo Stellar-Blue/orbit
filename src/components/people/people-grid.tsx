@@ -4,8 +4,9 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
-import { Profile, Team } from '@/lib/types';
+import { JobRole, Profile, ProfileRoleHistory, SeniorityLevel, Team } from '@/lib/types';
 import { EmployeeIntegration } from '@/lib/integrations/types';
+import { resolveCurrentRole } from '@/lib/profile-role';
 import { Badge } from '@/components/ui/primitives';
 import { Search } from 'lucide-react';
 
@@ -16,6 +17,9 @@ interface PeopleRow {
   email: string;
   title: string;
   role: string;
+  currentRole: string;
+  seniority: string;
+  startDate: string;
   team: string;
   employment: string;
   schedule: string;
@@ -26,10 +30,13 @@ interface PeopleGridProps {
   profiles: Profile[];
   teams: Team[];
   integrations: EmployeeIntegration[];
+  profileRoleHistory: ProfileRoleHistory[];
+  jobRoles: JobRole[];
+  seniorityLevels: SeniorityLevel[];
   onSelect: (p: Profile) => void;
 }
 
-export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integrations, onSelect }) => {
+export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integrations, profileRoleHistory, jobRoles, seniorityLevels, onSelect }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
   const integrationMap = useMemo(() => {
@@ -38,9 +45,21 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
     return map;
   }, [integrations]);
 
+  // Role & seniority come from the effective-dated assignments in profile_role_history —
+  // there is no per-profile seniority field anymore.
+  const currentRoleMap = useMemo(() => {
+    const map = new Map<string, { role: string; seniority: string }>();
+    profiles.forEach(p => {
+      const r = resolveCurrentRole(profileRoleHistory, p.id, jobRoles, seniorityLevels);
+      if (r) map.set(p.id, r);
+    });
+    return map;
+  }, [profiles, profileRoleHistory, jobRoles, seniorityLevels]);
+
   const rowData = useMemo<PeopleRow[]>(() => {
     return profiles.map(p => {
       const integ = integrationMap.get(p.id);
+      const current = currentRoleMap.get(p.id);
       return {
         profile: p,
         name: `${p.first_name} ${p.last_name}`,
@@ -48,13 +67,16 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         email: p.work_email || '',
         title: p.title || '',
         role: p.role || 'employee',
+        currentRole: current?.role || 'Unassigned',
+        seniority: current?.seniority || '—',
+        startDate: p.start_date || '',
         team: teams.find(t => t.id === p.team_id)?.name || 'General',
         employment: p.employment_type.replace('_', ' ').toUpperCase(),
         schedule: (p.work_schedule || []).join(', '),
         slackStatus: !integ ? 'none' : integ.status === 'revoked' ? 'revoked' : 'connected',
       };
     });
-  }, [profiles, teams, integrationMap]);
+  }, [profiles, teams, integrationMap, currentRoleMap]);
 
   const columnDefs = useMemo<ColDef<PeopleRow>[]>(() => [
     {
@@ -82,12 +104,30 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         </div>
       )
     },
+    {
+      headerName: 'Current Role', field: 'currentRole', width: 170, sortable: true, ...excelSetFilter(),
+      headerTooltip: 'Job role in force today, from the effective-dated Timesheet Role & Seniority assignment',
+      cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+        p.value === 'Unassigned'
+          ? <span className="text-xs text-slate-400 italic">Unassigned</span>
+          : <span className="font-medium text-slate-700">{p.value}</span>
+      )
+    },
+    {
+      headerName: 'Seniority', field: 'seniority', width: 120, sortable: true, ...excelSetFilter(),
+      headerTooltip: 'Seniority in force today, from the effective-dated Timesheet Role & Seniority assignment',
+      cellClass: 'text-slate-600 font-medium'
+    },
     { headerName: 'Team', field: 'team', width: 140, sortable: true, ...excelSetFilter() },
     {
       headerName: 'Employment Type', field: 'employment', width: 150, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
         <Badge variant={(p.value || '').includes('CONTRACTOR') ? 'warning' : (p.value || '').includes('PART') ? 'info' : 'success'} className="text-[10px]">{p.value}</Badge>
       )
+    },
+    {
+      headerName: 'Start Date', field: 'startDate', width: 130, sortable: true, ...excelSetFilter(),
+      cellClass: 'text-xs text-slate-600 font-mono'
     },
     {
       headerName: 'Work Schedule', field: 'schedule', width: 220, sortable: true, ...excelSetFilter(),

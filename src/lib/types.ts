@@ -54,7 +54,6 @@ export interface Profile {
   photo_url?: string | null;
   work_schedule: string[];
   role: UserRole; // joined from user_roles
-  seniority_level?: 'junior' | 'mid' | 'senior';
   contracted_weekly_hours?: number | null;
   onboarding_completed_at?: string | null; // integration onboarding gate marker
   slack_required?: boolean; // admin-controlled: must this user connect Slack?

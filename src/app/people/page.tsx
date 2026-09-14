@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
+import { resolveCurrentRole } from '@/lib/profile-role';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
@@ -81,7 +82,6 @@ export default function PeopleDirectoryPage() {
   const [newTitle, setNewTitle] = useState('Team Member');
   const [newTeamId, setNewTeamId] = useState(teams[0]?.id || 'tm-ops');
   const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('full_time');
-  const [newSeniorityLevel, setNewSeniorityLevel] = useState<'junior' | 'mid' | 'senior'>('mid');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [newStatus, setNewStatus] = useState<'active' | 'departed'>('active');
   const [newEndDate, setNewEndDate] = useState('');
@@ -150,7 +150,6 @@ export default function PeopleDirectoryPage() {
       title: newTitle,
       team_id: newTeamId,
       employment_type: newEmploymentType,
-      seniority_level: newSeniorityLevel,
       start_date: newStartDate,
       status: newStatus,
       end_date: newStatus === 'departed' ? (newEndDate || undefined) : undefined,
@@ -357,6 +356,9 @@ export default function PeopleDirectoryPage() {
           profiles={filteredProfiles}
           teams={teams}
           integrations={employeeIntegrations}
+          profileRoleHistory={profileRoleHistory}
+          jobRoles={jobRoles}
+          seniorityLevels={seniorityLevels}
           onSelect={(p) => { setSelectedProfile(p); setActiveTab('overview'); }}
         />
       ) : (
@@ -385,6 +387,12 @@ export default function PeopleDirectoryPage() {
                   </div>
                 </div>
                 <p className="text-sm font-medium text-slate-600 mt-4">{p.title}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {(() => {
+                    const cur = resolveCurrentRole(profileRoleHistory, p.id, jobRoles, seniorityLevels);
+                    return cur ? <>{cur.role} · <span className="text-slate-400">{cur.seniority}</span></> : <span className="text-slate-400 italic">No role/seniority assigned</span>;
+                  })()}
+                </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                 <span>Start: {p.start_date}</span>
@@ -468,18 +476,12 @@ export default function PeopleDirectoryPage() {
                       <Badge variant="info" className="mt-0.5">{selectedProfile.employment_type.toUpperCase()}</Badge>
                     </div>
                     <div>
-                      <span className="text-slate-500 uppercase font-semibold block">Seniority Level</span>
-                      <Badge variant="neutral" className="mt-0.5 uppercase">{(selectedProfile.seniority_level || 'mid')}</Badge>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 uppercase font-semibold block">Role / Seniority</span>
+                      <span className="text-slate-500 uppercase font-semibold block">Role &amp; Seniority</span>
                       {(() => {
-                        const today = new Date().toISOString().slice(0, 10);
-                        const row = profileRoleHistory.filter(h => h.profile_id === selectedProfile.id && h.valid_from <= today && (!h.valid_to || h.valid_to >= today)).sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
-                        if (!row) return <Badge variant="neutral" className="mt-0.5">Unassigned</Badge>;
-                        const rn = jobRoles.find(r => r.id === row.job_role_id)?.name;
-                        const sn = seniorityLevels.find(s => s.id === row.seniority_id)?.name;
-                        return <Badge variant="info" className="mt-0.5">{rn || 'Role'} · {sn || 'Seniority'}</Badge>;
+                        const cur = resolveCurrentRole(profileRoleHistory, selectedProfile.id, jobRoles, seniorityLevels);
+                        return cur
+                          ? <Badge variant="info" className="mt-0.5">{cur.role} · {cur.seniority}</Badge>
+                          : <Badge variant="neutral" className="mt-0.5">Unassigned</Badge>;
                       })()}
                     </div>
                     <div>
@@ -896,14 +898,6 @@ export default function PeopleDirectoryPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-slate-600 font-semibold block mb-1">Seniority Level (for man-hours billing)</label>
-                    <select value={editData.seniority_level || 'mid'} onChange={e => setEditData({...editData, seniority_level: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
-                      <option value="junior">Junior</option>
-                      <option value="mid">Mid</option>
-                      <option value="senior">Senior</option>
-                    </select>
-                  </div>
-                  <div>
                     <label className="text-slate-600 font-semibold block mb-1">Role Permission</label>
                     <select value={editData.role || 'employee'} onChange={e => setEditData({...editData, role: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
                       <option value="employee">Employee</option>
@@ -1031,14 +1025,6 @@ export default function PeopleDirectoryPage() {
                 <option value="full_time">Full Time</option>
                 <option value="part_time">Part Time</option>
                 <option value="contractor">Contractor</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-slate-600 font-semibold block mb-1">Seniority Level (for man-hours billing)</label>
-              <select value={newSeniorityLevel} onChange={e => setNewSeniorityLevel(e.target.value as any)} className="w-full p-2 border rounded-md bg-white text-slate-800">
-                <option value="junior">Junior</option>
-                <option value="mid">Mid</option>
-                <option value="senior">Senior</option>
               </select>
             </div>
             <div>
