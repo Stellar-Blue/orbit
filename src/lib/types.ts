@@ -87,6 +87,11 @@ export interface SalaryRecord {
   employer_cost_multiplier?: number | null;
   /** Absolute monthly employer cost in EUR (full company cost − gross). Preferred over the legacy multiplier. */
   employer_cost_amount?: number | null;
+  /**
+   * Optional total company cost per month as the accountant bills it. Not always known, so it is
+   * filled in later. `gross_amount` is the NET, the gross is derived (net + employer cost).
+   */
+  full_company_cost?: number | null;
   note?: string;
   /**
    * Ledger entry kind. `base` (default) = the base rate; `recurring_extra` = a contractual monthly

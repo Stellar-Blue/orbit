@@ -764,12 +764,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfile = async (updated: Profile) => {
     const supabase = getSupabaseBrowserClient();
-    const { team, sensitive, role, ...cleanProfile } = updated as any;
+    const { team, sensitive, role, id, ...changes } = updated as any;
     try {
-      const { error } = await supabase.from('profiles').update(cleanProfile).eq('id', updated.id);
-      if (error) {
-        console.error('Failed to update profile in database:', error);
-        alert(`Database Error: ${error.message}`);
+      // 0063 revoked the table-wide UPDATE grant on `profiles`: only the columns an employee may
+      // change on their own row are still granted, so an admin edit (team, employment type,
+      // status, dates…) goes through the service-role route, which re-checks is_admin.
+      const res = await fetch('/api/admin/profile-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: id, changes }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as { error?: string }));
+        console.error('Failed to update profile in database:', err);
+        alert(`Database Error: ${err.error || res.status}`);
         return;
       }
       if (role) {

@@ -34,13 +34,16 @@ export default function PayrollPage() {
   const [editSalaryId, setEditSalaryId] = useState<string | null>(null);
   const [newExtra, setNewExtra] = useState({ payment_type_id: '', amount: 0, start_period: '' });
   const [salForm, setSalForm] = useState({
-    gross_amount: 0, full_cost: 0, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '', label: '', payment_type_id: '',
+    // net = gross_amount (what the employee receives) · full_cost = the derived gross ·
+    // company_cost = the accountant's optional total.
+    gross_amount: 0, full_cost: 0, company_cost: 0, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '', label: '', payment_type_id: '',
   });
 
   const openSalaryEditor = (sal: SalaryRecord) => {
     setSalForm({
       gross_amount: Number(sal.gross_amount || 0),
       full_cost: loadedMonthlyCost(sal),
+      company_cost: Number(sal.full_company_cost || 0),
       valid_from: sal.valid_from || '',
       valid_to: sal.valid_to || '',
       basis: sal.basis || 'monthly_gross',
@@ -53,13 +56,16 @@ export default function PayrollPage() {
 
   const handleSaveSalaryEdit = async () => {
     if (!editSalaryId || !salForm.valid_from || salForm.gross_amount <= 0) {
-      alert('Valid from and a positive gross amount are required.');
+      alert('Valid from and a positive net amount are required.');
       return;
     }
+    // Blank = we do not have the accountant's total yet, so keep the column NULL.
+    const companyCost = salForm.company_cost > 0 ? Number(salForm.company_cost) : null;
     // Extras/bonuses carry no employer-cost maths of their own — they inherit the base ratio.
     if (editSalaryRecord && !isBaseSalary(editSalaryRecord)) {
       await updateSalaryRecord(editSalaryId, {
         gross_amount: Number(salForm.gross_amount),
+        full_company_cost: companyCost,
         valid_from: salForm.valid_from,
         valid_to: salForm.valid_to || undefined,
         label: salForm.label.trim() || editSalaryRecord.label || 'Contractual extra',
@@ -73,6 +79,7 @@ export default function PayrollPage() {
     const fullCost = Number(salForm.full_cost) || Number(salForm.gross_amount);
     await updateSalaryRecord(editSalaryId, {
       gross_amount: Number(salForm.gross_amount),
+      full_company_cost: companyCost,
       employer_cost_amount: Number(Math.max(0, fullCost - Number(salForm.gross_amount)).toFixed(2)),
       employer_cost_multiplier: null,
       employer_cost_pct: null,
@@ -272,6 +279,7 @@ export default function PayrollPage() {
   const [rsBasis, setRsBasis] = useState<'monthly_gross' | 'daily_rate' | 'fixed_fee' | 'fee'>('monthly_gross');
   const [rsGross, setRsGross] = useState<number>(3500);
   const [rsFullCost, setRsFullCost] = useState<number>(4340);
+  const [rsCompanyCost, setRsCompanyCost] = useState<number>(0);
   const [rsValidFrom, setRsValidFrom] = useState<string>('2026-08-01');
   const [rsNote, setRsNote] = useState<string>('Annual compensation review');
 
@@ -679,6 +687,7 @@ export default function PayrollPage() {
       valid_from: rsValidFrom,
       basis: rsBasis,
       gross_amount: Number(rsGross),
+      full_company_cost: rsCompanyCost > 0 ? Number(rsCompanyCost) : null,
       currency: 'EUR',
       employer_cost_amount: Number(Math.max(0, fullCost - Number(rsGross)).toFixed(2)),
       employer_cost_multiplier: null,
@@ -686,6 +695,7 @@ export default function PayrollPage() {
       note: rsNote.trim() || undefined
     });
     setIsRaiseOpen(false);
+    setRsCompanyCost(0);
     notifySuccess('New salary record recorded.');
   };
 
@@ -1143,15 +1153,21 @@ export default function PayrollPage() {
               </>
             )}
             <div>
-              <label className="text-slate-500 font-semibold block mb-1">{isExtraEntry ? 'Amount (€ / month)' : 'Gross (€)'}</label>
+              <label className="text-slate-500 font-semibold block mb-1">{isExtraEntry ? 'Net (€ / month)' : 'Net (€)'}</label>
               <input type="number" step="0.01" value={salForm.gross_amount || ''} onChange={e => setSalForm({ ...salForm, gross_amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
             </div>
             {!isExtraEntry && (
               <div>
-                <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo)</label>
+                <label className="text-slate-500 font-semibold block mb-1">Gross (€/mo)</label>
                 <input type="number" step="0.01" value={salForm.full_cost || ''} onChange={e => setSalForm({ ...salForm, full_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                <p className="text-[10px] text-slate-400 mt-0.5">Net + employer contributions (ΕΦΚΑ).</p>
               </div>
             )}
+            <div>
+              <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo) — optional</label>
+              <input type="number" step="0.01" placeholder="Leave empty until known" value={salForm.company_cost || ''} onChange={e => setSalForm({ ...salForm, company_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+              <p className="text-[10px] text-slate-400 mt-0.5">Total as the accountant bills it. Not used in calculations yet.</p>
+            </div>
             <div>
               <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
               <input type="date" value={salForm.valid_from} onChange={e => setSalForm({ ...salForm, valid_from: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
@@ -1286,7 +1302,7 @@ export default function PayrollPage() {
               </select>
             </div>
             <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">New Gross Amount (€)</label>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">New Net Amount (€)</label>
               <input type="number" step="50" value={rsGross} onChange={e => {
                 const g = Number(e.target.value);
                 setRsFullCost(prev => (rsGross > 0 && prev > 0) ? Number((g * (prev / rsGross)).toFixed(2)) : (rsBasis === 'fixed_fee' || rsBasis === 'fee' ? g : Number((g * 1.24).toFixed(2))));
@@ -1297,10 +1313,18 @@ export default function PayrollPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Full Company Cost (€/mo)</label>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€/mo)</label>
               <input type="number" step="50" value={rsFullCost} onChange={e => setRsFullCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />
-              <p className="text-[10px] text-slate-400 mt-0.5">Gross + employer contributions / VAT, as the accountant bills it. Equal to gross for invoices.</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Net + employer contributions / VAT. Equal to net for invoices.</p>
             </div>
+            <div>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Full Company Cost (€/mo) — optional</label>
+              <input type="number" step="50" placeholder="Leave empty until known" value={rsCompanyCost || ''} onChange={e => setRsCompanyCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />
+              <p className="text-[10px] text-slate-400 mt-0.5">Total as the accountant bills it. Not used in calculations yet.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Effective From Date</label>
               <input type="date" value={rsValidFrom} onChange={e => setRsValidFrom(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800 font-bold" />

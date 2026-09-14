@@ -11,7 +11,7 @@ import {
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/date';
-import { isBaseSalary, isRecurringExtra, extrasFor } from '@/lib/compensation';
+import { isBaseSalary, isRecurringExtra, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
 import { BenefitsList } from '@/components/compensation/benefits-list';
 
 const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
@@ -45,11 +45,10 @@ export default function MyCompensationPage() {
     } as SalaryRecord;
   }, [myBaseSalaries, currentUser.id, isContractor]);
 
-  // Estimate net pay (approx 22% tax/social deductions for salaried, 0% withholding or flat for contractors)
-  const estimatedNet = useMemo(() => {
-    if (isContractor) return currentSalary.gross_amount;
-    return Math.round(currentSalary.gross_amount * 0.78);
-  }, [currentSalary, isContractor]);
+  // Ledger vocabulary: `gross_amount` is the NET the employee is contracted (and the figure the
+  // ledger grid calls "Net"); the gross is net + employer contributions.
+  const netSalary = useMemo(() => Number(currentSalary.gross_amount) || 0, [currentSalary]);
+  const grossSalary = useMemo(() => loadedMonthlyCost(currentSalary), [currentSalary]);
 
   // Contractual recurring extras on the contract = the employee's monthly benefits.
   const myRecurringExtras = useMemo(
@@ -71,10 +70,10 @@ export default function MyCompensationPage() {
         profile_id: currentUser.id,
         period: '2026-07',
         payment_type_id: 'regular',
-        gross: currentSalary.gross_amount,
-        net: estimatedNet,
-        employer_contributions: 0,
-        total_cost: currentSalary.gross_amount,
+        gross: grossSalary,
+        net: netSalary,
+        employer_contributions: Number((grossSalary - netSalary).toFixed(2)),
+        total_cost: grossSalary,
         payment_date: '2026-07-30',
         bank_reference: 'WIRE-GR89100010',
         status: 'paid',
@@ -88,10 +87,10 @@ export default function MyCompensationPage() {
         profile_id: currentUser.id,
         period: '2026-06',
         payment_type_id: 'regular',
-        gross: currentSalary.gross_amount,
-        net: estimatedNet,
-        employer_contributions: 0,
-        total_cost: currentSalary.gross_amount,
+        gross: grossSalary,
+        net: netSalary,
+        employer_contributions: Number((grossSalary - netSalary).toFixed(2)),
+        total_cost: grossSalary,
         payment_date: '2026-06-29',
         bank_reference: 'WIRE-GR89100009',
         status: 'paid',
@@ -105,10 +104,10 @@ export default function MyCompensationPage() {
         profile_id: currentUser.id,
         period: '2026-05',
         payment_type_id: 'regular',
-        gross: currentSalary.gross_amount,
-        net: estimatedNet,
-        employer_contributions: 0,
-        total_cost: currentSalary.gross_amount,
+        gross: grossSalary,
+        net: netSalary,
+        employer_contributions: Number((grossSalary - netSalary).toFixed(2)),
+        total_cost: grossSalary,
         payment_date: '2026-05-30',
         bank_reference: 'WIRE-GR89100005',
         status: 'paid',
@@ -118,7 +117,7 @@ export default function MyCompensationPage() {
         ]
       },
     ] as PaymentRecord[];
-  }, [payments, currentUser.id, currentSalary.gross_amount, estimatedNet, isContractor, currentUser.last_name]);
+  }, [payments, currentUser.id, netSalary, grossSalary, isContractor, currentUser.last_name]);
 
   // Available years for filter
   const availableYears = useMemo(() => {
@@ -218,10 +217,10 @@ export default function MyCompensationPage() {
                   Estimated Net Payable Salary
                 </span>
                 <div className="text-3xl sm:text-4xl font-extrabold text-emerald-300 font-mono">
-                  €{estimatedNet.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
+                  €{netSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
                 </div>
                 <span className="text-[10px] text-slate-400 block mt-1">
-                  {isContractor ? 'Gross invoice payout — no withholding' : 'After tax & social deductions (~78% of gross base)'}
+                  {isContractor ? 'Contracted net payout' : 'Contracted net, as recorded in the salary ledger'}
                 </span>
               </div>
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-extrabold flex items-center shadow-2xs shrink-0">
@@ -232,13 +231,13 @@ export default function MyCompensationPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-700/80 text-xs">
               <div>
                 <span className="text-slate-400 font-medium block mb-0.5">
-                  {isContractor ? 'Monthly Fixed Retainer (Gross)' : 'Monthly Gross Salary'}
+                  {isContractor ? 'Monthly Retainer (Gross)' : 'Monthly Gross Salary'}
                 </span>
                 <strong className="text-white font-mono font-bold text-base">
-                  €{currentSalary.gross_amount.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
+                  €{grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
                 </strong>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {isContractor ? 'Invoiced retainer before withholding' : 'Contractual gross, before deductions'}
+                  {isContractor ? 'Retainer incl. VAT / withholding' : 'Net + employer contributions (ΕΦΚΑ)'}
                 </span>
               </div>
               <div>

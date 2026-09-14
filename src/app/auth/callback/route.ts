@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseServerClient, getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -116,13 +116,27 @@ export async function GET(request: Request) {
     const rolesToInsert = coreAdmins.includes(email) 
       ? [{ profile_id: createdProfile.id, role: 'admin' }]
       : [{ profile_id: createdProfile.id, role: 'employee' }];
-      
-    await supabase.from('user_roles').insert(rolesToInsert);
 
+    // 0063 restricts authenticated INSERT on user_roles to the caller's own row with a non-admin
+    // role, so the directory-seeded admin grant goes through the service role (email, domain and
+    // tenant are already verified above).
+    const { error: roleSeedError } = await (await getSupabaseAdminClient()).from('user_roles').insert(rolesToInsert);
+    if (roleSeedError) {
+      console.error(`JIT role seed failed for ${email}:`, roleSeedError);
+    }
+      
     profile = createdProfile;
   } else if (!profile.auth_user_id) {
-    // Link Supabase auth user ID to the existing directory profile
-    await supabase.from('profiles').update({ auth_user_id: user.id }).eq('id', profile.id);
+    // Link the Supabase auth user to the existing directory profile. `auth_user_id` is an identity
+    // column and 0063 revoked UPDATE on profiles from `authenticated`, so this uses the service
+    // role — the caller's email has already been directory-, domain- and tenant-verified.
+    const { error: linkError } = await (await getSupabaseAdminClient())
+      .from('profiles')
+      .update({ auth_user_id: user.id })
+      .eq('id', profile.id);
+    if (linkError) {
+      console.error(`Failed to link auth user to profile ${profile.id}:`, linkError);
+    }
   }
 
   if (profile.status !== 'active' && profile.status !== 'onboarding') {

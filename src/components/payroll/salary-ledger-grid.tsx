@@ -21,8 +21,12 @@ interface LedgerRow {
   from: string;
   to: string;
   basis: string;
+  /** What the employee receives — `salary_history.gross_amount`. */
+  net: number;
+  /** Net + employer cost (the derived gross). */
   gross: number;
-  loaded: number;
+  /** Optional total company cost as the accountant bills it — empty until the figure is known. */
+  companyCost: number | null;
   status: string;
   note: string;
 }
@@ -56,6 +60,8 @@ const euro = (v: unknown) => `€${Math.round(Number(v) || 0).toLocaleString()}`
 
 /**
  * Effective-dated salary ledger — the single source of truth for what an employee is paid.
+ * Money reads net → gross → full company cost: net is what the employee receives, gross adds the
+ * employer cost, and the accountant's total company cost is optional and filled in later.
  * Rows are grouped per employee (row grouping requires the AG Grid Enterprise key; without it the
  * grid renders flat) and cover the base rate, contractual recurring extras and one-off bonuses,
  * so one employee's whole monthly cost picture sits in one group.
@@ -96,9 +102,10 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
         from: sal.valid_from || '',
         to: sal.valid_to || '',
         basis: base ? (BASIS_LABELS[sal.basis] || sal.basis) : 'Monthly',
-        gross: amount,
+        net: amount,
         // Base rates carry their own employer cost; extras inherit the employee's base ratio.
-        loaded: base ? loadedMonthlyCost(sal) : loadedExtraCost(salaries, sal.profile_id, amount),
+        gross: base ? loadedMonthlyCost(sal) : loadedExtraCost(salaries, sal.profile_id, amount),
+        companyCost: sal.full_company_cost == null ? null : Number(sal.full_company_cost),
         status: base
           ? (sal.valid_to ? 'Past history' : 'Active rate')
           : isOneTimeBonus(sal)
@@ -161,14 +168,26 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       cellClass: 'text-xs font-semibold text-slate-700'
     },
     {
-      headerName: 'Gross Base', field: 'gross', width: 130, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerName: 'Net', field: 'net', width: 125, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerTooltip: 'What the employee receives (net).',
       valueFormatter: (p) => (!p.data || p.value == null ? '' : euro(p.value)),
       cellClass: 'font-mono font-bold text-slate-800'
     },
     {
-      headerName: 'Fully-Loaded Cost', field: 'loaded', width: 170, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerName: 'Gross', field: 'gross', width: 150, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerTooltip: 'Net + employer contributions / VAT — the fully-loaded gross.',
       valueFormatter: (p) => (!p.data || p.value == null ? '' : `${euro(p.value)}/mo`),
       cellClass: 'font-mono font-extrabold text-emerald-700'
+    },
+    {
+      headerName: 'Full Company Cost', field: 'companyCost', width: 175, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerTooltip: 'Optional: total monthly company cost as the accountant bills it. Left empty until the figure is available.',
+      valueFormatter: (p) => (!p.data || p.value == null ? '' : `${euro(p.value)}/mo`),
+      cellRenderer: (p: ICellRendererParams<LedgerRow, number | null>) => (
+        p.value == null
+          ? <span className="text-slate-300" title="Not recorded yet">—</span>
+          : <span className="font-mono font-bold text-indigo-700">{euro(p.value)}/mo</span>
+      )
     },
     {
       headerName: 'Status', field: 'status', width: 150, sortable: true, ...excelSetFilter(STATUS_FILTER_VALUES),
