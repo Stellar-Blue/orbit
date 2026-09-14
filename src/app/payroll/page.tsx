@@ -28,7 +28,7 @@ export default function PayrollPage() {
     generateDraftMonth, addPaymentRecord, updatePaymentRecord, deletePaymentRecord, markAllPaidForPeriod,
     addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord,
     documentTypes, backfillSalaryPayments,
-    salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus
+    salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus, deleteSalaryRecord
   } = useAuth();
   
   const [backfillingId, setBackfillingId] = useState<string | null>(null);
@@ -109,6 +109,21 @@ export default function PayrollPage() {
       status: 'active'
     });
     if (ok) setNewExtra({ payment_type_id: '', amount: 0, start_period: '' });
+  };
+
+  // Delete an effective-dated salary record (the entries behind the 12-month burn forecast).
+  const handleDeleteSalary = async (sal: SalaryRecord) => {
+    const prof = profiles.find(p => p.id === sal.profile_id);
+    const who = prof ? `${prof.first_name} ${prof.last_name}` : 'this employee';
+    if (!confirm(
+      `Delete the salary record for ${who} effective ${formatDate(sal.valid_from)}` +
+      `${sal.valid_to ? ` until ${formatDate(sal.valid_to)}` : ' (active rate)'}?\n\n` +
+      'It disappears from the salary ledger and the 12-month burn forecast. ' +
+      'Payment rows already generated are kept — the payment ledger is the record of what was paid. ' +
+      'This cannot be undone.'
+    )) return;
+    const ok = await deleteSalaryRecord(sal.id);
+    if (ok) notifySuccess('Salary record deleted.');
   };
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
@@ -885,6 +900,7 @@ export default function PayrollPage() {
                 backfillingId={backfillingId}
                 onEdit={openSalaryEditor}
                 onBackfill={handleBackfillSalary}
+                onDelete={handleDeleteSalary}
               />
             </div>
           </Card>
@@ -1076,11 +1092,21 @@ export default function PayrollPage() {
               </Button>
             </div>
           </div>
-          <div className="flex justify-end space-x-3 pt-2">
-            <Button size="sm" variant="outline" onClick={() => setEditSalaryId(null)} className="cursor-pointer">Cancel</Button>
-            <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#3D87D3] text-white cursor-pointer">
-              <Check className="w-3.5 h-3.5 mr-1" /> Save Record
+          <div className="flex justify-between items-center pt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { const sal = editSalaryRecord; setEditSalaryId(null); if (sal) handleDeleteSalary(sal); }}
+              className="border-rose-300 text-rose-600 hover:bg-rose-50 hover:border-rose-400 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Record
             </Button>
+            <div className="flex space-x-3">
+              <Button size="sm" variant="outline" onClick={() => setEditSalaryId(null)} className="cursor-pointer">Cancel</Button>
+              <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#3D87D3] text-white cursor-pointer">
+                <Check className="w-3.5 h-3.5 mr-1" /> Save Record
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>

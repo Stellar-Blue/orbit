@@ -8,7 +8,7 @@ import { formatDate } from '@/lib/date';
 import { SalaryRecord, Profile } from '@/lib/types';
 import { loadedMonthlyCost } from '@/lib/compensation';
 import { Badge, Button } from '@/components/ui/primitives';
-import { Search, Edit, Zap } from 'lucide-react';
+import { Search, Edit, Zap, Trash2 } from 'lucide-react';
 
 interface SalaryRow {
   sal: SalaryRecord;
@@ -29,6 +29,7 @@ interface SalaryLedgerGridProps {
   backfillingId: string | null;
   onEdit: (sal: SalaryRecord) => void;
   onBackfill: (sal: SalaryRecord) => void;
+  onDelete: (sal: SalaryRecord) => void;
 }
 
 const BASIS_LABELS: Record<string, string> = {
@@ -43,7 +44,7 @@ const BASIS_LABELS: Record<string, string> = {
  * AG Grid Enterprise key; without it the grid simply renders flat), so every raise / rate
  * change stays together with its person, newest rate first.
  */
-export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({ salaries, profiles, backfillingId, onEdit, onBackfill }) => {
+export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({ salaries, profiles, backfillingId, onEdit, onBackfill, onDelete }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
   const rowData = useMemo<SalaryRow[]>(() => {
@@ -116,7 +117,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({ salaries, pr
       )
     },
     {
-      headerName: '', field: 'sal.id', width: 265, sortable: false, filter: false, pinned: 'right',
+      headerName: '', field: 'sal.id', width: 320, sortable: false, filter: false, pinned: 'right',
       valueGetter: (p) => p.data?.sal.id,
       cellRenderer: (p: ICellRendererParams<SalaryRow, string>) => {
         const row = p.data;
@@ -142,11 +143,20 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({ salaries, pr
             >
               <Edit className="w-3.5 h-3.5 mr-1" /> Edit
             </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={(e) => { e.stopPropagation(); onDelete(row.sal); }}
+              title="Delete this salary record"
+              className="cursor-pointer shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
           </div>
         );
       }
     }
-  ], [backfillingId, onEdit, onBackfill]);
+  ], [backfillingId, onEdit, onBackfill, onDelete]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">

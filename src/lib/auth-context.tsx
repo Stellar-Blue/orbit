@@ -110,6 +110,7 @@ interface AppState {
   deleteSalaryBonus: (id: string) => Promise<boolean>;
   addSalaryRecord: (record: Omit<SalaryRecord, 'id'>) => Promise<void>;
   updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
+  deleteSalaryRecord: (id: string) => Promise<boolean>;
   addContract: (cnt: Omit<Contract, 'id'>) => void;
   updateContract: (cnt: Contract) => void;
   deleteContract: (id: string) => Promise<boolean>;
@@ -1592,6 +1593,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.from('salary_history').update(updates).eq('id', id);
     } catch (e) {
       console.error('Failed to update salary record in database:', e);
+    }
+  };
+
+  /**
+   * Delete an effective-dated salary record. Generated payment rows are NOT touched — the
+   * payment ledger is a historical record of what was actually paid.
+   */
+  const deleteSalaryRecord = async (id: string): Promise<boolean> => {
+    setSalaries(prev => prev.filter(s => s.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('salary_history').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete salary record:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception deleting salary record:', e);
+      return false;
     }
   };
 
@@ -4175,6 +4197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteSalaryBonus,
       addSalaryRecord,
       updateSalaryRecord,
+      deleteSalaryRecord,
       addContract,
       updateContract,
       deleteContract,
