@@ -29,6 +29,10 @@ export interface ProfileSensitive {
   amka: string;
   ama_efka: string;
   iban: string;
+  /** Payout bank name, e.g. Eurobank Ergasias. Optional. */
+  bank_name?: string | null;
+  /** SWIFT/BIC of the payout bank, 8 or 11 characters. Optional. */
+  bank_swift?: string | null;
   address: string;
   birth_date: string;
   id_number?: string;

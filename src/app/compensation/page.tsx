@@ -55,6 +55,9 @@ export default function MyCompensationPage() {
   const iban = (currentUser.sensitive?.iban || '').trim();
   const hasIban = iban.length > 0;
   const formattedIban = hasIban ? iban.replace(/\s+/g, '').replace(/(.{4})/g, '$1 ').trim() : '';
+  const bankName = (currentUser.sensitive?.bank_name || '').trim();
+  const bankSwift = (currentUser.sensitive?.bank_swift || '').trim();
+  const bankLine = [bankName, bankSwift ? `SWIFT/BIC: ${bankSwift.toUpperCase()}` : ''].filter(Boolean).join(' • ');
 
   // Contractual recurring extras on the contract = the employee's monthly benefits.
   const myRecurringExtras = useMemo(
@@ -283,6 +286,9 @@ export default function MyCompensationPage() {
                 placeholder="No IBAN on file — ask HR/Payroll"
                 className="font-mono font-extrabold text-slate-900 text-sm tracking-wider"
               />
+              <p className="text-[10px] text-slate-400">
+                {bankLine || 'Bank & SWIFT/BIC not on file'}
+              </p>
               <p className="text-[10px] text-slate-400">
                 {hasIban
                   ? 'Payroll disburses your net pay to this account.'

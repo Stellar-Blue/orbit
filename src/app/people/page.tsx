@@ -86,6 +86,8 @@ export default function PeopleDirectoryPage() {
   const [newAfm, setNewAfm] = useState('');
   const [newAmka, setNewAmka] = useState('');
   const [newIban, setNewIban] = useState('');
+  const [newBankName, setNewBankName] = useState('');
+  const [newBankSwift, setNewBankSwift] = useState('');
   const [newAddress, setNewAddress] = useState('');
 
   const activeContract = employeeContracts.find(c => c.profile_id === selectedProfile?.id) || null;
@@ -158,6 +160,8 @@ export default function PeopleDirectoryPage() {
         amka: newAmka || 'Not specified',
         ama_efka: 'Not specified',
         iban: newIban.trim(),
+        bank_name: newBankName.trim() || null,
+        bank_swift: newBankSwift.trim().toUpperCase() || null,
         address: newAddress || 'Athens, Greece',
         birth_date: '1990-01-01'
       },
@@ -168,7 +172,7 @@ export default function PeopleDirectoryPage() {
     setIsAddOpen(false);
     // Reset fields
     setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail(''); setNewPhone('');
-    setNewTitle('Team Member'); setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress('');
+    setNewTitle('Team Member'); setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName(''); setNewBankSwift('');
     setNewStartDate(new Date().toISOString().split('T')[0]); setNewStatus('active'); setNewEndDate('');
   };
 
@@ -681,6 +685,14 @@ export default function PeopleDirectoryPage() {
                       <span className="text-slate-500 uppercase font-semibold block">Bank Account IBAN</span>
                       <BlurredReveal value={selectedProfile.sensitive?.iban} className="mt-1" />
                     </div>
+                    <div>
+                      <span className="text-slate-500 uppercase font-semibold block">Bank</span>
+                      <span className="text-slate-800 font-bold text-sm">{selectedProfile.sensitive?.bank_name || 'Not configured'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase font-semibold block">SWIFT / BIC</span>
+                      <span className="text-slate-800 font-mono font-bold text-sm">{(selectedProfile.sensitive?.bank_swift || '').toUpperCase() || 'Not configured'}</span>
+                    </div>
                     <div className="col-span-2">
                       <span className="text-slate-500 uppercase font-semibold block">Registered Residential Address</span>
                       <span className="text-slate-700 text-sm">{selectedProfile.sensitive?.address || 'No address on file'}</span>
@@ -778,6 +790,14 @@ export default function PeopleDirectoryPage() {
                       <div className="col-span-2">
                         <label className="text-slate-500 block mb-1">Bank Account IBAN</label>
                         <input type="text" value={editData.sensitive?.iban || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), iban: e.target.value}})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                      </div>
+                      <div>
+                        <label className="text-slate-500 block mb-1">Bank</label>
+                        <input type="text" placeholder="e.g. Eurobank Ergasias" value={editData.sensitive?.bank_name || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), bank_name: e.target.value}})} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                      </div>
+                      <div>
+                        <label className="text-slate-500 block mb-1">SWIFT / BIC</label>
+                        <input type="text" placeholder="e.g. ERBKGRAA" value={editData.sensitive?.bank_swift || ''} onChange={e => setEditData({...editData, sensitive: {...(editData.sensitive || {}), bank_swift: e.target.value.toUpperCase()}})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
                       </div>
                       <div className="col-span-2">
                         <label className="text-slate-500 block mb-1">Residential Address</label>
@@ -909,6 +929,14 @@ export default function PeopleDirectoryPage() {
                 <div className="col-span-2">
                   <label className="text-slate-500 block mb-1">Bank Account IBAN</label>
                   <input type="text" placeholder="GR..." value={newIban} onChange={e => setNewIban(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-1">Bank</label>
+                  <input type="text" placeholder="e.g. Eurobank Ergasias" value={newBankName} onChange={e => setNewBankName(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-1">SWIFT / BIC</label>
+                  <input type="text" placeholder="e.g. ERBKGRAA" value={newBankSwift} onChange={e => setNewBankSwift(e.target.value.toUpperCase())} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-slate-500 block mb-1">Residential Address</label>

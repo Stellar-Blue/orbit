@@ -399,7 +399,9 @@ function MyProfileInner() {
                   ['ΑΦΜ (Tax ID)', currentUser.sensitive.afm],
                   ['ΑΜΚΑ (Social Security)', currentUser.sensitive.amka],
                   ['ΑΜΑ ΕΦΚΑ', currentUser.sensitive.ama_efka],
+                  ['Bank', currentUser.sensitive.bank_name],
                   ['IBAN', currentUser.sensitive.iban],
+                  ['SWIFT / BIC', currentUser.sensitive.bank_swift],
                   ['Address', currentUser.sensitive.address],
                   ['Birth Date', currentUser.sensitive.birth_date],
                   ['ID Number', currentUser.sensitive.id_number],
@@ -409,7 +411,11 @@ function MyProfileInner() {
                     {label === 'IBAN' ? (
                       <BlurredReveal value={value as string | null} className="mt-0.5" />
                     ) : (
-                      <div className="text-sm font-bold text-slate-800 mt-0.5 font-mono">{value || '—'}</div>
+                      <div className={`text-sm font-bold text-slate-800 mt-0.5 ${label === 'Bank' ? '' : 'font-mono'}`}>
+                        {label === 'SWIFT / BIC'
+                          ? ((value as string | null)?.trim().toUpperCase() || '—')
+                          : (value || '—')}
+                      </div>
                     )}
                   </div>
                 ))}
