@@ -7,14 +7,12 @@ import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
 import { resolveCurrentRole } from '@/lib/profile-role';
 import { formatDate } from '@/lib/date';
-import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
-import { BlurredReveal } from '@/components/ui/blurred-reveal';
+import { Button, Badge, Modal } from '@/components/ui/primitives';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 import { EmployeeLeaveEntitlement } from '@/components/people/employee-leave-entitlement';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import {
-  Users, Search, Filter, Download, Lock, ShieldAlert,
-  Mail, Calendar, Briefcase, Plus, Edit2, Check, Trash2, MessageSquare
+  Users, Search, Download, Plus, Edit2, Check, Trash2, MessageSquare
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -29,7 +27,7 @@ export default function PeopleDirectoryPage() {
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'sensitive' | 'edit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'edit'>('overview');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   
   // Sync initial selection from URL ID
@@ -356,6 +354,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
           profileRoleHistory={profileRoleHistory}
           jobRoles={jobRoles}
           seniorityLevels={seniorityLevels}
+          isAdmin={isAdmin}
           onSelect={(p) => { setSelectedProfile(p); setActiveTab('overview'); }}
         />
       ) : (
@@ -420,12 +419,6 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                 className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'schedule' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Work Schedule
-              </button>
-              <button 
-                onClick={() => setActiveTab('sensitive')} 
-                className={`pb-3 font-semibold flex items-center transition-colors cursor-pointer ${activeTab === 'sensitive' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                <Lock className="w-3.5 h-3.5 mr-1 text-amber-600" /> Sensitive PII (Admin)
               </button>
               {isAdmin && (
                 <button 
@@ -657,52 +650,6 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                   )}
                 </div>
               </div>
-            )}
-
-            {/* TAB 3: SENSITIVE DATA (ADMIN RLS GUARDED) */}
-            {activeTab === 'sensitive' && (
-              isAdmin ? (
-                <div className="space-y-4">
-                  <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between font-medium">
-                    <span>Admin authorization confirmed via RLS check.</span>
-                    <Badge variant="success">Admin Access Granted</Badge>
-                  </div>
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <span className="text-slate-500 uppercase font-semibold block">ΑΦΜ (Tax ID)</span>
-                      <span className="text-slate-800 font-mono font-bold text-sm">{selectedProfile.sensitive?.afm || 'Not configured'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 uppercase font-semibold block">ΑΜΚΑ (Social Security ID)</span>
-                      <span className="text-slate-800 font-mono font-bold text-sm">{selectedProfile.sensitive?.amka || 'Not configured'}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-slate-500 uppercase font-semibold block">Bank Account IBAN</span>
-                      <BlurredReveal value={selectedProfile.sensitive?.iban} className="mt-1" />
-                    </div>
-                    <div>
-                      <span className="text-slate-500 uppercase font-semibold block">Bank</span>
-                      <span className="text-slate-800 font-bold text-sm">{selectedProfile.sensitive?.bank_name || 'Not configured'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 uppercase font-semibold block">SWIFT / BIC</span>
-                      <span className="text-slate-800 font-mono font-bold text-sm">{(selectedProfile.sensitive?.bank_swift || '').toUpperCase() || 'Not configured'}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-slate-500 uppercase font-semibold block">Registered Residential Address</span>
-                      <span className="text-slate-700 text-sm">{selectedProfile.sensitive?.address || 'No address on file'}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-8 text-center bg-rose-50 border border-rose-200 rounded-xl text-rose-800 space-y-2">
-                  <ShieldAlert className="w-10 h-10 mx-auto text-rose-600" />
-                  <p className="font-bold text-base">403 Forbidden &mdash; Access Denied</p>
-                  <p className="text-xs text-slate-600">
-                    Sensitive personal identifiable information (ΑΦΜ, ΑΜΚΑ, IBAN) is strictly protected by Supabase Row-Level Security and is restricted exclusively to Founders with the <code className="text-rose-700 font-bold">admin</code> role.
-                  </p>
-                </div>
-              )
             )}
 
             {/* TAB 5: EDIT PROFILE (ADMIN ONLY) */}

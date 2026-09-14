@@ -2,13 +2,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
+import { type ColDef, type ICellRendererParams, type ValueFormatterParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { JobRole, Profile, ProfileRoleHistory, SeniorityLevel, Team } from '@/lib/types';
 import { EmployeeIntegration } from '@/lib/integrations/types';
 import { resolveCurrentRole } from '@/lib/profile-role';
 import { formatDate } from '@/lib/date';
 import { Badge } from '@/components/ui/primitives';
+import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { Search } from 'lucide-react';
 
 interface PeopleRow {
@@ -17,6 +18,16 @@ interface PeopleRow {
   greekName: string;
   email: string;
   role: string;
+  /** Sensitive PII — present for admins only (RLS: employees read just their own row). */
+  afm: string;
+  amka: string;
+  amaEfka: string;
+  iban: string;
+  bankName: string;
+  bankSwift: string;
+  address: string;
+  birthDate: string;
+  idNumber: string;
   currentRole: string;
   seniority: string;
   startDate: string;
@@ -33,10 +44,12 @@ interface PeopleGridProps {
   profileRoleHistory: ProfileRoleHistory[];
   jobRoles: JobRole[];
   seniorityLevels: SeniorityLevel[];
+  /** Admins additionally see the Sensitive PII columns (ΑΦΜ / ΑΜΚΑ / bank / address). */
+  isAdmin?: boolean;
   onSelect: (p: Profile) => void;
 }
 
-export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integrations, profileRoleHistory, jobRoles, seniorityLevels, onSelect }) => {
+export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integrations, profileRoleHistory, jobRoles, seniorityLevels, isAdmin = false, onSelect }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
   const integrationMap = useMemo(() => {
@@ -66,6 +79,15 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         greekName: p.name_el || '',
         email: p.work_email || '',
         role: p.role || 'employee',
+        afm: p.sensitive?.afm || '',
+        amka: p.sensitive?.amka || '',
+        amaEfka: p.sensitive?.ama_efka || '',
+        iban: p.sensitive?.iban || '',
+        bankName: p.sensitive?.bank_name || '',
+        bankSwift: (p.sensitive?.bank_swift || '').toUpperCase(),
+        address: p.sensitive?.address || '',
+        birthDate: p.sensitive?.birth_date || '',
+        idNumber: p.sensitive?.id_number || '',
         currentRole: current?.role || 'Unassigned',
         seniority: current?.seniority || '—',
         startDate: p.start_date || '',
@@ -143,6 +165,69 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         )
       )
     },
+    // Sensitive PII — admin-only. Rendered as a column group so it is obvious why these columns
+    // exist (and easy to collapse). Employees never get the data: profile_sensitive is own-row
+    // RLS, so their PeopleRow simply has empty values and the columns are not rendered at all.
+    ...(isAdmin ? [{
+      headerName: 'Sensitive PII (Admin)',
+      groupId: 'people_pii',
+      headerClass: 'bg-amber-50/70 text-amber-800 font-bold',
+      children: [
+        {
+          headerName: 'ΑΦΜ (Tax ID)', field: 'afm', width: 130, sortable: true, ...excelSetFilter(),
+          cellClass: 'font-mono text-xs text-slate-700',
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+          )
+        },
+        {
+          headerName: 'ΑΜΚΑ', field: 'amka', width: 140, sortable: true, ...excelSetFilter(),
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+          )
+        },
+        {
+          headerName: 'ΑΜΑ ΕΦΚΑ', field: 'amaEfka', width: 130, sortable: true, ...excelSetFilter(),
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+          )
+        },
+        {
+          headerName: 'IBAN', field: 'iban', width: 210, sortable: true, ...excelSetFilter(),
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            <BlurredReveal value={p.value} placeholder="—" className="text-xs" />
+          )
+        },
+        {
+          headerName: 'Bank', field: 'bankName', width: 165, sortable: true, ...excelSetFilter(),
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            p.value ? <span className="text-xs text-slate-700">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+          )
+        },
+        {
+          headerName: 'SWIFT / BIC', field: 'bankSwift', width: 125, sortable: true, ...excelSetFilter(),
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+          )
+        },
+        {
+          headerName: 'Birth Date', field: 'birthDate', width: 125, sortable: true, ...excelSetFilter(),
+          valueFormatter: (p: ValueFormatterParams<PeopleRow, string>) => (p.data && p.value ? formatDate(p.value) : ''),
+          cellClass: 'font-mono text-xs text-slate-600'
+        },
+        {
+          headerName: 'ID Number', field: 'idNumber', width: 130, sortable: true, ...excelSetFilter(),
+          cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
+            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+          )
+        },
+        {
+          headerName: 'Residential Address', field: 'address', minWidth: 220, sortable: true, ...excelSetFilter(),
+          cellClass: 'text-xs text-slate-600',
+          tooltipField: 'address'
+        }
+      ]
+    } as ColDef<PeopleRow>] : []),
     {
       headerName: '', field: 'profile.id', width: 130, sortable: false, filter: false, pinned: 'right',
       valueGetter: (p) => p.data?.profile.id,
@@ -156,7 +241,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         </button>
       )
     }
-  ], [onSelect]);
+  ], [onSelect, isAdmin]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
