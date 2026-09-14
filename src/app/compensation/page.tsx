@@ -13,6 +13,7 @@ import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { isBaseSalary, isRecurringExtra, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
 import { BenefitsList } from '@/components/compensation/benefits-list';
+import { BlurredReveal } from '@/components/ui/blurred-reveal';
 
 const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
 
@@ -49,6 +50,11 @@ export default function MyCompensationPage() {
   // ledger grid calls "Net"); the gross is net + employer contributions.
   const netSalary = useMemo(() => Number(currentSalary.gross_amount) || 0, [currentSalary]);
   const grossSalary = useMemo(() => loadedMonthlyCost(currentSalary), [currentSalary]);
+
+  // The employee's own bank coordinates, straight from their profile_sensitive row (RLS: own row).
+  const iban = (currentUser.sensitive?.iban || '').trim();
+  const hasIban = iban.length > 0;
+  const formattedIban = hasIban ? iban.replace(/\s+/g, '').replace(/(.{4})/g, '$1 ').trim() : '';
 
   // Contractual recurring extras on the contract = the employee's monthly benefits.
   const myRecurringExtras = useMemo(
@@ -269,12 +275,19 @@ export default function MyCompensationPage() {
                 <span className="text-slate-500 font-medium flex items-center">
                   <CreditCard className="w-4 h-4 mr-1.5 text-slate-600" /> Bank IBAN
                 </span>
-                <Badge variant="success">Verified</Badge>
+                <Badge variant={hasIban ? 'success' : 'warning'}>{hasIban ? 'ON FILE' : 'NOT ON FILE'}</Badge>
               </div>
-              <div className="font-mono font-extrabold text-slate-900 text-sm tracking-wider">
-                GR16 0110 0980 0000 1234 5678 901
-              </div>
-              <p className="text-[10px] text-slate-400">Eurobank Ergasias &bull; BIC: EVTOGRAA</p>
+              {/* The employee's own profile_sensitive.iban — never a sample value. */}
+              <BlurredReveal
+                value={formattedIban}
+                placeholder="No IBAN on file — ask HR/Payroll"
+                className="font-mono font-extrabold text-slate-900 text-sm tracking-wider"
+              />
+              <p className="text-[10px] text-slate-400">
+                {hasIban
+                  ? 'Payroll disburses your net pay to this account.'
+                  : 'Add your IBAN through HR/Payroll before the next payout run.'}
+              </p>
             </div>
 
             <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-950 text-[11px] space-y-1">

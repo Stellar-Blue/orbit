@@ -157,7 +157,7 @@ export default function PeopleDirectoryPage() {
         afm: newAfm || 'Not specified',
         amka: newAmka || 'Not specified',
         ama_efka: 'Not specified',
-        iban: newIban || 'GR0000000000000000000000000',
+        iban: newIban.trim(),
         address: newAddress || 'Athens, Greece',
         birth_date: '1990-01-01'
       },
