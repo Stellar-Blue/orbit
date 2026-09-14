@@ -55,7 +55,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
       const lType = leaveTypes.find(lt => lt.id === req.leave_type_id);
       return {
         req,
-        employee: prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown Team Member',
+        employee: prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown employee',
         employeeStatus: (prof?.status || 'active').replace('_', ' ').toUpperCase(),
         category: `${lType?.name_el || 'Leave'} (${lType?.name_en || 'Other'})`,
         categoryColour: lType?.colour || '#3D87D3',

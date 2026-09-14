@@ -47,7 +47,12 @@ export interface Profile {
   work_email: string;
   /** Directory-level contact phone (non-sensitive, visible to staff like work email). */
   phone?: string | null;
-  title: string;
+  /**
+   * Legacy free-text job title (defaulted to a meaningless "Team Member"). Superseded by the
+   * effective-dated Role & Seniority assignment in `profile_role_history`; no longer written
+   * from the People directory and only kept so historic rows still read back.
+   */
+  title?: string | null;
   team_id: string;
   team?: Team;
   manager_id?: string;

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandMenu } from "@/components/layout/command-menu";
 import { useAuth } from "@/lib/auth-context";
+import { roleLabel } from "@/lib/profile-role";
 import { Menu, Search, Eye, EyeOff, Users } from "lucide-react";
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -12,7 +13,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, companyProfile } = useAuth();
+  const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, companyProfile, profileRoleHistory, jobRoles, seniorityLevels } = useAuth();
   const [previewMenuOpen, setPreviewMenuOpen] = useState(false);
 
   if (isAuthPage) {
@@ -92,7 +93,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
                             <span className="truncate font-semibold text-slate-700">
                               {p.first_name} {p.last_name}
                             </span>
-                            <span className="text-[10px] text-slate-400 truncate">{p.title || p.employment_type.replace('_', ' ')}</span>
+                            <span className="text-[10px] text-slate-400 truncate">{roleLabel(p, profileRoleHistory, jobRoles, seniorityLevels)}</span>
                           </button>
                         ))}
                         {profiles.filter(p => p.status === 'active' && p.role !== 'admin').length === 0 && (

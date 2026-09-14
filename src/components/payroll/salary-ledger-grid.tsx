@@ -80,7 +80,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
   const rowData = useMemo<LedgerRow[]>(() => {
     const employeeName = (profileId: string) => {
       const prof = profiles.find(p => p.id === profileId);
-      return prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown Team Member';
+      return prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown employee';
     };
     const categoryLabel = (sal: SalaryRecord) => {
       const pt = sal.payment_type_id ? paymentTypes.find(t => t.id === sal.payment_type_id) : undefined;

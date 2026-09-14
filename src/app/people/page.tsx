@@ -76,7 +76,6 @@ export default function PeopleDirectoryPage() {
   const [newGreekName, setNewGreekName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newTitle, setNewTitle] = useState('Team Member');
   const [newTeamId, setNewTeamId] = useState(teams[0]?.id || 'tm-ops');
   const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('full_time');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -146,7 +145,6 @@ export default function PeopleDirectoryPage() {
       name_el: newGreekName || `${newFirstName} ${newLastName}`,
       work_email: newEmail,
       phone: newPhone.trim() || undefined,
-      title: newTitle,
       team_id: newTeamId,
       employment_type: newEmploymentType,
       start_date: newStartDate,
@@ -172,7 +170,7 @@ export default function PeopleDirectoryPage() {
     setIsAddOpen(false);
     // Reset fields
     setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail(''); setNewPhone('');
-    setNewTitle('Team Member'); setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName(''); setNewBankSwift('');
+setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName(''); setNewBankSwift('');
     setNewStartDate(new Date().toISOString().split('T')[0]); setNewStatus('active'); setNewEndDate('');
   };
 
@@ -218,7 +216,7 @@ export default function PeopleDirectoryPage() {
   const isAdmin = currentUser.role === 'admin';
 
   const filteredProfiles = profiles.filter(p => {
-    const matchesSearch = `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email} ${p.phone || ''} ${p.title}`.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email} ${p.phone || ''}`.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTeam = teamFilter === 'all' || p.team_id === teamFilter;
     const matchesEmployment = employmentFilter === 'all' || p.employment_type === employmentFilter;
     return matchesSearch && matchesTeam && matchesEmployment;
@@ -235,7 +233,6 @@ export default function PeopleDirectoryPage() {
       GreekName: p.name_el,
       Email: p.work_email,
       Phone: p.phone || '',
-      Title: p.title,
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
       StartDate: p.start_date,
@@ -255,7 +252,6 @@ export default function PeopleDirectoryPage() {
       GreekName: p.name_el,
       Email: p.work_email,
       Phone: p.phone || '',
-      Title: p.title,
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
       StartDate: p.start_date,
@@ -320,7 +316,7 @@ export default function PeopleDirectoryPage() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder="Search by name (Greek/English), title, or email..."
+            placeholder="Search by name (Greek/English), email or phone..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
@@ -387,7 +383,6 @@ export default function PeopleDirectoryPage() {
                     <p className="text-xs text-slate-500">{p.name_el}</p>
                   </div>
                 </div>
-                <p className="text-sm font-medium text-slate-600 mt-4">{p.title}</p>
                 <p className="text-xs text-slate-500 mt-1">
                   {(() => {
                     const cur = resolveCurrentRole(profileRoleHistory, p.id, jobRoles, seniorityLevels);
@@ -735,10 +730,6 @@ export default function PeopleDirectoryPage() {
                     <input type="tel" value={editData.phone || ''} onChange={e => setEditData({...editData, phone: e.target.value})} placeholder="+30 ..." className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" />
                   </div>
                   <div>
-                    <label className="text-slate-600 font-semibold block mb-1">Job Title</label>
-                    <input type="text" value={editData.title || ''} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium" required />
-                  </div>
-                  <div>
                     <label className="text-slate-600 font-semibold block mb-1">Assigned Team</label>
                     <select value={editData.team_id || ''} onChange={e => setEditData({...editData, team_id: e.target.value, team: teams.find(t => t.id === e.target.value)})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-medium">
                       {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -845,7 +836,7 @@ export default function PeopleDirectoryPage() {
       </Modal>
 
       {/* ADD PERSON MODAL (ADMIN ONLY) */}
-      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Onboard New Team Member (Admin)">
+      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Onboard New Person (Admin)">
         <form onSubmit={handleCreatePerson} className="space-y-4 text-xs">
           <div className="p-3 bg-[#3D87D3]/10 text-[#3D87D3] rounded-lg font-medium text-sm flex items-center justify-between">
             <span>Creating new directory profile with database sync.</span>
@@ -871,10 +862,6 @@ export default function PeopleDirectoryPage() {
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Phone Number</label>
               <input type="tel" placeholder="e.g. +30 2310 ..." value={newPhone} onChange={e => setNewPhone(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" />
-            </div>
-            <div>
-              <label className="text-slate-600 font-semibold block mb-1">Job Title *</label>
-              <input type="text" placeholder="e.g. Senior Software Engineer" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
             </div>
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Assigned Team *</label>

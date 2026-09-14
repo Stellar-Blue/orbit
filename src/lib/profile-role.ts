@@ -21,3 +21,19 @@ export function resolveCurrentRole(
     seniority: seniorityLevels.find(s => s.id === row.seniority_id)?.name || 'Seniority',
   };
 }
+
+/**
+ * How a person is labelled under their name: "Role · Seniority" from the effective-dated history,
+ * falling back to their employment type when nothing is assigned yet. Replaces the legacy
+ * `profiles.title` (which defaulted to a meaningless "Team Member").
+ */
+export function roleLabel(
+  profile: { id: string; employment_type?: string | null },
+  history: ProfileRoleHistory[],
+  jobRoles: JobRole[],
+  seniorityLevels: SeniorityLevel[]
+): string {
+  const current = resolveCurrentRole(history, profile.id, jobRoles, seniorityLevels);
+  if (current) return `${current.role} · ${current.seniority}`;
+  return (profile.employment_type || '').replace(/_/g, ' ') || '—';
+}

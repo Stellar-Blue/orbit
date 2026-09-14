@@ -1913,7 +1913,7 @@ export default function PayrollPage() {
                       const report = [
                         `💶 PAYROLL DISBURSEMENT REPORT: ${pay.period}`,
                         `=========================================`,
-                        `• Employee / Partner: ${prof ? `${prof.first_name} ${prof.last_name}` : 'Staff Member'} (Title: ${prof?.title || 'Team Member'}, Type: ${prof?.employment_type || 'regular'})`,
+                        `• Employee / Partner: ${prof ? `${prof.first_name} ${prof.last_name}` : 'Staff Member'} (Type: ${prof?.employment_type || 'regular'})`,
                         `• Payment UUID: ${pay.id}`,
                         `• Employee Profile UUID: ${pay.profile_id}`,
                         `• Period: ${pay.period} | Scheduled Payment Date: ${formatDate(pay.payment_date)}`,

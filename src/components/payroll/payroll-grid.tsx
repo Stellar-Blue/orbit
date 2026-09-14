@@ -60,7 +60,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
       return {
         pay,
         employee: prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown Member',
-        employeeSub: prof ? `${prof.title} (${prof.employment_type})` : '',
+        employeeSub: prof ? prof.employment_type.replace('_', ' ') : '',
         period: pay.period,
         paymentTypeEl: pt?.name_el || 'Μισθός',
         paymentTypeEn: pt?.name_en || '',

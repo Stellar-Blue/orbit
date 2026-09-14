@@ -3,6 +3,7 @@
 import React, { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { roleLabel } from '@/lib/profile-role';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { formatDate, formatDateTime } from '@/lib/date';
@@ -17,7 +18,7 @@ export default function MyProfilePage() {
 }
 
 function MyProfileInner() {
-  const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection, employeeIntegrations, refreshIntegrationState } = useAuth();
+  const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection, employeeIntegrations, refreshIntegrationState, profileRoleHistory, jobRoles, seniorityLevels } = useAuth();
   const searchParams = useSearchParams();
   const msalError = searchParams.get('msal');
 
@@ -35,7 +36,6 @@ function MyProfileInner() {
   const [firstName, setFirstName] = useState(currentUser.first_name);
   const [lastName, setLastName] = useState(currentUser.last_name);
   const [nameEl, setNameEl] = useState(currentUser.name_el);
-  const [title, setTitle] = useState(currentUser.title);
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -71,7 +71,6 @@ function MyProfileInner() {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       name_el: nameEl.trim() || `${firstName.trim()} ${lastName.trim()}`,
-      title: title.trim(),
       phone: phone.trim() || null,
     });
     setSaving(false);
@@ -147,7 +146,7 @@ function MyProfileInner() {
           </div>
 
           <h2 className="text-lg font-black text-slate-900 mt-4">{currentUser.first_name} {currentUser.last_name}</h2>
-          <p className="text-sm text-slate-500 font-medium">{currentUser.title || 'Team Member'}</p>
+          <p className="text-sm text-slate-500 font-medium">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</p>
           <div className="flex items-center gap-2 mt-2">
             <Badge variant="info">{currentUser.employment_type.replace('_', ' ').toUpperCase()}</Badge>
             <Badge variant={currentUser.role === 'admin' ? 'warning' : 'neutral'}>{currentUser.role.toUpperCase()}</Badge>
@@ -200,10 +199,6 @@ function MyProfileInner() {
                   <input type="text" value={nameEl} onChange={e => setNameEl(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Job Title</label>
-                  <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
-                </div>
-                <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Phone</label>
                   <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+30 ..." className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
                 </div>
@@ -212,7 +207,7 @@ function MyProfileInner() {
                     {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
                     {saving ? 'Saving…' : 'Save Changes'}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => { setEditing(false); setFirstName(currentUser.first_name); setLastName(currentUser.last_name); setNameEl(currentUser.name_el); setTitle(currentUser.title); setPhone(currentUser.phone || ''); }} className="cursor-pointer">
+                  <Button size="sm" variant="outline" onClick={() => { setEditing(false); setFirstName(currentUser.first_name); setLastName(currentUser.last_name); setNameEl(currentUser.name_el); setPhone(currentUser.phone || ''); }} className="cursor-pointer">
                     Cancel
                   </Button>
                 </div>
@@ -232,8 +227,8 @@ function MyProfileInner() {
                   <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.name_el || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Job Title</div>
-                  <div className="text-sm font-bold text-slate-800 mt-0.5">{currentUser.title || '—'}</div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Role &amp; Seniority</div>
+                  <div className="text-sm font-bold text-slate-800 mt-0.5">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</div>
                 </div>
                 <div>
                   <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Phone</div>

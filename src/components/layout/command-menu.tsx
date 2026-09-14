@@ -24,7 +24,7 @@ export const CommandMenu: React.FC = () => {
   }, []);
 
   const filteredProfiles = profiles.filter(p => 
-    `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email} ${p.title}`.toLowerCase().includes(query.toLowerCase())
+    `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email}`.toLowerCase().includes(query.toLowerCase())
   ).slice(0, 4);
 
   const filteredContracts = contracts.filter(c => 
@@ -89,7 +89,7 @@ export const CommandMenu: React.FC = () => {
                   <button key={p.id} onClick={() => navigate('/people')} className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-slate-100/80 text-left transition-colors cursor-pointer">
                     <div>
                       <p className="text-slate-800 font-medium">{p.first_name} {p.last_name} (<span className="text-slate-500 text-xs">{p.name_el}</span>)</p>
-                      <p className="text-xs text-slate-500">{p.title} &bull; {p.work_email}</p>
+                      <p className="text-xs text-slate-500">{p.work_email}</p>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400" />
                   </button>

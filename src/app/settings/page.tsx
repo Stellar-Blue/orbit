@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { roleLabel } from '@/lib/profile-role';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, CheckCircle2, AlertTriangle, 
@@ -499,7 +500,7 @@ export default function CompanySettingsPage() {
               <div key={p.id} className="py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
                 <div className="min-w-[180px]">
                   <div className="text-xs font-bold text-slate-800">{p.first_name} {p.last_name}</div>
-                  <div className="text-[10px] text-slate-400">{p.title}</div>
+                  <div className="text-[10px] text-slate-400">{roleLabel(p, profileRoleHistory, jobRoles, seniorityLevels)}</div>
                 </div>
                 <div className="flex-1"><EmployeeRemoteQuota key={p.id} profileId={p.id} /></div>
               </div>
@@ -559,7 +560,7 @@ export default function CompanySettingsPage() {
                             >
                               <option value="">-- No Lead Assigned --</option>
                               {activeEmployees.map(emp => (
-                                <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.title || 'Staff'})</option>
+                                <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.employment_type.replace('_', ' ')})</option>
                               ))}
                             </select>
                           </div>
@@ -645,7 +646,7 @@ export default function CompanySettingsPage() {
                   >
                     <option value="">-- No Lead Assigned (Optional) --</option>
                     {activeEmployees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.title || 'Team Member'})</option>
+                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.employment_type.replace('_', ' ')})</option>
                     ))}
                   </select>
                   <p className="text-[11px] text-slate-500 mt-1">

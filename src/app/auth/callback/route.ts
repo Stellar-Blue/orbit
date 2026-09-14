@@ -97,7 +97,6 @@ export async function GET(request: Request) {
         last_name: lastName,
         name_el: `${firstName} ${lastName}`,
         work_email: email,
-        title: 'Team Member',
         employment_type: 'full_time',
         start_date: new Date().toISOString().split('T')[0],
         status: 'active',

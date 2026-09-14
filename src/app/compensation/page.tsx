@@ -146,7 +146,7 @@ export default function MyCompensationPage() {
       ['STELLARBLUE SYSTEMS ORBIT — OFFICIAL COMPENSATION STATEMENT'],
       [''],
       ['Employee Name:', `${currentUser.first_name} ${currentUser.last_name}`],
-      ['Title / Department:', `${currentUser.title || 'Team Member'} / ${currentUser.team?.name || 'Staff'}`],
+      ['Department:', currentUser.team?.name || 'Staff'],
       ['Employment Type:', currentUser.employment_type.toUpperCase()],
       ['Work Email:', currentUser.work_email],
       ['Pay Period:', record.period],

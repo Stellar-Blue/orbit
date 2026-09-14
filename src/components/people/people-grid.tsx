@@ -16,7 +16,6 @@ interface PeopleRow {
   name: string;
   greekName: string;
   email: string;
-  title: string;
   role: string;
   currentRole: string;
   seniority: string;
@@ -66,7 +65,6 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         name: `${p.first_name} ${p.last_name}`,
         greekName: p.name_el || '',
         email: p.work_email || '',
-        title: p.title || '',
         role: p.role || 'employee',
         currentRole: current?.role || 'Unassigned',
         seniority: current?.seniority || '—',
@@ -81,14 +79,19 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
 
   const columnDefs = useMemo<ColDef<PeopleRow>[]>(() => [
     {
-      headerName: 'Employee Name', field: 'name', minWidth: 220, sortable: true, ...excelSetFilter(), pinned: 'left',
+      headerName: 'Employee Name', field: 'name', minWidth: 240, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
             {(p.value || '').split(' ').map(w => w[0]).slice(0, 2).join('')}
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-slate-800 truncate">{p.value}</p>
+            <p className="font-semibold text-slate-800 truncate flex items-center gap-1.5">
+              {p.value}
+              <Badge variant={p.data?.role === 'admin' ? 'warning' : 'neutral'} className="text-[9px] px-1.5 py-0 shrink-0">
+                {p.data?.role === 'admin' ? 'ADMIN' : 'EMPLOYEE'}
+              </Badge>
+            </p>
             {p.data?.greekName && <p className="text-xs text-slate-500 truncate">{p.data.greekName}</p>}
           </div>
         </div>
@@ -97,17 +100,6 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
     {
       headerName: 'Email', field: 'email', minWidth: 230, sortable: true, ...excelSetFilter(),
       cellClass: 'font-mono text-xs text-slate-600'
-    },
-    {
-      headerName: 'Role / Title', field: 'title', width: 170, sortable: true, ...excelSetFilter(),
-      cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
-        <div>
-          <div className="font-medium text-slate-700">{p.value}</div>
-          <Badge variant={p.data?.role === 'admin' ? 'warning' : 'neutral'} className="mt-0.5 text-[10px]">
-            {p.data?.role === 'admin' ? 'ADMIN' : 'EMPLOYEE'}
-          </Badge>
-        </div>
-      )
     },
     {
       headerName: 'Current Role', field: 'currentRole', width: 170, sortable: true, ...excelSetFilter(),

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { roleLabel } from '@/lib/profile-role';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
@@ -18,7 +19,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen }) => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview, profileRoleHistory, jobRoles, seniorityLevels } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
@@ -217,7 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
               </div>
               <div className="truncate">
                 <p className="text-sm font-extrabold text-slate-900 truncate">{currentUser.first_name} {currentUser.last_name}</p>
-                <p className="text-xs text-slate-500 font-medium truncate">{currentUser.title || 'Team Member'}</p>
+                <p className="text-xs text-slate-500 font-medium truncate">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</p>
               </div>
             </div>
             <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
@@ -239,7 +240,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
                     >
                       <div className="truncate pr-2">
                         <div className="font-bold truncate">{p.first_name} {p.last_name}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{p.title || 'Team Member'} ({p.employment_type})</div>
+                        <div className="text-[10px] text-slate-400 truncate">{roleLabel(p, profileRoleHistory, jobRoles, seniorityLevels)} ({p.employment_type})</div>
                       </div>
                       <Badge variant={p.role === 'admin' ? 'info' : 'neutral'} className="text-[10px] px-1.5 py-0 font-bold">{p.role}</Badge>
                     </button>

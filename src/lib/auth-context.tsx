@@ -79,7 +79,9 @@ interface AppState {
   // Actions for immediate optimistic mutation in UI
   switchUser: (profileId: string) => void;
   updateProfile: (profile: Profile) => void;
-  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & { photo_url?: string | null }) => Promise<boolean>;
+  /** Self-service edits. `title` is intentionally absent: the legacy job title is replaced by the
+   *  effective-dated Role & Seniority assignment, which only admins set. */
+  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'phone'>> & { photo_url?: string | null }) => Promise<boolean>;
   employeeIntegrations: EmployeeIntegration[];
   addProfile: (profile: Profile) => void;
   deleteProfile: (profileId: string) => Promise<boolean>;

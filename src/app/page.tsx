@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { roleLabel } from '@/lib/profile-role';
 import { 
   format, startOfWeek, endOfWeek, addMonths, subMonths, 
   startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, 
@@ -55,7 +56,8 @@ export default function DashboardPage() {
   const { 
     currentUser, profiles, teams, contracts, invoices, addInvoice, catalogModules, catalogItems, leaveRequests, leaveTypes, 
     entitlements, salaries, remoteDays, remotePatterns, remotePolicies, 
-    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt, timesheets 
+    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt, timesheets,
+    profileRoleHistory, jobRoles, seniorityLevels
   } = useAuth();
   
   const isAdmin = currentUser.role === 'admin';
@@ -414,7 +416,7 @@ export default function DashboardPage() {
       if (p.status !== 'active') return false;
       if (selectedTeamId !== 'all' && p.team_id !== selectedTeamId && p.team?.id !== selectedTeamId) return false;
       if (searchQuery.trim() !== '') {
-        const full = `${p.first_name} ${p.last_name} ${p.title || ''}`.toLowerCase();
+        const full = `${p.first_name} ${p.last_name}`.toLowerCase();
         if (!full.includes(searchQuery.toLowerCase())) return false;
       }
       return true;
@@ -552,7 +554,7 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
               Welcome back, {currentUser.first_name}!
             </h1>
-            <Badge variant={isAdmin ? 'info' : 'neutral'}>{currentUser.title || 'Team Member'}</Badge>
+            <Badge variant={isAdmin ? 'info' : 'neutral'}>{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</Badge>
           </div>
           <p className="text-slate-500 text-xs sm:text-sm mt-1">
             {isAdmin 
@@ -882,7 +884,7 @@ export default function DashboardPage() {
                       <ProfileAvatar photoUrl={profile.photo_url} firstName={profile.first_name} lastName={profile.last_name} size="md" />
                       <div className="min-w-0">
                         <p className="font-extrabold text-slate-900 text-sm leading-snug truncate">{profile.first_name} {profile.last_name}</p>
-                        <p className="text-xs text-slate-500 font-medium truncate">{profile.title || 'Team Member'}</p>
+                        <p className="text-xs text-slate-500 font-medium truncate">{roleLabel(profile, profileRoleHistory, jobRoles, seniorityLevels)}</p>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
@@ -1360,11 +1362,9 @@ export default function DashboardPage() {
                             <span className="text-xs font-bold text-slate-800 tracking-tight block truncate">
                               {p.first_name} {p.last_name}
                             </span>
-                            {p.title && (
-                              <span className="text-[10px] text-slate-400 block truncate font-medium">
-                                {p.title}
-                              </span>
-                            )}
+                            <span className="text-[10px] text-slate-400 block truncate font-medium">
+                              {roleLabel(p, profileRoleHistory, jobRoles, seniorityLevels)}
+                            </span>
                           </div>
                         </div>
                       </td>
