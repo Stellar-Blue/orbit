@@ -97,6 +97,8 @@ interface AppState {
   generateDraftMonth: (period: string) => Promise<void>;
   backfillSalaryPayments: (salaryId: string) => Promise<{ created: number; skipped: number }>;
   addPaymentType: (type: Omit<PaymentType, 'id' | 'sort_order'>) => Promise<void>;
+  updatePaymentType: (id: string, updates: Partial<PaymentType>) => Promise<boolean>;
+  deletePaymentType: (id: string) => Promise<boolean>;
   documentTypes: PaymentDocumentType[];
   addDocumentType: (dt: Omit<PaymentDocumentType, 'id' | 'sort_order'>) => Promise<boolean>;
   updateDocumentType: (id: string, updates: Partial<PaymentDocumentType>) => Promise<boolean>;
@@ -1412,6 +1414,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.from('payment_types').insert(newPt);
     } catch (e) {
       console.error('Failed to insert payment type:', e);
+    }
+  };
+
+  const updatePaymentType = async (id: string, updates: Partial<PaymentType>): Promise<boolean> => {
+    setPaymentTypes(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('payment_types').update(updates).eq('id', id);
+      if (error) {
+        console.error('Failed to update payment type:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Exception updating payment type:', e);
+      return false;
+    }
+  };
+
+  /**
+   * Delete a Dynamic Payment Type. The DB refuses this when payment rows still reference it
+   * (payments.payment_type_id is a NOT NULL FK with no cascade) — callers should offer
+   * deactivation instead. Contractual extras that reference it are un-linked by the FK.
+   * State is only updated after the DB accepted, so a failed delete changes nothing locally.
+   */
+  const deletePaymentType = async (id: string): Promise<boolean> => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('payment_types').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete payment type:', error);
+        alert(`Cannot delete this payment category:\n\n${error.message}`);
+        return false;
+      }
+      setPaymentTypes(prev => prev.filter(t => t.id !== id));
+      setSalaryBonuses(prev => prev.map(b => b.payment_type_id === id ? { ...b, payment_type_id: null } : b));
+      return true;
+    } catch (e) {
+      console.error('Exception deleting payment type:', e);
+      return false;
     }
   };
 
@@ -4184,6 +4227,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       generateDraftMonth,
       backfillSalaryPayments,
       addPaymentType,
+      updatePaymentType,
+      deletePaymentType,
       documentTypes,
       addDocumentType,
       updateDocumentType,

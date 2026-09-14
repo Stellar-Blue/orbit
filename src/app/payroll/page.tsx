@@ -26,7 +26,7 @@ export default function PayrollPage() {
   const { 
     currentUser, profiles, paymentTypes, salaries, payments, 
     generateDraftMonth, addPaymentRecord, updatePaymentRecord, deletePaymentRecord, markAllPaidForPeriod,
-    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, addSalaryRecord, updateSalaryRecord,
+    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, updatePaymentType, deletePaymentType, addSalaryRecord, updateSalaryRecord,
     documentTypes, backfillSalaryPayments,
     salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus, deleteSalaryRecord
   } = useAuth();
@@ -237,6 +237,7 @@ export default function PayrollPage() {
   
   // New dynamic payment type state
   const [isTypeOpen, setIsTypeOpen] = useState(false);
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
   const [ptCode, setPtCode] = useState('bonus_midyear');
   const [ptNameEl, setPtNameEl] = useState('Επιπλέον Αμοιβή');
   const [ptNameEn, setPtNameEn] = useState('Mid-Year Performance Bonus');
@@ -244,6 +245,7 @@ export default function PayrollPage() {
   const [ptStatutory, setPtStatutory] = useState(false);
   const [ptRecurring, setPtRecurring] = useState(false);
   const [ptMonth, setPtMonth] = useState<string>('');
+  const [ptActive, setPtActive] = useState(true);
 
   // Record Raise / Salary Record Modal
   const [isRaiseOpen, setIsRaiseOpen] = useState(false);
@@ -659,10 +661,27 @@ export default function PayrollPage() {
     notifySuccess('New salary record recorded.');
   };
 
-  // Save Dynamic Payment Type
+  // Save Dynamic Payment Type (create when editingTypeId is null, otherwise update in place)
   const handleSaveNewPaymentType = async () => {
     if (!ptNameEl.trim()) {
       alert('Please enter a Greek name for the payment category.');
+      return;
+    }
+    if (editingTypeId) {
+      const ok = await updatePaymentType(editingTypeId, {
+        code: ptCode.trim(),
+        name_el: ptNameEl.trim(),
+        name_en: ptNameEn.trim() || ptNameEl.trim(),
+        is_statutory: ptStatutory,
+        is_recurring_monthly: ptRecurring,
+        default_period_month: ptMonth ? Number(ptMonth) : null,
+        default_multiplier: Number(ptMult),
+        active: ptActive
+      });
+      if (!ok) return;
+      setIsTypeOpen(false);
+      setEditingTypeId(null);
+      notifySuccess('Payment category updated.');
       return;
     }
     await addPaymentType({
@@ -678,6 +697,54 @@ export default function PayrollPage() {
     });
     setIsTypeOpen(false);
     notifySuccess('New payment type created.');
+  };
+
+  const openNewPaymentType = () => {
+    setEditingTypeId(null);
+    setPtCode('bonus_midyear');
+    setPtNameEl('Επιπλέον Αμοιβή');
+    setPtNameEn('Mid-Year Performance Bonus');
+    setPtMult(0.5);
+    setPtStatutory(false);
+    setPtRecurring(false);
+    setPtMonth('');
+    setPtActive(true);
+    setIsTypeOpen(true);
+  };
+
+  const openPaymentTypeEditor = (pt: PaymentType) => {
+    setEditingTypeId(pt.id);
+    setPtCode(pt.code);
+    setPtNameEl(pt.name_el);
+    setPtNameEn(pt.name_en);
+    setPtMult(Number(pt.default_multiplier ?? 1));
+    setPtStatutory(pt.is_statutory);
+    setPtRecurring(pt.is_recurring_monthly);
+    setPtMonth(pt.default_period_month ? String(pt.default_period_month) : '');
+    setPtActive(pt.active);
+    setIsTypeOpen(true);
+  };
+
+  const handleDeletePaymentType = async (pt: PaymentType) => {
+    const usedByPayments = payments.filter(p => p.payment_type_id === pt.id).length;
+    const linkedExtras = salaryBonuses.filter(b => b.payment_type_id === pt.id).length;
+    if (usedByPayments > 0) {
+      // payments.payment_type_id is a NOT NULL FK without cascade — deleting is impossible.
+      if (confirm(`${pt.name_en} (${pt.code}) is used by ${usedByPayments} payment row(s) and cannot be deleted.\n\nDeactivate it instead? It stays on historic rows but disappears from new entries and forecasts.`)) {
+        const ok = await updatePaymentType(pt.id, { active: false });
+        if (ok) notifySuccess('Payment category deactivated.');
+      }
+      return;
+    }
+    const extraWarning = linkedExtras > 0
+      ? `\n\n${linkedExtras} contractual recurring extra(s) are linked to it and will lose that category.`
+      : '';
+    const systemWarning = ['salary', 'bonus', 'contractor_invoice'].includes(pt.code)
+      ? `\n\n⚠ "${pt.code}" drives payroll draft generation — deleting it stops those rows being created. Deactivating is usually safer.`
+      : '';
+    if (!confirm(`Delete payment category ${pt.name_en} (${pt.code})?${extraWarning}${systemWarning}\n\nThis cannot be undone.`)) return;
+    const ok = await deletePaymentType(pt.id);
+    if (ok) notifySuccess('Payment category deleted.');
   };
 
   return (
@@ -951,7 +1018,7 @@ export default function PayrollPage() {
       {/* TAB 3: PAYMENT TYPES SETTINGS */}
       {tab === 'payment_types' && (
         <Card title="Dynamic Payment Types Administration" subtitle="A table of payroll categories rather than hardcoded rules. Configures Greek statutory defaults, recurrence rules, and employee applicability." action={
-          <Button size="sm" variant="primary" onClick={() => setIsTypeOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
+          <Button size="sm" variant="primary" onClick={openNewPaymentType} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Payment Category
           </Button>
         }>
@@ -960,9 +1027,12 @@ export default function PayrollPage() {
               <div key={pt.id} className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 hover:border-indigo-200 transition-all">
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <Badge variant={pt.is_statutory ? 'info' : pt.is_recurring_monthly ? 'success' : 'neutral'}>
-                      {pt.is_statutory ? 'Statutory (Εργ. Νόμος)' : pt.is_recurring_monthly ? 'Recurring Monthly' : 'One-Off / Variable'}
-                    </Badge>
+                    <span className="flex items-center gap-1.5">
+                      <Badge variant={pt.is_statutory ? 'info' : pt.is_recurring_monthly ? 'success' : 'neutral'}>
+                        {pt.is_statutory ? 'Statutory (Εργ. Νόμος)' : pt.is_recurring_monthly ? 'Recurring Monthly' : 'One-Off / Variable'}
+                      </Badge>
+                      {!pt.active && <Badge variant="error" className="text-[9px] px-1.5 py-0">INACTIVE</Badge>}
+                    </span>
                     <span className="font-mono text-xs text-slate-400">Code: {pt.code}</span>
                   </div>
                   <h4 className="font-bold text-slate-800 text-base mt-2">{pt.name_el}</h4>
@@ -984,6 +1054,26 @@ export default function PayrollPage() {
                     <span>Applies to:</span>
                     <span className="text-slate-700 font-semibold">{pt.applies_to.join(', ')}</span>
                   </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={() => openPaymentTypeEditor(pt)} className="cursor-pointer">
+                    <Edit className="w-3.5 h-3.5 mr-1" /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const ok = await updatePaymentType(pt.id, { active: !pt.active });
+                      if (ok) notifySuccess(pt.active ? 'Payment category deactivated.' : 'Payment category activated.');
+                    }}
+                    className="cursor-pointer"
+                  >
+                    {pt.active ? 'Deactivate' : 'Activate'}
+                  </Button>
+                  <Button size="sm" variant="danger" onClick={() => handleDeletePaymentType(pt)} title="Delete payment category" className="cursor-pointer">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -1286,8 +1376,8 @@ export default function PayrollPage() {
         )}
       </Modal>
 
-      {/* ADD PAYMENT TYPE MODAL */}
-      <Modal isOpen={isTypeOpen} onClose={() => setIsTypeOpen(false)} title="Register Dynamic Payment Category">
+      {/* ADD / EDIT PAYMENT TYPE MODAL */}
+      <Modal isOpen={isTypeOpen} onClose={() => { setIsTypeOpen(false); setEditingTypeId(null); }} title={editingTypeId ? 'Edit Dynamic Payment Category' : 'Register Dynamic Payment Category'}>
         <div className="space-y-4 text-xs">
           <div>
             <label className="block font-semibold uppercase text-slate-500 mb-1">System Code (Slug)</label>
@@ -1328,10 +1418,16 @@ export default function PayrollPage() {
               <input type="checkbox" checked={ptRecurring} onChange={e => setPtRecurring(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded border-slate-300" />
               <span className="font-bold text-slate-700">Recurring Monthly</span>
             </label>
+            {editingTypeId && (
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={ptActive} onChange={e => setPtActive(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-slate-300" />
+                <span className="font-bold text-slate-700">Active (available for new entries)</span>
+              </label>
+            )}
           </div>
           <div className="pt-3 border-t border-slate-200 flex justify-end space-x-2">
-            <Button variant="outline" size="sm" onClick={() => setIsTypeOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={handleSaveNewPaymentType} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">Save Category &rarr;</Button>
+            <Button variant="outline" size="sm" onClick={() => { setIsTypeOpen(false); setEditingTypeId(null); }}>Cancel</Button>
+            <Button variant="primary" size="sm" onClick={handleSaveNewPaymentType} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">{editingTypeId ? 'Update Category' : 'Save Category'} &rarr;</Button>
           </div>
         </div>
       </Modal>

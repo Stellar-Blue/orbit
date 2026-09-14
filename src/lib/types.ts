@@ -67,8 +67,9 @@ export interface PaymentType {
   name_en: string;
   is_statutory: boolean;
   is_recurring_monthly: boolean;
-  default_period_month?: number;
-  default_multiplier?: number;
+  /** `null` clears an existing statutory month (the DB column is nullable). */
+  default_period_month?: number | null;
+  default_multiplier?: number | null;
   applies_to: EmploymentType[];
   active: boolean;
   sort_order: number;
