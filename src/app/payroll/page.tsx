@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
-import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
+import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType, SalaryBonus } from '@/lib/types';
 import { loadedMonthlyCost, employerCostRatio } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
@@ -124,6 +124,22 @@ export default function PayrollPage() {
     )) return;
     const ok = await deleteSalaryRecord(sal.id);
     if (ok) notifySuccess('Salary record deleted.');
+  };
+
+  // Pause / resume a contractual recurring extra straight from the ledger grid.
+  const handleToggleExtra = async (b: SalaryBonus) => {
+    const ok = await updateSalaryBonus(b.id, { status: b.status === 'active' ? 'inactive' : 'active' });
+    if (ok) notifySuccess(b.status === 'active' ? 'Recurring extra paused.' : 'Recurring extra resumed.');
+  };
+
+  const handleDeleteExtra = async (b: SalaryBonus) => {
+    if (!confirm(
+      `Delete the recurring extra "${b.name}" (€${Number(b.amount).toLocaleString()}/mo)?\n\n` +
+      'It stops being generated in payroll drafts. Payment rows already generated are kept. ' +
+      'This cannot be undone.'
+    )) return;
+    const ok = await deleteSalaryBonus(b.id);
+    if (ok) notifySuccess('Recurring extra deleted.');
   };
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
@@ -963,11 +979,15 @@ export default function PayrollPage() {
             <div className="mt-3">
               <SalaryLedgerGrid
                 salaries={salaries}
+                extras={salaryBonuses.filter(b => b.kind === 'recurring' && b.frequency === 'monthly')}
                 profiles={profiles}
+                paymentTypes={paymentTypes}
                 backfillingId={backfillingId}
                 onEdit={openSalaryEditor}
                 onBackfill={handleBackfillSalary}
                 onDelete={handleDeleteSalary}
+                onToggleExtra={handleToggleExtra}
+                onDeleteExtra={handleDeleteExtra}
               />
             </div>
           </Card>
