@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Modal, Button, Badge } from '@/components/ui/primitives';
 import { Invoice, Contract } from '@/lib/types';
+import { formatDate } from '@/lib/date';
 import { FileText, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -77,7 +78,7 @@ export function LinkageModal({ invoice, onClose }: LinkageModalProps) {
           <div className="flex justify-between items-center">
             <div>
               <div className="font-mono font-black text-slate-800">{invoice.invoice_number}</div>
-              <div className="text-xs font-bold text-slate-500">{invoice.issue_date}</div>
+              <div className="text-xs font-bold text-slate-500">{formatDate(invoice.issue_date)}</div>
             </div>
             <div className="text-right">
               <div className="font-mono font-black text-slate-900 text-lg">€{invoice.gross_eur.toLocaleString()}</div>

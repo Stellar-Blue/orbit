@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { formatDate } from '@/lib/date';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
@@ -190,12 +191,12 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
       {
         headerName: 'Start', field: 'startsOn', width: 100, sortable: true,
         filter: 'agDateColumnFilter', filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
-        valueFormatter: (p) => p.value
+        valueFormatter: (p) => formatDate(p.value)
       },
       {
         headerName: 'End', field: 'endsOn', width: 100, sortable: true,
         filter: 'agDateColumnFilter', filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
-        valueFormatter: (p) => p.value
+        valueFormatter: (p) => formatDate(p.value)
       },
       { headerName: 'Auto Renew', field: 'autoRenews', width: 100, sortable: true, ...excelSetFilter(['Yes', 'No']) },
       { headerName: 'Renew Term', field: 'renewalTerm', width: 100, sortable: true, ...excelSetFilter() },

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { formatDate } from '@/lib/date';
 import { LeaveRequest, LeaveType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Search } from 'lucide-react';
@@ -46,11 +47,13 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
     {
       headerName: 'Start Date', field: 'startDate', width: 115, sortable: true, filter: 'agDateColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: 'font-mono font-extrabold text-slate-900'
     },
     {
       headerName: 'End Date', field: 'endDate', width: 115, sortable: true, filter: 'agDateColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: 'font-mono font-extrabold text-slate-900'
     },
     {

@@ -16,6 +16,7 @@ import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
+import { formatDate } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 
@@ -724,8 +725,8 @@ export default function ContractsRegistryPage() {
                                     )}
                                     {inv.mark ? <span className="text-[10px] text-emerald-600 font-mono block">MARK: {inv.mark}</span> : <span className="text-[10px] text-amber-600 italic block">No MARK code</span>}
                                   </td>
-                                  <td className="p-3.5 text-slate-700">{inv.issue_date}</td>
-                                  <td className="p-3.5 text-slate-700">{inv.due_date}</td>
+                                  <td className="p-3.5 text-slate-700">{formatDate(inv.issue_date)}</td>
+                                  <td className="p-3.5 text-slate-700">{formatDate(inv.due_date)}</td>
                                   <td className="p-3.5 text-right font-black text-slate-900">€{inv.gross_eur.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                   <td className="p-3.5 text-right font-bold text-emerald-700">€{pAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                   <td className="p-3.5 text-center">

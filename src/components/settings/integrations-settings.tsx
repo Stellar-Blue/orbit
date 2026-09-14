@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clock, CheckCircle2, CalendarDays, KeyRound, Eye, EyeOff, Terminal, ChevronDown, Copy, Check, RotateCcw, Activity, Key } from 'lucide-react';
 import { IntegrationSettings } from '@/lib/integrations/types';
+import { formatDate, formatDateTime } from '@/lib/date';
 import { AttioSettings } from '@/components/settings/attio-settings';
 
 interface OutlookSettings {
@@ -501,7 +502,7 @@ export function IntegrationsSettings() {
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-mono">
               <span className="px-2 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-emerald-400">
-                Last reconciled: {integrationLastReconciledAt ? new Date(integrationLastReconciledAt).toLocaleString() : 'never'}
+                Last reconciled: {integrationLastReconciledAt ? formatDateTime(integrationLastReconciledAt) : 'never'}
               </span>
               <span className="px-2 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-amber-400">
                 Exceptions: {totalExceptions}
@@ -777,7 +778,7 @@ export function IntegrationsSettings() {
                       </div>
                       <div className="text-[11px] text-slate-500 mt-0.5">
                         {ex.reason || 'No reason'} · {ex.expires_at
-                          ? <span className="flex items-center gap-1 inline-flex"><Clock className="w-3 h-3" /> expires {new Date(ex.expires_at).toLocaleString()}</span>
+                          ? <span className="flex items-center gap-1 inline-flex"><Clock className="w-3 h-3" /> expires {formatDateTime(ex.expires_at)}</span>
                           : 'permanent'}
                       </div>
                     </div>
@@ -821,7 +822,7 @@ export function IntegrationsSettings() {
                   <span className="font-bold text-slate-800 truncate">{r.profile_name || r.profile_id}</span>
                   <Badge variant="error" className="text-[9px] px-1.5 py-0 shrink-0">token revoked</Badge>
                 </div>
-                <span className="text-[10px] text-slate-400 font-mono shrink-0">{r.revoked_at ? new Date(r.revoked_at).toLocaleDateString() : ''}</span>
+                <span className="text-[10px] text-slate-400 font-mono shrink-0">{r.revoked_at ? formatDate(r.revoked_at) : ''}</span>
               </div>
             ))}
             {integrationExceptions.exceptions.map(e => (
@@ -831,7 +832,7 @@ export function IntegrationsSettings() {
                   <span className="font-bold text-slate-800">{e.orbit_kind} · {e.operation}</span>
                   <Badge variant="warning" className="text-[9px] px-1.5 py-0">delivery exception</Badge>
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1 font-mono">reason: {e.reason || 'unknown'} · {new Date(e.created_at).toLocaleString()}</div>
+                <div className="text-[11px] text-slate-500 mt-1 font-mono">reason: {e.reason || 'unknown'} · {formatDateTime(e.created_at)}</div>
               </div>
             ))}
           </div>
@@ -914,7 +915,7 @@ export function IntegrationsSettings() {
                 <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Docs: {mydata.docCount}</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Imported invoices: {mydata.invoiceCount}</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">MARK cursor: {mydata.lastCompletedMark}</span>
-                <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Last sync: {mydata.lastSuccessAt ? new Date(mydata.lastSuccessAt).toLocaleString() : 'never'}</span>
+                <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600">Last sync: {mydata.lastSuccessAt ? formatDateTime(mydata.lastSuccessAt) : 'never'}</span>
                 {mydata.lastError && (
                   <span className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200" title={mydata.lastError}>Error: {mydata.lastError.slice(0, 80)}…</span>
                 )}

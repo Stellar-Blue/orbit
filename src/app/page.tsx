@@ -20,6 +20,7 @@ import {
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
 import { loadedMonthlyCost } from '@/lib/compensation';
+import { formatDate, formatDateTime } from '@/lib/date';
 import { notifySuccess } from '@/lib/validation-modal';
 
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
@@ -628,7 +629,7 @@ export default function DashboardPage() {
                         : <Badge variant="warning" className="text-[9px] px-1.5 py-0">{totalExceptions} exceptions</Badge>}
                     </div>
                     <div className="text-[11px] text-slate-500 font-medium">
-                      Last reconciled: {integrationLastReconciledAt ? new Date(integrationLastReconciledAt).toLocaleString() : 'not yet'} · {integrationExceptions.notConnectedCount} employee(s) not connected to Slack
+                      Last reconciled: {integrationLastReconciledAt ? formatDateTime(integrationLastReconciledAt) : 'not yet'} · {integrationExceptions.notConnectedCount} employee(s) not connected to Slack
                     </div>
                   </div>
                 </div>
@@ -688,7 +689,7 @@ export default function DashboardPage() {
                       <div key={req.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                         <div>
                           <p className="font-semibold text-sm text-slate-800">{requester?.first_name} {requester?.last_name}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{req.working_days} working days ({req.start_date} to {req.end_date})</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{req.working_days} working days ({formatDate(req.start_date)} to {formatDate(req.end_date)})</p>
                         </div>
                         <Link href="/leave">
                           <Button size="sm" variant="primary" className="font-black bg-[#3D87D3]">Review</Button>
@@ -1217,7 +1218,7 @@ export default function DashboardPage() {
                                     isActualEnd ? 'rounded-r-md rounded-l-none pl-1 border-l border-dashed border-rose-300' :
                                     'rounded-none px-1 border-l border-r border-dashed border-rose-300'
                                   }`}
-                                  title={`${prof.first_name} ${prof.last_name} — ${displayType} (${req.start_date} to ${req.end_date})`}
+                                  title={`${prof.first_name} ${prof.last_name} — ${displayType} (${formatDate(req.start_date)} to ${formatDate(req.end_date)})`}
                                 >
                                   <div className="flex items-center truncate">
                                     <span className="mr-1.5">🏖️</span>

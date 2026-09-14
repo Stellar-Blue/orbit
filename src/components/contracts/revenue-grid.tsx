@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { formatDate } from '@/lib/date';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { Badge } from '@/components/ui/primitives';
@@ -100,6 +101,7 @@ export const RevenueGrid: React.FC<RevenueGridProps> = ({
     {
       headerName: 'Start', field: 'start', width: 105, sortable: true, filter: 'agDateColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: 'text-[11px] font-mono text-slate-400'
     },
     {

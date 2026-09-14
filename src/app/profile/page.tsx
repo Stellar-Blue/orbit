@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
+import { formatDate, formatDateTime } from '@/lib/date';
 import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Phone, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
 
 export default function MyProfilePage() {
@@ -169,7 +170,7 @@ function MyProfileInner() {
             </div>
             <div className="flex items-center gap-2.5 text-xs text-slate-600">
               <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Started {currentUser.start_date}</span>
+              <span>Started {formatDate(currentUser.start_date)}</span>
             </div>
           </div>
         </Card>
@@ -270,7 +271,7 @@ function MyProfileInner() {
                     </div>
                     <div className="text-xs text-slate-500 font-mono mt-0.5">
                       {slackIntegration?.external_user_id ? `Slack user: ${slackIntegration.external_user_id}` : 'User token linked'}
-                      {slackIntegration?.last_synced_at && <> · last synced {new Date(slackIntegration.last_synced_at).toLocaleString()}</>}
+                      {slackIntegration?.last_synced_at && <> · last synced {formatDateTime(slackIntegration.last_synced_at)}</>}
                     </div>
                   </div>
                 </div>
@@ -293,7 +294,7 @@ function MyProfileInner() {
                       {!currentUser.slack_required
                         ? 'Slack mirroring is not required for your account. An administrator can enable it if you want your status mirrored.'
                         : myIntegrationExemption
-                          ? `Temporarily exempt${myIntegrationExemption.expires_at ? ` until ${new Date(myIntegrationExemption.expires_at).toLocaleString()}` : ''} (admin-granted)`
+                          ? `Temporarily exempt${myIntegrationExemption.expires_at ? ` until ${formatDateTime(myIntegrationExemption.expires_at)}` : ''} (admin-granted)`
                           : isRevoked
                             ? 'Orbit can no longer mirror your status. Reconnect to keep the mirror active.'
                             : 'Connect Slack so Orbit can mirror your leave & remote statuses.'}
@@ -344,7 +345,7 @@ function MyProfileInner() {
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5">
                         {m365Integration.last_synced_at
-                          ? <>Last synced {new Date(m365Integration.last_synced_at).toLocaleString()}</>
+                          ? <>Last synced {formatDateTime(m365Integration.last_synced_at)}</>
                           : 'Ready for next sync'}
                       </div>
                     </div>

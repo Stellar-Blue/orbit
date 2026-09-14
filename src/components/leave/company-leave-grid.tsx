@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { formatDate } from '@/lib/date';
 import { LeaveRequest, Profile, LeaveType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Edit3, Trash2, Search } from 'lucide-react';
@@ -11,7 +12,7 @@ import { Edit3, Trash2, Search } from 'lucide-react';
 interface LeaveRow {
   req: LeaveRequest;
   employee: string;
-  employeeSub: string;
+  employeeStatus: string;
   category: string;
   categoryColour: string;
   mandatory: boolean;
@@ -55,7 +56,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
       return {
         req,
         employee: prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown Team Member',
-        employeeSub: prof ? `${prof.title || 'Team Member'} • ${prof.employment_type.toUpperCase()}` : '',
+        employeeStatus: (prof?.status || 'active').replace('_', ' ').toUpperCase(),
         category: `${lType?.name_el || 'Leave'} (${lType?.name_en || 'Other'})`,
         categoryColour: lType?.colour || '#3D87D3',
         mandatory: req.origin === 'mandatory',
@@ -73,10 +74,19 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
     {
       headerName: 'Employee Member', field: 'employee', minWidth: 200, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => (
-        <div>
-          <div className="font-extrabold text-slate-900 text-sm">{p.value}</div>
-          <div className="text-[11px] text-slate-400 font-semibold">{p.data?.employeeSub}</div>
-        </div>
+        <div className="font-extrabold text-slate-900 text-sm">{p.value}</div>
+      )
+    },
+    {
+      headerName: 'Employment Status', field: 'employeeStatus', width: 160, sortable: true, ...excelSetFilter(['ACTIVE', 'ON LEAVE', 'DEPARTED']),
+      cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => (
+        p.value === 'DEPARTED' ? (
+          <Badge variant="error" className="font-extrabold">DEPARTED</Badge>
+        ) : p.value === 'ON LEAVE' ? (
+          <Badge variant="warning" className="font-extrabold">ON LEAVE</Badge>
+        ) : (
+          <Badge variant="success" className="font-extrabold">● ACTIVE</Badge>
+        )
       )
     },
     {
@@ -101,11 +111,13 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
     {
       headerName: 'Start', field: 'startDate', width: 105, sortable: true, filter: 'agDateColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: 'font-mono font-bold text-slate-800'
     },
     {
       headerName: 'End', field: 'endDate', width: 105, sortable: true, filter: 'agDateColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: 'font-mono font-bold text-slate-800'
     },
     {

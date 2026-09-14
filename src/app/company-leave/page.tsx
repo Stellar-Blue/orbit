@@ -15,6 +15,7 @@ import {
 import { parseISO, format, eachDayOfInterval } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest, LeaveType } from '@/lib/types';
+import { formatDate } from '@/lib/date';
 
 const CompanyLeaveGrid = dynamic(() => import('@/components/leave/company-leave-grid').then(m => m.CompanyLeaveGrid), { ssr: false });
 
@@ -114,7 +115,7 @@ export default function CompanyLeaveManagementPage() {
       const summaryData: (string | number)[][] = [
         ['STELLARBLUE ORBIT — COMPANY-WIDE DEDUCTED LEAVE DAYS REPORT'],
         ['Report Year:', String(exportYear)],
-        ['Generated On:', new Date().toLocaleDateString('en-GB')],
+        ['Generated On:', formatDate(new Date())],
         [''],
         ['Employee Name', 'Work Email', 'Employment Type', 'Total Allowance Quota', 'Regular Deducted (Days)', 'Mandatory Closure (Days)', 'Total Deducted Days', 'Remaining Available Balance']
       ];
@@ -645,7 +646,7 @@ export default function CompanyLeaveManagementPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-600">
-                    Dates Horizon: <strong className="text-[#3D87D3] font-mono">{ml.start_date} &rarr; {ml.end_date}</strong> &bull; Announcement Notes: {ml.note}
+                    Dates Horizon: <strong className="text-[#3D87D3] font-mono">{formatDate(ml.start_date)} &rarr; {formatDate(ml.end_date)}</strong> &bull; Announcement Notes: {ml.note}
                   </p>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-700 text-xs flex items-center justify-between font-medium">
                     <span>Fan-Out Status: <strong className="text-slate-900 font-extrabold">Active</strong> across all full-time and part-time staff (external contractors excluded).</span>

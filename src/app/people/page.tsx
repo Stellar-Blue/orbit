@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Profile, EmploymentType } from '@/lib/types';
 import { resolveCurrentRole } from '@/lib/profile-role';
+import { formatDate } from '@/lib/date';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
@@ -395,7 +396,7 @@ export default function PeopleDirectoryPage() {
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <span>Start: {p.start_date}</span>
+                <span>Start: {formatDate(p.start_date)}</span>
                 <span className="text-[#3D87D3] font-medium group-hover:underline">View details &rarr;</span>
               </div>
             </div>
@@ -490,7 +491,7 @@ export default function PeopleDirectoryPage() {
                     </div>
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Start Date</span>
-                      <span className="text-slate-700 font-medium">{selectedProfile.start_date}</span>
+                      <span className="text-slate-700 font-medium">{formatDate(selectedProfile.start_date)}</span>
                     </div>
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Employment Status</span>
@@ -501,7 +502,7 @@ export default function PeopleDirectoryPage() {
                     {selectedProfile.end_date && (
                       <div>
                         <span className="text-slate-500 uppercase font-semibold block">End Date</span>
-                        <span className="text-slate-700 font-medium">{selectedProfile.end_date}</span>
+                        <span className="text-slate-700 font-medium">{formatDate(selectedProfile.end_date)}</span>
                       </div>
                     )}
                     <div>
@@ -699,7 +700,7 @@ export default function PeopleDirectoryPage() {
                           <Badge variant={activeContract.status === 'active' ? 'success' : 'warning'}>{activeContract.status.toUpperCase()}</Badge>
                         </div>
                         <div className="text-slate-600 mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-                          <span><strong className="text-slate-800">From:</strong> {activeContract.start_date}</span>
+                          <span><strong className="text-slate-800">From:</strong> {formatDate(activeContract.start_date)}</span>
                           <span><strong className="text-slate-800">To:</strong> {activeContract.end_date || 'Open-ended'}</span>
                           <span><strong className="text-slate-800">Auto-renew:</strong> {activeContract.auto_renew ? 'Yes' : 'No'}</span>
                           <span><strong className="text-slate-800">Notice:</strong> {activeContract.notice_days} days</span>

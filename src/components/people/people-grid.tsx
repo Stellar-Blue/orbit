@@ -7,6 +7,7 @@ import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-
 import { JobRole, Profile, ProfileRoleHistory, SeniorityLevel, Team } from '@/lib/types';
 import { EmployeeIntegration } from '@/lib/integrations/types';
 import { resolveCurrentRole } from '@/lib/profile-role';
+import { formatDate } from '@/lib/date';
 import { Badge } from '@/components/ui/primitives';
 import { Search } from 'lucide-react';
 
@@ -131,6 +132,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
     },
     {
       headerName: 'Start Date', field: 'startDate', width: 130, sortable: true, ...excelSetFilter(),
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: 'text-xs text-slate-600 font-mono'
     },
     {

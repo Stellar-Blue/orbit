@@ -13,6 +13,7 @@ import {
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest } from '@/lib/types';
+import { formatDate } from '@/lib/date';
 import { DateRangePicker } from '@/components/leave/date-range-picker';
 
 const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
@@ -220,7 +221,7 @@ export default function LeaveManagementPage() {
       const summaryData: (string | number)[][] = [
         ['STELLARBLUE ORBIT — COMPANY-WIDE DEDUCTED LEAVE DAYS REPORT'],
         ['Report Year:', String(exportTargetYear)],
-        ['Generated On:', new Date().toLocaleDateString('en-GB')],
+        ['Generated On:', formatDate(new Date())],
         [''],
         ['Employee Name', 'Work Email', 'Employment Type', 'Total Allowance Quota', 'Regular Deducted (Days)', 'Mandatory Closure (Days)', 'Total Deducted Days', 'Remaining Available Balance']
       ];
@@ -398,7 +399,7 @@ export default function LeaveManagementPage() {
                         </Badge>
                       </div>
                       <div className="mt-2 pt-2 border-t border-white/10">
-                        <h4 className="text-xs font-black text-white truncate">{lt?.name_en || 'Scheduled Leave'} &bull; <span className="font-mono text-emerald-200">{nextLeave.start_date} → {nextLeave.end_date}</span></h4>
+                        <h4 className="text-xs font-black text-white truncate">{lt?.name_en || 'Scheduled Leave'} &bull; <span className="font-mono text-emerald-200">{formatDate(nextLeave.start_date)} → {formatDate(nextLeave.end_date)}</span></h4>
                         <p className="text-[11px] text-emerald-100/90 mt-0.5 font-medium truncate">{nextLeave.working_days}d deduction {nextLeave.note ? `— "${nextLeave.note}"` : ''}</p>
                       </div>
                     </div>
@@ -660,7 +661,7 @@ export default function LeaveManagementPage() {
                                           isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
                                           'rounded-none px-1'
                                         }`}
-                                        title={`Company Closure: ${m.start_date} → ${m.end_date}`}
+                                        title={`Company Closure: ${formatDate(m.start_date)} → ${formatDate(m.end_date)}`}
                                       >
                                         <span className="truncate flex items-center font-black">
                                           <span className="mr-1.5">🔒</span>
@@ -699,7 +700,7 @@ export default function LeaveManagementPage() {
                                           isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
                                           'rounded-none px-1'
                                         }`}
-                                        title={`${lt?.name_en} (${req.start_date} → ${req.end_date})`}
+                                        title={`${lt?.name_en} (${formatDate(req.start_date)} → ${formatDate(req.end_date)})`}
                                       >
                                         <span className="truncate flex items-center font-black text-white">
                                           <span className="mr-1.5">🏖️</span>

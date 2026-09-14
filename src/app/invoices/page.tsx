@@ -15,6 +15,7 @@ import {
   Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+import { formatDate } from '@/lib/date';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1069,7 +1070,7 @@ export default function InvoicesRegistryPage() {
                   `• Direction & Status: ${inv.direction.toUpperCase()} - ${inv.status.toUpperCase()}`,
                   `• Reference Period: ${inv.reference_period || 'N/A / Standalone'} (Period: ${inv.period_from || 'N/A'} to ${inv.period_to || 'N/A'})`,
                   `• Financial Breakdown: Net €${(inv.net || 0).toLocaleString()} + VAT (${inv.vat_rate || '24%'}): €${(inv.vat_amount || 0).toLocaleString()} = Total Gross €${(inv.gross_eur || 0).toLocaleString()}`,
-                  `• Timelines: Issued on ${inv.issue_date} | Due by ${inv.due_date}`,
+                  `• Timelines: Issued on ${formatDate(inv.issue_date)} | Due by ${formatDate(inv.due_date)}`,
                   `• Linked Contract UUID: ${inv.contract_id || 'Standalone / No contract linked'}`,
                   `• Notes: ${inv.notes || 'No additional settlement caveats reported.'}`
                 ].join('\n');

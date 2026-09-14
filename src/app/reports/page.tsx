@@ -17,6 +17,7 @@ import {
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { CashflowBarChart } from '@/components/invoices/cashflow-chart';
 import { calculateContractValuation } from '@/lib/pricing-engine';
+import { formatDate } from '@/lib/date';
 import * as XLSX from 'xlsx';
 
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
@@ -328,7 +329,7 @@ export default function ReportsPage() {
       ['ORBIT — BUDGETING & CASHFLOW REPORT'],
       ['Period Start:', `${STAT_MONTHS[cfStartMonth - 1]} ${cfStartYear}`],
       ['Months Shown:', String(cfMonths)],
-      ['Generated On:', new Date().toLocaleDateString('en-GB')],
+      ['Generated On:', formatDate(new Date())],
       [''],
       ['Month', 'Year', 'Realized AR (EUR)', 'Realized AP (EUR)', 'Realized Net (EUR)', 'Projected AR (EUR)', 'Projected AP (EUR)', 'Projected Net (EUR)', 'Payroll Burn (EUR)', 'Status']
     ];

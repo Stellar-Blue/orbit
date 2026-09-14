@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { Counterparty, AttioLink, CounterpartyContact, Contract, Role } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
+import { formatDate, formatDateTime } from '@/lib/date';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { TierOverrideForm } from '@/components/counterparties/tier-override-form';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
@@ -629,7 +630,7 @@ export default function CounterpartiesRegistryPage() {
                             {event.event_type}
                           </span>
                           <span className="text-xs text-slate-400 font-mono">ID: {event.attio_event_id}</span>
-                          <span className="text-xs text-slate-400">Received: {event.received_at ? new Date(event.received_at).toLocaleString() : 'Recent'}</span>
+                          <span className="text-xs text-slate-400">Received: {event.received_at ? formatDateTime(event.received_at) : 'Recent'}</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <h4 className="text-lg font-bold text-slate-900">{payload.name || "Attio CRM Company"}</h4>
@@ -708,7 +709,7 @@ export default function CounterpartiesRegistryPage() {
                       <span className="font-bold text-slate-800">{payload.name || event.attio_event_id}</span>
                       <span className="font-mono text-slate-400">({payload.record_id})</span>
                     </div>
-                    <span className="text-slate-400 font-mono">{event.processed_at ? new Date(event.processed_at).toLocaleString() : 'Resolved'}</span>
+                    <span className="text-slate-400 font-mono">{event.processed_at ? formatDateTime(event.processed_at) : 'Resolved'}</span>
                   </div>
                 );
               })}
@@ -960,8 +961,8 @@ export default function CounterpartiesRegistryPage() {
                                     {inv.mark ? <span className="text-[10px] text-emerald-600 font-mono block">MARK: {inv.mark}</span> : <span className="text-[10px] text-amber-600 italic block">No MARK code</span>}
                                   </td>
                                   <td className="p-3.5 text-slate-700">
-                                    <span className="block">{inv.issue_date}</span>
-                                    <span className="text-[11px] text-slate-400">Due: {inv.due_date}</span>
+                                    <span className="block">{formatDate(inv.issue_date)}</span>
+                                    <span className="text-[11px] text-slate-400">Due: {formatDate(inv.due_date)}</span>
                                   </td>
                                   <td className="p-3.5 text-right font-black text-slate-900">€{inv.gross_eur.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                   <td className="p-3.5 text-right font-bold text-emerald-700">€{pAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
@@ -1105,7 +1106,7 @@ export default function CounterpartiesRegistryPage() {
                           <div className="p-3 bg-white rounded-xl border border-slate-200/80">
                             <span className="text-slate-400 uppercase font-semibold text-[10px]">Last Sync Checkpoint</span>
                             <div className="text-sm font-bold text-slate-800 mt-1">
-                              {selectedEntity.attio_link.last_outbound_at ? new Date(selectedEntity.attio_link.last_outbound_at).toLocaleString() : 'Up to date'}
+                              {selectedEntity.attio_link.last_outbound_at ? formatDateTime(selectedEntity.attio_link.last_outbound_at) : 'Up to date'}
                             </div>
                             <span className="text-[10px] text-blue-500 font-semibold">Ready for next scheduled push</span>
                           </div>

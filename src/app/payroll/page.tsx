@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
 import { loadedMonthlyCost, employerCostRatio } from '@/lib/compensation';
+import { formatDate, formatDateTime } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
@@ -311,7 +312,7 @@ export default function PayrollPage() {
               const filename = `${afm}_${pt?.code || 'pay'}_${p.period}${suffix}.pdf`;
               
               // Generate verifiable mock content representing the stored receipt voucher
-              const receiptContent = `STELLARBLUE SYSTEMS ORBIT — ACCOUNTANT RECEIPT ARCHIVE\nFile Name: ${filename}\nOriginal Upload: ${doc.name} (${doc.size})\nEmployee: ${prof?.first_name} ${prof?.last_name} (AFM: ${afm})\nPeriod: ${p.period}\nPayment Type: ${pt?.name_el} (${pt?.name_en})\nTotal Cost: €${p.total_cost} | Net Disbursed: €${p.net}\nBank Ref: ${p.bank_reference || 'WIRE-TRANSFER'}\nUploaded At: ${doc.uploaded_at}\nEncrypted & Stored in Private Supabase Vault under RLS`;
+              const receiptContent = `STELLARBLUE SYSTEMS ORBIT — ACCOUNTANT RECEIPT ARCHIVE\nFile Name: ${filename}\nOriginal Upload: ${doc.name} (${doc.size})\nEmployee: ${prof?.first_name} ${prof?.last_name} (AFM: ${afm})\nPeriod: ${p.period}\nPayment Type: ${pt?.name_el} (${pt?.name_en})\nTotal Cost: €${p.total_cost} | Net Disbursed: €${p.net}\nBank Ref: ${p.bank_reference || 'WIRE-TRANSFER'}\nUploaded At: ${formatDateTime(doc.uploaded_at)}\nEncrypted & Stored in Private Supabase Vault under RLS`;
               
               receiptsFolder?.file(filename, receiptContent);
               totalDocsAdded++;
@@ -534,7 +535,7 @@ export default function PayrollPage() {
     }
 
     // Fallback only if no actual file payload exists (e.g., sample mock records from seed script)
-    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${doc.uploaded_at}\nEmployee: ${profName || 'Staff'}\nBank Reference: ${bankRef || 'WIRE-TRANSFER'}\nStatus: Verified and Encrypted under RLS Vault (Demo Placeholder - Upload a file to retain binary archive)`;
+    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${formatDateTime(doc.uploaded_at)}\nEmployee: ${profName || 'Staff'}\nBank Reference: ${bankRef || 'WIRE-TRANSFER'}\nStatus: Verified and Encrypted under RLS Vault (Demo Placeholder - Upload a file to retain binary archive)`;
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1458,7 +1459,7 @@ export default function PayrollPage() {
                           <div className="truncate">
                             <span className="font-bold text-slate-800 text-xs block truncate">{doc.name}</span>
                             <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                              Uploaded: {doc.uploaded_at} &bull; Size: {doc.size}
+                              Uploaded: {formatDateTime(doc.uploaded_at)} &bull; Size: {doc.size}
                             </span>
                           </div>
                         </div>
@@ -1581,7 +1582,7 @@ export default function PayrollPage() {
           documentName={previewDoc.doc.name}
           documentUrl={previewDoc.doc.url}
           storagePath={`payroll/${selectedPeriod}/${previewDoc.doc.name}`}
-          uploadedAt={previewDoc.doc.uploaded_at}
+          uploadedAt={formatDateTime(previewDoc.doc.uploaded_at)}
           subtitle={`Payroll Receipt · ${previewDoc.profName} (${previewDoc.doc.type.replace('_', ' ')})`}
           onDownload={() => handleDownloadDoc(previewDoc.doc, previewDoc.profName, previewDoc.bankRef)}
         />
@@ -1660,7 +1661,7 @@ export default function PayrollPage() {
                         `• Employee / Partner: ${prof ? `${prof.first_name} ${prof.last_name}` : 'Staff Member'} (Title: ${prof?.title || 'Team Member'}, Type: ${prof?.employment_type || 'regular'})`,
                         `• Payment UUID: ${pay.id}`,
                         `• Employee Profile UUID: ${pay.profile_id}`,
-                        `• Period: ${pay.period} | Scheduled Payment Date: ${pay.payment_date}`,
+                        `• Period: ${pay.period} | Scheduled Payment Date: ${formatDate(pay.payment_date)}`,
                         `• Payment Category: ${pt?.name_el || 'Μισθός'} (${pt?.name_en || 'Salary'})`,
                         `• Status: ${pay.status.toUpperCase()}`,
                         `• Financial Breakdown: Gross €${(pay.gross || 0).toLocaleString()} | Employer EFKA: €${(pay.employer_contributions || 0).toLocaleString()} | Total Cost: €${(pay.total_cost || 0).toLocaleString()} | Net Payable: €${(pay.net || 0).toLocaleString()}`,

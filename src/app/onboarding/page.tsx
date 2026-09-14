@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { formatDateTime } from '@/lib/date';
 import { Button, Card } from '@/components/ui/primitives';
 import { ShieldCheck, AlertTriangle, Clock, LogOut, CheckCircle2, Loader2, MessageSquare } from 'lucide-react';
 import { EmployeeIntegration, IntegrationExemption } from '@/lib/integrations/types';
@@ -75,7 +76,7 @@ function OnboardingInner() {
   };
 
   const exemptionText = exemption?.expires_at
-    ? `This access expires ${new Date(exemption.expires_at).toLocaleString()}`
+    ? `This access expires ${formatDateTime(exemption.expires_at)}`
     : 'This access is permanent (admin-granted).';
 
   return (

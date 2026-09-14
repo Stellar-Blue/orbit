@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
+import { formatDateTime } from '@/lib/date';
 
 const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
 
@@ -149,7 +150,7 @@ export default function MyCompensationPage() {
   };
 
   const handleDownloadDoc = (doc: PaymentDocument) => {
-    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${doc.uploaded_at}\nEmployee: ${currentUser.first_name} ${currentUser.last_name}\nStatus: Verified and Encrypted under RLS`;
+    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${formatDateTime(doc.uploaded_at)}\nEmployee: ${currentUser.first_name} ${currentUser.last_name}\nStatus: Verified and Encrypted under RLS`;
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');

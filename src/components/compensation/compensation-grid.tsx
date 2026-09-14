@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { formatDate } from '@/lib/date';
 import { PaymentRecord } from '@/lib/types';
 import { Card } from '@/components/ui/primitives';
 import { CheckCircle2, Download, Paperclip, Search } from 'lucide-react';
@@ -81,7 +82,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
       cellClass: 'font-mono text-xs',
       cellRenderer: (p: ICellRendererParams<CompRow, string>) => (
         <div>
-          <span className="text-slate-800 font-semibold block">{p.value}</span>
+          <span className="text-slate-800 font-semibold block">{formatDate(p.value)}</span>
           <span className="text-[10px] text-slate-400 uppercase tracking-tight">{p.data?.bankRef}</span>
         </div>
       )

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type GridApi, type GetContextMenuItemsParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
+import { formatDate } from '@/lib/date';
 import { Invoice, InvoiceStatus, BudgetCategory } from '@/lib/types';
 import { useAuth } from '@/lib/auth-context';
 import { Badge } from '@/components/ui/primitives';
@@ -120,7 +121,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         linkageType: inv.contract ? 'contract' : 'category',
         referencePeriod: inv.reference_period || '',
         yearQuarter: deriveYearQuarter(inv.issue_date),
-        periodRange: [inv.period_from, inv.period_to].filter(Boolean).join(' → '),
+        periodRange: [inv.period_from, inv.period_to].filter(Boolean).map(d => formatDate(d as string)).join(' → '),
         issueDate: inv.issue_date,
         dueDate: inv.due_date,
         overdue: isOverdue,
@@ -299,6 +300,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
     {
       headerName: 'Due Date', field: 'dueDate', width: 110, sortable: true, filter: 'agDateColumnFilter',
       filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      valueFormatter: (p) => formatDate(p.value),
       cellClass: (params) => params.data?.overdue ? 'font-bold text-red-600' : ''
     },
     {

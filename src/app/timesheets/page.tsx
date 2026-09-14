@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Project, WorkItem, TimeEntry } from '@/lib/types';
+import { formatDate, formatDayMonth } from '@/lib/date';
 import { Button, Badge } from '@/components/ui/primitives';
 import { Clock, ChevronLeft, ChevronRight, Plus, Trash2, Copy, Check, Send, Layers, Users, ClipboardCheck, X, Save } from 'lucide-react';
 import { ProjectForecastEditor } from '@/components/timesheets/project-forecast-editor';
@@ -192,7 +193,7 @@ export default function TimesheetsPage() {
             <div className="flex items-center gap-2">
               <button onClick={() => setWeekStart(d => addDays(d, -7))} className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"><ChevronLeft className="w-4 h-4" /></button>
               <span className="text-sm font-bold text-slate-800 min-w-[150px] text-center">
-                {new Date(weekDays[0] + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – {new Date(weekDays[6] + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                {formatDayMonth(weekDays[0])} – {formatDayMonth(weekDays[6])} {weekDays[6].slice(0, 4)}
               </span>
               <button onClick={() => setWeekStart(d => addDays(d, 7))} className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"><ChevronRight className="w-4 h-4" /></button>
               <button onClick={() => setWeekStart(mondayOf(new Date()))} className="text-[11px] font-bold text-[#3D87D3] hover:underline cursor-pointer">This week</button>
@@ -322,7 +323,7 @@ export default function TimesheetsPage() {
                       const w = t.work_item_id ? workItems.find(x => x.id === t.work_item_id) : null;
                       return (
                         <div key={t.id} className="px-4 py-2 flex items-center justify-between gap-3">
-                          <span className="font-mono text-slate-400">{t.work_date}</span>
+                          <span className="font-mono text-slate-400">{formatDate(t.work_date)}</span>
                           <span className="flex-1 font-semibold text-slate-700">{w ? `${p?.name || 'Project'} — ${w.name}` : (p?.name || 'Project')}</span>
                           <span className="font-mono font-bold">{fmtH(t.minutes)}</span>
                           {t.note && <span className="text-slate-400 italic max-w-[260px] truncate">{t.note}</span>}
