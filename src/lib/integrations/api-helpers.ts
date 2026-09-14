@@ -26,6 +26,22 @@ export async function requireApiSession(request: NextRequest): Promise<ApiSessio
   return { supabase, profileId: profile.id, isAdmin: (roleRows || []).some(r => r.role === 'admin') };
 }
 
+/**
+ * Cron routes are reachable from the internet: middleware.ts excludes /api/ from the
+ * auth redirect. Returns null when the caller presented the right secret, otherwise the
+ * response to send back. A missing CRON_SECRET is a misconfiguration, not a free pass.
+ */
+export function requireCronSecret(request: NextRequest): NextResponse | null {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return NextResponse.json({ error: 'CRON_SECRET is not configured' }, { status: 500 });
+  }
+  if (request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized & Invalid Cron Secret' }, { status: 401 });
+  }
+  return null;
+}
+
 export function isNextResponse(v: unknown): v is NextResponse {
   return v instanceof NextResponse;
 }

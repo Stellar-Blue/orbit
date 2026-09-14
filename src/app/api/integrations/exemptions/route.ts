@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/integrations/server';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireApiSession(request);
+  if (isNextResponse(session)) return session;
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const admin = getAdminClient();
   const { data: exemptions } = await admin
     .from('integration_exemptions')

@@ -4,7 +4,13 @@ import { getAdminClient } from '@/lib/integrations/server';
 import { clearMyDataCreds, getMyDataCreds, setMyDataCreds } from '@/lib/integrations/mydata';
 
 // GET: myDATA integration status (never returns the subscription key)
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireApiSession(request);
+  if (isNextResponse(session)) return session;
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const admin = getAdminClient();
   const creds = await getMyDataCreds(admin);
   const { data: state } = await admin.from('aade_sync_state').select('last_completed_mark,last_success_at,last_error').eq('id', 1).maybeSingle();

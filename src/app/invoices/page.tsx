@@ -51,14 +51,11 @@ export default function InvoicesRegistryPage() {
     const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const path = `invoices/${invId}_${Date.now()}_${cleanName}`;
     try {
+      // The invoices bucket is private, so no URL is stored: readers sign storage_path on load.
       let documentUrl = '';
       const { error } = await supabase.storage.from('invoices').upload(path, file, { cacheControl: '3600', upsert: true });
-      if (!error) {
-        const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(path);
-        documentUrl = pubData?.publicUrl || '';
-      }
-      if (error || !documentUrl) {
-        console.warn('Storage fallback applied or public URL unavailable -> using Data URL representation.');
+      if (error) {
+        console.warn('Storage upload failed -> using Data URL representation.');
         documentUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve((e.target?.result as string) || '');

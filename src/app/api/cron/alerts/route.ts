@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireCronSecret } from '@/lib/integrations/api-helpers';
 
 /**
  * Secure Vercel Cron handler for daily contract notice window checks.
  * Protected by authorization bearer token matching CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized & Invalid Cron Secret' }, { status: 401 });
-  }
+  const unauthorized = requireCronSecret(request);
+  if (unauthorized) return unauthorized;
 
   // In production, queries supabase for contracts where notice_deadline is approaching within 60 days
   // and triggers notifications/emails to owner_profile_id.

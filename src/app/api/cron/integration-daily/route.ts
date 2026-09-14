@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireCronSecret } from '@/lib/integrations/api-helpers';
 import { athensToday, computeDayState, deliverSlackOutbox, enqueueOutbox, getAdminClient, getSlackSettings } from '@/lib/integrations/server';
 import { syncOutlookForProfile } from '@/lib/integrations/outlook';
 import { syncIssuedInvoices } from '@/lib/integrations/mydata';
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized & Invalid Cron Secret' }, { status: 401 });
-  }
+  const unauthorized = requireCronSecret(request);
+  if (unauthorized) return unauthorized;
 
   const admin = getAdminClient();
   const settings = await getSlackSettings(admin);

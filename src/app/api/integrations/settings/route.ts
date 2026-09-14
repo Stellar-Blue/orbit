@@ -4,7 +4,13 @@ import { getGraphSettings } from '@/lib/integrations/outlook';
 import { DEFAULT_SLACK_SETTINGS } from '@/lib/integrations/types';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireApiSession(request);
+  if (isNextResponse(session)) return session;
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const admin = getAdminClient();
   const settings = await getSlackSettings(admin);
   const outlook = await getGraphSettings(admin);

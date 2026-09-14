@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
@@ -99,6 +99,7 @@ export default function ContractsRegistryPage() {
   const [newDirection, setNewDirection] = useState<ContractDirection>('revenue');
   const [newType, setNewType] = useState('saas_subscription');
   const [isPreviewingDoc, setIsPreviewingDoc] = useState(false);
+  const [previewDocUrl, setPreviewDocUrl] = useState<string>('');
   const [newNotice, setNewNotice] = useState(60);
   const [newStarts, setNewStarts] = useState('2026-08-01');
   const [newEnds, setNewEnds] = useState('');
@@ -128,12 +129,35 @@ export default function ContractsRegistryPage() {
         });
       }
 
-      const { data } = supabase.storage.from('contract-documents').getPublicUrl(filePath);
-      return data.publicUrl || filePath;
+      // contract-documents is private, so the object path is stored and signed on read.
+      return filePath;
     } catch (err) {
       console.error('Storage upload error:', err);
       return null;
     }
+  };
+
+  // document_url holds one of three shapes: a Data URL (the upload fallback above), a full
+  // public URL from before the bucket was made private, or an object path for anything
+  // written since. Older rows are left alone and normalised here instead of backfilled.
+  const resolveContractDocumentUrl = async (documentUrl: string): Promise<string> => {
+    if (documentUrl.startsWith('data:')) {
+      return documentUrl;
+    }
+
+    const publicPrefix = '/storage/v1/object/public/contract-documents/';
+    const prefixIndex = documentUrl.indexOf(publicPrefix);
+    let storagePath = documentUrl;
+    if (prefixIndex !== -1) {
+      storagePath = documentUrl.slice(prefixIndex + publicPrefix.length);
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase.storage
+      .from('contract-documents')
+      .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
+
+    return data?.signedUrl || '';
   };
 
   const handleSelectDocForNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -854,7 +878,13 @@ export default function ContractsRegistryPage() {
                         <Button 
                           size="sm" 
                           variant="secondary" 
-                          onClick={() => setIsPreviewingDoc(true)}
+                          onClick={async () => {
+                            if (!selectedContract.document_url) {
+                              return;
+                            }
+                            setPreviewDocUrl(await resolveContractDocumentUrl(selectedContract.document_url));
+                            setIsPreviewingDoc(true);
+                          }}
                           className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-3"
                         >
                           <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Preview
@@ -1190,7 +1220,7 @@ export default function ContractsRegistryPage() {
           isOpen={isPreviewingDoc}
           onClose={() => setIsPreviewingDoc(false)}
           documentName={selectedContract.document_name}
-          documentUrl={selectedContract.document_url}
+          documentUrl={previewDocUrl}
           storagePath={`contracts/${selectedContract.reference}/${selectedContract.document_name}`}
           uploadedAt={selectedContract.document_uploaded_at?.split('T')[0] || selectedContract.starts_on}
           subtitle={`Signed Agreement · ${selectedContract.counterparty?.legal_name || 'Client Entity'}`}

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
@@ -240,6 +240,24 @@ const generateUUID = (): string => {
     const r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
+};
+
+const signInvoiceDocuments = async (
+  supabase: ReturnType<typeof getSupabaseBrowserClient>,
+  rows: InvoiceDocument[]
+): Promise<InvoiceDocument[]> => {
+  return Promise.all(rows.map(async (doc) => {
+    const isMockPath = typeof doc.storage_path === 'string' && doc.storage_path.startsWith('mcp_invoices/');
+    if (isMockPath || !doc.storage_path) {
+      return { ...doc, url: undefined };
+    }
+
+    const { data: signed } = await supabase.storage
+      .from('invoices')
+      .createSignedUrl(doc.storage_path, SIGNED_URL_TTL_SECONDS);
+
+    return { ...doc, url: signed?.signedUrl || undefined };
+  }));
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -616,13 +634,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             setInvoiceCategories(loadedCats);
           }
-          const loadedDocs: InvoiceDocument[] = (docRes.data || []).map((doc: any) => {
-            const isMockPath = typeof doc.storage_path === 'string' && doc.storage_path.startsWith('mcp_invoices/');
-            const { data: pubData } = isMockPath
-              ? { data: null }
-              : supabase.storage.from('invoices').getPublicUrl(doc.storage_path);
-            return { ...doc, url: pubData?.publicUrl || undefined };
-          });
+          const loadedDocs: InvoiceDocument[] = await signInvoiceDocuments(supabase, docRes.data || []);
           setInvoiceDocuments(loadedDocs);
           const loadedPays: InvoicePayment[] = payRes.data || [];
           setInvoicePayments(loadedPays);
@@ -710,7 +722,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // While previewing a SPECIFIC employee, keep exposing the real (logged-in admin) role so the
   // exit ribbon/controls stay available; otherwise the role follows the active identity.
   const realUserRole = previewProfileId
-    ? (profiles.find(p => p.id === realProfileId)?.role || 'admin')
+    ? (profiles.find(p => p.id === realProfileId)?.role || 'employee')
     : baseCurrentUser.role;
   const currentUser = useMemo(() => {
     if (previewProfileId) {
@@ -3968,13 +3980,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('invoice_allocations').select('*'),
       ]);
       
-      const loadedDocs: InvoiceDocument[] = (docRes.data || []).map((doc: any) => {
-        const isMockPath = typeof doc.storage_path === 'string' && doc.storage_path.startsWith('mcp_invoices/');
-        const { data: pubData } = isMockPath
-          ? { data: null }
-          : supabase.storage.from('invoices').getPublicUrl(doc.storage_path);
-        return { ...doc, url: pubData?.publicUrl || undefined };
-      });
+      const loadedDocs: InvoiceDocument[] = await signInvoiceDocuments(supabase, docRes.data || []);
       setInvoiceDocuments(loadedDocs);
       
       const loadedPays: InvoicePayment[] = payRes.data || [];
