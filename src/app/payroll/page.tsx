@@ -728,7 +728,7 @@ export default function PayrollPage() {
         <StatCard 
           title={`Total Company Cost (${selectedPeriod})`}
           value={`€${totalCost.toLocaleString()}`}
-          subtitle="Gross salaries, employer EFKA & contractor retainers"
+          subtitle="Gross salaries, net disbursements & contractor retainers"
           icon={<DollarSign className="w-5 h-5 text-[#3D87D3]" />}
         />
         <StatCard 
@@ -839,7 +839,6 @@ export default function PayrollPage() {
                 const prof = profiles.find(p => p.id === sal.profile_id);
                 const isActive = !sal.valid_to;
                 const loadedMonthly = loadedMonthlyCost(sal);
-                const employerCost = Number((loadedMonthly - sal.gross_amount).toFixed(2));
 
                 return (
                   <div key={sal.id} className={`p-4 rounded-xl border transition-all text-xs ${isActive ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/70 border-slate-200 opacity-75'}`}>
@@ -894,10 +893,6 @@ export default function PayrollPage() {
                           </div>
                         </div>
                         <div className="text-right flex items-center space-x-6">
-                          <div>
-                            <span className="text-xs text-slate-400 font-medium block">Employer Cost</span>
-                            <span className="font-mono font-bold text-[#3D87D3] text-sm">€{employerCost.toLocaleString()}</span>
-                          </div>
                           <div>
                             <span className="text-xs text-slate-400 font-medium block">Gross Base ({(sal.basis || 'monthly_gross').replace('_', ' ')})</span>
                             <span className="font-mono font-bold text-slate-800 text-sm">€{(sal.gross_amount || 0).toLocaleString()}</span>

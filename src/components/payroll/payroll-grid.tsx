@@ -17,7 +17,6 @@ interface PayrollRow {
   paymentTypeEn: string;
   gross: number;
   net: number;
-  employer: number;
   totalCost: number;
   bankRef: string;
   status: string;
@@ -67,7 +66,6 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
         paymentTypeEn: pt?.name_en || '',
         gross: pay.gross,
         net: pay.net,
-        employer: pay.employer_contributions,
         totalCost: pay.total_cost,
         bankRef: pay.bank_reference || '',
         status: pay.status,
@@ -124,11 +122,6 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
     {
       headerName: 'Net Pay', field: 'net', width: 105, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
       cellClass: 'font-mono font-bold text-emerald-700',
-      valueFormatter: (p) => `€${Number(p.value).toLocaleString()}`
-    },
-    {
-      headerName: 'Employer EFKA', field: 'employer', width: 115, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
-      cellClass: 'font-mono text-slate-600',
       valueFormatter: (p) => `€${Number(p.value).toLocaleString()}`
     },
     {
