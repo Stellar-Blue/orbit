@@ -88,10 +88,14 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-slate-800 truncate">{p.value}</p>
-            <p className="text-xs text-slate-500 truncate">{p.data?.greekName} • {p.data?.email}</p>
+            {p.data?.greekName && <p className="text-xs text-slate-500 truncate">{p.data.greekName}</p>}
           </div>
         </div>
       )
+    },
+    {
+      headerName: 'Email', field: 'email', minWidth: 230, sortable: true, ...excelSetFilter(),
+      cellClass: 'font-mono text-xs text-slate-600'
     },
     {
       headerName: 'Role / Title', field: 'title', width: 170, sortable: true, ...excelSetFilter(),

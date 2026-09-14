@@ -21,7 +21,6 @@ interface LeaveRow {
   note: string;
   status: string;
   pendingCancel: boolean;
-  erganiStatus: string;
 }
 
 interface CompanyLeaveGridProps {
@@ -65,8 +64,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
         workDays: getEffectiveDays(req),
         note: req.note || '',
         status: req.status,
-        pendingCancel: req.status === 'cancellation_requested',
-        erganiStatus: req.ergani_status || 'not_submitted'
+        pendingCancel: req.status === 'cancellation_requested'
       };
     });
   }, [requests, profiles, leaveTypes, getEffectiveDays]);
@@ -122,7 +120,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
       )
     },
     {
-      headerName: 'Status & ΕΡΓΑΝΗ', field: 'status', width: 150, sortable: true, ...excelSetFilter(['pending', 'approved', 'rejected', 'taken', 'cancellation_requested']),
+      headerName: 'Status', field: 'status', width: 150, sortable: true, ...excelSetFilter(['pending', 'approved', 'rejected', 'taken', 'cancellation_requested']),
       cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => (
         <div className="space-y-1">
           {p.value === 'approved' || p.value === 'taken' ? (
@@ -137,9 +135,6 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
               ⚠️ Cancellation Requested
             </Badge>
           )}
-          <div className="text-[10px] font-mono text-slate-400 uppercase">
-            ΕΡΓΑΝΗ: <span className="text-slate-600 font-bold">{p.data?.erganiStatus}</span>
-          </div>
         </div>
       )
     },
