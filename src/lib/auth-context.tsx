@@ -11,12 +11,12 @@ import {
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
   Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
   Budget, BudgetCategory, BudgetLine, RecurringCommitment,
-  EmployeeContract, SalaryBonus,
+  EmployeeContract,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy
 } from './types';
 import { calculateContractValuation } from './pricing-engine';
-import { employerCostRatio, loadedMonthlyCost } from './compensation';
+import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
@@ -106,10 +106,6 @@ interface AppState {
   employeeContracts: EmployeeContract[];
   addEmployeeContract: (c: Omit<EmployeeContract, 'id'>) => Promise<boolean>;
   updateEmployeeContract: (id: string, updates: Partial<EmployeeContract>) => Promise<boolean>;
-  salaryBonuses: SalaryBonus[];
-  addSalaryBonus: (b: Omit<SalaryBonus, 'id'>) => Promise<boolean>;
-  updateSalaryBonus: (id: string, updates: Partial<SalaryBonus>) => Promise<boolean>;
-  deleteSalaryBonus: (id: string) => Promise<boolean>;
   addSalaryRecord: (record: Omit<SalaryRecord, 'id'>) => Promise<void>;
   updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
   deleteSalaryRecord: (id: string) => Promise<boolean>;
@@ -256,8 +252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [previewProfileId, setPreviewProfileId] = useState<string | null>(null);
   const [realProfileId, setRealProfileId] = useState<string>('');
   const [teams, setTeams] = useState<Team[]>([]);
-  const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);
-  const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
+  const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);  const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [entitlements, setEntitlements] = useState<LeaveEntitlement[]>([]);
@@ -300,7 +295,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tierOverrides, setTierOverrides] = useState<CounterpartyTierOverride[]>([]);
   const [documentTypes, setDocumentTypes] = useState<PaymentDocumentType[]>([]);
   const [employeeContracts, setEmployeeContracts] = useState<EmployeeContract[]>([]);
-  const [salaryBonuses, setSalaryBonuses] = useState<SalaryBonus[]>([]);
   const [invoiceCategories, setInvoiceCategories] = useState<InvoiceCategory[]>([]);
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
@@ -369,7 +363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           holidaysRes, remoteDaysRes, remotePatternsRes, timesheetsRes, counterpartiesRes, cpRolesTableRes, cpRoleLinksRes, contractsRes, remotePoliciesRes,
           catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
           tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
-          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2, bonusesRes,
+          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2,
           jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes, companyProfileRes, leavePolicyRes
         ] = await Promise.all([
           supabase.from('teams').select('*'),
@@ -377,7 +371,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('user_roles').select('*'),
           isAdmin ? supabase.from('profile_sensitive').select('*') : (matchedId ? supabase.from('profile_sensitive').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('payment_types').select('*').order('sort_order', { ascending: true }),
-          isAdmin ? supabase.from('salary_history').select('*') : (matchedId ? supabase.from('salary_history').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('salary_history').select('*') : (matchedId ? supabase.from('my_compensation').select('*') : Promise.resolve(emptyRes)),
           isAdmin ? supabase.from('payments').select('*') : (matchedId ? supabase.from('payments').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('leave_types').select('*').order('sort_order', { ascending: true }),
           isAdmin ? supabase.from('leave_entitlements').select('*') : (matchedId ? supabase.from('leave_entitlements').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
@@ -409,7 +403,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           supabase.from('integration_settings').select('*'),
           supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true }),
           isAdmin ? supabase.from('employee_contracts').select('*') : (matchedId ? supabase.from('employee_contracts').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('salary_bonuses').select('*') : (matchedId ? supabase.from('salary_bonuses').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('job_roles').select('*').order('sort_order', { ascending: true }),
           supabase.from('seniority_levels').select('*').order('rank', { ascending: true }),
           supabase.from('profile_role_history').select('*'),
@@ -652,7 +645,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setDocumentTypes((documentTypesRes?.data || []) as PaymentDocumentType[]);
         setEmployeeContracts((contractsRes2?.data || []) as EmployeeContract[]);
-        setSalaryBonuses((bonusesRes?.data || []) as SalaryBonus[]);
 
         setJobRoles((jobRolesRes?.data || []) as JobRole[]);
         setSeniorityLevels((seniorityLevelsRes?.data || []) as SeniorityLevel[]);
@@ -1450,7 +1442,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
       setPaymentTypes(prev => prev.filter(t => t.id !== id));
-      setSalaryBonuses(prev => prev.map(b => b.payment_type_id === id ? { ...b, payment_type_id: null } : b));
+      // Ledger entries that referenced it are un-linked by the FK (ON DELETE SET NULL).
+      setSalaries(prev => prev.map(s => s.payment_type_id === id ? { ...s, payment_type_id: null } : s));
       return true;
     } catch (e) {
       console.error('Exception deleting payment type:', e);
@@ -1547,72 +1540,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addSalaryBonus = async (b: Omit<SalaryBonus, 'id'>): Promise<boolean> => {
-    const newB: SalaryBonus = { ...b, id: generateUUID() };
-    setSalaryBonuses(prev => [...prev, newB]);
-    try {
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.from('salary_bonuses').insert(newB);
-      if (error) {
-        console.error('Failed to insert salary bonus:', error);
-        alert(`Database Error: ${error.message}`);
-        setSalaryBonuses(prev => prev.filter(x => x.id !== newB.id));
-        return false;
-      }
-      return true;
-    } catch (e) {
-      console.error('Exception inserting salary bonus:', e);
-      return false;
-    }
-  };
-
-  const updateSalaryBonus = async (id: string, updates: Partial<SalaryBonus>): Promise<boolean> => {
-    setSalaryBonuses(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
-    try {
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.from('salary_bonuses').update(updates).eq('id', id);
-      if (error) {
-        console.error('Failed to update salary bonus:', error);
-        alert(`Database Error: ${error.message}`);
-        return false;
-      }
-      return true;
-    } catch (e) {
-      console.error('Exception updating salary bonus:', e);
-      return false;
-    }
-  };
-
-  const deleteSalaryBonus = async (id: string): Promise<boolean> => {
-    setSalaryBonuses(prev => prev.filter(b => b.id !== id));
-    try {
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.from('salary_bonuses').delete().eq('id', id);
-      if (error) {
-        console.error('Failed to delete salary bonus:', error);
-        alert(`Database Error: ${error.message}`);
-        return false;
-      }
-      return true;
-    } catch (e) {
-      console.error('Exception deleting salary bonus:', e);
-      return false;
-    }
-  };
-
+  /**
+   * Append an effective-dated ledger entry (base rate, contractual extra or one-off bonus).
+   * Never edits in place: for a BASE row the previous open base rate is closed first, so raises
+   * build a complete history. Extras/bonuses are additive and never close anything.
+   */
   const addSalaryRecord = async (rec: Omit<SalaryRecord, 'id'>) => {
     const newSal: SalaryRecord = { ...rec, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
 
-    // Never edit in place. A raise = close the old row, add a new one.
-    const oldSal = salaries.find(s => s.profile_id === rec.profile_id && !s.valid_to);
-    if (oldSal) {
-      const closeDate = rec.valid_from;
-      setSalaries(prev => prev.map(s => s.id === oldSal.id ? { ...s, valid_to: closeDate } : s));
-      try {
-        await supabase.from('salary_history').update({ valid_to: closeDate }).eq('id', oldSal.id);
-      } catch (e) {
-        console.error('Failed to close old salary record in database:', e);
+    if (isBaseSalary(newSal)) {
+      const oldSal = salaries.find(s => s.profile_id === rec.profile_id && isBaseSalary(s) && !s.valid_to);
+      if (oldSal) {
+        const closeDate = rec.valid_from;
+        setSalaries(prev => prev.map(s => s.id === oldSal.id ? { ...s, valid_to: closeDate } : s));
+        try {
+          await supabase.from('salary_history').update({ valid_to: closeDate }).eq('id', oldSal.id);
+        } catch (e) {
+          console.error('Failed to close old salary record in database:', e);
+        }
       }
     }
 
@@ -1720,7 +1666,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const monthNum = parseInt(period.split('-')[1], 10);
 
     activeStaff.forEach(p => {
-      const sal = salaries.find(s => s.profile_id === p.id && !s.valid_to);
+      const sal = salaries.find(s => s.profile_id === p.id && isBaseSalary(s) && !s.valid_to);
       if (!sal) return;
 
       if (p.employment_type === 'contractor') {
@@ -1798,41 +1744,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
 
-        // Recurring monthly extras on the employee's contract — auto-generated each period.
-        // A bonus that names a Dynamic Payment Type is filed under that category; otherwise
-        // it falls back to the generic 'bonus' type (previous behaviour).
+        // Contractual extras & one-off bonuses live in the salary ledger as effective-dated rows.
+        // A month is covered when valid_from <= month end and valid_to is open or within the month.
+        // An entry naming a Dynamic Payment Type is filed under that category, else the generic 'bonus'.
         const ptBonus = paymentTypes.find(t => t.code === 'bonus');
         if (ptBonus) {
-          const activeMonthlyBonuses = salaryBonuses.filter(b =>
-            b.profile_id === p.id && b.status === 'active' && b.kind === 'recurring' &&
-            b.frequency === 'monthly' &&
-            (!b.start_period || b.start_period <= period) &&
-            (!b.end_period || b.end_period >= period)
+          const monthStart = `${period}-01`;
+          const monthEnd = new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0).toISOString().slice(0, 10);
+          const dueExtras = salaries.filter(s =>
+            s.profile_id === p.id && !isBaseSalary(s) &&
+            s.valid_from <= monthEnd && (!s.valid_to || s.valid_to >= monthStart)
           );
-          activeMonthlyBonuses.forEach(b => {
-            const payType = (b.payment_type_id ? paymentTypes.find(t => t.id === b.payment_type_id) : undefined) || ptBonus;
+          dueExtras.forEach(x => {
+            const payType = (x.payment_type_id ? paymentTypes.find(t => t.id === x.payment_type_id) : undefined) || ptBonus;
+            const note = `Extra: ${x.label || 'Contractual extra'}`;
             const duplicateBonus = payments.some(exist =>
               exist.profile_id === p.id && exist.payment_type_id === payType.id &&
-              exist.period === period && exist.note === `Bonus: ${b.name}`
+              exist.period === period && exist.note === note
             );
-            if (duplicateBonus || newPays.some(n => n.profile_id === p.id && n.payment_type_id === payType.id && n.note === `Bonus: ${b.name}`)) return;
-            const bonusAmount = Number(b.amount);
-            const bonusTotalCost = Number((bonusAmount * mult).toFixed(2));
-            const bonusEmployer = Number((bonusTotalCost - bonusAmount).toFixed(2));
-            const bonusNet = Number((bonusAmount * 0.72).toFixed(2));
+            if (duplicateBonus || newPays.some(n => n.profile_id === p.id && n.payment_type_id === payType.id && n.note === note)) return;
+            const extraAmount = Number(x.gross_amount);
+            const extraTotalCost = Number((extraAmount * mult).toFixed(2));
+            const extraEmployer = Number((extraTotalCost - extraAmount).toFixed(2));
+            const extraNet = Number((extraAmount * 0.72).toFixed(2));
             newPays.push({
               id: generateUUID(),
               profile_id: p.id,
               period,
               payment_type_id: payType.id,
               payment_type: payType,
-              gross: bonusAmount,
-              net: bonusNet,
-              employer_contributions: bonusEmployer,
-              total_cost: bonusTotalCost,
+              gross: extraAmount,
+              net: extraNet,
+              employer_contributions: extraEmployer,
+              total_cost: extraTotalCost,
               payment_date: `${period}-28`,
               status: 'planned',
-              note: `Bonus: ${b.name}`,
+              note,
               documents: []
             });
           });
@@ -3813,7 +3760,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       activeSalaries.forEach(salary => {
-        const baseCost = loadedMonthlyCost(salary);
+        // Base rates carry their own employer cost; extras inherit the employee's base ratio.
+        const baseCost = isBaseSalary(salary)
+          ? loadedMonthlyCost(salary)
+          : loadedExtraCost(salaries, salary.profile_id, Number(salary.gross_amount) || 0);
 
         for (let m = 1; m <= 12; m++) {
           let monthMultiplier = 1.0;
@@ -4236,10 +4186,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       employeeContracts,
       addEmployeeContract,
       updateEmployeeContract,
-      salaryBonuses,
-      addSalaryBonus,
-      updateSalaryBonus,
-      deleteSalaryBonus,
       addSalaryRecord,
       updateSalaryRecord,
       deleteSalaryRecord,

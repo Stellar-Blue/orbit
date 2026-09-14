@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
-import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType, SalaryBonus } from '@/lib/types';
-import { loadedMonthlyCost, employerCostRatio } from '@/lib/compensation';
+import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
+import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isRecurringExtra, isOneTimeBonus, extrasFor, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
@@ -26,16 +26,15 @@ export default function PayrollPage() {
   const { 
     currentUser, profiles, paymentTypes, salaries, payments, 
     generateDraftMonth, addPaymentRecord, updatePaymentRecord, deletePaymentRecord, markAllPaidForPeriod,
-    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, updatePaymentType, deletePaymentType, addSalaryRecord, updateSalaryRecord,
-    documentTypes, backfillSalaryPayments,
-    salaryBonuses, addSalaryBonus, updateSalaryBonus, deleteSalaryBonus, deleteSalaryRecord
+    addPaymentDocuments, updatePaymentDocumentType, deletePaymentDocument, addPaymentType, updatePaymentType, deletePaymentType, addSalaryRecord, updateSalaryRecord, deleteSalaryRecord,
+    documentTypes, backfillSalaryPayments
   } = useAuth();
   
   const [backfillingId, setBackfillingId] = useState<string | null>(null);
   const [editSalaryId, setEditSalaryId] = useState<string | null>(null);
   const [newExtra, setNewExtra] = useState({ payment_type_id: '', amount: 0, start_period: '' });
   const [salForm, setSalForm] = useState({
-    gross_amount: 0, full_cost: 0, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '',
+    gross_amount: 0, full_cost: 0, valid_from: '', valid_to: '', basis: 'monthly_gross', note: '', label: '', payment_type_id: '',
   });
 
   const openSalaryEditor = (sal: SalaryRecord) => {
@@ -46,6 +45,8 @@ export default function PayrollPage() {
       valid_to: sal.valid_to || '',
       basis: sal.basis || 'monthly_gross',
       note: sal.note || '',
+      label: sal.label || '',
+      payment_type_id: sal.payment_type_id || '',
     });
     setEditSalaryId(sal.id);
   };
@@ -53,6 +54,20 @@ export default function PayrollPage() {
   const handleSaveSalaryEdit = async () => {
     if (!editSalaryId || !salForm.valid_from || salForm.gross_amount <= 0) {
       alert('Valid from and a positive gross amount are required.');
+      return;
+    }
+    // Extras/bonuses carry no employer-cost maths of their own — they inherit the base ratio.
+    if (editSalaryRecord && !isBaseSalary(editSalaryRecord)) {
+      await updateSalaryRecord(editSalaryId, {
+        gross_amount: Number(salForm.gross_amount),
+        valid_from: salForm.valid_from,
+        valid_to: salForm.valid_to || undefined,
+        label: salForm.label.trim() || editSalaryRecord.label || 'Contractual extra',
+        payment_type_id: salForm.payment_type_id || null,
+        note: salForm.note.trim() || undefined,
+      });
+      setEditSalaryId(null);
+      notifySuccess('Ledger entry updated.');
       return;
     }
     const fullCost = Number(salForm.full_cost) || Number(salForm.gross_amount);
@@ -81,13 +96,15 @@ export default function PayrollPage() {
       : 'All past payments already exist.');
   };
 
-  // Contractual recurring monthly extras (Dynamic Payment Types) for the salary record being edited.
+  // Every non-base ledger entry (contractual extras + one-off bonuses) of the employee being edited.
   const editSalaryRecord = salaries.find(s => s.id === editSalaryId) || null;
   const editExtraEmployee = editSalaryRecord ? profiles.find(p => p.id === editSalaryRecord.profile_id) : null;
   const editExtras = editSalaryRecord
-    ? salaryBonuses.filter(b => b.profile_id === editSalaryRecord.profile_id && b.kind === 'recurring' && b.frequency === 'monthly')
+    ? extrasFor(salaries, editSalaryRecord.profile_id).filter(x => isRecurringExtra(x))
     : [];
   const recurringPaymentTypes = paymentTypes.filter(pt => pt.active && pt.is_recurring_monthly);
+  /** The modal edits a base rate or (when true) a contractual extra / one-off bonus ledger entry. */
+  const isExtraEntry = !!editSalaryRecord && !isBaseSalary(editSalaryRecord);
 
   const handleAddSalaryExtra = async () => {
     if (!editSalaryRecord) return;
@@ -96,50 +113,36 @@ export default function PayrollPage() {
       alert('Pick a recurring monthly Dynamic Payment Type and enter a positive monthly amount.');
       return;
     }
-    const ok = await addSalaryBonus({
+    await addSalaryRecord({
       profile_id: editSalaryRecord.profile_id,
-      name: pt.name_en || pt.name_el,
-      amount: Number(newExtra.amount),
-      kind: 'recurring',
-      frequency: 'monthly',
-      start_period: newExtra.start_period || null,
-      end_period: null,
-      period: null,
+      entry_type: 'recurring_extra',
+      label: pt.name_en || pt.name_el,
       payment_type_id: pt.id,
-      status: 'active'
+      valid_from: newExtra.start_period ? `${newExtra.start_period}-01` : new Date().toISOString().slice(0, 10),
+      basis: 'monthly_gross',
+      gross_amount: Number(newExtra.amount),
+      currency: 'EUR',
+      note: undefined,
     });
-    if (ok) setNewExtra({ payment_type_id: '', amount: 0, start_period: '' });
+    setNewExtra({ payment_type_id: '', amount: 0, start_period: '' });
   };
 
-  // Delete an effective-dated salary record (the entries behind the 12-month burn forecast).
+  // Delete any ledger entry (base rate, recurring extra or one-off bonus).
   const handleDeleteSalary = async (sal: SalaryRecord) => {
     const prof = profiles.find(p => p.id === sal.profile_id);
     const who = prof ? `${prof.first_name} ${prof.last_name}` : 'this employee';
+    const what = isBaseSalary(sal)
+      ? 'salary record'
+      : `${isOneTimeBonus(sal) ? 'one-off bonus' : 'recurring extra'} “${sal.label || 'unnamed'}”`;
     if (!confirm(
-      `Delete the salary record for ${who} effective ${formatDate(sal.valid_from)}` +
-      `${sal.valid_to ? ` until ${formatDate(sal.valid_to)}` : ' (active rate)'}?\n\n` +
+      `Delete the ${what} for ${who} effective ${formatDate(sal.valid_from)}` +
+      `${sal.valid_to ? ` until ${formatDate(sal.valid_to)}` : ' (still running)'}?\n\n` +
       'It disappears from the salary ledger and the 12-month burn forecast. ' +
       'Payment rows already generated are kept — the payment ledger is the record of what was paid. ' +
       'This cannot be undone.'
     )) return;
     const ok = await deleteSalaryRecord(sal.id);
-    if (ok) notifySuccess('Salary record deleted.');
-  };
-
-  // Pause / resume a contractual recurring extra straight from the ledger grid.
-  const handleToggleExtra = async (b: SalaryBonus) => {
-    const ok = await updateSalaryBonus(b.id, { status: b.status === 'active' ? 'inactive' : 'active' });
-    if (ok) notifySuccess(b.status === 'active' ? 'Recurring extra paused.' : 'Recurring extra resumed.');
-  };
-
-  const handleDeleteExtra = async (b: SalaryBonus) => {
-    if (!confirm(
-      `Delete the recurring extra "${b.name}" (€${Number(b.amount).toLocaleString()}/mo)?\n\n` +
-      'It stops being generated in payroll drafts. Payment rows already generated are kept. ' +
-      'This cannot be undone.'
-    )) return;
-    const ok = await deleteSalaryBonus(b.id);
-    if (ok) notifySuccess('Recurring extra deleted.');
+    if (ok) notifySuccess('Ledger entry deleted.');
   };
   
   const hasPaymentReceipt = (docs?: PaymentDocument[]) => {
@@ -422,7 +425,6 @@ export default function PayrollPage() {
 
   // Calculate 12-Month Forward Burn Forecast
   const twelveMonthForecast = useMemo(() => {
-    const activeSalaries = salaries.filter(s => !s.valid_to);
     const months: { monthStr: string; monthLabel: string; monthNum: number; regularCost: number; statutoryCost: number; statutoryItems: string[]; totalCost: number }[] = [];
 
     // Parse current year & month from selectedPeriod
@@ -434,11 +436,20 @@ export default function PayrollPage() {
       const currentY = year + Math.floor((m - 1 + i) / 12);
       const monthStr = `${currentY}-${String(currentM).padStart(2, '0')}`;
       const monthLabel = `${monthNames[currentM - 1]} ${currentY}`;
+      const monthEnd = `${monthStr}-${String(new Date(currentY, currentM, 0).getDate()).padStart(2, '0')}`;
+      const monthStart = `${monthStr}-01`;
 
-      // Regular Monthly Cost (salaries + contractor fees, fully loaded)
+      // Only what is effective during THIS month: a raise, an extra starting later or one that
+      // ended before must not inflate the forecast.
+      const rowsInMonth = salaries.filter(sal =>
+        sal.valid_from <= monthEnd && (!sal.valid_to || sal.valid_to >= monthStart));
+
+      // Regular Monthly Cost (base rates, contractor fees + contractual extras, fully loaded)
       let regularCost = 0;
-      activeSalaries.forEach(sal => {
-        regularCost += loadedMonthlyCost(sal);
+      rowsInMonth.forEach(sal => {
+        regularCost += isBaseSalary(sal)
+          ? loadedMonthlyCost(sal)
+          : loadedExtraCost(salaries, sal.profile_id, Number(sal.gross_amount) || 0);
       });
 
       // Statutory Extras Cost for employees in matching default months (e.g., April Easter, July Holiday, Dec Christmas)
@@ -449,7 +460,8 @@ export default function PayrollPage() {
       if (statTypes.length > 0) {
         statTypes.forEach(st => {
           statutoryItems.push(st.name_el);
-          activeSalaries.forEach(sal => {
+          // Statutory bonuses are a multiple of the BASE rate only — never of an extra.
+          rowsInMonth.filter(isBaseSalary).forEach(sal => {
             const prof = profiles.find(pr => pr.id === sal.profile_id);
             if (prof && prof.employment_type !== 'contractor') { // Contractors do not get Greek statutory bonuses
               const statGross = sal.gross_amount * (st.default_multiplier ?? 1.0);
@@ -487,7 +499,7 @@ export default function PayrollPage() {
     setUpNote('');
 
     if (defaultProf) {
-      const sal = salaries.find(s => s.profile_id === defaultProf.id && !s.valid_to);
+      const sal = salaries.find(s => s.profile_id === defaultProf.id && isBaseSalary(s) && !s.valid_to);
       if (sal) {
         setUpGross(sal.gross_amount);
         if (defaultProf.employment_type === 'contractor') {
@@ -510,7 +522,7 @@ export default function PayrollPage() {
     setUpProfileId(profId);
     const prof = profiles.find(p => p.id === profId);
     if (!prof) return;
-    const sal = salaries.find(s => s.profile_id === prof.id && !s.valid_to);
+    const sal = salaries.find(s => s.profile_id === prof.id && isBaseSalary(s) && !s.valid_to);
     if (sal) {
       setUpGross(sal.gross_amount);
       if (prof.employment_type === 'contractor') {
@@ -743,7 +755,7 @@ export default function PayrollPage() {
 
   const handleDeletePaymentType = async (pt: PaymentType) => {
     const usedByPayments = payments.filter(p => p.payment_type_id === pt.id).length;
-    const linkedExtras = salaryBonuses.filter(b => b.payment_type_id === pt.id).length;
+    const linkedExtras = salaries.filter(s => s.payment_type_id === pt.id).length;
     if (usedByPayments > 0) {
       // payments.payment_type_id is a NOT NULL FK without cascade — deleting is impossible.
       if (confirm(`${pt.name_en} (${pt.code}) is used by ${usedByPayments} payment row(s) and cannot be deleted.\n\nDeactivate it instead? It stays on historic rows but disappears from new entries and forecasts.`)) {
@@ -979,15 +991,12 @@ export default function PayrollPage() {
             <div className="mt-3">
               <SalaryLedgerGrid
                 salaries={salaries}
-                extras={salaryBonuses.filter(b => b.kind === 'recurring' && b.frequency === 'monthly')}
                 profiles={profiles}
                 paymentTypes={paymentTypes}
                 backfillingId={backfillingId}
                 onEdit={openSalaryEditor}
                 onBackfill={handleBackfillSalary}
                 onDelete={handleDeleteSalary}
-                onToggleExtra={handleToggleExtra}
-                onDeleteExtra={handleDeleteExtra}
               />
             </div>
           </Card>
@@ -1103,44 +1112,72 @@ export default function PayrollPage() {
 
       {/* RECORD RAISE MODAL */}
       {/* EDIT EXISTING EFFECTIVE-DATED SALARY RECORD (opened from the salary ledger grid) */}
-      <Modal isOpen={!!editSalaryId} onClose={() => setEditSalaryId(null)} title="Edit Effective-Dated Salary Record">
+      <Modal isOpen={!!editSalaryId} onClose={() => setEditSalaryId(null)} title={isExtraEntry ? 'Edit Ledger Entry' : 'Edit Effective-Dated Salary Record'}>
         <div className="space-y-4 text-xs">
-          <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium">
-            This edits the existing record in place. To record a <strong>raise</strong>, use &quot;Record Raise / New Contract&quot; instead, so the previous rate is closed with a valid-to date and the history stays complete.
-          </div>
+          {isExtraEntry ? (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-medium">
+              Editing a <strong>{isOneTimeBonus(editSalaryRecord!) ? 'one-off bonus' : 'contractual recurring extra'}</strong>. Payroll drafts pay it for every month its validity window covers, filed under its Dynamic Payment Type. End it by setting a <strong>Valid To</strong> date.
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium">
+              This edits the existing record in place. To record a <strong>raise</strong>, use &quot;Record Raise / New Contract&quot; instead, so the previous rate is closed with a valid-to date and the history stays complete.
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {isExtraEntry && (
+              <>
+                <div className="sm:col-span-2">
+                  <label className="text-slate-500 font-semibold block mb-1">Name</label>
+                  <input type="text" value={salForm.label} onChange={e => setSalForm({ ...salForm, label: e.target.value })} placeholder="e.g. Company Car Allowance" className="w-full p-2 border rounded-md bg-white text-slate-800" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-slate-500 font-semibold block mb-1">Dynamic Payment Type (the category payroll files it under)</label>
+                  <select value={salForm.payment_type_id} onChange={e => setSalForm({ ...salForm, payment_type_id: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                    <option value="">— Generic Bonus category —</option>
+                    {recurringPaymentTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>)}
+                    {salForm.payment_type_id && !recurringPaymentTypes.some(pt => pt.id === salForm.payment_type_id) && (
+                      <option value={salForm.payment_type_id}>{paymentTypes.find(pt => pt.id === salForm.payment_type_id)?.name_en || 'Linked category'} (inactive)</option>
+                    )}
+                  </select>
+                </div>
+              </>
+            )}
             <div>
-              <label className="text-slate-500 font-semibold block mb-1">Gross (€)</label>
+              <label className="text-slate-500 font-semibold block mb-1">{isExtraEntry ? 'Amount (€ / month)' : 'Gross (€)'}</label>
               <input type="number" step="0.01" value={salForm.gross_amount || ''} onChange={e => setSalForm({ ...salForm, gross_amount: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
             </div>
-            <div>
-              <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo)</label>
-              <input type="number" step="0.01" value={salForm.full_cost || ''} onChange={e => setSalForm({ ...salForm, full_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
-            </div>
+            {!isExtraEntry && (
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1">Full Company Cost (€/mo)</label>
+                <input type="number" step="0.01" value={salForm.full_cost || ''} onChange={e => setSalForm({ ...salForm, full_cost: Number(e.target.value) })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+              </div>
+            )}
             <div>
               <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
               <input type="date" value={salForm.valid_from} onChange={e => setSalForm({ ...salForm, valid_from: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
             </div>
             <div>
-              <label className="text-slate-500 font-semibold block mb-1">Valid To (empty = active)</label>
+              <label className="text-slate-500 font-semibold block mb-1">Valid To (empty = still running)</label>
               <input type="date" value={salForm.valid_to} onChange={e => setSalForm({ ...salForm, valid_to: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
             </div>
-            <div>
-              <label className="text-slate-500 font-semibold block mb-1">Basis</label>
-              <select value={salForm.basis} onChange={e => setSalForm({ ...salForm, basis: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
-                <option value="monthly_gross">Monthly Gross</option>
-                <option value="daily_rate">Daily Rate</option>
-                <option value="fixed_fee">Fixed Fee</option>
-                <option value="fee">Fee</option>
-              </select>
-            </div>
+            {!isExtraEntry && (
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1">Basis</label>
+                <select value={salForm.basis} onChange={e => setSalForm({ ...salForm, basis: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                  <option value="monthly_gross">Monthly Gross</option>
+                  <option value="daily_rate">Daily Rate</option>
+                  <option value="fixed_fee">Fixed Fee</option>
+                  <option value="fee">Fee</option>
+                </select>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <label className="text-slate-500 font-semibold block mb-1">Note</label>
               <input type="text" value={salForm.note} onChange={e => setSalForm({ ...salForm, note: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800" />
             </div>
           </div>
 
-          {/* Contractual recurring monthly extras — the Dynamic Payment Types this employee is
+          {/* Contractual recurring extras — the Dynamic Payment Types this employee is
               paid every month, on top of the base salary. Auto-generated by payroll drafts. */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1152,40 +1189,31 @@ export default function PayrollPage() {
             {editExtras.length === 0 && (
               <div className="text-[11px] text-slate-400 italic">No recurring monthly extras on this contract yet.</div>
             )}
-            {editExtras.map(b => (
-              <div key={b.id} className="flex items-center gap-2 flex-wrap">
-                <select
-                  value={b.payment_type_id || ''}
-                  onChange={e => updateSalaryBonus(b.id, { payment_type_id: e.target.value || null })}
-                  className="flex-1 min-w-[180px] p-2 border rounded-md bg-white text-slate-800"
-                >
-                  <option value="">— Generic Bonus category —</option>
-                  {recurringPaymentTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>)}
-                  {b.payment_type_id && !recurringPaymentTypes.some(pt => pt.id === b.payment_type_id) && (
-                    <option value={b.payment_type_id}>
-                      {paymentTypes.find(pt => pt.id === b.payment_type_id)?.name_en || 'Linked category'} (inactive)
-                    </option>
-                  )}
-                </select>
-                <input
-                  type="number"
-                  step="0.01"
-                  defaultValue={Number(b.amount)}
-                  onBlur={e => { const v = Number(e.target.value); if (v !== Number(b.amount)) updateSalaryBonus(b.id, { amount: v }); }}
-                  title="Monthly amount (€)"
-                  className="w-24 p-2 border rounded-md bg-white text-slate-800 font-mono"
-                />
-                <input type="month" value={b.start_period || ''} onChange={e => updateSalaryBonus(b.id, { start_period: e.target.value || null })} title="Active from (empty = always)" className="w-36 p-2 border rounded-md bg-white text-slate-800 font-mono" />
-                <input type="month" value={b.end_period || ''} onChange={e => updateSalaryBonus(b.id, { end_period: e.target.value || null })} title="Active until (empty = open-ended)" className="w-36 p-2 border rounded-md bg-white text-slate-800 font-mono" />
-                <span className={`text-[10px] font-bold shrink-0 ${b.status === 'active' ? 'text-emerald-700' : 'text-slate-400'}`}>{b.status.toUpperCase()}</span>
-                <Button size="sm" variant="outline" onClick={() => updateSalaryBonus(b.id, { status: b.status === 'active' ? 'inactive' : 'active' })} className="cursor-pointer shrink-0">
-                  {b.status === 'active' ? 'Pause' : 'Resume'}
-                </Button>
-                <Button size="sm" variant="danger" onClick={() => { if (confirm(`Delete extra "${b.name}"?`)) deleteSalaryBonus(b.id); }} className="cursor-pointer shrink-0">
-                  <Trash2 className="w-3 h-3" />
-                </Button>
-              </div>
-            ))}
+            {editExtras.map(x => {
+              const pt = x.payment_type_id ? paymentTypes.find(t => t.id === x.payment_type_id) : undefined;
+              const running = !x.valid_to || x.valid_to >= new Date().toISOString().slice(0, 10);
+              return (
+                <div key={x.id} className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg p-2">
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-800 block truncate">{x.label || 'Unnamed extra'}</span>
+                    <span className="text-[10px] text-slate-500 block truncate">
+                      {pt ? `${pt.name_el} · ${pt.name_en}` : 'Generic Bonus category'}
+                      {' · '}€{Number(x.gross_amount).toLocaleString()} / month
+                      {' · '}{formatDate(x.valid_from)} → {x.valid_to ? formatDate(x.valid_to) : 'Present'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge variant={running ? 'success' : 'neutral'} className="text-[9px] px-1.5 py-0">{running ? 'RUNNING' : 'ENDED'}</Badge>
+                    <Button size="sm" variant="outline" onClick={() => openSalaryEditor(x)} className="cursor-pointer shrink-0" title="Edit this extra in the form above">
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => handleDeleteSalary(x)} className="cursor-pointer shrink-0" title="Delete this extra">
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
             <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200">
               <select
                 value={newExtra.payment_type_id}

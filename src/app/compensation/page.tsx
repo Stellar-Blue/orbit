@@ -10,7 +10,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
-import { formatDateTime } from '@/lib/date';
+import { formatDate, formatDateTime } from '@/lib/date';
+import { isBaseSalary, isRecurringExtra, extrasFor } from '@/lib/compensation';
+import { BenefitsList } from '@/components/compensation/benefits-list';
 
 const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
 
@@ -21,14 +23,17 @@ export default function MyCompensationPage() {
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  // Find active and historical salary records for current user (NO employer costs displayed)
+  // My effective-dated remuneration ledger (base rates + contractual extras + one-off bonuses).
+  // Admin-visible in full; an employee reads only their own rows through the RLS-safe view.
   const mySalaries = useMemo(() => {
     const records = (salaries || []).filter(s => s.profile_id === currentUser.id);
     return [...records].sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || ''));
   }, [salaries, currentUser.id]);
 
+  const myBaseSalaries = useMemo(() => mySalaries.filter(isBaseSalary), [mySalaries]);
+
   const currentSalary = useMemo(() => {
-    const active = mySalaries.find(s => !s.valid_to) || mySalaries[0];
+    const active = myBaseSalaries.find(s => !s.valid_to) || myBaseSalaries[0];
     if (active) return active;
     return {
       id: 'mock-sal-1',
@@ -38,13 +43,19 @@ export default function MyCompensationPage() {
       gross_amount: isContractor ? 3500 : 2800,
       currency: 'EUR'
     } as SalaryRecord;
-  }, [mySalaries, currentUser.id, isContractor]);
+  }, [myBaseSalaries, currentUser.id, isContractor]);
 
   // Estimate net pay (approx 22% tax/social deductions for salaried, 0% withholding or flat for contractors)
   const estimatedNet = useMemo(() => {
     if (isContractor) return currentSalary.gross_amount;
     return Math.round(currentSalary.gross_amount * 0.78);
   }, [currentSalary, isContractor]);
+
+  // Contractual recurring extras on the contract = the employee's monthly benefits.
+  const myRecurringExtras = useMemo(
+    () => extrasFor(mySalaries, currentUser.id).filter(isRecurringExtra),
+    [mySalaries, currentUser.id]
+  );
 
   // STRICT REQUIREMENT: Only show PAID payments to employee. Draft/planned stays hidden under RLS until confirmed.
   const myPayments: PaymentRecord[] = useMemo(() => {
@@ -200,14 +211,18 @@ export default function MyCompensationPage() {
         {/* Active Remuneration Card */}
         <Card title="Active Remuneration Structure" subtitle="Current effective rates & personal earnings (Confidential)" className="lg:col-span-2 shadow-xs border-slate-200/90">
           <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mt-3 space-y-6 shadow-md">
+            {/* Primary figure = what actually lands in the bank each month. */}
             <div className="flex items-start justify-between gap-4">
               <div>
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
-                  {isContractor ? 'Monthly Fixed Retainer Rate (Gross)' : 'Monthly Base Salary (Gross)'}
+                  Estimated Net Payable Salary
                 </span>
-                <div className="text-3xl sm:text-4xl font-extrabold text-white font-mono">
-                  €{currentSalary.gross_amount.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
+                <div className="text-3xl sm:text-4xl font-extrabold text-emerald-300 font-mono">
+                  €{estimatedNet.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
                 </div>
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  {isContractor ? 'Gross invoice payout — no withholding' : 'After tax & social deductions (~78% of gross base)'}
+                </span>
               </div>
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-extrabold flex items-center shadow-2xs shrink-0">
                 <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-400" /> Active Rate
@@ -216,18 +231,20 @@ export default function MyCompensationPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-700/80 text-xs">
               <div>
-                <span className="text-slate-400 font-medium block mb-0.5">Estimated Net Payable</span>
-                <strong className="text-emerald-300 font-mono font-bold text-base">
-                  €{estimatedNet.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
+                <span className="text-slate-400 font-medium block mb-0.5">
+                  {isContractor ? 'Monthly Fixed Retainer (Gross)' : 'Monthly Gross Salary'}
+                </span>
+                <strong className="text-white font-mono font-bold text-base">
+                  €{currentSalary.gross_amount.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
                 </strong>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {isContractor ? 'Gross invoice payout' : '~78% net retention estimate'}
+                  {isContractor ? 'Invoiced retainer before withholding' : 'Contractual gross, before deductions'}
                 </span>
               </div>
               <div>
                 <span className="text-slate-400 font-medium block mb-0.5">Effective From Date</span>
                 <strong className="text-white font-mono font-bold text-sm">
-                  {currentSalary.valid_from}
+                  {formatDate(currentSalary.valid_from)}
                 </strong>
                 <span className="text-[10px] text-slate-400 block mt-0.5">{currentSalary.note || 'Current annual compensation review'}</span>
               </div>
@@ -240,6 +257,9 @@ export default function MyCompensationPage() {
               </div>
             </div>
           </div>
+
+          {/* Recurring monthly extras tracked on the contract = the employee's benefits. */}
+          <BenefitsList extras={myRecurringExtras} paymentTypes={paymentTypes} />
         </Card>
 
         {/* Bank Direct Deposit & Security Details */}
@@ -322,10 +342,10 @@ export default function MyCompensationPage() {
           </div>
 
           <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-            {mySalaries.length === 0 ? (
+            {myBaseSalaries.length === 0 ? (
               <div className="p-4 rounded-xl border border-slate-200 bg-white flex items-center justify-between">
                 <div>
-                  <span className="font-bold text-slate-800 text-sm block">{currentSalary.valid_from} &rarr; Present</span>
+                  <span className="font-bold text-slate-800 text-sm block">{formatDate(currentSalary.valid_from)} &rarr; Present</span>
                   <span className="text-slate-500 text-xs">Initial regular engagement terms</span>
                 </div>
                 <div className="text-right font-mono font-extrabold text-emerald-700 text-base">
@@ -333,7 +353,7 @@ export default function MyCompensationPage() {
                 </div>
               </div>
             ) : (
-              mySalaries.map((sal, idx) => {
+              myBaseSalaries.map(sal => {
                 const isActive = !sal.valid_to;
                 return (
                   <div key={sal.id} className={`p-3.5 rounded-xl border flex items-center justify-between ${isActive ? 'bg-emerald-50/40 border-emerald-200 shadow-2xs' : 'bg-white border-slate-200 opacity-80'}`}>
@@ -341,7 +361,7 @@ export default function MyCompensationPage() {
                       <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'CURRENT RATE' : 'HISTORICAL'}</Badge>
                       <div>
                         <span className="font-bold text-slate-900 text-sm block">
-                          {sal.valid_from} &rarr; {sal.valid_to || 'Present'}
+                          {formatDate(sal.valid_from)} &rarr; {sal.valid_to ? formatDate(sal.valid_to) : 'Present'}
                         </span>
                         <span className="text-[11px] text-slate-500 block mt-0.5">
                           Basis: {sal.basis.toUpperCase().replace('_', ' ')} {sal.note && `&bull; ${sal.note}`}

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
-import { loadedMonthlyCost } from '@/lib/compensation';
+import { loadedMonthlyCost, isBaseSalary, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { notifySuccess } from '@/lib/validation-modal';
 
@@ -79,7 +79,10 @@ export default function DashboardPage() {
   
   const monthlyCost = salaries.reduce((acc, sal) => {
     if (sal.valid_to) return acc;
-    return acc + loadedMonthlyCost(sal);
+    // Base rates carry their own employer cost; contractual extras inherit the employee's base ratio.
+    return acc + (isBaseSalary(sal)
+      ? loadedMonthlyCost(sal)
+      : loadedExtraCost(salaries, sal.profile_id, Number(sal.gross_amount) || 0));
   }, 0);
 
   const urgentContracts = contracts.filter(c => getContractNoticeStatus(c).isUrgent).slice(0, 5);

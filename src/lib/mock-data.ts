@@ -250,7 +250,12 @@ export const MOCK_SALARIES: SalaryRecord[] = [
   { id: 'sal-8', profile_id: 'prof-sofia', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 3500, currency: 'EUR', employer_cost_multiplier: 1.0, note: 'UI/UX Retainer excl VAT' },
   { id: 'sal-9', profile_id: 'prof-kostas', valid_from: '2026-01-01', basis: 'fixed_fee', gross_amount: 4200, currency: 'EUR', employer_cost_multiplier: 1.0, note: 'Data Arch Retainer excl VAT' },
   { id: 'sal-10', profile_id: 'prof-alexandra', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 2700, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24 },
-  { id: 'sal-11', profile_id: 'prof-petros', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 1100, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'Internship' }
+  { id: 'sal-11', profile_id: 'prof-petros', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 1100, currency: 'EUR', employer_cost_pct: 22.29, employer_cost_multiplier: 1.24, note: 'Internship' },
+  // Contractual extras live in the same effective-dated ledger as the base rates (entry_type).
+  { id: 'sal-x1', profile_id: 'prof-eleni', valid_from: '2026-01-01', basis: 'monthly_gross', gross_amount: 60, currency: 'EUR', entry_type: 'recurring_extra', label: 'Mobile & Internet Allowance', payment_type_id: 'pt-bonus' },
+  { id: 'sal-x2', profile_id: 'prof-nikos', valid_from: '2024-09-01', basis: 'monthly_gross', gross_amount: 300, currency: 'EUR', entry_type: 'recurring_extra', label: 'Company Car Allowance', note: 'Indexed annually' },
+  { id: 'sal-x3', profile_id: 'prof-nikos', valid_from: '2025-06-01', valid_to: '2025-12-31', basis: 'monthly_gross', gross_amount: 250, currency: 'EUR', entry_type: 'recurring_extra', label: 'On-call Retainer', note: 'Ended with the EMS contract' },
+  { id: 'sal-x4', profile_id: 'prof-eleni', valid_from: '2026-03-01', valid_to: '2026-03-31', basis: 'monthly_gross', gross_amount: 1500, currency: 'EUR', entry_type: 'one_time_bonus', label: 'Project Delivery Bonus', payment_type_id: 'pt-bonus' }
 ];
 
 export const MOCK_PAYMENTS: PaymentRecord[] = [

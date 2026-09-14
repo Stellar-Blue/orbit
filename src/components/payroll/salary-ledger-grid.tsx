@@ -5,16 +5,15 @@ import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { formatDate } from '@/lib/date';
-import { SalaryRecord, SalaryBonus, PaymentType, Profile } from '@/lib/types';
-import { loadedMonthlyCost, employerCostRatio } from '@/lib/compensation';
+import { SalaryRecord, PaymentType, Profile } from '@/lib/types';
+import { loadedMonthlyCost, isBaseSalary, isOneTimeBonus, loadedExtraCost } from '@/lib/compensation';
 import { Badge, Button } from '@/components/ui/primitives';
 import { Search, Edit, Zap, Trash2 } from 'lucide-react';
 
 interface LedgerRow {
-  kind: 'salary' | 'extra';
+  kind: 'salary' | 'extra' | 'bonus';
   id: string;
-  sal?: SalaryRecord;
-  extra?: SalaryBonus;
+  sal: SalaryRecord;
   employee: string;
   entry: string;
   entrySub: string;
@@ -29,18 +28,15 @@ interface LedgerRow {
 }
 
 interface SalaryLedgerGridProps {
+  /** Every effective-dated ledger entry: base rates, contractual recurring extras and one-off bonuses. */
   salaries: SalaryRecord[];
-  /** Contractual recurring monthly extras (salary_bonuses, kind=recurring, frequency=monthly) — any status. */
-  extras: SalaryBonus[];
   profiles: Profile[];
   paymentTypes: PaymentType[];
-  /** Salary record currently generating its past payment rows (disables the button). */
+  /** Ledger entry currently generating its past payment rows (disables the button). */
   backfillingId: string | null;
   onEdit: (sal: SalaryRecord) => void;
   onBackfill: (sal: SalaryRecord) => void;
   onDelete: (sal: SalaryRecord) => void;
-  onToggleExtra: (extra: SalaryBonus) => void;
-  onDeleteExtra: (extra: SalaryBonus) => void;
 }
 
 const BASIS_LABELS: Record<string, string> = {
@@ -50,95 +46,75 @@ const BASIS_LABELS: Record<string, string> = {
   fee: 'Fee'
 };
 
-const STATUS_FILTER_VALUES = ['Active rate', 'Past history', 'Active extra', 'Paused extra'];
+const STATUS_FILTER_VALUES = ['Active rate', 'Past history', 'Active extra', 'Past extra', 'One-off bonus'];
 
-/** Extras are month-based (YYYY-MM); anchor to the 1st so dates sort/filter consistently. */
-const monthToDate = (ym?: string | null) => (ym ? `${ym}-01` : '');
+/** Today as YYYY-MM-DD — used to decide whether an entry's validity window is still running. */
+const today = () => new Date().toISOString().slice(0, 10);
 
 /** Money in the ledger is whole euros — ratios produce cents (60 × 1.24 = 74.4) that read as noise. */
 const euro = (v: unknown) => `€${Math.round(Number(v) || 0).toLocaleString()}`;
 
 /**
- * Effective-dated salary ledger. Rows are grouped per employee (row grouping — requires the
- * AG Grid Enterprise key; without it the grid simply renders flat) and carry BOTH the salary
- * records and the contractual recurring monthly extras (the Dynamic Payment Types paid on
- * top of the base salary), so one employee's monthly cost picture sits in one group.
+ * Effective-dated salary ledger — the single source of truth for what an employee is paid.
+ * Rows are grouped per employee (row grouping requires the AG Grid Enterprise key; without it the
+ * grid renders flat) and cover the base rate, contractual recurring extras and one-off bonuses,
+ * so one employee's whole monthly cost picture sits in one group.
  */
 export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
   salaries,
-  extras,
   profiles,
   paymentTypes,
   backfillingId,
   onEdit,
   onBackfill,
-  onDelete,
-  onToggleExtra,
-  onDeleteExtra
+  onDelete
 }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
   const rowData = useMemo<LedgerRow[]>(() => {
-    // Employer-cost ratio driving an extra's fully-loaded cost (mirrors what payroll does).
-    const activeSalaryByProfile = new Map<string, SalaryRecord>();
-    salaries.filter(s => !s.valid_to).forEach(s => activeSalaryByProfile.set(s.profile_id, s));
-    const loadedExtraCost = (profileId: string, amount: number) => {
-      const active = activeSalaryByProfile.get(profileId);
-      const ratio = active ? employerCostRatio(active) : 1;
-      return Number((amount * ratio).toFixed(2));
-    };
     const employeeName = (profileId: string) => {
       const prof = profiles.find(p => p.id === profileId);
       return prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown Team Member';
     };
+    const categoryLabel = (sal: SalaryRecord) => {
+      const pt = sal.payment_type_id ? paymentTypes.find(t => t.id === sal.payment_type_id) : undefined;
+      return pt ? `${pt.name_el} · ${pt.name_en}` : 'Bonus category';
+    };
+    const isRunning = (sal: SalaryRecord) => !sal.valid_to || sal.valid_to >= today();
 
-    const salaryRows: LedgerRow[] = salaries.map(sal => ({
-      kind: 'salary',
-      id: sal.id,
-      sal,
-      employee: employeeName(sal.profile_id),
-      entry: 'Base Salary',
-      entrySub: '',
-      category: 'Salary',
-      from: sal.valid_from || '',
-      to: sal.valid_to || '',
-      basis: BASIS_LABELS[sal.basis] || sal.basis,
-      gross: Number(sal.gross_amount) || 0,
-      loaded: loadedMonthlyCost(sal),
-      status: !sal.valid_to ? 'Active rate' : 'Past history',
-      note: sal.note || ''
-    }));
-
-    const extraRows: LedgerRow[] = extras.map(b => {
-      const pt = b.payment_type_id ? paymentTypes.find(t => t.id === b.payment_type_id) : undefined;
-      const amount = Number(b.amount) || 0;
+    return salaries.map<LedgerRow>(sal => {
+      const base = isBaseSalary(sal);
+      const amount = Number(sal.gross_amount) || 0;
       return {
-        kind: 'extra',
-        id: b.id,
-        extra: b,
-        employee: employeeName(b.profile_id),
-        entry: 'Recurring Extra',
-        entrySub: b.name,
-        category: pt ? `${pt.name_el} · ${pt.name_en}` : 'Generic Bonus category',
-        from: monthToDate(b.start_period),
-        to: monthToDate(b.end_period),
-        basis: 'Monthly',
+        kind: base ? 'salary' : isOneTimeBonus(sal) ? 'bonus' : 'extra',
+        id: sal.id,
+        sal,
+        employee: employeeName(sal.profile_id),
+        entry: base ? 'Base Salary' : isOneTimeBonus(sal) ? 'One-off Bonus' : 'Recurring Extra',
+        entrySub: base ? '' : (sal.label || 'Unnamed'),
+        category: base ? 'Salary' : categoryLabel(sal),
+        from: sal.valid_from || '',
+        to: sal.valid_to || '',
+        basis: base ? (BASIS_LABELS[sal.basis] || sal.basis) : 'Monthly',
         gross: amount,
-        loaded: loadedExtraCost(b.profile_id, amount),
-        status: b.status === 'active' ? 'Active extra' : 'Paused extra',
-        note: b.note || ''
+        // Base rates carry their own employer cost; extras inherit the employee's base ratio.
+        loaded: base ? loadedMonthlyCost(sal) : loadedExtraCost(salaries, sal.profile_id, amount),
+        status: base
+          ? (sal.valid_to ? 'Past history' : 'Active rate')
+          : isOneTimeBonus(sal)
+            ? 'One-off bonus'
+            : (isRunning(sal) ? 'Active extra' : 'Past extra'),
+        note: sal.note || ''
       };
-    });
-
-    // Group order = employee (A→Z); inside a group: salary records first (newest rate first),
-    // then the extras (active ahead of paused).
-    return [...salaryRows, ...extraRows].sort((a, b) =>
+    }).sort((a, b) =>
+      // Group order = employee (A→Z); inside a group: base rates first (newest first),
+      // then extras/bonuses with the running ones ahead of the expired ones.
       a.employee.localeCompare(b.employee) ||
       (a.kind === b.kind ? 0 : a.kind === 'salary' ? -1 : 1) ||
       (a.status === b.status ? 0 : a.status.startsWith('Active') ? -1 : 1) ||
       b.from.localeCompare(a.from)
     );
-  }, [salaries, extras, profiles, paymentTypes]);
+  }, [salaries, profiles, paymentTypes]);
 
   const columnDefs = useMemo<ColDef<LedgerRow>[]>(() => [
     {
@@ -148,15 +124,19 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       rowGroup: true, hide: HAS_AG_GRID_LICENSE
     },
     {
-      headerName: 'Entry', field: 'entry', width: 195, sortable: true, ...excelSetFilter(['Base Salary', 'Recurring Extra']),
-      cellRenderer: (p: ICellRendererParams<LedgerRow, string>) => (
-        <div>
-          <Badge variant={p.value === 'Recurring Extra' ? 'info' : 'neutral'} className="font-extrabold">
-            {p.value === 'Recurring Extra' ? '◆ RECURRING EXTRA' : '● BASE SALARY'}
-          </Badge>
-          {p.data?.entrySub && <div className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate">{p.data.entrySub}</div>}
-        </div>
-      )
+      headerName: 'Entry', field: 'entry', width: 195, sortable: true, ...excelSetFilter(['Base Salary', 'Recurring Extra', 'One-off Bonus']),
+      cellRenderer: (p: ICellRendererParams<LedgerRow, string>) => {
+        // Group rows carry no data — don't render a badge for them.
+        if (!p.value) return <span />;
+        return (
+          <div>
+            <Badge variant={p.value === 'Base Salary' ? 'neutral' : p.value === 'One-off Bonus' ? 'warning' : 'info'} className="font-extrabold">
+              {p.value === 'Base Salary' ? '● BASE SALARY' : p.value === 'One-off Bonus' ? '★ ONE-OFF BONUS' : '◆ RECURRING EXTRA'}
+            </Badge>
+            {p.data?.entrySub && <div className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate">{p.data.entrySub}</div>}
+          </div>
+        );
+      }
     },
     {
       headerName: 'Payment Category', field: 'category', width: 185, sortable: true, ...excelSetFilter(),
@@ -195,7 +175,8 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       cellRenderer: (p: ICellRendererParams<LedgerRow, string>) => {
         if (!p.value) return <span />;
         if (p.value === 'Past history') return <Badge variant="neutral" className="font-extrabold">PAST HISTORY</Badge>;
-        if (p.value === 'Paused extra') return <Badge variant="warning" className="font-extrabold">PAUSED</Badge>;
+        if (p.value === 'Past extra') return <Badge variant="neutral" className="font-extrabold">PAST EXTRA</Badge>;
+        if (p.value === 'One-off bonus') return <Badge variant="warning" className="font-extrabold">ONE-OFF</Badge>;
         return <Badge variant="success" className="font-extrabold">{p.value.toUpperCase()}</Badge>;
       }
     },
@@ -211,48 +192,27 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       cellRenderer: (p: ICellRendererParams<LedgerRow, string>) => {
         const row = p.data;
         if (!row) return <span />;
-        if (row.kind === 'extra' && row.extra) {
-          const b = row.extra;
-          return (
-            <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+        // "Past Payments" only makes sense for a base rate: it backfills the salary/retainer rows
+        // across the record's validity window. Extras are paid through the monthly draft run.
+        const busy = backfillingId === row.sal.id;
+        return (
+          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            {row.kind === 'salary' && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={(e) => { e.stopPropagation(); onToggleExtra(b); }}
-                title={b.status === 'active' ? 'Stop paying this extra (history is kept)' : 'Resume paying this extra'}
-                className="cursor-pointer shrink-0"
+                disabled={busy}
+                onClick={(e) => { e.stopPropagation(); onBackfill(row.sal); }}
+                className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
               >
-                {b.status === 'active' ? 'Pause' : 'Resume'}
+                <Zap className={`w-3.5 h-3.5 mr-1 ${busy ? 'animate-pulse' : ''}`} />
+                {busy ? 'Producing…' : 'Past Payments'}
               </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={(e) => { e.stopPropagation(); onDeleteExtra(b); }}
-                title="Delete this recurring extra"
-                className="cursor-pointer shrink-0"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          );
-        }
-        const busy = backfillingId === row.sal?.id;
-        return (
-          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            )}
             <Button
               size="sm"
               variant="outline"
-              disabled={busy}
-              onClick={(e) => { e.stopPropagation(); if (row.sal) onBackfill(row.sal); }}
-              className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
-            >
-              <Zap className={`w-3.5 h-3.5 mr-1 ${busy ? 'animate-pulse' : ''}`} />
-              {busy ? 'Producing…' : 'Past Payments'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={(e) => { e.stopPropagation(); if (row.sal) onEdit(row.sal); }}
+              onClick={(e) => { e.stopPropagation(); onEdit(row.sal); }}
               className="text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer shrink-0"
             >
               <Edit className="w-3.5 h-3.5 mr-1" /> Edit
@@ -260,8 +220,8 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
             <Button
               size="sm"
               variant="danger"
-              onClick={(e) => { e.stopPropagation(); if (row.sal) onDelete(row.sal); }}
-              title="Delete this salary record"
+              onClick={(e) => { e.stopPropagation(); onDelete(row.sal); }}
+              title="Delete this ledger entry"
               className="cursor-pointer shrink-0"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -270,7 +230,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
         );
       }
     }
-  ], [backfillingId, onEdit, onBackfill, onDelete, onToggleExtra, onDeleteExtra]);
+  ], [backfillingId, onEdit, onBackfill, onDelete]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
@@ -279,14 +239,14 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search salaries & extras across all columns..."
+            placeholder="Search rates, extras & bonuses across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
         <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {rowData.filter(r => r.kind === 'salary').length} salary record(s) · {rowData.filter(r => r.kind === 'extra').length} recurring extra(s) · grouped per employee
+          {rowData.filter(r => r.kind === 'salary').length} base rate(s) · {rowData.filter(r => r.kind === 'extra').length} recurring extra(s) · {rowData.filter(r => r.kind === 'bonus').length} one-off bonus(es) · grouped per employee
         </span>
       </div>
       <div className="h-[520px]">
@@ -302,8 +262,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
           {...GROUPING_OPTIONS}
           groupDefaultExpanded={-1}
           onRowDoubleClicked={e => { if (e.data?.sal) onEdit(e.data.sal); }}
-        />
-      </div>
+        />      </div>
     </div>
   );
 };

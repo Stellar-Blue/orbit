@@ -88,6 +88,15 @@ export interface SalaryRecord {
   /** Absolute monthly employer cost in EUR (full company cost − gross). Preferred over the legacy multiplier. */
   employer_cost_amount?: number | null;
   note?: string;
+  /**
+   * Ledger entry kind. `base` (default) = the base rate; `recurring_extra` = a contractual monthly
+   * extra (benefit); `one_time_bonus` = a single-month bonus. Everything paid is a ledger row.
+   */
+  entry_type?: 'base' | 'recurring_extra' | 'one_time_bonus';
+  /** Extra/bonus name — the payroll draft note. NULL for base rows. */
+  label?: string | null;
+  /** Optional Dynamic Payment Type a recurring extra / one-off bonus is filed under. */
+  payment_type_id?: string | null;
 }
 
 export interface EmployeeContract {
@@ -101,23 +110,6 @@ export interface EmployeeContract {
   notice_days: number;
   status: 'active' | 'expired' | 'terminated';
   notes?: string | null;
-  created_at?: string;
-}
-
-export interface SalaryBonus {
-  id: string;
-  profile_id: string;
-  name: string;
-  amount: number;
-  kind: 'recurring' | 'one_time';
-  frequency?: 'monthly' | 'quarterly' | 'annual' | null;
-  start_period?: string | null;
-  end_period?: string | null;
-  period?: string | null;
-  status: 'active' | 'paid' | 'expired' | 'inactive';
-  /** Optional Dynamic Payment Type (payment_types.id) this recurring extra is contractually part of. NULL = generic Bonus category. */
-  payment_type_id?: string | null;
-  note?: string | null;
   created_at?: string;
 }
 
