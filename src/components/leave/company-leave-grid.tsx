@@ -16,6 +16,8 @@ interface LeaveRow {
   category: string;
   categoryColour: string;
   mandatory: boolean;
+  /** Human label for `req.origin` — drives the filterable "Leave Source" column. */
+  source: string;
   startDate: string;
   endDate: string;
   workDays: number;
@@ -60,6 +62,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
         category: `${lType?.name_el || 'Leave'} (${lType?.name_en || 'Other'})`,
         categoryColour: lType?.colour || '#3D87D3',
         mandatory: req.origin === 'mandatory',
+        source: req.origin === 'mandatory' ? 'Mandatory Closure' : req.origin === 'admin_entry' ? 'Admin Entry' : 'Employee Request',
         startDate: req.start_date,
         endDate: req.end_date,
         workDays: getEffectiveDays(req),
@@ -69,6 +72,8 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
       };
     });
   }, [requests, profiles, leaveTypes, getEffectiveDays]);
+
+  const mandatoryCount = useMemo(() => rowData.reduce((n, r) => n + (r.mandatory ? 1 : 0), 0), [rowData]);
 
   const columnDefs = useMemo<ColDef<LeaveRow>[]>(() => [
     {
@@ -102,10 +107,18 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
             <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: p.data?.categoryColour || '#3D87D3' }} />
             {p.value}
           </span>
-          {p.data?.mandatory && (
-            <span className="block mt-1 text-[10px] font-extrabold text-indigo-700">📌 Company Mandatory Closure</span>
-          )}
         </div>
+      )
+    },
+    {
+      headerName: 'Leave Source', field: 'source', width: 175, sortable: true,
+      ...excelSetFilter(['Mandatory Closure', 'Employee Request', 'Admin Entry']),
+      cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => (
+        p.value === 'Mandatory Closure' ? (
+          <Badge variant="info" className="font-black">📌 MANDATORY</Badge>
+        ) : (
+          <Badge variant="neutral" className="font-bold">{p.value === 'Admin Entry' ? 'ADMIN ENTRY' : 'EMPLOYEE'}</Badge>
+        )
       )
     },
     {
@@ -231,7 +244,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
           />
         </div>
         <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {requests.length} requests · use column filters for Excel-style options
+          {requests.length} requests · {mandatoryCount} from mandatory closures · use column filters for Excel-style options
         </span>
       </div>
       <div className="h-[540px]">

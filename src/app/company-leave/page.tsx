@@ -39,7 +39,7 @@ export default function CompanyLeaveManagementPage() {
   const [activeTab, setActiveTab] = useState<'approvals' | 'categories'>('approvals');
 
   // Filter state for approval queue
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'mandatory'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Rejection explanation modal
@@ -403,6 +403,7 @@ export default function CompanyLeaveManagementPage() {
       if (filterStatus === 'pending') return req.status === 'pending' || req.status === 'cancellation_requested';
       if (filterStatus === 'approved') return req.status === 'approved' || req.status === 'taken';
       if (filterStatus === 'rejected') return req.status === 'rejected';
+      if (filterStatus === 'mandatory') return req.origin === 'mandatory';
       return true;
     }).sort((a, b) => b.start_date.localeCompare(a.start_date));
   }, [leaveRequests, profiles, filterStatus, searchQuery]);
@@ -422,6 +423,7 @@ export default function CompanyLeaveManagementPage() {
   }
 
   const pendingCount = leaveRequests.filter(r => r.status === 'pending' || r.status === 'cancellation_requested').length;
+  const mandatoryRowCount = leaveRequests.filter(r => r.origin === 'mandatory').length;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200 pb-20">
@@ -551,7 +553,7 @@ export default function CompanyLeaveManagementPage() {
                 <span className="text-xs font-extrabold text-slate-500 mr-1 flex items-center shrink-0">
                   <Filter className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Filter View:
                 </span>
-                {(['pending', 'approved', 'rejected', 'all'] as const).map(st => (
+                {(['pending', 'approved', 'rejected', 'mandatory', 'all'] as const).map(st => (
                   <button
                     key={st}
                     onClick={() => setFilterStatus(st)}
@@ -564,6 +566,7 @@ export default function CompanyLeaveManagementPage() {
                     {st === 'pending' && `Pending Queue (${pendingCount})`}
                     {st === 'approved' && 'Approved / Taken'}
                     {st === 'rejected' && 'Rejected Archive'}
+                    {st === 'mandatory' && `📌 Mandatory Closures (${mandatoryRowCount})`}
                     {st === 'all' && `All Records (${leaveRequests.length})`}
                   </button>
                 ))}
