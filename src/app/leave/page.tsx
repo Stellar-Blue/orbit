@@ -15,6 +15,11 @@ import * as XLSX from 'xlsx';
 import { LeaveRequest } from '@/lib/types';
 import { formatDate } from '@/lib/date';
 import { DateRangePicker } from '@/components/leave/date-range-picker';
+import {
+  DETAILED_LEDGER_HEADERS, LEAVE_EXPORT_MONTHS, detailedLedgerAoa, filterLeaveExport,
+  groupLeavesByEmployee, leaveCategoryName, leaveExportEmployees, leaveExportScopeLabel,
+  type LeaveExportFilters, type LeaveExportPeriod,
+} from '@/lib/leave-export';
 
 const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
 
@@ -200,6 +205,21 @@ export default function LeaveManagementPage() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportTargetYear, setExportTargetYear] = useState<number>(() => new Date().getFullYear() || 2026);
   const [exportScope, setExportScope] = useState<string>('me');
+  const [exportPeriod, setExportPeriod] = useState<LeaveExportPeriod>('full_year');
+  const [exportMonth, setExportMonth] = useState(() => new Date().getMonth() + 1);
+  const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
+  const [exportActiveOnly, setExportActiveOnly] = useState(false);
+
+  const exportFilters: LeaveExportFilters = {
+    year: exportTargetYear, period: exportPeriod, month: exportMonth,
+    approvedOnly: exportApprovedOnly, activeOnly: exportActiveOnly,
+  };
+  /** Exactly the leave rows the "Download" button will write, so the modal can preview them. */
+  const exportLeaves = useMemo(
+    () => filterLeaveExport(leaveRequests, exportFilters, profiles),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [leaveRequests, exportTargetYear, exportPeriod, exportMonth, exportApprovedOnly, exportActiveOnly, profiles]
+  );
 
   const exportYearLeaves = useMemo(() => {
     return leaveRequests.filter(r => 
@@ -208,11 +228,9 @@ export default function LeaveManagementPage() {
   }, [leaveRequests, currentUser.id, selectedYear]);
 
   const handleConfirmExport = () => {
-    const targetLeaves = leaveRequests.filter(r => {
-      const startYr = new Date(r.start_date).getFullYear();
-      const endYr = new Date(r.end_date).getFullYear();
-      return startYr === exportTargetYear || endYr === exportTargetYear;
-    });
+    const targetLeaves = exportLeaves;
+    const scopedProfiles = leaveExportEmployees(profiles, exportActiveOnly);
+    const scopeLabel = leaveExportScopeLabel(exportFilters, undefined, { employees: isAdmin });
 
     const wb = XLSX.utils.book_new();
 
@@ -221,12 +239,13 @@ export default function LeaveManagementPage() {
       const summaryData: (string | number)[][] = [
         ['STELLARBLUE ORBIT — COMPANY-WIDE DEDUCTED LEAVE DAYS REPORT'],
         ['Report Year:', String(exportTargetYear)],
+        ['Export Filters:', scopeLabel],
         ['Generated On:', formatDate(new Date())],
         [''],
         ['Employee Name', 'Work Email', 'Employment Type', 'Total Allowance Quota', 'Regular Deducted (Days)', 'Mandatory Closure (Days)', 'Total Deducted Days', 'Remaining Available Balance']
       ];
 
-      profiles.forEach(p => {
+      scopedProfiles.forEach(p => {
         const bal = getEmployeeLeaveBalance(p.id, exportTargetYear);
         const totalDeducted = bal.taken + bal.mandatory;
         if (p.employment_type !== 'contractor' || totalDeducted > 0) {
@@ -243,32 +262,11 @@ export default function LeaveManagementPage() {
         }
       });
 
-      // Detailed Deductions Ledger
+      // Detailed Deductions Ledger — grouped per employee, column headers on row 1.
       const detailData: (string | number)[][] = [
-        ['STELLARBLUE ORBIT — DETAILED DEDUCTIONS LEDGER (ALL EMPLOYEES)'],
-        ['Report Year:', String(exportTargetYear)],
-        [''],
-        ['Employee Name', 'Work Email', 'Start Date', 'End Date', 'Leave Category / Type', 'Deducted Working Days', 'Status', 'Origin', 'Note / Reason']
+        DETAILED_LEDGER_HEADERS,
+        ...detailedLedgerAoa(groupLeavesByEmployee(targetLeaves, profiles, getEffectiveDays), leaveTypes, getEffectiveDays),
       ];
-
-      targetLeaves
-        .sort((a, b) => b.start_date.localeCompare(a.start_date))
-        .forEach(req => {
-          const emp = profiles.find(p => p.id === req.profile_id);
-          const lt = leaveTypes.find(t => t.id === req.leave_type_id);
-          const catName = lt ? (lt.name_en || lt.name_el) : (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave');
-          detailData.push([
-            emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown Employee',
-            emp?.work_email || '',
-            req.start_date,
-            req.end_date,
-            catName,
-            Number(req.working_days || 0),
-            req.status.toUpperCase(),
-            req.origin.toUpperCase(),
-            req.note || 'Standard absence record'
-          ]);
-        });
 
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
       const wsDetail = XLSX.utils.aoa_to_sheet(detailData);
@@ -288,6 +286,7 @@ export default function LeaveManagementPage() {
         ['Employee Name:', `${targetEmp.first_name} ${targetEmp.last_name}`],
         ['Work Email:', targetEmp.work_email || ''],
         ['Report Year:', String(exportTargetYear)],
+        ['Export Filters:', scopeLabel],
         ['Total Annual Allowance Quota:', `${targetBalance.entitlement + targetBalance.carryOver} working days`],
         ['Regular Deducted Days:', `${targetBalance.taken} working days`],
         ['Mandatory Closure Deducted Days:', `${targetBalance.mandatory} working days`],
@@ -298,15 +297,14 @@ export default function LeaveManagementPage() {
       ];
 
       if (empLeaves.length === 0) {
-        wsData.push(['No recorded leave deductions for selected year', '', '', '', '', '', '']);
+        wsData.push(['No recorded leave deductions for the selected filters', '', '', '', '', '', '']);
       } else {
         empLeaves.forEach(req => {
-          const lt = leaveTypes.find(t => t.id === req.leave_type_id);
           const effDays = getEffectiveDays(req);
           wsData.push([
             req.start_date,
             req.end_date,
-            lt?.name_en || (req.origin === 'mandatory' ? 'Mandatory Company Closure' : 'Regular Leave'),
+            leaveCategoryName(req, leaveTypes),
             `${effDays}d`,
             req.status.toUpperCase(),
             req.origin.toUpperCase(),
@@ -880,20 +878,76 @@ export default function LeaveManagementPage() {
       >
         <div className="space-y-4 text-xs">
           <p className="text-slate-600 leading-relaxed font-medium">
-            Select a report year to download an official spreadsheet detailing your leave records, working days deducted, and remaining available quota.
+            Select the report scope and filters to download an official spreadsheet detailing the leave records you choose, the working days deducted, and the remaining available quota.
           </p>
-          <div>
-            <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Target Report Year</label>
-            <select
-              value={exportTargetYear}
-              onChange={e => setExportTargetYear(Number(e.target.value))}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-            >
-              <option value={2027}>2027</option>
-              <option value={2026}>2026</option>
-              <option value={2025}>2025</option>
-              <option value={2024}>2024</option>
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Target Report Year</label>
+              <select
+                value={exportTargetYear}
+                onChange={e => setExportTargetYear(Number(e.target.value))}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value={2027}>2027</option>
+                <option value={2026}>2026</option>
+                <option value={2025}>2025</option>
+                <option value={2024}>2024</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Leaves To Include (Period)</label>
+              <select
+                value={exportPeriod}
+                onChange={e => setExportPeriod(e.target.value as LeaveExportPeriod)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value="full_year">🗓️ Whole year ({exportTargetYear})</option>
+                <option value="ytd">⏱️ Year to date (01/01 → today)</option>
+                <option value="month">📅 Single month…</option>
+              </select>
+            </div>
+
+            {exportPeriod === 'month' && (
+              <div>
+                <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Month</label>
+                <select
+                  value={exportMonth}
+                  onChange={e => setExportMonth(Number(e.target.value))}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  {LEAVE_EXPORT_MONTHS.map((m, i) => (
+                    <option key={m} value={i + 1}>{m} {exportTargetYear}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Leave Status</label>
+              <select
+                value={exportApprovedOnly ? 'approved' : 'all'}
+                onChange={e => setExportApprovedOnly(e.target.value === 'approved')}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value="all">📋 All statuses (incl. pending &amp; rejected)</option>
+                <option value="approved">✅ Approved &amp; deducted leaves only</option>
+              </select>
+            </div>
+
+            {isAdmin && (
+              <div>
+                <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1.5">Employees</label>
+                <select
+                  value={exportActiveOnly ? 'active' : 'all'}
+                  onChange={e => setExportActiveOnly(e.target.value === 'active')}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  <option value="all">👥 All employees (incl. departed)</option>
+                  <option value="active">🟢 Active employees only</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {isAdmin && (
@@ -916,6 +970,14 @@ export default function LeaveManagementPage() {
             </div>
           )}
 
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-600 font-medium leading-relaxed">
+            <span className="font-extrabold text-slate-800">{leaveExportScopeLabel(exportFilters, undefined, { employees: isAdmin })}</span>
+            {' — '}
+            {exportScope === 'all'
+              ? `${exportLeaves.length} leave record(s) across ${groupLeavesByEmployee(exportLeaves, profiles).length} employee(s) will be exported (grouped per employee), plus the annual balance summary.`
+              : `${exportLeaves.filter(r => r.profile_id === (exportScope === 'me' ? currentUser.id : exportScope)).length} leave record(s) will be exported.`}
+          </div>
+
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-slate-600">
             <p className="font-semibold text-slate-800 flex items-center">
               <FileText className="w-4 h-4 mr-1.5 text-[#3D87D3] shrink-0" /> Included Report Data
@@ -923,7 +985,7 @@ export default function LeaveManagementPage() {
             <ul className="list-disc pl-5 space-y-1 text-slate-500 font-medium">
               <li>Total Annual Allowance Quota &amp; Carryover Days</li>
               <li>Consumed working days &amp; exact remaining balance</li>
-              <li>Detailed ledger of all scheduled, approved, and pending time-off</li>
+              <li>Detailed ledger of the selected leaves, grouped per employee</li>
             </ul>
           </div>
 
