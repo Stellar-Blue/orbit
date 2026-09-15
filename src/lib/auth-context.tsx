@@ -90,6 +90,8 @@ interface AppState {
   addMandatoryLeave: (ml: Omit<MandatoryLeave, 'id'>) => void;
   updateMandatoryLeave: (id: string, updated: Partial<MandatoryLeave>) => Promise<void>;
   deleteMandatoryLeave: (id: string) => Promise<void>;
+  /** Re-runs the fan-out for every live mandatory closure (catch-up for new hires / reactivated staff). */
+  syncAllMandatoryLeaves: () => Promise<{ closures: number; added: number; updated: number; removed: number }>;
   addPaymentRecord: (pay: Omit<PaymentRecord, 'id'>) => void;
   updatePaymentRecord: (id: string, updates: Partial<PaymentRecord>) => Promise<void>;
   deletePaymentRecord: (id: string) => Promise<void>;
@@ -1168,10 +1170,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    *  - row range clipped to the employee's start date;
    *  - working_days = the employee's scheduled weekdays in range that are NOT public holidays.
    */
-  const syncMandatoryFanout = async (m: MandatoryLeave) => {
-    if (!m || m.status === 'cancelled') return;
+  const syncMandatoryFanout = async (m: MandatoryLeave): Promise<{ added: number; updated: number; removed: number } | null> => {
+    if (!m || m.status === 'cancelled') return null;
     const supabase = getSupabaseBrowserClient();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let added = 0, updated = 0, removed = 0;
     try {
       const eligible = profiles.filter(p =>
         p.status === 'active' &&
@@ -1206,6 +1209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (toDelete.length > 0) {
         await supabase.from('leave_requests').delete().in('id', toDelete.map(r => r.id));
         setLeaveRequests(prev => prev.filter(r => !toDelete.some(t => t.id === r.id)));
+        removed += toDelete.length;
       }
 
       // 2) Ensure exactly one correct row per eligible employee.
@@ -1223,6 +1227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (Object.keys(patch).length > 0) {
             await supabase.from('leave_requests').update(patch).eq('id', row.id);
             setLeaveRequests(prev => prev.map(r => r.id === row.id ? { ...r, ...patch } : r));
+            updated++;
           }
         } else {
           const newReq: LeaveRequest = {
@@ -1242,13 +1247,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           await supabase.from('leave_requests').insert(newReq);
           setLeaveRequests(prev => [newReq, ...prev]);
+          added++;
         }
       }
+      return { added, updated, removed };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('syncMandatoryFanout error:', e);
       alert(`Mandatory fan-out failed: ${msg}`);
+      return null;
     }
+  };
+
+  /**
+   * Catch-up sync: re-runs the idempotent fan-out for EVERY live closure. Use after hiring or
+   * re-activating employees post-publication, or to repair a closure whose rows drifted.
+   */
+  const syncAllMandatoryLeaves = async () => {
+    let closures = 0, added = 0, updated = 0, removed = 0;
+    for (const m of mandatoryLeaves) {
+      const res = await syncMandatoryFanout(m);
+      if (!res) continue; // cancelled / deleted / failed
+      closures++;
+      added += res.added; updated += res.updated; removed += res.removed;
+    }
+    return { closures, added, updated, removed };
   };
 
   const addMandatoryLeave = async (ml: Omit<MandatoryLeave, 'id'>) => {
@@ -4421,6 +4444,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addMandatoryLeave,
       updateMandatoryLeave,
       deleteMandatoryLeave,
+      syncAllMandatoryLeaves,
       addPaymentRecord,
       updatePaymentRecord,
       deletePaymentRecord,

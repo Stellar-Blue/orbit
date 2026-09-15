@@ -10,9 +10,8 @@ import { ProfileAvatar } from '@/components/ui/profile-avatar';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, 
   Users, Filter, Edit3, ShieldAlert,
-  Briefcase, Plus, Search, Settings, Trash2, Tag, Sliders, Download, FileSpreadsheet
+  Briefcase, Plus, Search, Settings, Trash2, Tag, Sliders, Download, FileSpreadsheet, RefreshCw
 } from 'lucide-react';
-import { parseISO, format, eachDayOfInterval } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest, LeaveType } from '@/lib/types';
 import { formatDate } from '@/lib/date';
@@ -21,6 +20,7 @@ import {
   groupLeavesByEmployee, leaveCategoryName, leaveExportEmployees, leaveExportScopeLabel,
   type LeaveExportFilters, type LeaveExportPeriod,
 } from '@/lib/leave-export';
+import { countWorkingDays, holidayDates, resolveWorkSchedule } from '@/lib/leave-days';
 
 const CompanyLeaveGrid = dynamic(() => import('@/components/leave/company-leave-grid').then(m => m.CompanyLeaveGrid), { ssr: false });
 
@@ -28,6 +28,7 @@ export default function CompanyLeaveManagementPage() {
   const { 
     currentUser, profiles, leaveTypes, leaveRequests, mandatoryLeaves, publicHolidays, 
     updateLeaveRequestStatus, addMandatoryLeave, updateMandatoryLeave, deleteMandatoryLeave,
+    syncAllMandatoryLeaves,
     editLeaveRequest, decideLeaveCancellation, splitAndAddLeaveRequest, deleteLeaveRequest,
     addLeaveType, updateLeaveType, deleteLeaveType, getEmployeeLeaveBalance
   } = useAuth();
@@ -72,19 +73,8 @@ export default function CompanyLeaveManagementPage() {
 
   const addEmpCalculatedDays = useMemo(() => {
     const targetEmp = profiles.find(p => p.id === (addEmpId || profiles[0]?.id));
-    if (!addEmpStart || !addEmpEnd || addEmpStart > addEmpEnd || !targetEmp) return 0;
-    let wd = 0;
-    let cur = new Date(addEmpStart);
-    const end = new Date(addEmpEnd);
-    const schedule = targetEmp.work_schedule || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    while (cur <= end) {
-      const dStr = cur.toISOString().split('T')[0];
-      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][cur.getDay()];
-      const isHoliday = publicHolidays.some(h => h.date === dStr);
-      if (schedule.includes(dayName) && !isHoliday) wd += 1;
-      cur.setDate(cur.getDate() + 1);
-    }
-    return wd;
+    if (!targetEmp) return 0;
+    return countWorkingDays(addEmpStart, addEmpEnd, targetEmp.work_schedule, holidayDates(publicHolidays));
   }, [addEmpId, addEmpStart, addEmpEnd, profiles, publicHolidays]);
 
   // New / Edit Leave Category Modal State
@@ -215,24 +205,8 @@ export default function CompanyLeaveManagementPage() {
   };
 
   // Calculate working days excluding Greek holidays and weekends
-  const calculateWorkingDays = (startStr: string, endStr: string, schedule?: string[]) => {
-    try {
-      const days = eachDayOfInterval({ start: parseISO(startStr), end: parseISO(endStr) });
-      let count = 0;
-      const effectiveSchedule = schedule || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-      days.forEach(d => {
-        const dayStr = format(d, 'yyyy-MM-dd');
-        const dayOfWeek = format(d, 'EEE');
-        const isHol = (publicHolidays || []).some(h => h.date === dayStr);
-        if (!isHol && effectiveSchedule.includes(dayOfWeek)) {
-          count++;
-        }
-      });
-      return count;
-    } catch {
-      return 0;
-    }
-  };
+  const calculateWorkingDays = (startStr: string, endStr: string, schedule?: string[]) =>
+    countWorkingDays(startStr, endStr, schedule, holidayDates(publicHolidays));
 
   const getEffectiveDays = (req: LeaveRequest) => {
     const p = profiles.find(pr => pr.id === req.profile_id);
@@ -301,6 +275,33 @@ export default function CompanyLeaveManagementPage() {
     }
   };
 
+  /** Fanned-out entries currently attached to each closure (admin 'detached' corrections included). */
+  const fanoutCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    leaveRequests.forEach(r => {
+      if (r.origin === 'mandatory' && r.mandatory_leave_id) {
+        counts[r.mandatory_leave_id] = (counts[r.mandatory_leave_id] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [leaveRequests]);
+  const fanoutCountFor = (mandatoryId: string) => fanoutCounts[mandatoryId] || 0;
+
+  // Catch-up sync: re-fan every closure so newly hired/reactivated employees get their closure rows.
+  const [isSyncingMandatory, setIsSyncingMandatory] = useState(false);
+  const handleSyncMandatoryFanout = async () => {
+    setIsSyncingMandatory(true);
+    try {
+      const res = await syncAllMandatoryLeaves();
+      notifySuccess(
+        `${res.closures} closure(s) synced — ${res.added} added, ${res.updated} updated, ${res.removed} removed.`,
+        'Mandatory Leave Sync'
+      );
+    } finally {
+      setIsSyncingMandatory(false);
+    }
+  };
+
   const handleAddEmployeeLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     const targetEmp = profiles.find(p => p.id === (addEmpId || profiles[0]?.id));
@@ -325,7 +326,7 @@ export default function CompanyLeaveManagementPage() {
       origin: 'admin_entry',
       note: addEmpNote || `Entered by Admin (${currentUser.first_name} ${currentUser.last_name})`,
       ergani_status: 'pending'
-    }, targetEmp.work_schedule || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], publicHolidays);
+    }, resolveWorkSchedule(targetEmp.work_schedule), publicHolidays);
     setIsAddEmployeeLeaveOpen(false);
     setAddEmpNote('');
     notifySuccess('Leave record added.');
@@ -614,7 +615,19 @@ export default function CompanyLeaveManagementPage() {
           </div>
 
           {/* Mandatory Leaves Register */}
-          <Card title="Company-Wide Mandatory Closure Register" subtitle="Admin-declared mandatory breaks (such as August Summer Bridge or Christmas) counting directly against employee allowances" className="shadow-xs border-slate-200/90">
+          <Card title="Company-Wide Mandatory Closure Register" subtitle="Admin-declared mandatory breaks (such as August Summer Bridge or Christmas) counting directly against employee allowances" className="shadow-xs border-slate-200/90" action={
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncMandatoryFanout}
+              disabled={isSyncingMandatory || mandatoryLeaves.length === 0}
+              title="Re-fan every closure to all eligible employees (new hires, reactivations, drifted rows)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isSyncingMandatory ? 'animate-spin' : ''}`} />
+              {isSyncingMandatory ? 'Syncing…' : 'Sync to All Employees'}
+            </Button>
+          }>
             <div className="space-y-4 mt-3">
               {mandatoryLeaves.map(ml => (
                 <div key={ml.id} className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs space-y-3 hover:border-slate-300 transition-all">
@@ -646,7 +659,7 @@ export default function CompanyLeaveManagementPage() {
                     Dates Horizon: <strong className="text-[#3D87D3] font-mono">{formatDate(ml.start_date)} &rarr; {formatDate(ml.end_date)}</strong> &bull; Announcement Notes: {ml.note}
                   </p>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-700 text-xs flex items-center justify-between font-medium">
-                    <span>Fan-Out Status: <strong className="text-slate-900 font-extrabold">Active</strong> across all full-time and part-time staff (external contractors excluded).</span>
+                    <span>Fan-Out Status: <strong className="text-slate-900 font-extrabold">{fanoutCountFor(ml.id)} employee entr{fanoutCountFor(ml.id) === 1 ? 'y' : 'ies'}</strong> — all full-time and part-time staff eligible for the period (external contractors excluded).</span>
                     <span className="text-emerald-700 font-bold">✓ Part-time schedule rules respected</span>
                   </div>
                 </div>

@@ -20,6 +20,7 @@ import {
   groupLeavesByEmployee, leaveCategoryName, leaveExportEmployees, leaveExportScopeLabel,
   type LeaveExportFilters, type LeaveExportPeriod,
 } from '@/lib/leave-export';
+import { countWorkingDays, holidayDates } from '@/lib/leave-days';
 
 const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
 
@@ -86,25 +87,17 @@ export default function LeaveManagementPage() {
     }
   }, [leaveTypes, reqType]);
 
-  // Calculate working days excluding Greek holidays and weekends for an individual schedule
+  // Working days for an individual schedule: weekends off-schedule, Greek holidays and mandatory
+  // company closures excluded. Counting itself lives in @/lib/leave-days so every leave surface agrees.
   const calculateWorkingDays = (startStr: string, endStr: string, schedule: string[], targetProfileId: string = currentUser.id) => {
-    try {
-      const days = eachDayOfInterval({ start: parseISO(startStr), end: parseISO(endStr) });
-      let count = 0;
-      days.forEach(d => {
-        const dayStr = format(d, 'yyyy-MM-dd');
-        const dayOfWeek = format(d, 'EEE'); // Mon, Tue, etc.
-        const isHoliday = publicHolidays.some(h => h.date === dayStr);
-        const isMandatory = mandatoryLeaves.some(m => dayStr >= m.start_date && dayStr <= m.end_date) ||
-                            leaveRequests.some(r => r.origin === 'mandatory' && r.profile_id === targetProfileId && dayStr >= r.start_date && dayStr <= r.end_date);
-        if (!isHoliday && !isMandatory && schedule.includes(dayOfWeek)) {
-          count++;
-        }
-      });
-      return count;
-    } catch {
-      return 0;
-    }
+    const excluded = new Set<string>(holidayDates(publicHolidays));
+    const addRange = (s: string, e: string) =>
+      eachDayOfInterval({ start: parseISO(s), end: parseISO(e) }).forEach(d => excluded.add(format(d, 'yyyy-MM-dd')));
+    mandatoryLeaves.forEach(m => addRange(m.start_date, m.end_date));
+    leaveRequests
+      .filter(r => r.origin === 'mandatory' && r.profile_id === targetProfileId)
+      .forEach(r => addRange(r.start_date, r.end_date));
+    return countWorkingDays(startStr, endStr, schedule, excluded);
   };
 
   const getEffectiveDays = (r: LeaveRequest) => {
