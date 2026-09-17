@@ -10,8 +10,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
-import { formatDate, formatDateTime } from '@/lib/date';
-import { isBaseSalary, isRecurringExtra, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
+import { formatDate, formatDateTime, todayKey } from '@/lib/date';
+import { isBaseSalary, isRecurringExtra, isOneTimeBonus, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
 import { BenefitsList } from '@/components/compensation/benefits-list';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { DocumentPreviewModal, dataUrlToObjectUrl } from '@/components/ui/document-preview-modal';
@@ -65,6 +65,30 @@ export default function MyCompensationPage() {
   const myRecurringExtras = useMemo(
     () => extrasFor(mySalaries, currentUser.id).filter(isRecurringExtra),
     [mySalaries, currentUser.id]
+  );
+
+  /**
+   * The whole ledger as one chronological history: base rates, monthly benefits (card, insurance…)
+   * and one-off payments (bonuses). `mySalaries` is already newest-first.
+   */
+  const myCompensationHistory = useMemo(
+    () => mySalaries.map(sal => {
+      const kind: 'base' | 'extra' | 'bonus' = isBaseSalary(sal) ? 'base' : isOneTimeBonus(sal) ? 'bonus' : 'extra';
+      const paymentType = sal.payment_type_id ? paymentTypes.find(pt => pt.id === sal.payment_type_id) : undefined;
+      return {
+        id: sal.id,
+        kind,
+        from: sal.valid_from,
+        to: sal.valid_to || '',
+        amount: Number(sal.gross_amount) || 0,
+        label: sal.label || '',
+        basis: sal.basis || '',
+        typeName: paymentType ? (paymentType.name_en || paymentType.name_el) : '',
+        note: sal.note || '',
+        running: !sal.valid_to || sal.valid_to >= todayKey(),
+      };
+    }),
+    [mySalaries, paymentTypes]
   );
 
   // STRICT REQUIREMENT: Only show PAID payments to employee. Draft/planned stays hidden under RLS until confirmed.
@@ -322,15 +346,16 @@ export default function MyCompensationPage() {
       <Modal 
         isOpen={showHistoryModal} 
         onClose={() => setShowHistoryModal(false)} 
-        title={`My Personal Salary History (${currentUser.first_name} ${currentUser.last_name})`}
+        title={`My Personal Compensation History (${currentUser.first_name} ${currentUser.last_name})`}
       >
         <div className="space-y-4 text-xs">
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
-            Below is your chronological record of base rates and salary adjustments. Historical entries show when each compensation level went into effect.
+            Your chronological record of base rates, monthly benefits (card, insurance, allowances) and one-off payments (bonuses).
+            Each entry shows when it started, and when it ended if it is no longer running.
           </div>
 
           <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-            {myBaseSalaries.length === 0 ? (
+            {myCompensationHistory.length === 0 ? (
               <div className="p-4 rounded-xl border border-slate-200 bg-white flex items-center justify-between">
                 <div>
                   <span className="font-bold text-slate-800 text-sm block">{formatDate(currentSalary.valid_from)} &rarr; Present</span>
@@ -341,23 +366,37 @@ export default function MyCompensationPage() {
                 </div>
               </div>
             ) : (
-              myBaseSalaries.map(sal => {
-                const isActive = !sal.valid_to;
+              myCompensationHistory.map(row => {
+                const isBase = row.kind === 'base';
+                const badgeVariant = isBase
+                  ? (row.running ? 'success' as const : 'neutral' as const)
+                  : row.kind === 'bonus' ? 'warning' as const : 'info' as const;
+                const badgeLabel = isBase
+                  ? (row.running ? 'CURRENT RATE' : 'HISTORICAL RATE')
+                  : row.kind === 'bonus'
+                    ? 'ONE-OFF PAYMENT'
+                    : (row.running ? 'MONTHLY BENEFIT' : 'BENEFIT ENDED');
+                const detail = isBase
+                  ? `Basis: ${row.basis.toUpperCase().replace('_', ' ')}`
+                  : [row.typeName || 'Bonus category', row.label].filter(Boolean).join(' · ');
                 return (
-                  <div key={sal.id} className={`p-3.5 rounded-xl border flex items-center justify-between ${isActive ? 'bg-emerald-50/40 border-emerald-200 shadow-2xs' : 'bg-white border-slate-200 opacity-80'}`}>
-                    <div className="flex items-center space-x-3">
-                      <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'CURRENT RATE' : 'HISTORICAL'}</Badge>
-                      <div>
+                  <div key={row.id} className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${row.running && isBase ? 'bg-emerald-50/40 border-emerald-200 shadow-2xs' : row.running ? 'bg-white border-slate-200' : 'bg-white border-slate-200 opacity-80'}`}>
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                      <div className="min-w-0">
                         <span className="font-bold text-slate-900 text-sm block">
-                          {formatDate(sal.valid_from)} &rarr; {sal.valid_to ? formatDate(sal.valid_to) : 'Present'}
+                          {formatDate(row.from)} &rarr; {row.to ? formatDate(row.to) : 'Present'}
                         </span>
-                        <span className="text-[11px] text-slate-500 block mt-0.5">
-                          Basis: {sal.basis.toUpperCase().replace('_', ' ')} {sal.note && `&bull; ${sal.note}`}
+                        <span className="text-[11px] text-slate-500 block mt-0.5 truncate">
+                          {detail}{row.note && ` • ${row.note}`}
                         </span>
                       </div>
                     </div>
-                    <div className="text-right font-mono font-extrabold text-slate-900 text-base">
-                      €{sal.gross_amount.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-normal">/ mo gross</span>
+                    <div className="text-right font-mono font-extrabold text-slate-900 text-base shrink-0">
+                      €{row.amount.toLocaleString()}
+                      <span className="text-xs text-slate-500 font-sans font-normal">
+                        {isBase ? ' / mo gross' : row.kind === 'bonus' ? ' one-off' : ' / month'}
+                      </span>
                     </div>
                   </div>
                 );
