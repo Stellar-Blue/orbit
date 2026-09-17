@@ -89,6 +89,10 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       apply_discount: l.apply_discount !== false,
       min_monthly_charge: null,
       invoice_timing: l.invoice_timing || null,
+      // These two must be carried over or a saved window renders empty and the next save overwrites
+      // it with NULL — which made the dates look like they never saved.
+      starts_on: l.starts_on || null,
+      ends_on: l.ends_on || null,
       line_kind: l.line_kind || 'unit',
       role: l.role || null,
       seniority: l.seniority || null
