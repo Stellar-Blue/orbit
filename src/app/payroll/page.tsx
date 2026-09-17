@@ -85,6 +85,8 @@ export default function PayrollPage() {
       valid_from: salForm.valid_from,
       valid_to: salForm.valid_to || undefined,
       basis: salForm.basis as any,
+      // The category payroll drafts file this base pay under.
+      payment_type_id: salForm.payment_type_id || null,
       note: salForm.note.trim() || undefined,
     });
     setEditSalaryId(null);
@@ -1206,6 +1208,19 @@ export default function PayrollPage() {
                   <option value="fixed_fee">Fixed Fee</option>
                   <option value="fee">Fee</option>
                 </select>
+              </div>
+            )}
+            {!isExtraEntry && (
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1">Dynamic Payment Type</label>
+                <select value={salForm.payment_type_id} onChange={e => setSalForm({ ...salForm, payment_type_id: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800">
+                  <option value="">— Unassigned —</option>
+                  {recurringPaymentTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>)}
+                  {salForm.payment_type_id && !recurringPaymentTypes.some(pt => pt.id === salForm.payment_type_id) && (
+                    <option value={salForm.payment_type_id}>{paymentTypes.find(pt => pt.id === salForm.payment_type_id)?.name_en || 'Linked category'} (not recurring monthly)</option>
+                  )}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-0.5">The category payroll files this monthly pay under — drafts use it directly.</p>
               </div>
             )}
             <div className="sm:col-span-2">
