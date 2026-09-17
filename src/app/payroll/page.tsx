@@ -957,7 +957,7 @@ export default function PayrollPage() {
           onClick={() => setTab('forecast')}
           className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          Salary Records & 12-Month Burn Forecast
+          Salary Records & Company Costs
         </button>
         <button 
           onClick={() => setTab('payment_types')}
@@ -1004,38 +1004,6 @@ export default function PayrollPage() {
               }
             }}
           />
-        </div>
-      )}
-
-      {/* TAB 2: SALARY RECORDS HISTORY & 12-MONTH BURN FORECAST */}
-      {tab === 'forecast' && (
-        <div className="space-y-8">
-          <Card 
-            title="Effective-Dated Salary Ledger & Company Costs" 
-            subtitle="Never edit salaries in place: recording a raise closes the old record with valid_to and adds a new row, generating complete salary histories automatically." 
-            action={
-              <Button size="sm" variant="primary" onClick={() => {
-                const p = profiles.filter(p => p.status === 'active')[0];
-                setRsProfileId(p?.id || '');
-                setRsPaymentTypeId(baseRecurringType(p?.employment_type)?.id || '');
-                setIsRaiseOpen(true);
-              }} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
-                <Plus className="w-3.5 h-3.5 mr-1" /> Record Raise / New Contract
-              </Button>
-            }
-          >
-            <div className="mt-3">
-              <SalaryLedgerGrid
-                salaries={salaries}
-                profiles={profiles}
-                paymentTypes={paymentTypes}
-                backfillingId={backfillingId}
-                onEdit={openSalaryEditor}
-                onBackfill={handleBackfillSalary}
-                onDelete={handleDeleteSalary}
-              />
-            </div>
-          </Card>
 
           <Card title="12-Month Projected Burn Engine (Statutory Included)" subtitle="Projected monthly expenditures across all active staff, incorporating Greek statutory salaries (Month 4 Easter, Month 7 Holiday Allowance, Month 12 Christmas) so real expenditures never surprise management.">
             <div className="mt-3 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
@@ -1075,6 +1043,38 @@ export default function PayrollPage() {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB 2: SALARY RECORDS HISTORY & COMPANY COSTS */}
+      {tab === 'forecast' && (
+        <div className="space-y-8">
+          <Card 
+            title="Effective-Dated Salary Ledger & Company Costs" 
+            subtitle="Never edit salaries in place: recording a raise closes the old record with valid_to and adds a new row, generating complete salary histories automatically." 
+            action={
+              <Button size="sm" variant="primary" onClick={() => {
+                const p = profiles.filter(p => p.status === 'active')[0];
+                setRsProfileId(p?.id || '');
+                setRsPaymentTypeId(baseRecurringType(p?.employment_type)?.id || '');
+                setIsRaiseOpen(true);
+              }} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
+                <Plus className="w-3.5 h-3.5 mr-1" /> Record Raise / New Contract
+              </Button>
+            }
+          >
+            <div className="mt-3">
+              <SalaryLedgerGrid
+                salaries={salaries}
+                profiles={profiles}
+                paymentTypes={paymentTypes}
+                backfillingId={backfillingId}
+                onEdit={openSalaryEditor}
+                onBackfill={handleBackfillSalary}
+                onDelete={handleDeleteSalary}
+              />
             </div>
           </Card>
         </div>
