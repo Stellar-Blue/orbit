@@ -867,7 +867,8 @@ export default function PayrollPage() {
       </div>
 
       {/* Single control bar: every input (period range, actions, person filter, status tabs)
-          sits in one row immediately above the main tabs. */}
+          sits in one row immediately above the main tabs. Ledger-only controls (Upload Payment,
+          person filter, status tabs) render just for the Payment Ledger tab. */}
       <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-2xl p-2.5 shadow-2xs">
         <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-1 gap-1.5">
           <span className="text-[11px] font-bold text-slate-500 px-1">From:</span>
@@ -899,9 +900,11 @@ export default function PayrollPage() {
             {selectedPeriod === endPeriod ? '+ Year Range' : '1 Month'}
           </button>
         </div>
-        <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-bold">
-          <Upload className="w-3.5 h-3.5 mr-1.5 text-white" /> Upload Payment
-        </Button>
+        {tab === 'ledger' && (
+          <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-bold">
+            <Upload className="w-3.5 h-3.5 mr-1.5 text-white" /> Upload Payment
+          </Button>
+        )}
         <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer font-semibold" title={`Generate drafts for period range: ${periodLabel}`}>
           <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft ({periodLabel})
         </Button>
