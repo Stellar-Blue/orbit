@@ -80,7 +80,7 @@ export default function ContractsRegistryPage() {
         currency: contract.currency,
         expectedAmount: period.expectedAmount,
         reference: contract.reference,
-        timing: contract.invoice_timing || 'start_of_period',
+        timing: period.timing,
         invoiceNumber: invNumber,
         issueDate: todayStr,
         dueDate: dueStr,
@@ -827,6 +827,9 @@ export default function ContractsRegistryPage() {
                                   <td className="p-3">
                                     <span className="font-bold text-slate-900 font-mono block">{period.key}</span>
                                     <span className="text-[10px] text-slate-500">{period.label}</span>
+                                    <span className={`text-[10px] font-bold block mt-0.5 ${period.timing === 'end_of_period' ? 'text-indigo-600' : 'text-emerald-600'}`}>
+                                      {period.timing === 'end_of_period' ? '⏳ billed in arrears (period end)' : '🚀 billed in advance (period start)'}
+                                    </span>
                                   </td>
                                   <td className="p-3 text-slate-600">{formatDate(period.from)} → {formatDate(period.to)}</td>
                                   <td className="p-3 text-right font-black text-slate-900 font-mono">€{period.expectedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
@@ -948,6 +951,7 @@ export default function ContractsRegistryPage() {
                   initialDiscountPct={selectedContract.discount_pct || 0}
                   initialTermYears={selectedContract.term_years || 1}
                   initialStartDate={selectedContract.service_start_date || selectedContract.starts_on}
+                  contractInvoiceTiming={selectedContract.invoice_timing}
                   onSave={async (lines, schedule, discountPct, termYears, startDate, tcv, groups) => {
                     await saveContractPricing(
                       selectedContract.id,

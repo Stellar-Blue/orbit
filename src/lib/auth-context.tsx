@@ -1996,12 +1996,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         monthly_quantities: l.monthly_quantities || null,
         apply_discount: l.apply_discount !== false,
         min_monthly_charge: null,
+        invoice_timing: l.invoice_timing || null,
         line_kind: l.line_kind || 'unit',
         role: l.role || null,
         seniority: l.seniority || null
       }));
       if (linesToInsert.length > 0) {
-        await supabase.from('contract_lines').insert(linesToInsert);
+        const { error: linesErr } = await supabase.from('contract_lines').insert(linesToInsert);
+        if (linesErr && /invoice_timing/i.test(linesErr.message || '')) {
+          // Migration 20260917130000 not applied yet: save the price sheet without the per-line timing
+          // rather than leaving the contract with no lines at all (the old rows were already deleted).
+          console.warn('[contract_lines] invoice_timing column missing — apply supabase/migrations/20260917130000_contract_line_invoice_timing.sql');
+          await supabase.from('contract_lines').insert(linesToInsert.map(l => {
+            const copy: Record<string, unknown> = { ...l };
+            delete copy.invoice_timing;
+            return copy;
+          }));
+        }
       }
 
       const nowPeriod = new Date().toISOString().slice(0, 7);

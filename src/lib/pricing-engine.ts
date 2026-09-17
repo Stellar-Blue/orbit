@@ -217,6 +217,29 @@ export interface ContractPeriodAmount {
   amount: number;
 }
 
+export interface ContractPeriodTimingAmount {
+  period: string;
+  /** Amount billed in advance (at the period start) — lines with start_of_period timing. */
+  advance: number;
+  /** Amount billed in arrears (at the period end) — lines with end_of_period timing. */
+  arrears: number;
+  /** advance + arrears — always equals calculatePeriodAmounts' amount for the same period. */
+  total: number;
+}
+
+/**
+ * Effective invoicing timing for a line: the line's own override, else the contract's timing.
+ * A line can be billed at the start of its chargeable period while another is billed at the end.
+ */
+export function getLineInvoiceTiming(
+  line: Partial<ContractLine>,
+  contractTiming: string = 'start_of_period'
+): 'start_of_period' | 'end_of_period' {
+  const own = line.invoice_timing;
+  if (own === 'start_of_period' || own === 'end_of_period') return own;
+  return contractTiming === 'end_of_period' ? 'end_of_period' : 'start_of_period';
+}
+
 /**
  * Builds the month-by-month revenue schedule across the contract term,
  * respecting billing frequency anchors, monthly quantity carry-forwards and
@@ -272,6 +295,69 @@ export function calculatePeriodAmounts(
     });
 
     result.push({ period, amount: Number(monthTotal.toFixed(2)) });
+  });
+
+  return result;
+}
+
+/**
+ * Same month-by-month schedule, but split by invoicing timing so a period can be billed partly in
+ * advance (lines with start_of_period) and partly in arrears (lines with end_of_period).
+ * `total` is identical to calculatePeriodAmounts for the same inputs — group floors are computed on the
+ * FULL group before splitting, so splitting a floored group can never double-count the floor.
+ */
+export function calculatePeriodAmountsByTiming(
+  lines: Array<Partial<ContractLine>>,
+  discountPct: number = 0,
+  termYears: number = 1,
+  startDate: string = new Date().toISOString().split('T')[0],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = [],
+  groups: Array<Partial<ContractLineGroup>> = [],
+  contractTiming: string = 'start_of_period'
+): ContractPeriodTimingAmount[] {
+  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
+  const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
+  const startObj = new Date(startDate || new Date());
+  const periods: string[] = [];
+  for (let i = 0; i < monthsCount; i++) {
+    const d = new Date(startObj.getFullYear(), startObj.getMonth() + i, 1);
+    periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  const groupFloors = buildGroupFloorMap(groups);
+  const result: ContractPeriodTimingAmount[] = [];
+
+  periods.forEach((period, pIdx) => {
+    const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
+    let advance = 0;
+    let arrears = 0;
+
+    lines.forEach(l => {
+      const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
+      let { gross: grossVal } = calculateLineGrossAmount(l, effQty);
+      if (l.group_id && l.frequency !== 'one_time') {
+        const ratio = groupRatios.get(l.group_id);
+        if (ratio) grossVal *= ratio;
+      }
+      const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
+      const netVal = grossVal * lineMult;
+
+      const included =
+        l.frequency === 'monthly' ? true
+        : l.frequency === 'quarterly' ? pIdx % 3 === 0
+        : l.frequency === 'annual' ? pIdx % 12 === 0
+        : l.frequency === 'one_time' ? pIdx === 0
+        : false;
+      if (!included) return;
+
+      if (getLineInvoiceTiming(l, contractTiming) === 'end_of_period') arrears += netVal;
+      else advance += netVal;
+    });
+
+    const adv = Number(advance.toFixed(2));
+    const arr = Number(arrears.toFixed(2));
+    result.push({ period, advance: adv, arrears: arr, total: Number((adv + arr).toFixed(2)) });
   });
 
   return result;

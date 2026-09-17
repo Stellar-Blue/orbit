@@ -2,29 +2,32 @@
  * Single source of truth for "which billing periods does this contract owe, and how much do we
  * expect for each one?".
  *
- * Extracted verbatim from the Contract Invoicing & Revenue Action Center so the contract dossier can
- * offer the same fast-create rows without a second copy of the cadence/timing math. Behaviour is
- * intentionally identical to the Action Center: expected amount = fixed contract amount for the period
- * (via calculateInvoiceAmountForPeriod) + man-hours from linked timesheets, falling back to the stored
- * schedule / net ARR when the engine yields nothing.
+ * Expected amounts come from the month-by-month schedule (calculatePeriodAmountsByTiming — the engine
+ * behind the "Monthly Cash Landing & Revenue Recognition" panel), summed over the billing window and
+ * split by invoicing timing, so a line billed in advance and a line billed in arrears yield their own
+ * suggestion rows. calculateInvoiceAmountForPeriod is only a fallback for windows the schedule does not
+ * cover.
  */
 import {
   calculateContractValuation,
   calculateInvoiceAmountForPeriod,
   calculateManHoursCharge,
-  calculatePeriodAmounts,
+  calculatePeriodAmountsByTiming,
 } from './pricing-engine';
 import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice } from './types';
 
 type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>;
 
 export interface BillingPeriodItem {
-  /** Machine-comparable period key: "2026-01" (monthly), "2026-Q1" (quarterly), "2026" (annual). */
+  /** Machine-comparable period key: "2026-01" (monthly), "2026-Q1" (quarterly), "2026" (annual).
+   *  When a period is billed both in advance and in arrears the keys get an `@start` / `@end` suffix. */
   key: string;
   label: string;
   from: string;
   to: string;
   expectedAmount: number;
+  /** When this part of the period is charged — the line's own timing, else the contract's. */
+  timing: 'start_of_period' | 'end_of_period';
   status: 'unbilled' | 'draft_created' | 'billed';
   invoiceId?: string;
 }
@@ -119,18 +122,19 @@ export function getContractBillingPeriods(
   );
 
   // Month-by-month schedule — the very engine behind the "Monthly Cash Landing & Revenue Recognition"
-  // panel, so a suggested invoice always equals what that panel shows for the same window.
+  // panel — split by invoicing timing so advance and arrears lines are invoiced separately.
   const billableLines = lines.filter(l => (l as { line_kind?: string | null }).line_kind !== 'man_hours');
-  const scheduleByMonth = new Map<string, number>();
-  calculatePeriodAmounts(
+  const scheduleByMonth = new Map<string, { advance: number; arrears: number }>();
+  calculatePeriodAmountsByTiming(
     billableLines,
     contract.discount_pct || 0,
     contract.term_years || 1,
     startDateStr,
     catalogModules,
     catalogItems,
-    groups
-  ).forEach(entry => scheduleByMonth.set(entry.period, Number(entry.amount) || 0));
+    groups,
+    timing
+  ).forEach(entry => scheduleByMonth.set(entry.period, { advance: Number(entry.advance) || 0, arrears: Number(entry.arrears) || 0 }));
 
   const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
     if (cadence === 'monthly') {
@@ -167,15 +171,15 @@ export function getContractBillingPeriods(
   const periods: Array<ReturnType<typeof getPeriodInfo>> = [];
   const seenKeys = new Set<string>();
   let cursor = new Date(startDate);
-  const timingIsEnd = timing === 'end_of_period';
 
+  // Advance halves are due at the period start and arrears halves at the period end, so walk every
+  // period that has STARTED and let the per-side check below decide which halves are billable yet.
   while (true) {
     const info = getPeriodInfo(cursor);
     if (seenKeys.has(info.key)) break;
     seenKeys.add(info.key);
 
-    const dueAt = timingIsEnd ? new Date(info.to + 'T00:00:00') : new Date(info.from + 'T00:00:00');
-    if (dueAt > todayStart) break;
+    if (new Date(info.from + 'T00:00:00') > todayStart) break;
 
     periods.push(info);
 
@@ -186,18 +190,22 @@ export function getContractBillingPeriods(
 
   if (periods.length === 0) return [];
 
-  const expectedFor = (period: { from: string; to: string }): number => {
-    // The suggested invoice mirrors the month-by-month revenue schedule the pricing builder shows, so
-    // per-month quantity overrides and group min_monthly_charge floors are priced in. Man-hours lines are
-    // excluded here (their charge comes from logged timesheets) to avoid billing a rate × quantity stub.
-    const scheduled = monthsInWindow(period.from, period.to).reduce(
-      (sum, month) => sum + (scheduleByMonth.get(month) ?? 0),
-      0
-    );
-    const manHours = calculateManHoursCharge(lines, timesheets, period.from, period.to);
-    if (scheduled > 0 || manHours > 0) return scheduled + manHours;
+  /** Sum of the scheduled advance/arrears halves across the months a billing window touches. */
+  const scheduledHalves = (period: { from: string; to: string }): { advance: number; arrears: number } => {
+    let advance = 0;
+    let arrears = 0;
+    monthsInWindow(period.from, period.to).forEach(month => {
+      const entry = scheduleByMonth.get(month);
+      if (!entry) return;
+      advance += entry.advance;
+      arrears += entry.arrears;
+    });
+    return { advance, arrears };
+  };
 
-    // Nothing in the schedule for this window (line-less or non-scheduled contract) — legacy fallbacks.
+  /** Legacy single-amount fallback for windows the schedule does not cover (line-less contracts). */
+  const fallbackAmountFor = (period: { from: string; to: string }): number => {
+    const manHours = calculateManHoursCharge(lines, timesheets, period.from, period.to);
     const startDateForCalc = contract.service_start_date || contract.starts_on || period.from;
     let base = 0;
     if (lines.length > 0) {
@@ -247,27 +255,52 @@ export function getContractBillingPeriods(
 
   const results: BillingPeriodItem[] = [];
   periods.forEach(period => {
-    const expectedAmt = expectedFor(period);
-    if (expectedAmt <= 0 && !contract.value) return;
+    const { advance, arrears } = scheduledHalves(period);
+    // Timesheet man-hours are always billed after the work, so they land in the arrears half.
+    const manHours = calculateManHoursCharge(lines, timesheets, period.from, period.to);
+    const advanceAmt = Number(advance.toFixed(2));
+    const arrearsAmt = Number((arrears + manHours).toFixed(2));
+    const splitRequired = advanceAmt > 0 && arrearsAmt > 0;
 
-    const existingInv = findExistingInvoice(period);
-    const draftId = generatedDraftIds[`${contract.id}::${period.key}`];
-    const status: BillingPeriodItem['status'] = existingInv
-      ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')
-      : draftId ? 'draft_created' : 'unbilled';
+    const pushRow = (side: 'start_of_period' | 'end_of_period', amount: number) => {
+      const key = splitRequired ? `${period.key}@${side === 'start_of_period' ? 'start' : 'end'}` : period.key;
+      const label = splitRequired
+        ? `${period.label} · ${side === 'start_of_period' ? 'in advance' : 'in arrears'}`
+        : period.label;
+      const lookup = { key, label, from: period.from, to: period.to };
+      const existingInv = findExistingInvoice(lookup);
+      const draftId = generatedDraftIds[`${contract.id}::${key}`];
+      const status: BillingPeriodItem['status'] = existingInv
+        ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')
+        : draftId ? 'draft_created' : 'unbilled';
 
-    results.push({
-      key: period.key,
-      label: period.label,
-      from: period.from,
-      to: period.to,
-      expectedAmount: Number(expectedAmt.toFixed(2)),
-      status,
-      invoiceId: existingInv?.id || draftId,
-    });
+      results.push({
+        key,
+        label,
+        from: period.from,
+        to: period.to,
+        expectedAmount: Number(amount.toFixed(2)),
+        timing: side,
+        status,
+        invoiceId: existingInv?.id || draftId,
+      });
+    };
+
+    if (advanceAmt > 0 && new Date(period.from + 'T00:00:00') <= todayStart) pushRow('start_of_period', advanceAmt);
+    if (arrearsAmt > 0 && new Date(period.to + 'T00:00:00') <= todayStart) pushRow('end_of_period', arrearsAmt);
+
+    if (advanceAmt === 0 && arrearsAmt === 0) {
+      // No scheduled amount for this window — fall back to the legacy calculation for the whole period.
+      const fallback = fallbackAmountFor(period);
+      if (fallback <= 0 && !contract.value) return;
+      const dueAt = timing === 'end_of_period' ? new Date(period.to + 'T00:00:00') : new Date(period.from + 'T00:00:00');
+      if (dueAt > todayStart) return;
+      pushRow(timing === 'end_of_period' ? 'end_of_period' : 'start_of_period', fallback);
+    }
   });
 
-  return results;
+  // Oldest period first within the same timing side, so the queue reads forwards in time.
+  return results.sort((a, b) => a.key.localeCompare(b.key) || a.timing.localeCompare(b.timing));
 }
 
 /** Draft-invoice insert payload for a billing period — shared by the hub's quick create and the dossier. */

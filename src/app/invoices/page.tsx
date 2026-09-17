@@ -397,7 +397,7 @@ export default function InvoicesRegistryPage() {
           counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
           direction: cnt.direction,
           cadence,
-          timing: cnt.invoice_timing || 'start_of_period',
+          timing: period.timing,
           periodLabel: period.label,
           periodKey: period.key,
           periodFrom: period.from,

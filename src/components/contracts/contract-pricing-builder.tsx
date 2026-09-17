@@ -17,6 +17,8 @@ interface ContractPricingBuilderProps {
   initialDiscountPct?: number;
   initialTermYears?: number;
   initialStartDate?: string;
+  /** The contract's own invoice timing — shown as the inherited default for lines without their own. */
+  contractInvoiceTiming?: string | null;
   onSave?: (
     lines: Omit<ContractLine, 'id' | 'contract_id'>[], 
     schedule: { period: string; amount: number }[], 
@@ -54,6 +56,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   initialDiscountPct = 0,
   initialTermYears = 1,
   initialStartDate = new Date().toISOString().split('T')[0],
+  contractInvoiceTiming = 'start_of_period',
   onSave,
   onCancel,
   readOnly = false
@@ -83,6 +86,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {},
       apply_discount: l.apply_discount !== false,
       min_monthly_charge: null,
+      invoice_timing: l.invoice_timing || null,
       line_kind: l.line_kind || 'unit',
       role: l.role || null,
       seniority: l.seniority || null
@@ -553,6 +557,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                   <th className="py-2.5 px-3 w-36">Base Qty / Mo Horizon</th>
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
+                  <th className="py-2.5 px-3 w-44">Invoicing Timing</th>
                   <th className="py-2.5 px-3 text-center w-32">Discount Applied</th>
                   <th className="py-2.5 px-4 text-right w-48">Month 1 Rate / Projections</th>
                   {!readOnly && <th className="py-2.5 px-3 text-center w-14">Action</th>}
@@ -715,6 +720,36 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               <option value="quarterly">Quarterly</option>
                               <option value="annual">Annual</option>
                               <option value="one_time">One-time</option>
+                            </select>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 align-top">
+                          {/* Per-line invoice timing: a license can be billed up front while a service line
+                              is billed once the period closes, within the same contract and period. */}
+                          {readOnly ? (
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg border ${
+                              (line.invoice_timing || contractInvoiceTiming) === 'end_of_period'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}>
+                              {line.invoice_timing
+                                ? (line.invoice_timing === 'end_of_period' ? '⏳ Arrears' : '🚀 Advance')
+                                : `Inherited (${contractInvoiceTiming === 'end_of_period' ? 'Arrears' : 'Advance'})`}
+                            </span>
+                          ) : (
+                            <select
+                              value={line.invoice_timing || ''}
+                              onChange={e => updateLine(idx, 'invoice_timing', e.target.value || null)}
+                              className={`w-full bg-white border rounded px-2 py-1.5 text-xs font-bold focus:outline-none focus:border-blue-500 ${
+                                (line.invoice_timing || contractInvoiceTiming) === 'end_of_period'
+                                  ? 'border-indigo-300 text-indigo-700'
+                                  : 'border-emerald-300 text-emerald-700'
+                              }`}
+                              title="When this line item is invoiced. Default inherits the contract's own timing."
+                            >
+                              <option value="">Inherit contract ({contractInvoiceTiming === 'end_of_period' ? 'arrears' : 'advance'})</option>
+                              <option value="start_of_period">Start of period (in advance)</option>
+                              <option value="end_of_period">End of period (in arrears)</option>
                             </select>
                           )}
                         </td>

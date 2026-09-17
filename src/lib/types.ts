@@ -517,6 +517,8 @@ export interface ContractLine {
   monthly_quantities?: { [period: string]: number } | null;
   apply_discount?: boolean;
   min_monthly_charge?: number | null;
+  /** When this line is invoiced: 'start_of_period' (advance), 'end_of_period' (arrears) or null to inherit the contract's timing. */
+  invoice_timing?: 'start_of_period' | 'end_of_period' | null;
   line_kind?: 'unit' | 'man_hours';
   role?: string | null;
   seniority?: 'junior' | 'mid' | 'senior' | null;
