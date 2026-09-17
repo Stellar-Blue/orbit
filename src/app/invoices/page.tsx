@@ -15,6 +15,7 @@ import {
   Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { formatDate } from '@/lib/date';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 
@@ -422,8 +423,8 @@ export default function InvoicesRegistryPage() {
 
       {/* REGISTRATION / EDIT MODAL */}
       {isRegisterModalOpen && (
-        <Modal isOpen={true} title={editingInvoiceId ? "Edit Corporate Tax Invoice" : "Register Corporate Tax Invoice (Common Truth)"} onClose={() => { setIsRegisterModalOpen(false); setEditingInvoiceId(null); }}>
-          <div className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
+        <Modal isOpen={true} size="full" title={editingInvoiceId ? "Edit Corporate Tax Invoice" : "Register Corporate Tax Invoice (Common Truth)"} onClose={() => { setIsRegisterModalOpen(false); setEditingInvoiceId(null); }}>
+          <div className="space-y-4 max-h-[78vh] overflow-y-auto px-1">
             {duplicateWarning && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold flex items-center gap-2 animate-bounce">
                 <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
@@ -480,46 +481,52 @@ export default function InvoicesRegistryPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Corporate Counterparty</label>
-                <select
+                <SearchableSelect
                   value={newCpId}
-                  onChange={(e: any) => setNewCpId(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                >
-                  <option value="">Select corporate entity...</option>
-                  {counterparties.map(cp => (
-                    <option key={cp.id} value={cp.id}>{cp.legal_name} {cp.vat_number ? `(VAT: ${cp.vat_number})` : ''}</option>
-                  ))}
-                </select>
+                  onChange={setNewCpId}
+                  emptyLabel="Select corporate entity…"
+                  placeholder="Search by legal name, ΑΦΜ, domain…"
+                  options={counterparties.map(cp => ({
+                    value: cp.id,
+                    label: cp.legal_name,
+                    hint: cp.vat_number ? `ΑΦΜ ${cp.vat_number}` : '',
+                    keywords: `${cp.trade_name || ''} ${cp.vat_number || ''} ${cp.afm || ''} ${cp.website_domain || ''}`,
+                  }))}
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Linkage: Contract Agreement</label>
-                <select
+                <SearchableSelect
                   value={newContractId}
-                  onChange={(e: any) => handleContractChange(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                >
-                  <option value="">No Contract (One-off / General expense)</option>
-                  {contracts.filter(c => !newCpId || c.counterparty_id === newCpId).map(cnt => (
-                    <option key={cnt.id} value={cnt.id}>{cnt.product || 'Contract'} (€{(cnt.value || 0).toLocaleString()})</option>
-                  ))}
-                </select>
+                  onChange={handleContractChange}
+                  emptyLabel="No Contract (One-off / General expense)"
+                  placeholder="Search contract by product / reference…"
+                  options={contracts.filter(c => !newCpId || c.counterparty_id === newCpId).map(cnt => ({
+                    value: cnt.id,
+                    label: cnt.product || 'Contract',
+                    hint: `€${(cnt.value || 0).toLocaleString()}`,
+                    keywords: `${cnt.reference || ''} ${cnt.direction || ''}`,
+                  }))}
+                />
               </div>
             </div>
 
             {!newContractId && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Expense & Budget Category (For unlinked bills)</label>
-                <select
+                <SearchableSelect
                   value={newCatName}
-                  onChange={(e: any) => setNewCatName(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                >
-                  <option value="">Select budget expenditure tag...</option>
-                  {invoiceCategories?.map(cat => (
-                    <option key={cat.id} value={cat.name}>{cat.name} ({cat.description || 'Budget tag'})</option>
-                  ))}
-                </select>
+                  onChange={setNewCatName}
+                  emptyLabel="Select budget expenditure tag…"
+                  placeholder="Search category…"
+                  options={(invoiceCategories || []).map(cat => ({
+                    value: cat.name,
+                    label: cat.name,
+                    hint: cat.description || 'Budget tag',
+                    keywords: cat.description || '',
+                  }))}
+                />
               </div>
             )}
 
