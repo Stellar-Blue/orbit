@@ -20,6 +20,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
+import { buildDraftInvoicePayload, getContractBillingPeriods } from '@/lib/billing-periods';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
@@ -225,6 +226,7 @@ export default function InvoicesRegistryPage() {
   };
 
   // Deep link from a contract's Projects tab: /invoices?new=1&contract=<id>&project=<id>
+  // and from the contract dossier: /invoices?new=1&contract=<id>&period=<key>&from=&to=&net=
   // Waits for the referenced rows to load, then opens the register modal pre-filled and strips the
   // query so a refresh (or a realtime reload) cannot reopen it.
   useEffect(() => {
@@ -242,6 +244,12 @@ export default function InvoicesRegistryPage() {
     const project = projects.find(pr => pr.id === projectId);
     const unbilled = project ? calculateUnbilledProjectCharge(timeEntries, project.id) : null;
 
+    // An explicit billing period (from the dossier's fast-create rows) wins over the defaults.
+    const periodKey = params.get('period') || '';
+    const periodFrom = params.get('from') || '';
+    const periodTo = params.get('to') || '';
+    const periodNet = Number(params.get('net') || 0);
+
     const todayStr = new Date().toISOString().split('T')[0];
     const due = new Date();
     due.setDate(due.getDate() + 30);
@@ -258,20 +266,24 @@ export default function InvoicesRegistryPage() {
     setNewMark('');
     setNewIssueDate(todayStr);
     setNewDueDate(due.toISOString().split('T')[0]);
-    if (unbilled?.from) {
+    if (periodFrom) {
+      setNewPeriodFrom(periodFrom);
+      setNewPeriodTo(periodTo || periodFrom);
+    } else if (unbilled?.from) {
       setNewPeriodFrom(unbilled.from);
       setNewPeriodTo(unbilled.to || todayStr);
     } else {
       setNewPeriodFrom(todayStr.slice(0, 7) + '-01');
       setNewPeriodTo(todayStr);
     }
-    setNewReferencePeriod((unbilled?.from || todayStr).slice(0, 7));
-    if (unbilled && unbilled.amount > 0) setNewNet(unbilled.amount);
+    setNewReferencePeriod(periodKey || (unbilled?.from || todayStr).slice(0, 7));
+    if (periodNet > 0) setNewNet(periodNet);
+    else if (unbilled && unbilled.amount > 0) setNewNet(unbilled.amount);
     setNewVatRate('24%');
     setNewNotes(
       project
         ? `Timesheet billing — project ${project.name}${unbilled && unbilled.amount > 0 ? ` (${unbilled.hours}h approved, billable work)` : ''}`
-        : `Contract ${contract?.reference || contractId}`
+        : `Contract ${contract?.reference || contractId}${periodKey ? ` — billing period ${periodKey}` : ''}`
     );
     setNewLinks([]);
     setDuplicateWarning('');
@@ -365,138 +377,18 @@ export default function InvoicesRegistryPage() {
       invoiceId?: string;
     }> = [];
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
+    // Period walk + expected amounts live in @/lib/billing-periods (shared with the contract dossier).
     (contracts || []).forEach(cnt => {
       if (cnt.status !== 'active' && cnt.status !== 'in_negotiation') return;
 
-      const val = calculateContractValuation(cnt.lines || [], cnt.discount_pct || 0, cnt.term_years || 1, cnt.service_start_date || cnt.starts_on, catalogModules || [], catalogItems || [], cnt.value || 0, cnt.billing_cadence);
-
-      const startDateStr = cnt.service_start_date || cnt.starts_on;
-      if (!startDateStr) return;
-      const startDate = new Date(startDateStr + 'T00:00:00');
-
       const cadence = cnt.billing_cadence || 'monthly';
-
-      const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
-        if (cadence === 'monthly') {
-          const key = format(cursor, 'yyyy-MM');
-          const from = format(new Date(cursor.getFullYear(), cursor.getMonth(), 1), 'yyyy-MM-dd');
-          const to = format(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0), 'yyyy-MM-dd');
-          return { key, label: `Monthly (${key})`, from, to };
-        } else if (cadence === 'quarterly') {
-          const q = Math.floor(cursor.getMonth() / 3);
-          const year = cursor.getFullYear();
-          const key = `${year}-Q${q + 1}`;
-          const from = format(new Date(year, q * 3, 1), 'yyyy-MM-dd');
-          const to = format(new Date(year, q * 3 + 3, 0), 'yyyy-MM-dd');
-          return { key, label: `Q${q + 1} ${year}`, from, to };
-        } else if (cadence === 'annual') {
-          const year = cursor.getFullYear();
-          const key = `${year}`;
-          const from = format(new Date(year, 0, 1), 'yyyy-MM-dd');
-          const to = format(new Date(year, 11, 31), 'yyyy-MM-dd');
-          return { key, label: `${year} Annual Term`, from, to };
-        }
-        const key = format(startDate, 'yyyy-MM-dd');
-        return { key, label: cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement', from: startDateStr, to: format(today, 'yyyy-MM-dd') };
-      };
-
-      const advanceCursor = (cursor: Date): Date => {
-        const next = new Date(cursor);
-        if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
-        else if (cadence === 'quarterly') next.setMonth(next.getMonth() + 3);
-        else if (cadence === 'annual') next.setFullYear(next.getFullYear() + 1);
-        else return new Date(today.getTime() + 1);
-        return next;
-      };
-
-      const periods: Array<ReturnType<typeof getPeriodInfo>> = [];
-      const seenKeys = new Set<string>();
-      let cursor = new Date(startDate);
-      const timingIsEnd = cnt.invoice_timing === 'end_of_period';
-
-      while (true) {
-        const info = getPeriodInfo(cursor);
-        if (seenKeys.has(info.key)) break;
-        seenKeys.add(info.key);
-
-        const dueAt = timingIsEnd ? new Date(info.to + 'T00:00:00') : new Date(info.from + 'T00:00:00');
-        if (dueAt > today) break;
-
-        periods.push(info);
-
-        if (cadence === 'one_off' || cadence === 'milestone') break;
-        cursor = advanceCursor(cursor);
-        if (cursor > today && cursor.getTime() - today.getTime() > 366 * 86400000) break;
-      }
-
-      if (periods.length === 0) return;
-
-      const getAmt = (period: { from: string; to: string }): number => {
-        const cntLines = cnt.lines || [];
-        const startDateForCalc = cnt.service_start_date || cnt.starts_on || period.from;
-
-        const manHours = calculateManHoursCharge(cntLines as any, (timesheets || []), period.from, period.to);
-
-        let base = 0;
-        if (cntLines.length > 0) {
-          base = calculateInvoiceAmountForPeriod(
-            cntLines as any,
-            period.from,
-            period.to,
-            cnt.invoice_timing || 'start_of_period',
-            cadence,
-            startDateForCalc,
-            cnt.discount_pct || 0,
-            catalogModules || [],
-            catalogItems || []
-          );
-        }
-        if (base > 0 || manHours > 0) return base + manHours;
-
-        const schedItem = (cnt.schedule || []).find(s => s.period === period.from.slice(0, 7));
-        if (schedItem) return schedItem.amount;
-        if (cadence === 'annual') return val.netARR || (cnt.value || 0);
-        if (cadence === 'quarterly') return (val.netARR / 4) || ((cnt.value || 0) / 4);
-        if (cadence === 'monthly') return val.netMonthlyMRR || ((cnt.value || 0) / 12);
-        return val.totalContractValue || (cnt.value || 0);
-      };
-
-      periods.forEach(period => {
-        const expectedAmt = getAmt(period);
-        if (expectedAmt <= 0 && !cnt.value) return;
-
-        const existingInv = (invoices || []).find(i => {
-          if (i.contract_id !== cnt.id) return false;
-          if (i.reference_period && i.reference_period.trim() !== '') {
-            return (
-              i.reference_period.trim() === period.key ||
-              i.reference_period.trim().toLowerCase() === period.key.toLowerCase() ||
-              i.reference_period.trim().toLowerCase() === period.label.toLowerCase()
-            );
-          }
-          if (cadence === 'monthly') {
-            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key);
-            return (i.issue_date || '').startsWith(period.key);
-          }
-          if (cadence === 'quarterly') {
-            if (i.period_from && i.period_from.trim() !== '') return i.period_from >= period.from && i.period_from <= period.to;
-            return (i.issue_date || '') >= period.from && (i.issue_date || '') <= period.to;
-          }
-          if (cadence === 'annual') {
-            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key.slice(0, 4));
-            return (i.issue_date || '').startsWith(period.key.slice(0, 4));
-          }
-          return true;
-        });
-
-        const draftId = generatedDraftIds[`${cnt.id}::${period.key}`];
-        const status: 'unbilled' | 'draft_created' | 'billed' = existingInv
-          ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')
-          : draftId ? 'draft_created' : 'unbilled';
-
+      getContractBillingPeriods(cnt, {
+        catalogModules: catalogModules || [],
+        catalogItems: catalogItems || [],
+        timesheets: timesheets || [],
+        invoices: invoices || [],
+        generatedDraftIds,
+      }).forEach(period => {
         results.push({
           contractId: cnt.id,
           reference: cnt.reference,
@@ -509,11 +401,11 @@ export default function InvoicesRegistryPage() {
           periodKey: period.key,
           periodFrom: period.from,
           periodTo: period.to,
-          expectedAmount: Number(expectedAmt.toFixed(2)),
+          expectedAmount: period.expectedAmount,
           currency: cnt.currency || 'EUR',
           dueDate: period.from,
-          status,
-          invoiceId: existingInv?.id || draftId
+          status: period.status,
+          invoiceId: period.invoiceId
         });
       });
     });
@@ -544,29 +436,19 @@ export default function InvoicesRegistryPage() {
     const year = (item.periodFrom || todayStr).slice(0, 4);
     const invNumber = `INV-${year}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newInv = await addInvoice({
-      direction: item.direction === 'revenue' ? 'outgoing' : 'incoming',
-      counterparty_id: item.counterpartyId,
-      contract_id: item.contractId,
-      type: 'invoice',
-      invoice_number: invNumber,
-      issue_date: todayStr,
-      due_date: dueStr,
-      period_from: item.periodFrom || todayStr,
-      period_to: item.periodTo || dueStr,
-      reference_period: item.periodKey,
+    const newInv = await addInvoice(buildDraftInvoicePayload({
+      period: { key: item.periodKey, label: item.periodLabel, from: item.periodFrom, to: item.periodTo },
+      contractId: item.contractId,
+      counterpartyId: item.counterpartyId,
+      direction: item.direction,
       currency: item.currency,
-      fx_rate: 1.0,
-      net: Number((item.expectedAmount / 1.24).toFixed(2)),
-      vat_rate: '24',
-      vat_amount: Number((item.expectedAmount - (item.expectedAmount / 1.24)).toFixed(2)),
-      gross: item.expectedAmount,
-      gross_eur: item.expectedAmount,
-      status: 'draft',
-      missing_document: false,
-      notes: `Auto-generated draft for contract ${item.reference} (${item.periodLabel} - ${item.timing})`,
-      created_via: 'ui'
-    });
+      expectedAmount: item.expectedAmount,
+      reference: item.reference,
+      timing: item.timing,
+      invoiceNumber: invNumber,
+      issueDate: todayStr,
+      dueDate: dueStr,
+    }));
 
     if (newInv) {
       setGeneratedDraftIds(prev => ({ ...prev, [suggestionId(item)]: newInv.id }));

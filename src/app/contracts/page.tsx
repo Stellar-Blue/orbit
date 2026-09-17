@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -10,7 +10,7 @@ import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDi
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, X, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Copy, Users, Share2
+  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Copy, Users, Share2, Zap
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
@@ -19,12 +19,13 @@ import { CounterpartyPicker } from '@/components/counterparties/counterparty-pic
 import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
+import { buildDraftInvoicePayload, getContractBillingPeriods, type BillingPeriodItem } from '@/lib/billing-periods';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
 const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard, timesheets, addInvoice, refreshInvoices } = useAuth();
   const params = useParams();
   const router = useRouter();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -38,6 +39,10 @@ export default function ContractsRegistryPage() {
   const [contractRateCardId, setContractRateCardId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('table');
+  /** Optimistic "draft created" marks for the dossier's fast-create rows, keyed `${contractId}::${periodKey}`. */
+  const [contractDraftIds, setContractDraftIds] = useState<Record<string, string>>({});
+  /** Period currently being drafted — blocks a double click from creating two invoices. */
+  const [creatingPeriodKey, setCreatingPeriodKey] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === 'admin';
 
@@ -54,6 +59,41 @@ export default function ContractsRegistryPage() {
       if (id) setCopiedId(null);
       setCopyFeedback(null);
     }, 2500);
+  };
+
+  // Fast-create a draft invoice for one of the contract's due billing periods, straight from the dossier.
+  // Uses the same payload builder as the Invoices Hub quick-create so both stay identical.
+  const createDraftForPeriod = async (period: BillingPeriodItem) => {
+    if (!addInvoice || !selectedContract || creatingPeriodKey) return;
+    const contract = selectedContract;
+    setCreatingPeriodKey(period.key);
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const dueStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+      const invNumber = `INV-${(period.from || todayStr).slice(0, 4)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const newInv = await addInvoice(buildDraftInvoicePayload({
+        period,
+        contractId: contract.id,
+        counterpartyId: contract.counterparty_id,
+        direction: contract.direction,
+        currency: contract.currency,
+        expectedAmount: period.expectedAmount,
+        reference: contract.reference,
+        timing: contract.invoice_timing || 'start_of_period',
+        invoiceNumber: invNumber,
+        issueDate: todayStr,
+        dueDate: dueStr,
+      }));
+
+      if (newInv) {
+        setContractDraftIds(prev => ({ ...prev, [`${contract.id}::${period.key}`]: newInv.id }));
+        notifySuccess(`Draft invoice #${invNumber} created for ${contract.reference} (${period.label}).`);
+        await refreshInvoices?.();
+      }
+    } finally {
+      setCreatingPeriodKey(null);
+    }
   };
 
   useEffect(() => {
@@ -93,6 +133,19 @@ export default function ContractsRegistryPage() {
       window.history.pushState(null, '', '/contracts');
     }
   }, [selectedContract]);
+
+  // Due billing periods for the contract currently open in the dossier (shared with the Invoices Hub
+  // quick-create queue, so "what is owed" is computed in exactly one place).
+  const selectedContractPeriods = useMemo(() => {
+    if (!selectedContract) return [];
+    return getContractBillingPeriods(selectedContract, {
+      catalogModules: catalogModules || [],
+      catalogItems: catalogItems || [],
+      timesheets: timesheets || [],
+      invoices: invoices || [],
+      generatedDraftIds: contractDraftIds,
+    });
+  }, [selectedContract, catalogModules, catalogItems, timesheets, invoices, contractDraftIds]);
 
   // Form states for adding new contract
   const [newRef, setNewRef] = useState('SB-2026-NEW');
@@ -686,6 +739,9 @@ export default function ContractsRegistryPage() {
                   const totalGross = linkedInvoices.reduce((s, i) => s + i.gross_eur, 0);
                   const totalPaid = linkedInvoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + p.amount, 0), 0);
                   const totalOpen = Math.max(0, totalGross - totalPaid);
+                  const duePeriods = selectedContractPeriods.filter(p => p.status !== 'billed');
+                  const dueTotal = duePeriods.reduce((s, p) => s + p.expectedAmount, 0);
+                  const nextDuePeriod = duePeriods.find(p => p.status === 'unbilled');
 
                   return (
                     <div className="space-y-6">
@@ -707,6 +763,113 @@ export default function ContractsRegistryPage() {
                           <span className="text-2xl font-black text-amber-900 mt-1 block font-mono">€{totalOpen.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           <span className="text-[11px] text-amber-700 font-medium">{totalOpen === 0 ? 'Fully settled obligation' : 'Pending collection or maturity'}</span>
                         </Card>
+                      </div>
+
+                      {/* Fast create: the periods this contract already owes, ready to bill in one click */}
+                      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                              <Zap className="w-4 h-4 text-emerald-600" />
+                              Billing Periods Due
+                              {duePeriods.length > 0 && (
+                                <Badge variant="warning" className="text-[11px] px-2 py-0.5">{duePeriods.length} unbilled</Badge>
+                              )}
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                              {selectedContract.billing_cadence || 'monthly'} cadence ·
+                              {' '}{selectedContract.invoice_timing === 'end_of_period' ? 'in arrears' : 'in advance'} ·
+                              {' '}expected total <strong className="text-slate-700 font-mono">€{dueTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {nextDuePeriod && (
+                              <button
+                                type="button"
+                                onClick={() => createDraftForPeriod(nextDuePeriod)}
+                                disabled={creatingPeriodKey !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                                title={`Create a draft invoice for ${nextDuePeriod.label} (€${nextDuePeriod.expectedAmount.toLocaleString()})`}
+                              >
+                                <Zap className="w-3.5 h-3.5 text-amber-300" /> Create next draft · {nextDuePeriod.key}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/invoices?new=1&contract=${selectedContract.id}`)}
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                              title="Open the invoice register pre-filled for this contract"
+                            >
+                              <Receipt className="w-3.5 h-3.5 text-[#3D87D3]" /> Register Invoice
+                            </button>
+                          </div>
+                        </div>
+
+                        {duePeriods.length === 0 ? (
+                          <div className="p-5 text-center text-xs text-slate-400 font-semibold italic">
+                            No billing period is due yet — as soon as one reaches its {selectedContract.invoice_timing === 'end_of_period' ? 'period end' : 'period start'} it appears here ready to invoice.
+                          </div>
+                        ) : (
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-100 border-b border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
+                              <tr>
+                                <th className="p-3">Period</th>
+                                <th className="p-3">Service Window</th>
+                                <th className="p-3 text-right">Expected Gross</th>
+                                <th className="p-3 text-center">Status</th>
+                                <th className="p-3 text-right">Fast Create</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200/60 font-medium">
+                              {duePeriods.map(period => (
+                                <tr key={period.key} className="hover:bg-slate-50/70 transition-colors">
+                                  <td className="p-3">
+                                    <span className="font-bold text-slate-900 font-mono block">{period.key}</span>
+                                    <span className="text-[10px] text-slate-500">{period.label}</span>
+                                  </td>
+                                  <td className="p-3 text-slate-600">{formatDate(period.from)} → {formatDate(period.to)}</td>
+                                  <td className="p-3 text-right font-black text-slate-900 font-mono">€{period.expectedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                  <td className="p-3 text-center">
+                                    {period.status === 'unbilled'
+                                      ? <Badge variant="warning">Unbilled</Badge>
+                                      : <Badge variant="info">Draft created</Badge>}
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => router.push(`/invoices?new=1&contract=${selectedContract.id}&period=${encodeURIComponent(period.key)}&from=${period.from}&to=${period.to}&net=${period.expectedAmount}`)}
+                                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-[11px] font-bold transition-all cursor-pointer"
+                                        title="Open the register pre-filled with this period and amount"
+                                      >
+                                        Review
+                                      </button>
+                                      {period.status === 'unbilled' ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => createDraftForPeriod(period)}
+                                          disabled={creatingPeriodKey !== null}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                                          title="Create a draft invoice for this period right now"
+                                        >
+                                          <Zap className="w-3 h-3 text-amber-300" /> {creatingPeriodKey === period.key ? 'Creating…' : 'Create draft'}
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => router.push(`/invoices?contract=${selectedContract.id}`)}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-[11px] font-bold transition-all cursor-pointer"
+                                        >
+                                          Open in hub <ArrowUpRight className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
                       </div>
 
                       <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
