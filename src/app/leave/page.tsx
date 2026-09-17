@@ -87,6 +87,16 @@ export default function LeaveManagementPage() {
     }
   }, [leaveTypes, reqType]);
 
+  // Home's "Request Leave" button lands here as /leave?request=leave and files straight away.
+  // Read from window (not useSearchParams) so the page stays statically renderable, then strip the
+  // param so a refresh or a back-navigation doesn't reopen the modal.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('request') !== 'leave') return;
+    setIsRequestOpen(true);
+    window.history.replaceState(null, '', '/leave');
+  }, []);
+
   // Working days for an individual schedule: weekends off-schedule, Greek holidays and mandatory
   // company closures excluded. Counting itself lives in @/lib/leave-days so every leave surface agrees.
   const calculateWorkingDays = (startStr: string, endStr: string, schedule: string[], targetProfileId: string = currentUser.id) => {

@@ -570,7 +570,7 @@ export default function DashboardPage() {
                   <Globe className="w-4 h-4 mr-2 text-cyan-600" /> Log Remote Work
                 </Button>
               </Link>
-              <Link href="/leave">
+              <Link href="/leave?request=leave">
                 <Button variant="primary" className="cursor-pointer font-extrabold text-xs bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-sm">
                   <Plus className="w-4 h-4 mr-1.5" /> Request Leave
                 </Button>
