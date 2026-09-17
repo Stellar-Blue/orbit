@@ -91,8 +91,15 @@ export default function DashboardPage() {
   const pendingLeaves = leaveRequests.filter(r => r.status === 'pending');
 
   // --- 3. EMPLOYEE LEAVE HELPER ---
-  const myEntitlement = entitlements.find(e => e.profile_id === currentUser.id && e.year === 2026);
-  const myLeavesTaken = getEmployeeLeaveBalance(currentUser.id, 2026).taken;
+  // One source of truth with Leave Management: entitlement + carry-over minus taken, pending and
+  // mandatory-closure days. Never recompute the total here — the two screens used to disagree.
+  const leaveYear = new Date().getFullYear();
+  const myBalance = useMemo(
+    () => getEmployeeLeaveBalance(currentUser.id, leaveYear),
+    [currentUser.id, leaveYear, getEmployeeLeaveBalance, leaveRequests, entitlements]
+  );
+  /** True when the year is still running on the company default (no per-employee row configured). */
+  const usesDefaultEntitlement = !entitlements.some(e => e.profile_id === currentUser.id && e.year === leaveYear);
 
   // --- 3.5. UNBILLED CONTRACT & INVOICING ACTION ENGINE ---
   const [generatedDraftIds, setGeneratedDraftIds] = useState<Record<string, string>>({});
@@ -781,13 +788,12 @@ export default function DashboardPage() {
 
       {/* 4. EMPLOYEE PERSONAL SUMMARY (LEAVE QUOTA) */}
       {!isContractor ? (
-        <Card title="My 2026 Annual Leave Quota" subtitle="Managed per employee per year" className="border-slate-200/90 shadow-2xs">
-          {myEntitlement ? (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6 p-2">
+        <Card title={`My ${leaveYear} Annual Leave Quota`} subtitle="Managed per employee per year" className="border-slate-200/90 shadow-2xs">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6 p-2">
               <div className="flex items-center space-x-5">
                 <div className="px-6 py-4 rounded-2xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex flex-col justify-center shrink-0">
                   <span className="text-3xl font-black text-[#3D87D3] leading-none">
-                    {myEntitlement.entitlement_days + myEntitlement.carried_over_days - myLeavesTaken}
+                    {myBalance.available}
                   </span>
                   <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mt-1">Days Remaining</span>
                 </div>
@@ -796,31 +802,48 @@ export default function DashboardPage() {
                   <p className="text-xs text-slate-500 max-w-sm mt-0.5">
                     Plan your breaks and time away. Submit requests directly via the leave management workspace.
                   </p>
+                  {usesDefaultEntitlement && (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      Running on the company default of {myBalance.entitlement} days — no personal quota set for {leaveYear}.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 text-xs font-semibold bg-slate-50 p-4 rounded-xl border border-slate-200/80 shrink-0">
                 <div>
                   <span className="text-slate-400 text-[11px] block">Entitlement</span>
-                  <span className="font-bold text-slate-800 text-sm">{myEntitlement.entitlement_days} d</span>
+                  <span className="font-bold text-slate-800 text-sm">{myBalance.entitlement} d</span>
                 </div>
                 <div className="w-px h-8 bg-slate-200 hidden sm:block" />
                 <div>
                   <span className="text-slate-400 text-[11px] block">Carried Over</span>
-                  <span className="font-extrabold text-emerald-600 text-sm">+{myEntitlement.carried_over_days} d</span>
+                  <span className="font-extrabold text-emerald-600 text-sm">+{myBalance.carryOver} d</span>
                 </div>
                 <div className="w-px h-8 bg-slate-200 hidden sm:block" />
                 <div>
                   <span className="text-slate-400 text-[11px] block">Taken / Approved</span>
-                  <span className="font-extrabold text-rose-600 text-sm">-{myLeavesTaken} d</span>
+                  <span className="font-extrabold text-rose-600 text-sm">-{myBalance.taken} d</span>
                 </div>
+                {myBalance.reserved > 0 && (
+                  <>
+                    <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">Pending</span>
+                      <span className="font-extrabold text-purple-600 text-sm">-{myBalance.reserved} d</span>
+                    </div>
+                  </>
+                )}
+                {myBalance.mandatory > 0 && (
+                  <>
+                    <div className="w-px h-8 bg-slate-200 sm:block hidden" />
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">Mandatory</span>
+                      <span className="font-extrabold text-indigo-600 text-sm">-{myBalance.mandatory} d</span>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          ) : (
-            <div className="p-6 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl font-medium">
-              <AlertTriangle className="w-5 h-5 mx-auto mb-2 text-amber-600" />
-              Entitlement not yet set for 2026 &mdash; please contact a founder/admin to configure your annual quota.
-            </div>
-          )}
+          </div>
         </Card>
       ) : (
         <Card title="Contractor Retainer Summary & Invoicing" subtitle="StellarBlue contractor partner workspace" className="border-slate-200/90 shadow-2xs">
