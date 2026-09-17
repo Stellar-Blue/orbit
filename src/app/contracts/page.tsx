@@ -141,6 +141,7 @@ export default function ContractsRegistryPage() {
     return getContractBillingPeriods(selectedContract, {
       catalogModules: catalogModules || [],
       catalogItems: catalogItems || [],
+      groups: selectedContract.groups || [],
       timesheets: timesheets || [],
       invoices: invoices || [],
       generatedDraftIds: contractDraftIds,

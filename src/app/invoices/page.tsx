@@ -385,6 +385,7 @@ export default function InvoicesRegistryPage() {
       getContractBillingPeriods(cnt, {
         catalogModules: catalogModules || [],
         catalogItems: catalogItems || [],
+        groups: cnt.groups || [],
         timesheets: timesheets || [],
         invoices: invoices || [],
         generatedDraftIds,

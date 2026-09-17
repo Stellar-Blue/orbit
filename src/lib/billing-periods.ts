@@ -12,8 +12,9 @@ import {
   calculateContractValuation,
   calculateInvoiceAmountForPeriod,
   calculateManHoursCharge,
+  calculatePeriodAmounts,
 } from './pricing-engine';
-import type { CatalogItem, CatalogModule, ContractLine, Invoice } from './types';
+import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice } from './types';
 
 type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>;
 
@@ -33,6 +34,7 @@ export interface BillingPeriodContract {
   value?: number | null;
   schedule?: Array<{ period: string; amount: number }> | null;
   lines?: ContractLine[] | null;
+  groups?: Array<Partial<ContractLineGroup>> | null;
   billing_cadence?: string | null;
   invoice_timing?: string | null;
   discount_pct?: number | null;
@@ -47,6 +49,8 @@ export interface BillingPeriodOptions {
   catalogModules?: CatalogModule[];
   catalogItems?: CatalogItem[];
   timesheets?: Array<{ contract_line_id?: string | null; work_date: string; hours: number }>;
+  /** Contract line groups — needed so min_monthly_charge floors are priced into the schedule. */
+  groups?: Array<Partial<ContractLineGroup>>;
   /** Linked invoices, used to mark a period as drafted/billed. */
   invoices?: Array<{
     id: string; contract_id?: string | null; status: string;
@@ -58,6 +62,20 @@ export interface BillingPeriodOptions {
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+/** Every calendar month a billing window touches, e.g. Q1 → ['2026-01','2026-02','2026-03']. */
+function monthsInWindow(from: string, to: string, cap = 240): string[] {
+  const months: string[] = [];
+  const cursor = new Date(from + 'T00:00:00');
+  if (isNaN(cursor.getTime())) return months;
+  cursor.setDate(1);
+  const end = new Date(to + 'T00:00:00');
+  while (!isNaN(end.getTime()) && cursor <= end && months.length < cap) {
+    months.push(ym(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
+}
 
 /**
  * Billing periods already due (in advance or in arrears) for a single contract, newest walk first,
@@ -73,6 +91,7 @@ export function getContractBillingPeriods(
     catalogModules = [],
     catalogItems = [],
     timesheets = [],
+    groups = [],
     invoices = [],
     generatedDraftIds = {},
   } = options;
@@ -98,6 +117,20 @@ export function getContractBillingPeriods(
     contract.value || 0,
     cadence
   );
+
+  // Month-by-month schedule — the very engine behind the "Monthly Cash Landing & Revenue Recognition"
+  // panel, so a suggested invoice always equals what that panel shows for the same window.
+  const billableLines = lines.filter(l => (l as { line_kind?: string | null }).line_kind !== 'man_hours');
+  const scheduleByMonth = new Map<string, number>();
+  calculatePeriodAmounts(
+    billableLines,
+    contract.discount_pct || 0,
+    contract.term_years || 1,
+    startDateStr,
+    catalogModules,
+    catalogItems,
+    groups
+  ).forEach(entry => scheduleByMonth.set(entry.period, Number(entry.amount) || 0));
 
   const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
     if (cadence === 'monthly') {
@@ -154,9 +187,18 @@ export function getContractBillingPeriods(
   if (periods.length === 0) return [];
 
   const expectedFor = (period: { from: string; to: string }): number => {
-    const startDateForCalc = contract.service_start_date || contract.starts_on || period.from;
+    // The suggested invoice mirrors the month-by-month revenue schedule the pricing builder shows, so
+    // per-month quantity overrides and group min_monthly_charge floors are priced in. Man-hours lines are
+    // excluded here (their charge comes from logged timesheets) to avoid billing a rate × quantity stub.
+    const scheduled = monthsInWindow(period.from, period.to).reduce(
+      (sum, month) => sum + (scheduleByMonth.get(month) ?? 0),
+      0
+    );
     const manHours = calculateManHoursCharge(lines, timesheets, period.from, period.to);
+    if (scheduled > 0 || manHours > 0) return scheduled + manHours;
 
+    // Nothing in the schedule for this window (line-less or non-scheduled contract) — legacy fallbacks.
+    const startDateForCalc = contract.service_start_date || contract.starts_on || period.from;
     let base = 0;
     if (lines.length > 0) {
       base = calculateInvoiceAmountForPeriod(
