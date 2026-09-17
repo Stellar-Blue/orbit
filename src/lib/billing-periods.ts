@@ -290,7 +290,10 @@ export function getContractBillingPeriods(
     if (arrearsAmt > 0 && new Date(period.to + 'T00:00:00') <= todayStart) pushRow('end_of_period', arrearsAmt);
 
     if (advanceAmt === 0 && arrearsAmt === 0) {
-      // No scheduled amount for this window — fall back to the legacy calculation for the whole period.
+      // With line items, the schedule is authoritative: a period where every line's window is dormant
+      // genuinely owes nothing (falling back to netARR here would invent an invoice).
+      if (lines.length > 0) return;
+      // No line items at all — fall back to the legacy calculation for the whole period.
       const fallback = fallbackAmountFor(period);
       if (fallback <= 0 && !contract.value) return;
       const dueAt = timing === 'end_of_period' ? new Date(period.to + 'T00:00:00') : new Date(period.from + 'T00:00:00');

@@ -179,6 +179,30 @@ function getEffectiveQuantityForPeriod(
 }
 
 /**
+ * Whether a line charges in a given period. Lines may start later or end earlier than the contract
+ * (a module added in month 4, a licence that stops in month 18); NULL means the full contract term.
+ * Periods are 'YYYY-MM', so a plain string comparison is chronological.
+ */
+export function isLineActiveInPeriod(line: Partial<ContractLine>, period: string): boolean {
+  const start = line.starts_on ? String(line.starts_on).slice(0, 7) : null;
+  const end = line.ends_on ? String(line.ends_on).slice(0, 7) : null;
+  if (start && period < start) return false;
+  if (end && period > end) return false;
+  return true;
+}
+
+/**
+ * Index of the month a line starts charging — the anchor for its annual/quarterly/one-time trigger.
+ * A licence added in month 4 bills from month 4, not from the contract's opening month.
+ * Returns 0 when the line has no window (or one that starts with the contract).
+ */
+export function linePeriodAnchor(line: Partial<ContractLine>, periods: string[]): number {
+  if (!line.starts_on) return 0;
+  const idx = periods.indexOf(String(line.starts_on).slice(0, 7));
+  return idx > 0 ? idx : 0;
+}
+
+/**
  * Computes per-group floor scaling ratios for a single period: each group's
  * combined monthly-equivalent gross is compared against its floor, and lines
  * in floored groups scale proportionally (ratio > 1) so the group total
@@ -198,6 +222,7 @@ function computeGroupFloorRatiosForPeriod(
   const equivByGroup = new Map<string, number>();
   lines.forEach(l => {
     if (l.frequency === 'one_time' || !l.group_id) return;
+    if (!isLineActiveInPeriod(l, periods[pIdx])) return; // a dormant line cannot reach a floor
     const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
     const { gross: grossVal } = calculateLineGrossAmount(l, effQty);
     const equiv = l.frequency === 'annual' ? grossVal / 12 : l.frequency === 'quarterly' ? grossVal / 3 : grossVal;
@@ -274,6 +299,7 @@ export function calculatePeriodAmounts(
     let monthTotal = 0;
 
     lines.forEach(l => {
+      if (!isLineActiveInPeriod(l, period)) return; // line's own start/end window
       const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
       let { gross: grossVal } = calculateLineGrossAmount(l, effQty);
       if (l.group_id && l.frequency !== 'one_time') {
@@ -282,15 +308,16 @@ export function calculatePeriodAmounts(
       }
       const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
       const netVal = grossVal * lineMult;
+      const anchor = linePeriodAnchor(l, periods);
 
       if (l.frequency === 'monthly') {
         monthTotal += netVal;
       } else if (l.frequency === 'quarterly') {
-        if (pIdx % 3 === 0) monthTotal += netVal;
+        if ((pIdx - anchor) % 3 === 0) monthTotal += netVal;
       } else if (l.frequency === 'annual') {
-        if (pIdx % 12 === 0) monthTotal += netVal;
+        if ((pIdx - anchor) % 12 === 0) monthTotal += netVal;
       } else if (l.frequency === 'one_time') {
-        if (pIdx === 0) monthTotal += netVal;
+        if (pIdx === anchor) monthTotal += netVal;
       }
     });
 
@@ -334,6 +361,7 @@ export function calculatePeriodAmountsByTiming(
     let arrears = 0;
 
     lines.forEach(l => {
+      if (!isLineActiveInPeriod(l, period)) return; // line's own start/end window
       const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
       let { gross: grossVal } = calculateLineGrossAmount(l, effQty);
       if (l.group_id && l.frequency !== 'one_time') {
@@ -342,12 +370,13 @@ export function calculatePeriodAmountsByTiming(
       }
       const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
       const netVal = grossVal * lineMult;
+      const anchor = linePeriodAnchor(l, periods);
 
       const included =
         l.frequency === 'monthly' ? true
-        : l.frequency === 'quarterly' ? pIdx % 3 === 0
-        : l.frequency === 'annual' ? pIdx % 12 === 0
-        : l.frequency === 'one_time' ? pIdx === 0
+        : l.frequency === 'quarterly' ? (pIdx - anchor) % 3 === 0
+        : l.frequency === 'annual' ? (pIdx - anchor) % 12 === 0
+        : l.frequency === 'one_time' ? pIdx === anchor
         : false;
       if (!included) return;
 
@@ -458,6 +487,7 @@ export function calculateContractValuation(
     periods.forEach((period, pIdx) => {
       const groupRatios = computeGroupFloorRatiosForPeriod(recurringLines, periods, pIdx, groupFloors, catalogModules, catalogItems);
       recurringLines.forEach(l => {
+        if (!isLineActiveInPeriod(l, period)) return; // line's own start/end window
         const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
         let { gross: grossVal } = calculateLineGrossAmount(l as any, effQty);
         if (l.group_id && l.frequency !== 'one_time') {
@@ -466,21 +496,22 @@ export function calculateContractValuation(
         }
         const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
         const netVal = grossVal * lineMult;
+        const anchor = linePeriodAnchor(l, periods);
 
         if (l.frequency === 'one_time') {
-          if (pIdx === 0) {
+          if (pIdx === anchor) {
             oneTimeValue += ((Number(l.unit_price) || 0) * (Number(l.quantity) || 0)) * lineMult;
           }
         } else if (l.frequency === 'annual') {
-          if (pIdx % 12 === 0) scheduledRecurringValue += netVal;
-          if (pIdx === 0) startingNetMonthly += (grossVal / 12) * lineMult;
+          if ((pIdx - anchor) % 12 === 0) scheduledRecurringValue += netVal;
+          if (pIdx === anchor) startingNetMonthly += (grossVal / 12) * lineMult;
         } else if (l.frequency === 'quarterly') {
-          if (pIdx % 3 === 0) scheduledRecurringValue += netVal;
-          if (pIdx === 0) startingNetMonthly += (grossVal / 3) * lineMult;
+          if ((pIdx - anchor) % 3 === 0) scheduledRecurringValue += netVal;
+          if (pIdx === anchor) startingNetMonthly += (grossVal / 3) * lineMult;
         } else {
           // monthly
           scheduledRecurringValue += netVal;
-          if (pIdx === 0) startingNetMonthly += grossVal * lineMult;
+          if (pIdx === anchor) startingNetMonthly += grossVal * lineMult;
         }
       });
     });
@@ -507,7 +538,8 @@ export function calculateContractValuation(
       });
     }
 
-    // Calculate weighted ARR contribution across items for Tier scoring
+    // Calculate weighted ARR contribution across items for Tier scoring. Tiering is anchored on the
+    // contract's opening month, so a line that starts later still counts towards the tier.
     recurringLines.forEach(l => {
       if (l.frequency === 'one_time') return; // One-time fees do not contribute to ARR tiering
       
@@ -621,6 +653,8 @@ export function calculateManHoursCharge(
   const rateByLine = new Map<string, number>();
   (lines || []).forEach(l => {
     if ((l as any).line_kind === 'man_hours' && l.id) {
+      // A man-hours line that has not started yet (or already ended) cannot be billed.
+      if (!isLineActiveInPeriod(l, periodFrom.slice(0, 7))) return;
       rateByLine.set(l.id, Number(l.unit_price) || 0);
     }
   });
@@ -758,6 +792,10 @@ export function calculateInvoiceAmountForPeriod(
 
   // Man-hours lines are billed from logged timesheets, not in the fixed invoice amount.
   lines = lines.filter(l => (l as any).line_kind !== 'man_hours');
+  if (lines.length === 0) return 0;
+
+  // Only lines whose own start/end window covers this period can be invoiced for it.
+  lines = lines.filter(l => isLineActiveInPeriod(l, periodFrom.slice(0, 7)));
   if (lines.length === 0) return 0;
 
   const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);

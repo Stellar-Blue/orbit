@@ -1997,19 +1997,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         apply_discount: l.apply_discount !== false,
         min_monthly_charge: null,
         invoice_timing: l.invoice_timing || null,
+        starts_on: l.starts_on || null,
+        ends_on: l.ends_on || null,
         line_kind: l.line_kind || 'unit',
         role: l.role || null,
         seniority: l.seniority || null
       }));
       if (linesToInsert.length > 0) {
         const { error: linesErr } = await supabase.from('contract_lines').insert(linesToInsert);
-        if (linesErr && /invoice_timing/i.test(linesErr.message || '')) {
-          // Migration 20260917130000 not applied yet: save the price sheet without the per-line timing
-          // rather than leaving the contract with no lines at all (the old rows were already deleted).
-          console.warn('[contract_lines] invoice_timing column missing — apply supabase/migrations/20260917130000_contract_line_invoice_timing.sql');
+        if (linesErr && /invoice_timing|starts_on|ends_on/i.test(linesErr.message || '')) {
+          // Migration 20260917130000 / 20260917140000 not applied yet: save the price sheet without the
+          // newer line columns rather than leaving the contract with no lines at all (the old rows were
+          // already deleted by the time we get here).
+          console.warn('[contract_lines] invoice_timing / starts_on / ends_on missing — apply supabase/migrations/20260917130000_contract_line_invoice_timing.sql and 20260917140000_contract_line_active_window.sql');
           await supabase.from('contract_lines').insert(linesToInsert.map(l => {
             const copy: Record<string, unknown> = { ...l };
             delete copy.invoice_timing;
+            delete copy.starts_on;
+            delete copy.ends_on;
             return copy;
           }));
         }

@@ -7,7 +7,7 @@ import { calculateContractValuation, isVariableQuantityPricingScheme, calculateL
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
-  Sparkles, CheckCircle2, AlertCircle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X, FolderPlus, Folder, ShieldCheck
+  Sparkles, CheckCircle2, AlertCircle, AlertTriangle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X, FolderPlus, Folder, ShieldCheck
 } from 'lucide-react';
 
 interface ContractPricingBuilderProps {
@@ -36,6 +36,8 @@ const generateGroupId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `grp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const roleLabel = (role?: string | null): string => {
   const map: Record<string, string> = {
@@ -117,6 +119,47 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
     }
     return periods;
   }, [termYears, startDate]);
+
+  // ── Per-line active window (start from / ends at) ────────────────────────────────────────────────
+  /** First and last date a line may legitimately charge: the contract's own service window. */
+  const windowBounds = useMemo(() => {
+    const first = termPeriods[0] || startDate.slice(0, 7);
+    const last = termPeriods[termPeriods.length - 1] || first;
+    const lastDay = new Date(Number(last.slice(0, 4)), Number(last.slice(5, 7)), 0).getDate();
+    return { min: `${first}-01`, max: `${last}-${String(lastDay).padStart(2, '0')}`, firstMonth: first, lastMonth: last };
+  }, [termPeriods, startDate]);
+
+  const monthLabel = (iso: string) => {
+    const [y, m] = iso.slice(0, 7).split('-');
+    return `${MONTH_SHORT[Number(m) - 1] ?? m} ${y}`;
+  };
+
+  /** Months a line's window actually charges inside the contract term (client-side preview only). */
+  const lineActiveMonthCount = (line: Omit<ContractLine, 'id' | 'contract_id'>) =>
+    termPeriods.filter(p => (!line.starts_on || p >= line.starts_on.slice(0, 7)) && (!line.ends_on || p <= line.ends_on.slice(0, 7))).length;
+
+  /** Validation of every line window: range sanity plus the contract's own term bounds. */
+  const windowErrors = useMemo(() => {
+    const errors = new Map<number, string>();
+    const countActive = (from: string | null, to: string | null) =>
+      termPeriods.filter(p => (!from || p >= from) && (!to || p <= to)).length;
+    lines.forEach((line, idx) => {
+      const from = line.starts_on ? line.starts_on.slice(0, 7) : null;
+      const to = line.ends_on ? line.ends_on.slice(0, 7) : null;
+      if (from && to && to < from) { errors.set(idx, '“to” is before “from”'); return; }
+      if (from && from < windowBounds.firstMonth) { errors.set(idx, `starts before the contract (${monthLabel(windowBounds.min)})`); return; }
+      if (to && to > windowBounds.lastMonth) { errors.set(idx, `ends after the contract term (${monthLabel(windowBounds.max)})`); return; }
+      if (from && to && countActive(from, to) === 0) { errors.set(idx, 'window covers no chargeable month'); return; }
+      // One-time fees are legitimately deferred (billed once, in their start month) — no extra rule.
+    });
+    return errors;
+  }, [lines, windowBounds, termPeriods]);
+
+  /** A window that fails validation is never sent to the engine. */
+  const sanitizedLines = useMemo(
+    () => lines.map((line, idx) => (windowErrors.has(idx) ? { ...line, starts_on: null, ends_on: null } : line)),
+    [lines, windowErrors]
+  );
 
   // Carry-forward calculation: find explicit quantity override or carry forward previous month's quantity
   const getEffectiveQuantity = (line: Omit<ContractLine, 'id' | 'contract_id'>, periodIdx: number, allPeriods: string[]) => {
@@ -239,9 +282,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
     setDiscountPct(disc);
   };
 
-  // Calculations incorporating dynamic monthly quantity carry-forward schedules and Tier 1-10 weighting
+  // Calculations incorporating dynamic monthly quantity carry-forward schedules and Tier 1-10 weighting.
+  // Lines with an invalid active window are excluded (they fall back to the contract's full term) so a
+  // half-typed date can never distort the price sheet.
   const totals = useMemo(() => {
-    const valuation = calculateContractValuation(lines, discountPct, termYears, startDate, catalogModules, catalogItems, 0, 'monthly', groups);
+    const valuation = calculateContractValuation(sanitizedLines, discountPct, termYears, startDate, catalogModules, catalogItems, 0, 'monthly', groups);
     return {
       netMonthlyMRR: valuation.netMonthlyMRR,
       netAnnual: valuation.netARR,
@@ -251,18 +296,19 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       breakdown: valuation.breakdown,
       weightedARR: valuation.weightedARR
     };
-  }, [lines, discountPct, termYears, startDate, catalogModules, catalogItems, groups]);
+  }, [sanitizedLines, discountPct, termYears, startDate, catalogModules, catalogItems, groups]);
 
   // Schedule generator reflecting monthly variable quantity carry-forwards and group-level floors
   const schedule = useMemo(() => {
-    return calculatePeriodAmounts(lines, discountPct, termYears, startDate, catalogModules, catalogItems, groups);
-  }, [lines, discountPct, termYears, startDate, catalogModules, catalogItems, groups]);
+    return calculatePeriodAmounts(sanitizedLines, discountPct, termYears, startDate, catalogModules, catalogItems, groups);
+  }, [sanitizedLines, discountPct, termYears, startDate, catalogModules, catalogItems, groups]);
 
   const handleSaveClick = async () => {
     if (!onSave) return;
+    if (windowErrors.size > 0) return; // guarded by the disabled button; never persist an invalid window
     setIsSaving(true);
     try {
-      await onSave(lines, schedule, discountPct, termYears, startDate, totals.totalContractValue, groups);
+      await onSave(sanitizedLines, schedule, discountPct, termYears, startDate, totals.totalContractValue, groups);
     } finally {
       setIsSaving(false);
     }
@@ -558,6 +604,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                   <th className="py-2.5 px-3 w-28">Unit Label</th>
                   <th className="py-2.5 px-3 w-36">Frequency</th>
                   <th className="py-2.5 px-3 w-44">Invoicing Timing</th>
+                  <th className="py-2.5 px-3 w-52">Active Window</th>
                   <th className="py-2.5 px-3 text-center w-32">Discount Applied</th>
                   <th className="py-2.5 px-4 text-right w-48">Month 1 Rate / Projections</th>
                   {!readOnly && <th className="py-2.5 px-3 text-center w-14">Action</th>}
@@ -751,6 +798,53 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                               <option value="start_of_period">Start of period (in advance)</option>
                               <option value="end_of_period">End of period (in arrears)</option>
                             </select>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 align-top">
+                          {/* Per-line active window: a charge can start later or stop earlier than the contract. */}
+                          {readOnly ? (
+                            <span className="text-[11px] text-slate-600 font-mono block mt-1">
+                              {line.starts_on ? monthLabel(line.starts_on) : 'from contract start'}
+                              <span className="text-slate-400"> → </span>
+                              {line.ends_on ? monthLabel(line.ends_on) : 'to contract end'}
+                            </span>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 w-6 shrink-0">from</span>
+                                <input
+                                  type="date"
+                                  value={line.starts_on || ''}
+                                  min={windowBounds.min}
+                                  max={windowBounds.max}
+                                  onChange={e => updateLine(idx, 'starts_on', e.target.value || null)}
+                                  title="First chargeable month for this line (inclusive) — leave empty to start with the contract"
+                                  className={`w-full bg-white border rounded px-1.5 py-1 text-[11px] font-mono focus:outline-none ${windowErrors.get(idx) ? 'border-rose-400 focus:border-rose-500' : 'border-slate-300 focus:border-blue-500'}`}
+                                />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 w-6 shrink-0">to</span>
+                                <input
+                                  type="date"
+                                  value={line.ends_on || ''}
+                                  min={line.starts_on || windowBounds.min}
+                                  max={windowBounds.max}
+                                  onChange={e => updateLine(idx, 'ends_on', e.target.value || null)}
+                                  title="Last chargeable month for this line (inclusive) — leave empty to run to the contract end"
+                                  className={`w-full bg-white border rounded px-1.5 py-1 text-[11px] font-mono focus:outline-none ${windowErrors.get(idx) ? 'border-rose-400 focus:border-rose-500' : 'border-slate-300 focus:border-blue-500'}`}
+                                />
+                              </div>
+                              {windowErrors.get(idx) && (
+                                <div className="text-[10px] font-bold text-rose-600">{windowErrors.get(idx)}</div>
+                              )}
+                              {!windowErrors.get(idx) && (line.starts_on || line.ends_on) && (
+                                <div className="text-[10px] text-slate-500">
+                                  {isOneTime
+                                    ? `charged once, in ${monthLabel(line.starts_on || windowBounds.min)}`
+                                    : `charged for ${lineActiveMonthCount(line)} of ${termPeriods.length} months`}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="py-3 px-3 align-top text-center">
@@ -1048,14 +1142,33 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 variant="primary"
                 size="sm"
                 onClick={handleSaveClick}
-                disabled={isSaving || lines.length === 0}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-6 shadow-lg shadow-emerald-600/30 cursor-pointer"
+                disabled={isSaving || lines.length === 0 || windowErrors.size > 0}
+                title={windowErrors.size > 0 ? 'Fix the highlighted active windows before saving' : 'Save the pricing snapshot'}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-6 shadow-lg shadow-emerald-600/30 cursor-pointer disabled:opacity-50"
               >
-                {isSaving ? 'Saving Snapshot...' : 'Save & Lock Contract Pricing'}
+                {isSaving ? 'Saving Snapshot...' : windowErrors.size > 0 ? `Fix ${windowErrors.size} active window${windowErrors.size === 1 ? '' : 's'}` : 'Save & Lock Contract Pricing'}
               </Button>
             )}
           </div>
         </div>
+
+        {/* Invalid per-line active windows block the save — billing would silently skip those months */}
+        {!readOnly && windowErrors.size > 0 && (
+          <div className="mt-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <div>{windowErrors.size} line item{windowErrors.size === 1 ? ' has' : 's have'} an invalid active window — those months will not be charged.</div>
+              <ul className="mt-1 space-y-0.5 font-medium">
+                {Array.from(windowErrors.entries()).map(([idx, msg]) => (
+                  <li key={idx}>{lines[idx]?.name || `Line ${idx + 1}`}: {msg}</li>
+                ))}
+              </ul>
+              <div className="mt-1 text-[11px] font-semibold text-rose-700">
+                Valid range for this contract: {monthLabel(windowBounds.min)} → {monthLabel(windowBounds.max)} (term {termYears} year{termYears === 1 ? '' : 's'}).
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Schedule Matrix Expandable */}
         {showSchedulePreview && (

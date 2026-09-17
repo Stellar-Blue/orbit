@@ -519,6 +519,10 @@ export interface ContractLine {
   min_monthly_charge?: number | null;
   /** When this line is invoiced: 'start_of_period' (advance), 'end_of_period' (arrears) or null to inherit the contract's timing. */
   invoice_timing?: 'start_of_period' | 'end_of_period' | null;
+  /** First month this line charges (YYYY-MM-DD); null = from the contract's own start. */
+  starts_on?: string | null;
+  /** Last month this line charges (YYYY-MM-DD, inclusive); null = until the contract's own end. */
+  ends_on?: string | null;
   line_kind?: 'unit' | 'man_hours';
   role?: string | null;
   seniority?: 'junior' | 'mid' | 'senior' | null;
