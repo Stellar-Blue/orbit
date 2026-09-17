@@ -1,4 +1,4 @@
-import { Contract, ContractLine, ContractLineGroup, CatalogModule, CatalogItem } from '@/lib/types';
+import { Contract, ContractLine, ContractLineGroup, CatalogModule, CatalogItem, TimeEntry } from '@/lib/types';
 
 export interface ContractTierResult {
   tier: number;
@@ -548,6 +548,46 @@ export function calculateManHoursCharge(
     total += (Number(t.hours) || 0) * rate;
   });
   return total;
+}
+
+/**
+ * Unbilled billable value of one project, from the timesheet v2 entries.
+ *
+ * Only entries that can be invoiced count: billable, approved/locked, and not already attached to
+ * an invoice (`invoice_id`). Value = hours × the rate snapshot taken when the entry was approved.
+ * Used by the contract Projects tab and by the invoice draft the "Create draft invoice" link opens.
+ */
+export function calculateUnbilledProjectCharge(
+  timeEntries: Array<Partial<TimeEntry>>,
+  projectId: string
+): { hours: number; amount: number; from: string | null; to: string | null; entryIds: string[] } {
+  const billableStates = ['approved', 'locked'];
+  const rows = (timeEntries || []).filter(
+    e => e.project_id === projectId && e.billable === true && !e.invoice_id && billableStates.includes(String(e.status))
+  );
+
+  let hours = 0;
+  let amount = 0;
+  let from: string | null = null;
+  let to: string | null = null;
+
+  rows.forEach(e => {
+    const h = (Number(e.minutes) || 0) / 60;
+    hours += h;
+    amount += h * (Number(e.billing_rate) || 0);
+    const d = String(e.work_date || '');
+    if (!d) return;
+    if (!from || d < from) from = d;
+    if (!to || d > to) to = d;
+  });
+
+  return {
+    hours: Number(hours.toFixed(2)),
+    amount: Number(amount.toFixed(2)),
+    from,
+    to,
+    entryIds: rows.map(e => String(e.id)).filter(Boolean),
+  };
 }
 
 export function getContractNoticeStatus(contract: {

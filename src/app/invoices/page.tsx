@@ -19,7 +19,7 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
-import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
+import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
@@ -29,7 +29,7 @@ export default function InvoicesRegistryPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
     addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices,
-    timesheets, catalogModules, catalogItems
+    timesheets, catalogModules, catalogItems, projects, timeEntries
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -223,6 +223,62 @@ export default function InvoicesRegistryPage() {
       setDuplicateWarning(`An ${dir === 'outgoing' ? 'issued (AR)' : 'incoming (AP)'} invoice with number "${num}" is already registered for this corporate entity!`);
     }
   };
+
+  // Deep link from a contract's Projects tab: /invoices?new=1&contract=<id>&project=<id>
+  // Waits for the referenced rows to load, then opens the register modal pre-filled and strips the
+  // query so a refresh (or a realtime reload) cannot reopen it.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') !== '1') return;
+
+    const contractId = params.get('contract') || '';
+    const projectId = params.get('project') || '';
+    // Wait for the slices to arrive before deciding what can be pre-filled.
+    if (contractId && contracts.length === 0) return;
+    if (projectId && projects.length === 0) return;
+
+    const contract = contracts.find(c => c.id === contractId);
+    const project = projects.find(pr => pr.id === projectId);
+    const unbilled = project ? calculateUnbilledProjectCharge(timeEntries, project.id) : null;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const due = new Date();
+    due.setDate(due.getDate() + 30);
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link prefill once the referenced rows have loaded
+    setEditingInvoiceId(null);
+    setNewDirection(contract?.direction === 'cost' ? 'incoming' : 'outgoing');
+    setNewType('invoice');
+    setNewStatus('draft');
+    setNewCpId(contract?.counterparty_id || '');
+    setNewContractId(contractId);
+    setNewCatName('');
+    setNewInvNumber('');
+    setNewMark('');
+    setNewIssueDate(todayStr);
+    setNewDueDate(due.toISOString().split('T')[0]);
+    if (unbilled?.from) {
+      setNewPeriodFrom(unbilled.from);
+      setNewPeriodTo(unbilled.to || todayStr);
+    } else {
+      setNewPeriodFrom(todayStr.slice(0, 7) + '-01');
+      setNewPeriodTo(todayStr);
+    }
+    setNewReferencePeriod((unbilled?.from || todayStr).slice(0, 7));
+    if (unbilled && unbilled.amount > 0) setNewNet(unbilled.amount);
+    setNewVatRate('24%');
+    setNewNotes(
+      project
+        ? `Timesheet billing — project ${project.name}${unbilled && unbilled.amount > 0 ? ` (${unbilled.hours}h approved, billable work)` : ''}`
+        : `Contract ${contract?.reference || contractId}`
+    );
+    setNewLinks([]);
+    setDuplicateWarning('');
+    setIsRegisterModalOpen(true);
+    window.history.replaceState(null, '', '/invoices');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link prefill once the referenced rows have loaded
+  }, [contracts, projects, timeEntries]);
 
   // Filtered Register Invoices
   const filteredInvoices = useMemo(() => {

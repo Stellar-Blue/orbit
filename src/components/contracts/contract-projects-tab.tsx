@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Contract, Project } from '@/lib/types';
 import { Button } from '@/components/ui/primitives';
-import { Plus, Trash2, Pencil, Check, X } from 'lucide-react';
+import { calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
+import { Plus, Trash2, Pencil, Check, X, Receipt } from 'lucide-react';
 import { ProjectForecastEditor } from '@/components/timesheets/project-forecast-editor';
 
 /** Projects linked to one contract: see / create / edit / delete + role-seniority forecast. */
 export function ContractProjectsTab({ contract }: { contract: Contract }) {
-  const { projects, saveProject, deleteProject } = useAuth();
+  const { projects, saveProject, deleteProject, timeEntries } = useAuth();
   const [name, setName] = useState('');
   const [billable, setBillable] = useState(true);
   const [budgetHours, setBudgetHours] = useState('');
@@ -89,6 +91,37 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
                 )}
               </div>
               <div className="p-4">
+                {(() => {
+                  // Billable, approved time that has not been invoiced yet — the draft the link below
+                  // opens is pre-filled from it (counterparty, period and net landed in the modal).
+                  const unbilled = calculateUnbilledProjectCharge(timeEntries, p.id);
+                  return (
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        {unbilled.hours > 0 ? (
+                          <>
+                            <span className="font-mono text-slate-800">{unbilled.hours}h</span> approved, not invoiced
+                            {unbilled.amount > 0
+                              ? <> &middot; <span className="font-mono font-extrabold text-emerald-700">€{unbilled.amount.toLocaleString('de-DE', { minimumFractionDigits: 2 })}</span></>
+                              : <span className="text-amber-700"> &middot; no billing-rate snapshot on those entries yet</span>}
+                            {unbilled.from && unbilled.to && (
+                              <span className="text-slate-400"> &middot; {unbilled.from} → {unbilled.to}</span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-slate-400">No approved, uninvoiced billable hours on this project.</span>
+                        )}
+                      </span>
+                      <Link
+                        href={`/invoices?new=1&contract=${contract.id}&project=${p.id}`}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#3D87D3] hover:underline shrink-0"
+                        title="Open the invoice register pre-filled with this project's unbilled work"
+                      >
+                        <Receipt className="w-3.5 h-3.5" /> Create draft invoice →
+                      </Link>
+                    </div>
+                  );
+                })()}
                 <ProjectForecastEditor projectId={p.id} />
               </div>
             </div>
