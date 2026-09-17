@@ -248,7 +248,10 @@ export default function PayrollPage() {
   const [ptCode, setPtCode] = useState('bonus_midyear');
   const [ptNameEl, setPtNameEl] = useState('Επιπλέον Αμοιβή');
   const [ptNameEn, setPtNameEn] = useState('Mid-Year Performance Bonus');
-  const [ptMult, setPtMult] = useState(0.5);
+  // The Default Salary Multiplier is no longer editable in the category modal, but statutory
+  // payouts still use it (Easter/Holiday 0.5×, Christmas 1×). It is carried through from the record
+  // being edited so an edit never silently rewrites it; new categories fall back to 1× at payout.
+  const [ptMult, setPtMult] = useState<number | null>(null);
   const [ptStatutory, setPtStatutory] = useState(false);
   const [ptRecurring, setPtRecurring] = useState(false);
   const [ptMonth, setPtMonth] = useState<string>('');
@@ -717,7 +720,7 @@ export default function PayrollPage() {
         is_statutory: ptStatutory,
         is_recurring_monthly: ptRecurring,
         default_period_month: ptMonth ? Number(ptMonth) : null,
-        default_multiplier: Number(ptMult),
+        default_multiplier: ptMult,
         active: ptActive
       });
       if (!ok) return;
@@ -733,7 +736,7 @@ export default function PayrollPage() {
       is_statutory: ptStatutory,
       is_recurring_monthly: ptRecurring,
       default_period_month: ptMonth ? Number(ptMonth) : undefined,
-      default_multiplier: Number(ptMult),
+      default_multiplier: ptMult ?? undefined,
       applies_to: ['full_time', 'part_time', 'contractor', 'intern'],
       active: true
     });
@@ -746,7 +749,7 @@ export default function PayrollPage() {
     setPtCode('bonus_midyear');
     setPtNameEl('Επιπλέον Αμοιβή');
     setPtNameEn('Mid-Year Performance Bonus');
-    setPtMult(0.5);
+    setPtMult(null);
     setPtStatutory(false);
     setPtRecurring(false);
     setPtMonth('');
@@ -759,7 +762,7 @@ export default function PayrollPage() {
     setPtCode(pt.code);
     setPtNameEl(pt.name_el);
     setPtNameEn(pt.name_en);
-    setPtMult(Number(pt.default_multiplier ?? 1));
+    setPtMult(pt.default_multiplier ?? null);
     setPtStatutory(pt.is_statutory);
     setPtRecurring(pt.is_recurring_monthly);
     setPtMonth(pt.default_period_month ? String(pt.default_period_month) : '');
@@ -1459,21 +1462,15 @@ export default function PayrollPage() {
               <input type="text" value={ptNameEn} onChange={e => setPtNameEn(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800" placeholder="e.g. Easter Bonus" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Default Salary Multiplier</label>
-              <input type="number" step="0.1" value={ptMult} onChange={e => setPtMult(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono" />
-              <span className="text-[10px] text-slate-400">0.5 for Easter/Holiday, 1.0 for Christmas</span>
-            </div>
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Default Statutory Month</label>
-              <select value={ptMonth} onChange={e => setPtMonth(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-semibold">
-                <option value="">None / All Months</option>
-                <option value="4">4 - April (Easter Bonus)</option>
-                <option value="7">7 - July (Holiday Allowance)</option>
-                <option value="12">12 - December (Christmas Bonus)</option>
-              </select>
-            </div>
+          <div>
+            <label className="block font-semibold uppercase text-slate-500 mb-1">Default Statutory Month</label>
+            <select value={ptMonth} onChange={e => setPtMonth(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-semibold">
+              <option value="">None / All Months</option>
+              <option value="4">4 - April (Easter Bonus)</option>
+              <option value="7">7 - July (Holiday Allowance)</option>
+              <option value="12">12 - December (Christmas Bonus)</option>
+            </select>
+            <span className="text-[10px] text-slate-400">Only used by statutory items.</span>
           </div>
           <div className="flex items-center space-x-6 pt-2">
             <label className="flex items-center space-x-2 cursor-pointer">
