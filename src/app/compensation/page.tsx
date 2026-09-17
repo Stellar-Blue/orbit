@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { 
   DollarSign, Download, ShieldCheck, CreditCard, 
-  Building, Calendar, FileText, CheckCircle2, TrendingUp, AlertTriangle, Lock, Paperclip, FolderOpen, FileSpreadsheet, History
+  Building, Calendar, FileText, CheckCircle2, TrendingUp, AlertTriangle, Lock, Paperclip, FolderOpen, FileSpreadsheet, History, Eye
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
@@ -14,6 +14,7 @@ import { formatDate, formatDateTime } from '@/lib/date';
 import { isBaseSalary, isRecurringExtra, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
 import { BenefitsList } from '@/components/compensation/benefits-list';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
+import { DocumentPreviewModal, dataUrlToObjectUrl } from '@/components/ui/document-preview-modal';
 
 const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
 
@@ -21,6 +22,7 @@ export default function MyCompensationPage() {
   const { currentUser, salaries, payments, paymentTypes } = useAuth();
   const isContractor = currentUser.employment_type === 'contractor';
   const [selectedPaymentForDocs, setSelectedPaymentForDocs] = useState<PaymentRecord | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<PaymentDocument | null>(null);
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
@@ -115,16 +117,25 @@ export default function MyCompensationPage() {
   };
 
   const handleDownloadDoc = (doc: PaymentDocument) => {
-    const content = `STELLARBLUE SYSTEMS ORBIT — VERIFIED PAYMENT DOCUMENT\nDocument ID: ${doc.id}\nType: ${doc.type.toUpperCase()}\nFile Size: ${doc.size}\nUploaded: ${formatDateTime(doc.uploaded_at)}\nEmployee: ${currentUser.first_name} ${currentUser.last_name}\nStatus: Verified and Encrypted under RLS`;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = doc.name.endsWith('.pdf') ? doc.name.replace('.pdf', '_receipt.txt') : doc.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // The real binary lives in `doc.url` (base64 data: URL for uploaded files). Hand the browser a
+    // blob: URL so the bytes — and the original filename — are what actually get saved; never write
+    // a generated placeholder here.
+    if (doc.url) {
+      const isDataUrl = doc.url.startsWith('data:');
+      const href = isDataUrl ? (dataUrlToObjectUrl(doc.url) || doc.url) : doc.url;
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = doc.name || 'payment-document';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (href.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(href), 10_000);
+      return;
+    }
+
+    // No stored payload: seed/mock rows created without a file. Say so instead of pretending.
+    alert(`"${doc.name}" has no stored file — it was registered as a placeholder row (${doc.size}), so there is nothing to download. Ask Payroll to upload the actual receipt.`);
   };
 
   return (
@@ -397,13 +408,22 @@ export default function MyCompensationPage() {
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadDoc(doc)}
-                      className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-bold text-[11px] shadow-xs transition-all cursor-pointer shrink-0"
-                    >
-                      <Download className="w-3 h-3 mr-1.5" /> Download PDF
-                    </button>
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDoc(doc)}
+                        className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1.5 text-indigo-600" /> Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadDoc(doc)}
+                        className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Download
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -415,6 +435,19 @@ export default function MyCompensationPage() {
           </div>
         )}
       </Modal>
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={!!previewDoc}
+          onClose={() => setPreviewDoc(null)}
+          documentName={previewDoc.name}
+          documentUrl={previewDoc.url}
+          storagePath={`payroll/${selectedPaymentForDocs?.period || ''}/${previewDoc.name}`}
+          uploadedAt={formatDateTime(previewDoc.uploaded_at)}
+          subtitle={`My Payslip · ${previewDoc.type.replace('_', ' ')} · ${previewDoc.size}`}
+          onDownload={() => handleDownloadDoc(previewDoc)}
+        />
+      )}
     </div>
   );
 }

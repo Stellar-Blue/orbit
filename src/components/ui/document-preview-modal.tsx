@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Modal, Button, Badge } from '@/components/ui/primitives';
 import { 
   FileText, Download, ShieldCheck, Eye, ExternalLink, 
@@ -18,6 +18,21 @@ export interface DocumentPreviewModalProps {
   subtitle?: string;
 }
 
+/** Converts a base64 `data:` URL into a `blob:` URL. */
+export const dataUrlToObjectUrl = (dataUrl: string): string | null => {
+  try {
+    const [meta, payload] = dataUrl.split(',');
+    if (!payload) return null;
+    const mime = meta.slice(5).split(';')[0] || 'application/octet-stream';
+    const binary = meta.includes('base64') ? atob(payload) : decodeURIComponent(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch {
+    return null;
+  }
+};
+
 export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   isOpen,
   onClose,
@@ -28,15 +43,35 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   onDownload,
   subtitle
 }) => {
+  // Chrome's built-in PDF viewer refuses `data:` URLs ("Failed to load PDF document"), so both the
+  // iframe and the direct link get a blob: URL for non-image payloads. Images are fine either way.
+  const resolvedUrl = useMemo(() => {
+    if (!documentUrl) return null;
+    const isImagePayload = /^data:image\//i.test(documentUrl) ||
+      /\.(png|jpe?g|gif|webp|svg)$/i.test(documentName || '');
+    if (documentUrl.startsWith('data:') && !isImagePayload) {
+      return dataUrlToObjectUrl(documentUrl) || documentUrl;
+    }
+    return documentUrl;
+  }, [documentUrl, documentName]);
+
+  // Release the generated blob: URL when the preview changes or the modal unmounts.
+  useEffect(() => () => {
+    if (resolvedUrl?.startsWith('blob:') && documentUrl?.startsWith('data:')) {
+      URL.revokeObjectURL(resolvedUrl);
+    }
+  }, [resolvedUrl, documentUrl]);
+
   if (!isOpen) return null;
 
   const isEmbeddableUrl = Boolean(
-    documentUrl && (documentUrl.startsWith('http://') || documentUrl.startsWith('https://') || documentUrl.startsWith('data:') || documentUrl.startsWith('blob:'))
+    resolvedUrl && (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://') || resolvedUrl.startsWith('data:') || resolvedUrl.startsWith('blob:'))
   );
 
   const isImage = Boolean(
-    documentName && /\.(png|jpe?g|gif|webp|svg)$/i.test(documentName) || 
-    (documentUrl && documentUrl.startsWith('data:image/'))
+    (documentName && /\.(png|jpe?g|gif|webp|svg)$/i.test(documentName)) ||
+    (documentUrl && documentUrl.startsWith('data:image/')) ||
+    (resolvedUrl && resolvedUrl.startsWith('data:image/'))
   );
 
   const handleDownloadClick = () => {
@@ -44,9 +79,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       onDownload();
       return;
     }
-    if (documentUrl && (documentUrl.startsWith('http') || documentUrl.startsWith('data:') || documentUrl.startsWith('blob:'))) {
+    if (resolvedUrl && (resolvedUrl.startsWith('http') || resolvedUrl.startsWith('data:') || resolvedUrl.startsWith('blob:'))) {
       const a = document.createElement('a');
-      a.href = documentUrl;
+      a.href = resolvedUrl;
       a.download = documentName || 'document_archive.pdf';
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
@@ -91,9 +126,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-            {isEmbeddableUrl && (
+            {isEmbeddableUrl && resolvedUrl?.startsWith('blob:') && (
               <a 
-                href={documentUrl!} 
+                href={resolvedUrl} 
                 target="_blank" 
                 rel="noreferrer" 
                 className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-sm"
@@ -116,11 +151,11 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <div className="flex-1 w-full bg-slate-200/50 flex items-center justify-center p-2">
               {isImage ? (
                 <div className="max-h-[72vh] overflow-auto p-4 bg-white rounded-xl shadow-sm border border-slate-300 flex items-center justify-center">
-                  <img src={documentUrl!} alt={documentName} className="max-w-full h-auto object-contain rounded-md" />
+                  <img src={resolvedUrl!} alt={documentName} className="max-w-full h-auto object-contain rounded-md" />
                 </div>
               ) : (
                 <iframe 
-                  src={documentUrl!} 
+                  src={resolvedUrl!} 
                   className="w-full h-[72vh] bg-white rounded-xl border border-slate-300 shadow-inner" 
                   title={`Preview - ${documentName}`}
                 />
