@@ -269,22 +269,25 @@ const signInvoiceDocuments = async (
  * Phone numbers the caller is allowed to see: every row for an admin, own row for an employee.
  * `profiles.phone` is revoked from `authenticated` (migration 20260917120000), so `select('*')` on
  * profiles no longer returns it — the value is merged in from this admin/self-only view instead.
- * Returns an empty map (rather than throwing) when the view is missing, e.g. before the migration
- * has been applied; people then simply show no phone number.
+ *
+ * Returns `null` when the view itself is unavailable (migration not applied yet, or a transient
+ * error): callers then keep the phone that came back with the row, which is what the table still
+ * provides before the revoke lands. Never return an empty map for "unavailable" — that would wipe
+ * every phone number on load.
  */
 const fetchProfilePhones = async (
   supabase: ReturnType<typeof getSupabaseBrowserClient>
-): Promise<Map<string, string | null>> => {
+): Promise<Map<string, string | null> | null> => {
   try {
     const { data, error } = await supabase.from('profile_phones').select('id, phone');
     if (error) {
-      console.warn('[profiles] phone lookup unavailable:', error.message);
-      return new Map();
+      console.warn('[profiles] phone view unavailable, using row values:', error.message);
+      return null;
     }
     return new Map((data || []).map((r: { id: string; phone: string | null }) => [r.id, r.phone]));
   } catch (e) {
-    console.warn('[profiles] phone lookup failed:', e);
-    return new Map();
+    console.warn('[profiles] phone lookup failed, using row values:', e);
+    return null;
   }
 };
 
@@ -386,8 +389,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         const initialProfilesRes = await supabase.from('profiles').select('*');
         const loadedProfiles: Profile[] = initialProfilesRes.data || [];
+        // Only overwrite when the view answered — otherwise keep the value the row already carries.
         const phones = await fetchProfilePhones(supabase);
-        loadedProfiles.forEach(p => { p.phone = phones.get(p.id) ?? null; });
+        if (phones) loadedProfiles.forEach(p => { p.phone = phones.get(p.id) ?? null; });
         
         if (session?.user?.email) {
           const email = session.user.email.toLowerCase();
@@ -4131,7 +4135,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ]);
     setProfiles(rows.map(p => ({
       ...p,
-      phone: phoneMap.get(p.id) ?? null,
+      // Same rule as the initial load: a missing view must not blank the phone.
+      ...(phoneMap ? { phone: phoneMap.get(p.id) ?? null } : {}),
       role: roleRows.some(r => r.profile_id === p.id && r.role === 'admin') ? 'admin' : 'employee',
       sensitive: sensitiveRows.find(s => s.profile_id === p.id),
       team: teamRows.find(t => t.id === p.team_id),
