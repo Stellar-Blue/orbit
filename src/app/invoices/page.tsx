@@ -12,19 +12,24 @@ import {
   Receipt, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
-  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload
+  Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload,
+  Zap, EyeOff, RotateCcw
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { formatDate } from '@/lib/date';
+import { format } from 'date-fns';
+import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
+const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function InvoicesRegistryPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
-    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices
+    addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices,
+    timesheets, catalogModules, catalogItems
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -242,6 +247,311 @@ export default function InvoicesRegistryPage() {
   // Month M Close Drift Rollups (Current Month)
 
 
+  // ==========================================================================
+  // CONTRACT INVOICING & REVENUE ACTION CENTER  (moved here from the Home page)
+  // ==========================================================================
+  const [activeTab, setActiveTab] = useState<'ledger' | 'billing_actions'>('ledger');
+  const [generatedDraftIds, setGeneratedDraftIds] = useState<Record<string, string>>({});
+
+  /**
+   * Dismissed suggestions — "this period will not be invoiced, stop asking".
+   * Kept per user in localStorage: it is a reminder state, not data of record, and every row is
+   * derived again from contracts + invoices on load. Restorable from the dismissed list.
+   */
+  const dismissalKey = `orbit:billing-suggestions-dismissed:${currentUser.id}`;
+  const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
+  const [showDismissed, setShowDismissed] = useState(false);
+
+  useEffect(() => {
+    let stored: string[] = [];
+    try {
+      const raw = window.localStorage.getItem(dismissalKey);
+      stored = raw ? JSON.parse(raw) : [];
+    } catch {
+      stored = [];
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of persisted UI state after mount (window does not exist while rendering)
+    setDismissedKeys(stored);
+  }, [dismissalKey]);
+
+  const persistDismissals = (next: string[]) => {
+    setDismissedKeys(next);
+    try {
+      window.localStorage.setItem(dismissalKey, JSON.stringify(next));
+    } catch {
+      /* private mode / quota — the session still hides them */
+    }
+  };
+  const dismissSuggestion = (item: { contractId: string; periodKey: string; counterpartyName: string; periodLabel: string }) => {
+    const key = `${item.contractId}::${item.periodKey}`;
+    if (!dismissedKeys.includes(key)) persistDismissals([...dismissedKeys, key]);
+    notifySuccess(`Suggestion dismissed — ${item.counterpartyName} ${item.periodLabel}.`);
+  };
+  const restoreSuggestion = (key: string) => persistDismissals(dismissedKeys.filter(k => k !== key));
+
+  const pendingInvoicesQueue = useMemo(() => {
+    const results: Array<{
+      contractId: string;
+      reference: string;
+      counterpartyId: string;
+      counterpartyName: string;
+      direction: 'revenue' | 'cost';
+      cadence: string;
+      timing: string;
+      periodLabel: string;
+      periodKey: string; // machine-comparable key e.g. "2026-01" or "2026-Q1"
+      periodFrom: string;
+      periodTo: string;
+      expectedAmount: number;
+      currency: string;
+      dueDate: string;
+      status: 'unbilled' | 'draft_created' | 'billed';
+      invoiceId?: string;
+    }> = [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    (contracts || []).forEach(cnt => {
+      if (cnt.status !== 'active' && cnt.status !== 'in_negotiation') return;
+
+      const val = calculateContractValuation(cnt.lines || [], cnt.discount_pct || 0, cnt.term_years || 1, cnt.service_start_date || cnt.starts_on, catalogModules || [], catalogItems || [], cnt.value || 0, cnt.billing_cadence);
+
+      const startDateStr = cnt.service_start_date || cnt.starts_on;
+      if (!startDateStr) return;
+      const startDate = new Date(startDateStr + 'T00:00:00');
+
+      const cadence = cnt.billing_cadence || 'monthly';
+
+      const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
+        if (cadence === 'monthly') {
+          const key = format(cursor, 'yyyy-MM');
+          const from = format(new Date(cursor.getFullYear(), cursor.getMonth(), 1), 'yyyy-MM-dd');
+          const to = format(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0), 'yyyy-MM-dd');
+          return { key, label: `Monthly (${key})`, from, to };
+        } else if (cadence === 'quarterly') {
+          const q = Math.floor(cursor.getMonth() / 3);
+          const year = cursor.getFullYear();
+          const key = `${year}-Q${q + 1}`;
+          const from = format(new Date(year, q * 3, 1), 'yyyy-MM-dd');
+          const to = format(new Date(year, q * 3 + 3, 0), 'yyyy-MM-dd');
+          return { key, label: `Q${q + 1} ${year}`, from, to };
+        } else if (cadence === 'annual') {
+          const year = cursor.getFullYear();
+          const key = `${year}`;
+          const from = format(new Date(year, 0, 1), 'yyyy-MM-dd');
+          const to = format(new Date(year, 11, 31), 'yyyy-MM-dd');
+          return { key, label: `${year} Annual Term`, from, to };
+        }
+        const key = format(startDate, 'yyyy-MM-dd');
+        return { key, label: cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement', from: startDateStr, to: format(today, 'yyyy-MM-dd') };
+      };
+
+      const advanceCursor = (cursor: Date): Date => {
+        const next = new Date(cursor);
+        if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
+        else if (cadence === 'quarterly') next.setMonth(next.getMonth() + 3);
+        else if (cadence === 'annual') next.setFullYear(next.getFullYear() + 1);
+        else return new Date(today.getTime() + 1);
+        return next;
+      };
+
+      const periods: Array<ReturnType<typeof getPeriodInfo>> = [];
+      const seenKeys = new Set<string>();
+      let cursor = new Date(startDate);
+      const timingIsEnd = cnt.invoice_timing === 'end_of_period';
+
+      while (true) {
+        const info = getPeriodInfo(cursor);
+        if (seenKeys.has(info.key)) break;
+        seenKeys.add(info.key);
+
+        const dueAt = timingIsEnd ? new Date(info.to + 'T00:00:00') : new Date(info.from + 'T00:00:00');
+        if (dueAt > today) break;
+
+        periods.push(info);
+
+        if (cadence === 'one_off' || cadence === 'milestone') break;
+        cursor = advanceCursor(cursor);
+        if (cursor > today && cursor.getTime() - today.getTime() > 366 * 86400000) break;
+      }
+
+      if (periods.length === 0) return;
+
+      const getAmt = (period: { from: string; to: string }): number => {
+        const cntLines = cnt.lines || [];
+        const startDateForCalc = cnt.service_start_date || cnt.starts_on || period.from;
+
+        const manHours = calculateManHoursCharge(cntLines as any, (timesheets || []), period.from, period.to);
+
+        let base = 0;
+        if (cntLines.length > 0) {
+          base = calculateInvoiceAmountForPeriod(
+            cntLines as any,
+            period.from,
+            period.to,
+            cnt.invoice_timing || 'start_of_period',
+            cadence,
+            startDateForCalc,
+            cnt.discount_pct || 0,
+            catalogModules || [],
+            catalogItems || []
+          );
+        }
+        if (base > 0 || manHours > 0) return base + manHours;
+
+        const schedItem = (cnt.schedule || []).find(s => s.period === period.from.slice(0, 7));
+        if (schedItem) return schedItem.amount;
+        if (cadence === 'annual') return val.netARR || (cnt.value || 0);
+        if (cadence === 'quarterly') return (val.netARR / 4) || ((cnt.value || 0) / 4);
+        if (cadence === 'monthly') return val.netMonthlyMRR || ((cnt.value || 0) / 12);
+        return val.totalContractValue || (cnt.value || 0);
+      };
+
+      periods.forEach(period => {
+        const expectedAmt = getAmt(period);
+        if (expectedAmt <= 0 && !cnt.value) return;
+
+        const existingInv = (invoices || []).find(i => {
+          if (i.contract_id !== cnt.id) return false;
+          if (i.reference_period && i.reference_period.trim() !== '') {
+            return (
+              i.reference_period.trim() === period.key ||
+              i.reference_period.trim().toLowerCase() === period.key.toLowerCase() ||
+              i.reference_period.trim().toLowerCase() === period.label.toLowerCase()
+            );
+          }
+          if (cadence === 'monthly') {
+            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key);
+            return (i.issue_date || '').startsWith(period.key);
+          }
+          if (cadence === 'quarterly') {
+            if (i.period_from && i.period_from.trim() !== '') return i.period_from >= period.from && i.period_from <= period.to;
+            return (i.issue_date || '') >= period.from && (i.issue_date || '') <= period.to;
+          }
+          if (cadence === 'annual') {
+            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key.slice(0, 4));
+            return (i.issue_date || '').startsWith(period.key.slice(0, 4));
+          }
+          return true;
+        });
+
+        const draftId = generatedDraftIds[`${cnt.id}::${period.key}`];
+        const status: 'unbilled' | 'draft_created' | 'billed' = existingInv
+          ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')
+          : draftId ? 'draft_created' : 'unbilled';
+
+        results.push({
+          contractId: cnt.id,
+          reference: cnt.reference,
+          counterpartyId: cnt.counterparty_id,
+          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
+          direction: cnt.direction,
+          cadence,
+          timing: cnt.invoice_timing || 'start_of_period',
+          periodLabel: period.label,
+          periodKey: period.key,
+          periodFrom: period.from,
+          periodTo: period.to,
+          expectedAmount: Number(expectedAmt.toFixed(2)),
+          currency: cnt.currency || 'EUR',
+          dueDate: period.from,
+          status,
+          invoiceId: existingInv?.id || draftId
+        });
+      });
+    });
+
+    return results.sort((a, b) => {
+      const statusScore = { unbilled: 0, draft_created: 1, billed: 2 };
+      if (statusScore[a.status] !== statusScore[b.status]) return statusScore[a.status] - statusScore[b.status];
+      if (a.direction !== b.direction) return a.direction === 'revenue' ? -1 : 1;
+      if (a.periodKey < b.periodKey) return -1;
+      if (a.periodKey > b.periodKey) return 1;
+      return b.expectedAmount - a.expectedAmount;
+    });
+  }, [contracts, invoices, catalogModules, catalogItems, generatedDraftIds, timesheets]);
+
+  /** Suggestion identity — one row per contract + billing period. */
+  const suggestionId = (item: { contractId: string; periodKey: string }) => `${item.contractId}::${item.periodKey}`;
+  /** Dismissed rows are dropped from the working queue; `showDismissed` pulls them back for restore. */
+  const activeQueue = useMemo(
+    () => pendingInvoicesQueue.filter(i => showDismissed || !dismissedKeys.includes(suggestionId(i))),
+    [pendingInvoicesQueue, dismissedKeys, showDismissed]
+  );
+  const dismissedCount = pendingInvoicesQueue.filter(i => dismissedKeys.includes(suggestionId(i))).length;
+
+  const handleQuickCreateInvoice = async (item: typeof pendingInvoicesQueue[0]) => {
+    if (!addInvoice) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dueStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+    const year = (item.periodFrom || todayStr).slice(0, 4);
+    const invNumber = `INV-${year}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newInv = await addInvoice({
+      direction: item.direction === 'revenue' ? 'outgoing' : 'incoming',
+      counterparty_id: item.counterpartyId,
+      contract_id: item.contractId,
+      type: 'invoice',
+      invoice_number: invNumber,
+      issue_date: todayStr,
+      due_date: dueStr,
+      period_from: item.periodFrom || todayStr,
+      period_to: item.periodTo || dueStr,
+      reference_period: item.periodKey,
+      currency: item.currency,
+      fx_rate: 1.0,
+      net: Number((item.expectedAmount / 1.24).toFixed(2)),
+      vat_rate: '24',
+      vat_amount: Number((item.expectedAmount - (item.expectedAmount / 1.24)).toFixed(2)),
+      gross: item.expectedAmount,
+      gross_eur: item.expectedAmount,
+      status: 'draft',
+      missing_document: false,
+      notes: `Auto-generated draft for contract ${item.reference} (${item.periodLabel} - ${item.timing})`,
+      created_via: 'ui'
+    });
+
+    if (newInv) {
+      setGeneratedDraftIds(prev => ({ ...prev, [suggestionId(item)]: newInv.id }));
+      notifySuccess(`Draft invoice #${invNumber} created for ${item.counterpartyName} (${item.periodLabel}).`);
+    }
+  };
+
+  const [actionSearchQuery, setActionSearchQuery] = useState<string>('');
+  const [actionFilterStatus, setActionFilterStatus] = useState<string>('all');
+  const [actionFilterDirection, setActionFilterDirection] = useState<string>('all');
+  const [actionSortBy, setActionSortBy] = useState<'period' | 'amount_desc' | 'amount_asc' | 'counterparty'>('period');
+
+  const filteredActionQueue = useMemo(() => {
+    let list = [...activeQueue];
+    if (actionSearchQuery.trim()) {
+      const q = actionSearchQuery.toLowerCase();
+      list = list.filter(item =>
+        item.counterpartyName.toLowerCase().includes(q) ||
+        (item.reference || '').toLowerCase().includes(q) ||
+        item.periodLabel.toLowerCase().includes(q)
+      );
+    }
+    if (actionFilterStatus !== 'all') {
+      list = list.filter(item => item.status === actionFilterStatus);
+    }
+    if (actionFilterDirection !== 'all') {
+      list = list.filter(item => item.direction === actionFilterDirection);
+    }
+    list.sort((a, b) => {
+      if (actionSortBy === 'amount_desc') return b.expectedAmount - a.expectedAmount;
+      if (actionSortBy === 'amount_asc') return a.expectedAmount - b.expectedAmount;
+      if (actionSortBy === 'counterparty') return a.counterpartyName.localeCompare(b.counterpartyName);
+      if (a.status !== b.status) {
+        if (a.status === 'unbilled') return -1;
+        if (b.status === 'unbilled') return 1;
+      }
+      return b.periodKey.localeCompare(a.periodKey);
+    });
+    return list;
+  }, [activeQueue, actionSearchQuery, actionFilterStatus, actionFilterDirection, actionSortBy]);
+
   if (!isAdmin) {
     return (
       <div className="p-8 max-w-4xl mx-auto text-center">
@@ -259,6 +569,29 @@ export default function InvoicesRegistryPage() {
   return (
     <div className="w-full px-6 py-6 space-y-6 max-w-[1600px] mx-auto">
 
+      {/* Tabs */}
+      <div className="flex space-x-6 border-b border-slate-200 pb-3 text-sm">
+        <button
+          onClick={() => setActiveTab('ledger')}
+          className={`pb-2 font-semibold transition-all cursor-pointer ${activeTab === 'ledger' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          <span className="inline-flex items-center"><FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" /> Invoice Ledger ({filteredInvoices.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('billing_actions')}
+          className={`pb-2 font-semibold transition-all flex items-center cursor-pointer ${activeTab === 'billing_actions' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          <Zap className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Contract Invoicing &amp; Revenue Action Center
+          {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length > 0 && (
+            <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
+              {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'ledger' && (
+        <>
           {/* Filter Bar */}
           <Card className="p-4 bg-white border-slate-200 shadow-sm rounded-2xl flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-wrap">
@@ -419,6 +752,116 @@ export default function InvoicesRegistryPage() {
               if (inv.counterparty_id) router.push(`/counterparties/${inv.counterparty_id}`);
             }}
           />
+        </>
+      )}
+
+      {activeTab === 'billing_actions' && (
+        <Card
+          title="Contract Invoicing & Revenue Action Center"
+          subtitle="Automated ledger monitoring across active commercial contracts to ensure timely billing in advance or arrears"
+          action={
+            <div className="flex items-center space-x-3">
+              {activeQueue.filter(i => i.status === 'unbilled').length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                  {activeQueue.filter(i => i.status === 'unbilled').length} Action(s) Needed
+                </span>
+              )}
+              {dismissedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDismissed(v => !v)}
+                  className="text-[11px] font-bold text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 cursor-pointer"
+                  title="Show or hide the suggestions you dismissed"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                  {showDismissed ? 'Hide' : 'Show'} dismissed ({dismissedCount})
+                </button>
+              )}
+            </div>
+          }
+          className="border-slate-200/90 shadow-2xs"
+        >
+          <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+              <input
+                type="text"
+                placeholder="Search counterparty, ref, or period..."
+                value={actionSearchQuery}
+                onChange={(e) => setActionSearchQuery(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 flex-1 min-w-[160px]"
+              />
+              <select
+                value={actionFilterStatus}
+                onChange={(e) => setActionFilterStatus(e.target.value)}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value="all">All Statuses</option>
+                <option value="unbilled">Unbilled Only</option>
+                <option value="draft_created">Draft Created</option>
+                <option value="billed">Invoiced</option>
+              </select>
+              <select
+                value={actionFilterDirection}
+                onChange={(e) => setActionFilterDirection(e.target.value)}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value="all">All Directions</option>
+                <option value="revenue">Revenue Only</option>
+                <option value="cost">Spend Only</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500">Sort:</span>
+              <select
+                value={actionSortBy}
+                onChange={(e) => setActionSortBy(e.target.value as 'period' | 'amount_desc' | 'amount_asc' | 'counterparty')}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+              >
+                <option value="period">Urgency & Period</option>
+                <option value="amount_desc">Amount (High to Low)</option>
+                <option value="amount_asc">Amount (Low to High)</option>
+                <option value="counterparty">Counterparty Name</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
+            <BillingActionGrid
+              items={filteredActionQueue}
+              onQuickCreate={(item) => handleQuickCreateInvoice(item as unknown as (typeof pendingInvoicesQueue)[number])}
+              onDismiss={showDismissed ? undefined : dismissSuggestion}
+            />
+          </div>
+
+          {dismissedCount > 0 && (
+            <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-xs font-extrabold text-slate-700 inline-flex items-center gap-1.5">
+                  <EyeOff className="w-3.5 h-3.5 text-slate-400" /> Dismissed suggestions ({dismissedCount})
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Dismissing only hides the reminder — the contract period stays unbilled until an invoice exists.
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {pendingInvoicesQueue.filter(i => dismissedKeys.includes(suggestionId(i))).map(item => (
+                  <span key={suggestionId(item)} className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-600">
+                    <span className="truncate max-w-[280px]">{item.counterpartyName} · {item.periodLabel}</span>
+                    <button
+                      type="button"
+                      onClick={() => restoreSuggestion(suggestionId(item))}
+                      className="inline-flex items-center gap-1 text-[#3D87D3] hover:underline cursor-pointer"
+                      title="Bring this suggestion back into the queue"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Restore
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
 
       {/* REGISTRATION / EDIT MODAL */}

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { roleLabel } from '@/lib/profile-role';
@@ -16,15 +15,13 @@ import {
   Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
   CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
   CalendarDays, ChevronLeft, ChevronRight, Search, Globe,
-  ShieldCheck, Building2, Info, X, FileCheck, Zap, AlertCircle, RefreshCw
+  ShieldCheck, Building2, Info, X, RefreshCw
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
-import { calculateContractValuation, getContractNoticeStatus, calculateInvoiceAmountForPeriod, calculateManHoursCharge } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 import { loadedMonthlyCost, isBaseSalary, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
-import { notifySuccess } from '@/lib/validation-modal';
 
-const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
 interface DaySchedule {
   dateStr: string;
@@ -54,9 +51,9 @@ interface DaySchedule {
 
 export default function DashboardPage() {
   const { 
-    currentUser, profiles, teams, contracts, invoices, addInvoice, catalogModules, catalogItems, leaveRequests, leaveTypes, 
-    entitlements, salaries, remoteDays, remotePatterns, remotePolicies, 
-    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt, timesheets,
+    currentUser, profiles, teams, contracts, leaveRequests, leaveTypes, 
+    entitlements, salaries, remoteDays,
+    mandatoryLeaves, publicHolidays, getEmployeeLeaveBalance, integrationExceptions, integrationLastReconciledAt,
     profileRoleHistory, jobRoles, seniorityLevels
   } = useAuth();
   
@@ -100,284 +97,6 @@ export default function DashboardPage() {
   );
   /** True when the year is still running on the company default (no per-employee row configured). */
   const usesDefaultEntitlement = !entitlements.some(e => e.profile_id === currentUser.id && e.year === leaveYear);
-
-  // --- 3.5. UNBILLED CONTRACT & INVOICING ACTION ENGINE ---
-  const [generatedDraftIds, setGeneratedDraftIds] = useState<Record<string, string>>({});
-  const currentPeriodStr = useMemo(() => format(new Date(), 'yyyy-MM'), []);
-  const currentQuarterStr = useMemo(() => `Q${Math.floor(new Date().getMonth() / 3) + 1} ${new Date().getFullYear()}`, []);
-
-  const pendingInvoicesQueue = useMemo(() => {
-    const results: Array<{
-      contractId: string;
-      reference: string;
-      counterpartyId: string;
-      counterpartyName: string;
-      direction: 'revenue' | 'cost';
-      cadence: string;
-      timing: string;
-      periodLabel: string;
-      periodKey: string; // machine-comparable key e.g. "2026-01" or "2026-Q1"
-      periodFrom: string;
-      periodTo: string;
-      expectedAmount: number;
-      currency: string;
-      dueDate: string;
-      status: 'unbilled' | 'draft_created' | 'billed';
-      invoiceId?: string;
-    }> = [];
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    (contracts || []).forEach(cnt => {
-      if (cnt.status !== 'active' && cnt.status !== 'in_negotiation') return;
-
-      const val = calculateContractValuation(cnt.lines || [], cnt.discount_pct || 0, cnt.term_years || 1, cnt.service_start_date || cnt.starts_on, catalogModules || [], catalogItems || [], cnt.value || 0, cnt.billing_cadence);
-
-      // Determine the start of billing periods to check
-      const startDateStr = cnt.service_start_date || cnt.starts_on;
-      if (!startDateStr) return;
-      const startDate = new Date(startDateStr + 'T00:00:00');
-
-      const cadence = cnt.billing_cadence || 'monthly';
-
-      // Helper: get period key + label + boundaries for a given cursor date
-      const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
-        if (cadence === 'monthly') {
-          const key = format(cursor, 'yyyy-MM');
-          const from = format(new Date(cursor.getFullYear(), cursor.getMonth(), 1), 'yyyy-MM-dd');
-          const to = format(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0), 'yyyy-MM-dd');
-          return { key, label: `Monthly (${key})`, from, to };
-        } else if (cadence === 'quarterly') {
-          const q = Math.floor(cursor.getMonth() / 3);
-          const year = cursor.getFullYear();
-          const key = `${year}-Q${q + 1}`;
-          const from = format(new Date(year, q * 3, 1), 'yyyy-MM-dd');
-          const to = format(new Date(year, q * 3 + 3, 0), 'yyyy-MM-dd');
-          return { key, label: `Q${q + 1} ${year}`, from, to };
-        } else if (cadence === 'annual') {
-          const year = cursor.getFullYear();
-          const key = `${year}`;
-          const from = format(new Date(year, 0, 1), 'yyyy-MM-dd');
-          const to = format(new Date(year, 11, 31), 'yyyy-MM-dd');
-          return { key, label: `${year} Annual Term`, from, to };
-        } else {
-          // one_off / milestone — single period from start date
-          const key = format(startDate, 'yyyy-MM-dd');
-          return { key, label: cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement', from: startDateStr, to: format(today, 'yyyy-MM-dd') };
-        }
-      };
-
-      // Advance cursor to the next billing period boundary
-      const advanceCursor = (cursor: Date): Date => {
-        const next = new Date(cursor);
-        if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
-        else if (cadence === 'quarterly') next.setMonth(next.getMonth() + 3);
-        else if (cadence === 'annual') next.setFullYear(next.getFullYear() + 1);
-        else return new Date(today.getTime() + 1); // stop after one pass for one_off/milestone
-        return next;
-      };
-
-      // Collect all billing period keys that should have been invoiced by now
-      const periods: Array<ReturnType<typeof getPeriodInfo>> = [];
-      const seenKeys = new Set<string>();
-      let cursor = new Date(startDate);
-
-      // For end_of_period timing, a period is due when it has ended; for start_of_period it is due when it begins
-      const timingIsEnd = cnt.invoice_timing === 'end_of_period';
-
-      while (true) {
-        const info = getPeriodInfo(cursor);
-        if (seenKeys.has(info.key)) break; // safety guard
-        seenKeys.add(info.key);
-
-        // The invoice is due at start or end of this period
-        const dueAt = timingIsEnd ? new Date(info.to + 'T00:00:00') : new Date(info.from + 'T00:00:00');
-        if (dueAt > today) break; // not yet due
-
-        periods.push(info);
-
-        if (cadence === 'one_off' || cadence === 'milestone') break; // only one period ever
-        cursor = advanceCursor(cursor);
-        if (cursor > today && cursor.getTime() - today.getTime() > 366 * 86400000) break; // safety
-      }
-
-      if (periods.length === 0) return;
-
-      // Amount per period — respects line-item frequencies vs contract billing cadence.
-      // Annual lines only appear on the first/last period of the year;
-      // Quarterly lines only on the first/last period of the quarter.
-      const getAmt = (period: { from: string; to: string }): number => {
-        const cntLines = cnt.lines || [];
-        const startDateForCalc = cnt.service_start_date || cnt.starts_on || period.from;
-
-        // Man-hours are billed from logged timesheets (hours × rate per man-hours line)
-        const manHours = calculateManHoursCharge(cntLines as any, (timesheets || []), period.from, period.to);
-
-        let base = 0;
-        // If we have structured line items, use the frequency-aware calculator
-        if (cntLines.length > 0) {
-          base = calculateInvoiceAmountForPeriod(
-            cntLines as any,
-            period.from,
-            period.to,
-            cnt.invoice_timing || 'start_of_period',
-            cadence,
-            startDateForCalc,
-            cnt.discount_pct || 0,
-            catalogModules || [],
-            catalogItems || []
-          );
-        }
-        if (base > 0 || manHours > 0) return base + manHours;
-
-        // Fallback to valuation-based estimate when no structured lines exist
-        const schedItem = (cnt.schedule || []).find(s => s.period === period.from.slice(0, 7));
-        if (schedItem) return schedItem.amount;
-        if (cadence === 'annual') return val.netARR || (cnt.value || 0);
-        if (cadence === 'quarterly') return (val.netARR / 4) || ((cnt.value || 0) / 4);
-        if (cadence === 'monthly') return val.netMonthlyMRR || ((cnt.value || 0) / 12);
-        return val.totalContractValue || (cnt.value || 0);
-      };
-
-      periods.forEach(period => {
-        const expectedAmt = getAmt(period);
-        if (expectedAmt <= 0 && !cnt.value) return; // skip periods with no billable amount
-
-        // Check if invoice already exists for this period (checking reference_period first!)
-        const existingInv = (invoices || []).find(i => {
-          if (i.contract_id !== cnt.id) return false;
-          if (i.reference_period && i.reference_period.trim() !== '') {
-            return (
-              i.reference_period.trim() === period.key ||
-              i.reference_period.trim().toLowerCase() === period.key.toLowerCase() ||
-              i.reference_period.trim().toLowerCase() === period.label.toLowerCase()
-            );
-          }
-          if (cadence === 'monthly') {
-            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key);
-            return (i.issue_date || '').startsWith(period.key);
-          }
-          if (cadence === 'quarterly') {
-            if (i.period_from && i.period_from.trim() !== '') return i.period_from >= period.from && i.period_from <= period.to;
-            return (i.issue_date || '') >= period.from && (i.issue_date || '') <= period.to;
-          }
-          if (cadence === 'annual') {
-            if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key.slice(0, 4));
-            return (i.issue_date || '').startsWith(period.key.slice(0, 4));
-          }
-          return true; // one_off/milestone without explicit reference_period
-        });
-
-        const draftId = generatedDraftIds[`${cnt.id}::${period.key}`];
-        const status: 'unbilled' | 'draft_created' | 'billed' = existingInv
-          ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')
-          : draftId ? 'draft_created' : 'unbilled';
-
-        results.push({
-          contractId: cnt.id,
-          reference: cnt.reference,
-          counterpartyId: cnt.counterparty_id,
-          counterpartyName: cnt.counterparty?.legal_name || 'Unknown Counterparty',
-          direction: cnt.direction,
-          cadence,
-          timing: cnt.invoice_timing || 'start_of_period',
-          periodLabel: period.label,
-          periodKey: period.key,
-          periodFrom: period.from,
-          periodTo: period.to,
-          expectedAmount: Number(expectedAmt.toFixed(2)),
-          currency: cnt.currency || 'EUR',
-          dueDate: period.from,
-          status,
-          invoiceId: existingInv?.id || draftId
-        });
-      });
-    });
-
-    return results.sort((a, b) => {
-      const statusScore = { unbilled: 0, draft_created: 1, billed: 2 };
-      if (statusScore[a.status] !== statusScore[b.status]) return statusScore[a.status] - statusScore[b.status];
-      if (a.direction !== b.direction) return a.direction === 'revenue' ? -1 : 1;
-      // Sort by period ascending so oldest unbilled shows first
-      if (a.periodKey < b.periodKey) return -1;
-      if (a.periodKey > b.periodKey) return 1;
-      return b.expectedAmount - a.expectedAmount;
-    });
-  }, [contracts, invoices, currentPeriodStr, currentQuarterStr, catalogModules, catalogItems, generatedDraftIds, timesheets]);
-
-  const handleQuickCreateInvoice = async (item: typeof pendingInvoicesQueue[0]) => {
-    if (!addInvoice) return;
-    const todayStr = new Date().toISOString().split('T')[0];
-    const dueStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
-    const year = (item.periodFrom || todayStr).slice(0, 4);
-    const invNumber = `INV-${year}-${Math.floor(1000 + Math.random() * 9000)}`;
-    
-    const newInv = await addInvoice({
-      direction: item.direction === 'revenue' ? 'outgoing' : 'incoming',
-      counterparty_id: item.counterpartyId,
-      contract_id: item.contractId,
-      type: 'invoice',
-      invoice_number: invNumber,
-      issue_date: todayStr,
-      due_date: dueStr,
-      period_from: item.periodFrom || todayStr,
-      period_to: item.periodTo || dueStr,
-      reference_period: item.periodKey,
-      currency: item.currency,
-      fx_rate: 1.0,
-      net: Number((item.expectedAmount / 1.24).toFixed(2)),
-      vat_rate: '24',
-      vat_amount: Number((item.expectedAmount - (item.expectedAmount / 1.24)).toFixed(2)),
-      gross: item.expectedAmount,
-      gross_eur: item.expectedAmount,
-      status: 'draft',
-      missing_document: false,
-      notes: `Auto-generated draft for contract ${item.reference} (${item.periodLabel} - ${item.timing})`,
-      created_via: 'ui'
-    });
-
-    if (newInv) {
-      const compositeKey = `${item.contractId}::${item.periodKey}`;
-      setGeneratedDraftIds(prev => ({ ...prev, [compositeKey]: newInv.id }));
-      notifySuccess(`Draft invoice #${invNumber} created for ${item.counterpartyName} (${item.periodLabel}).`);
-    }
-  };
-
-  const [actionSearchQuery, setActionSearchQuery] = useState<string>('');
-  const [actionFilterStatus, setActionFilterStatus] = useState<string>('all');
-  const [actionFilterDirection, setActionFilterDirection] = useState<string>('all');
-  const [actionSortBy, setActionSortBy] = useState<'period' | 'amount_desc' | 'amount_asc' | 'counterparty'>('period');
-
-  const filteredActionQueue = useMemo(() => {
-    let list = [...pendingInvoicesQueue];
-    if (actionSearchQuery.trim()) {
-      const q = actionSearchQuery.toLowerCase();
-      list = list.filter(item => 
-        item.counterpartyName.toLowerCase().includes(q) ||
-        (item.reference || '').toLowerCase().includes(q) ||
-        item.periodLabel.toLowerCase().includes(q)
-      );
-    }
-    if (actionFilterStatus !== 'all') {
-      list = list.filter(item => item.status === actionFilterStatus);
-    }
-    if (actionFilterDirection !== 'all') {
-      list = list.filter(item => item.direction === actionFilterDirection);
-    }
-    list.sort((a, b) => {
-      if (actionSortBy === 'amount_desc') return b.expectedAmount - a.expectedAmount;
-      if (actionSortBy === 'amount_asc') return a.expectedAmount - b.expectedAmount;
-      if (actionSortBy === 'counterparty') return a.counterpartyName.localeCompare(b.counterpartyName);
-      // default 'period': unbilled first, then reverse chronological periodKey
-      if (a.status !== b.status) {
-        if (a.status === 'unbilled') return -1;
-        if (b.status === 'unbilled') return 1;
-      }
-      return b.periodKey.localeCompare(a.periodKey);
-    });
-    return list;
-  }, [pendingInvoicesQueue, actionSearchQuery, actionFilterStatus, actionFilterDirection, actionSortBy]);
 
   // --- 4. ORGANIZATIONAL OFFICE & REMOTE ROSTER STATE ---
   const [rosterDate, setRosterDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -713,76 +432,6 @@ export default function DashboardPage() {
               )}
             </Card>
           </div>
-
-          {/* Pending Contract Invoicing & Revenue Action Center */}
-          <Card 
-            title="Contract Invoicing & Revenue Action Center"
-            subtitle="Automated ledger monitoring across active commercial contracts to ensure timely billing in advance or arrears" 
-            action={
-              <div className="flex items-center space-x-3">
-                {pendingInvoicesQueue.filter(i => i.status === 'unbilled').length > 0 && (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                    {pendingInvoicesQueue.filter(i => i.status === 'unbilled').length} Action(s) Needed
-                  </span>
-                )}
-                <Link href="/invoices" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">
-                  Go to Invoice Ledger <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
-                </Link>
-              </div>
-            } 
-            className="border-slate-200/90 shadow-2xs"
-          >
-            <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-                <input
-                  type="text"
-                  placeholder="Search counterparty, ref, or period..."
-                  value={actionSearchQuery}
-                  onChange={(e) => setActionSearchQuery(e.target.value)}
-                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 flex-1 min-w-[160px]"
-                />
-                <select
-                  value={actionFilterStatus}
-                  onChange={(e) => setActionFilterStatus(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="unbilled">Unbilled Only</option>
-                  <option value="draft_created">Draft Created</option>
-                  <option value="billed">Invoiced</option>
-                </select>
-                <select
-                  value={actionFilterDirection}
-                  onChange={(e) => setActionFilterDirection(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                >
-                  <option value="all">All Directions</option>
-                  <option value="revenue">Revenue Only</option>
-                  <option value="cost">Spend Only</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500">Sort:</span>
-                <select
-                  value={actionSortBy}
-                  onChange={(e: any) => setActionSortBy(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                >
-                  <option value="period">Urgency & Period</option>
-                  <option value="amount_desc">Amount (High to Low)</option>
-                  <option value="amount_asc">Amount (Low to High)</option>
-                  <option value="counterparty">Counterparty Name</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
-              <BillingActionGrid
-              items={filteredActionQueue as any}
-              onQuickCreate={(item) => handleQuickCreateInvoice(item as any)}
-            />
-            </div>
-          </Card>
         </div>
       )}
 

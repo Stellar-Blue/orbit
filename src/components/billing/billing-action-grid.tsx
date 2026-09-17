@@ -6,7 +6,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Badge } from '@/components/ui/primitives';
-import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, Search } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, Search, EyeOff } from 'lucide-react';
 
 export interface BillingActionItem {
   contractId: string;
@@ -37,6 +37,8 @@ interface BillingActionRow {
 interface BillingActionGridProps {
   items: BillingActionItem[];
   onQuickCreate: (item: BillingActionItem) => void;
+  /** Hides a suggestion from the queue. Omit it to render the grid read-only (e.g. dismissed view). */
+  onDismiss?: (item: BillingActionItem) => void;
 }
 
 const timingLabel = (timing: string) => {
@@ -45,7 +47,7 @@ const timingLabel = (timing: string) => {
   return '🚀 In Advance (Start of period)';
 };
 
-export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQuickCreate }) => {
+export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQuickCreate, onDismiss }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
   const rowData = useMemo<BillingActionRow[]>(() => {
@@ -126,30 +128,43 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       }
     },
     {
-      headerName: 'Action', field: 'status', width: 160, sortable: false, filter: false, pinned: 'right',
+      headerName: 'Action', field: 'status', width: 250, sortable: false, filter: false, pinned: 'right',
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
-        p.value === 'unbilled' ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); if (p.data) onQuickCreate(p.data.item); }}
-            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm hover:shadow transition-all cursor-pointer"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-            <span>Create Draft</span>
-          </button>
-        ) : (
-          <Link
-            href="/invoices"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
-          >
-            <FileCheck className="w-3.5 h-3.5 text-blue-600" />
-            <span>View in Ledger →</span>
-          </Link>
-        )
+        <div className="flex items-center justify-end gap-1.5">
+          {p.value === 'unbilled' ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (p.data) onQuickCreate(p.data.item); }}
+              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm hover:shadow transition-all cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span>Create Draft</span>
+            </button>
+          ) : (
+            <Link
+              href="/invoices"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
+            >
+              <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+              <span>View in Ledger →</span>
+            </Link>
+          )}
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (p.data) onDismiss(p.data.item); }}
+              title="Discard this suggestion (it stays unbilled, the reminder just stops)"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-700 text-xs font-bold transition-all cursor-pointer"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>Discard</span>
+            </button>
+          )}
+        </div>
       )
     }
-  ], [onQuickCreate]);
+  ], [onQuickCreate, onDismiss]);
 
   return (
     <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
