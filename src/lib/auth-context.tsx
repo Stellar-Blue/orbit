@@ -1718,8 +1718,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const sal = salaries.find(s => s.profile_id === p.id && isBaseSalary(s) && !s.valid_to);
       if (!sal) return;
 
+      // The base ledger row names the Dynamic Payment Type the money is filed under (set in the
+      // raise modal). Rows recorded before that existed fall back to the conventional code.
+      const basePaymentType = (fallbackCode: string) =>
+        (sal.payment_type_id ? paymentTypes.find(t => t.id === sal.payment_type_id) : undefined)
+        || paymentTypes.find(t => t.code === fallbackCode);
+
       if (p.employment_type === 'contractor') {
-        const pt = paymentTypes.find(t => t.code === 'contractor_invoice');
+        const pt = basePaymentType('contractor_invoice');
         if (pt) {
           const duplicate = payments.some(exist => exist.profile_id === p.id && exist.payment_type_id === pt.id && exist.period === period);
           if (!duplicate && !newPays.some(n => n.profile_id === p.id && n.payment_type_id === pt.id)) {
@@ -1740,7 +1746,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } else {
-        const ptSalary = paymentTypes.find(t => t.code === 'salary');
+        const ptSalary = basePaymentType('salary');
         const mult = employerCostRatio(sal);
         
         if (ptSalary) {

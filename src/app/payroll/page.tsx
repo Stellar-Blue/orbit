@@ -15,7 +15,7 @@ import {
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
-import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isRecurringExtra, isOneTimeBonus, extrasFor, loadedExtraCost } from '@/lib/compensation';
+import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isOneTimeBonus, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
@@ -32,7 +32,6 @@ export default function PayrollPage() {
   
   const [backfillingId, setBackfillingId] = useState<string | null>(null);
   const [editSalaryId, setEditSalaryId] = useState<string | null>(null);
-  const [newExtra, setNewExtra] = useState({ payment_type_id: '', amount: 0, start_period: '' });
   const [salForm, setSalForm] = useState({
     // net = gross_amount (what the employee receives) · full_cost = the derived gross ·
     // company_cost = the accountant's optional total.
@@ -105,34 +104,13 @@ export default function PayrollPage() {
 
   // Every non-base ledger entry (contractual extras + one-off bonuses) of the employee being edited.
   const editSalaryRecord = salaries.find(s => s.id === editSalaryId) || null;
-  const editExtraEmployee = editSalaryRecord ? profiles.find(p => p.id === editSalaryRecord.profile_id) : null;
-  const editExtras = editSalaryRecord
-    ? extrasFor(salaries, editSalaryRecord.profile_id).filter(x => isRecurringExtra(x))
-    : [];
   const recurringPaymentTypes = paymentTypes.filter(pt => pt.active && pt.is_recurring_monthly);
+  /** The recurring monthly category that pays the base rate for a given employment type. */
+  const baseRecurringType = (employmentType?: string) =>
+    recurringPaymentTypes.find(t => t.code === (employmentType === 'contractor' ? 'contractor_invoice' : 'salary'))
+    || recurringPaymentTypes[0];
   /** The modal edits a base rate or (when true) a contractual extra / one-off bonus ledger entry. */
   const isExtraEntry = !!editSalaryRecord && !isBaseSalary(editSalaryRecord);
-
-  const handleAddSalaryExtra = async () => {
-    if (!editSalaryRecord) return;
-    const pt = recurringPaymentTypes.find(t => t.id === newExtra.payment_type_id);
-    if (!pt || !newExtra.amount || newExtra.amount <= 0) {
-      alert('Pick a recurring monthly Dynamic Payment Type and enter a positive monthly amount.');
-      return;
-    }
-    await addSalaryRecord({
-      profile_id: editSalaryRecord.profile_id,
-      entry_type: 'recurring_extra',
-      label: pt.name_en || pt.name_el,
-      payment_type_id: pt.id,
-      valid_from: newExtra.start_period ? `${newExtra.start_period}-01` : new Date().toISOString().slice(0, 10),
-      basis: 'monthly_gross',
-      gross_amount: Number(newExtra.amount),
-      currency: 'EUR',
-      note: undefined,
-    });
-    setNewExtra({ payment_type_id: '', amount: 0, start_period: '' });
-  };
 
   // Delete any ledger entry (base rate, recurring extra or one-off bonus).
   const handleDeleteSalary = async (sal: SalaryRecord) => {
@@ -276,7 +254,8 @@ export default function PayrollPage() {
   // Record Raise / Salary Record Modal
   const [isRaiseOpen, setIsRaiseOpen] = useState(false);
   const [rsProfileId, setRsProfileId] = useState('');
-  const [rsBasis, setRsBasis] = useState<'monthly_gross' | 'daily_rate' | 'fixed_fee' | 'fee'>('monthly_gross');
+  /** Recurring-monthly Dynamic Payment Type the new ledger row is filed under. */
+  const [rsPaymentTypeId, setRsPaymentTypeId] = useState<string>('');
   const [rsGross, setRsGross] = useState<number>(3500);
   const [rsFullCost, setRsFullCost] = useState<number>(4340);
   const [rsCompanyCost, setRsCompanyCost] = useState<number>(0);
@@ -675,28 +654,50 @@ export default function PayrollPage() {
     notifySuccess('Payment row updated.');
   };
 
+  // ---- Raise modal derived state -----------------------------------------------------------------
+  const rsIsContractor = profiles.find(p => p.id === rsProfileId)?.employment_type === 'contractor';
+  const rsSelectedType = recurringPaymentTypes.find(pt => pt.id === rsPaymentTypeId);
+  /**
+   * Base-rate categories replace the employee's current rate (the previous row gets a valid_to).
+   * `salary` / `contractor_invoice` are the codes payroll drafts use for the base pay, so they are
+   * the base ones; every other recurring monthly category is an additional monthly ledger row.
+   */
+  const rsIsBaseType = !rsSelectedType || rsSelectedType.code === 'salary' || rsSelectedType.code === 'contractor_invoice';
+
   // Save Raise / New Salary Record (Never edit in place)
   const handleSaveRaise = async () => {
     if (!rsProfileId || rsGross <= 0) {
       alert('Please enter a valid gross amount and select an employee.');
       return;
     }
+    if (!rsSelectedType) {
+      alert('Pick a recurring monthly Dynamic Payment Type for this ledger row.');
+      return;
+    }
     const fullCost = Number(rsFullCost) || Number(rsGross);
     await addSalaryRecord({
       profile_id: rsProfileId,
+      // A base-rate category (salary / contractor fee) replaces the current rate; every other
+      // recurring monthly category is an additional monthly ledger row paid alongside it.
+      entry_type: rsIsBaseType ? 'base' : 'recurring_extra',
+      label: rsIsBaseType ? null : (rsSelectedType.name_en || rsSelectedType.name_el),
+      payment_type_id: rsSelectedType.id,
       valid_from: rsValidFrom,
-      basis: rsBasis,
+      basis: rsIsBaseType ? (rsIsContractor ? 'fixed_fee' : 'monthly_gross') : 'monthly_gross',
       gross_amount: Number(rsGross),
       full_company_cost: rsCompanyCost > 0 ? Number(rsCompanyCost) : null,
       currency: 'EUR',
-      employer_cost_amount: Number(Math.max(0, fullCost - Number(rsGross)).toFixed(2)),
+      // Extras carry no employer-cost maths of their own — they inherit the employee's base ratio.
+      employer_cost_amount: rsIsBaseType ? Number(Math.max(0, fullCost - Number(rsGross)).toFixed(2)) : null,
       employer_cost_multiplier: null,
       employer_cost_pct: null,
       note: rsNote.trim() || undefined
     });
     setIsRaiseOpen(false);
     setRsCompanyCost(0);
-    notifySuccess('New salary record recorded.');
+    notifySuccess(rsIsBaseType
+      ? 'New salary record recorded.'
+      : `Recurring monthly ledger row recorded under ${rsSelectedType.name_en || rsSelectedType.name_el}.`);
   };
 
   // Save Dynamic Payment Type (create when editingTypeId is null, otherwise update in place)
@@ -996,6 +997,7 @@ export default function PayrollPage() {
               <Button size="sm" variant="primary" onClick={() => {
                 const p = profiles.filter(p => p.status === 'active')[0];
                 setRsProfileId(p?.id || '');
+                setRsPaymentTypeId(baseRecurringType(p?.employment_type)?.id || '');
                 setIsRaiseOpen(true);
               }} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
                 <Plus className="w-3.5 h-3.5 mr-1" /> Record Raise / New Contract
@@ -1197,58 +1199,10 @@ export default function PayrollPage() {
             </div>
           </div>
 
-          {/* Contractual recurring extras — the Dynamic Payment Types this employee is
-              paid every month, on top of the base salary. Auto-generated by payroll drafts. */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="font-bold text-slate-800">
-                Recurring monthly extras{editExtraEmployee ? ` — ${editExtraEmployee.first_name} ${editExtraEmployee.last_name}` : ''}
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">Each is filed in payroll under its own Dynamic Payment Type</span>
-            </div>
-            {editExtras.length === 0 && (
-              <div className="text-[11px] text-slate-400 italic">No recurring monthly extras on this contract yet.</div>
-            )}
-            {editExtras.map(x => {
-              const pt = x.payment_type_id ? paymentTypes.find(t => t.id === x.payment_type_id) : undefined;
-              const running = !x.valid_to || x.valid_to >= new Date().toISOString().slice(0, 10);
-              return (
-                <div key={x.id} className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg p-2">
-                  <div className="min-w-0">
-                    <span className="font-bold text-slate-800 block truncate">{x.label || 'Unnamed extra'}</span>
-                    <span className="text-[10px] text-slate-500 block truncate">
-                      {pt ? `${pt.name_el} · ${pt.name_en}` : 'Generic Bonus category'}
-                      {' · '}€{Number(x.gross_amount).toLocaleString()} / month
-                      {' · '}{formatDate(x.valid_from)} → {x.valid_to ? formatDate(x.valid_to) : 'Present'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Badge variant={running ? 'success' : 'neutral'} className="text-[9px] px-1.5 py-0">{running ? 'RUNNING' : 'ENDED'}</Badge>
-                    <Button size="sm" variant="outline" onClick={() => openSalaryEditor(x)} className="cursor-pointer shrink-0" title="Edit this extra in the form above">
-                      <Edit className="w-3 h-3" />
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={() => handleDeleteSalary(x)} className="cursor-pointer shrink-0" title="Delete this extra">
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200">
-              <select
-                value={newExtra.payment_type_id}
-                onChange={e => setNewExtra({ ...newExtra, payment_type_id: e.target.value })}
-                className="flex-1 min-w-[180px] p-2 border rounded-md bg-white text-slate-800"
-              >
-                <option value="">— Pick a recurring monthly Payment Type —</option>
-                {recurringPaymentTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>)}
-              </select>
-              <input type="number" step="0.01" placeholder="€ / month" value={newExtra.amount || ''} onChange={e => setNewExtra({ ...newExtra, amount: Number(e.target.value) })} className="w-28 p-2 border rounded-md bg-white text-slate-800 font-mono" />
-              <input type="month" value={newExtra.start_period} onChange={e => setNewExtra({ ...newExtra, start_period: e.target.value })} title="Active from (empty = immediately)" className="w-36 p-2 border rounded-md bg-white text-slate-800 font-mono" />
-              <Button size="sm" variant="primary" onClick={handleAddSalaryExtra} className="bg-[#3D87D3] text-white cursor-pointer shrink-0">
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add Extra
-              </Button>
-            </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">
+            Monthly recurring payments (allowances, benefits…) are <strong>their own Effective-Dated Salary Ledger rows</strong>,
+            each filed under its Dynamic Payment Type. To add or end one, use &quot;Record Raise / New Contract&quot; — a row ends by
+            getting a Valid To date, it is never an attachment to another row.
           </div>
           <div className="flex justify-between items-center pt-2">
             <Button
@@ -1281,11 +1235,12 @@ export default function PayrollPage() {
               setRsProfileId(e.target.value);
               const pr = profiles.find(p => p.id === e.target.value);
               const gross = Number(rsGross) || 0;
+              // Contractors are invoiced (fee), salaried staff are gross-paid: pick the matching
+              // recurring monthly Dynamic Payment Type and mirror it in the gross auto-fill.
+              setRsPaymentTypeId(baseRecurringType(pr?.employment_type)?.id || '');
               if (pr?.employment_type === 'contractor') {
-                setRsBasis('fixed_fee');
                 setRsFullCost(gross);
               } else {
-                setRsBasis('monthly_gross');
                 setRsFullCost(Number((gross * 1.24).toFixed(2)));
               }
             }} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-bold">
@@ -1297,30 +1252,35 @@ export default function PayrollPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Compensation Basis</label>
-              <select value={rsBasis} onChange={e => setRsBasis(e.target.value as any)} className="w-full bg-white border border-slate-200 rounded p-2 font-semibold text-slate-700">
-                <option value="monthly_gross">Monthly Gross (Salary)</option>
-                <option value="daily_rate">Daily Rate</option>
-                <option value="fixed_fee">Fixed Retainer Fee (Excl VAT)</option>
-                <option value="fee">Contractor Fee</option>
+              <label className="block font-semibold uppercase text-slate-500 mb-1">Dynamic Payment Type</label>
+              <select value={rsPaymentTypeId} onChange={e => setRsPaymentTypeId(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-semibold text-slate-700">
+                {recurringPaymentTypes.map(pt => (
+                  <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>
+                ))}
               </select>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Recurring monthly categories only. Salary / contractor fee replace the base rate; any other
+                category (allowance, benefit…) is recorded as an additional monthly ledger row.
+              </p>
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">New Net Amount (€)</label>
               <input type="number" step="50" value={rsGross} onChange={e => {
                 const g = Number(e.target.value);
-                setRsFullCost(prev => (rsGross > 0 && prev > 0) ? Number((g * (prev / rsGross)).toFixed(2)) : (rsBasis === 'fixed_fee' || rsBasis === 'fee' ? g : Number((g * 1.24).toFixed(2))));
+                setRsFullCost(prev => (rsGross > 0 && prev > 0) ? Number((g * (prev / rsGross)).toFixed(2)) : (rsIsBaseType ? Number((g * 1.24).toFixed(2)) : g));
                 setRsGross(g);
               }} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-base font-bold text-emerald-700" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€/mo)</label>
-              <input type="number" step="50" value={rsFullCost} onChange={e => setRsFullCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />
-              <p className="text-[10px] text-slate-400 mt-0.5">Net + employer contributions / VAT. Equal to net for invoices.</p>
-            </div>
+            {rsIsBaseType && (
+              <div>
+                <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€/mo)</label>
+                <input type="number" step="50" value={rsFullCost} onChange={e => setRsFullCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />
+                <p className="text-[10px] text-slate-400 mt-0.5">Net + employer contributions / VAT. Equal to net for invoices.</p>
+              </div>
+            )}
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Full Company Cost (€/mo) — optional</label>
               <input type="number" step="50" placeholder="Leave empty until known" value={rsCompanyCost || ''} onChange={e => setRsCompanyCost(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800" />

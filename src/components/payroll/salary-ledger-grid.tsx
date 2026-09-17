@@ -15,9 +15,10 @@ interface LedgerRow {
   id: string;
   sal: SalaryRecord;
   employee: string;
-  entry: string;
-  entrySub: string;
-  category: string;
+  /** Dynamic Payment Type this row is filed under (`name_el · name_en`), or `Unassigned`. */
+  paymentType: string;
+  /** Extra/bonus name — the payroll draft note. Empty for base rows. */
+  paymentTypeSub: string;
   from: string;
   to: string;
   basis: string;
@@ -82,9 +83,9 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       const prof = profiles.find(p => p.id === profileId);
       return prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown employee';
     };
-    const categoryLabel = (sal: SalaryRecord) => {
+    const paymentTypeLabel = (sal: SalaryRecord) => {
       const pt = sal.payment_type_id ? paymentTypes.find(t => t.id === sal.payment_type_id) : undefined;
-      return pt ? `${pt.name_el} · ${pt.name_en}` : 'Bonus category';
+      return pt ? `${pt.name_el} · ${pt.name_en}` : 'Unassigned';
     };
     const isRunning = (sal: SalaryRecord) => !sal.valid_to || sal.valid_to >= today();
 
@@ -96,9 +97,10 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
         id: sal.id,
         sal,
         employee: employeeName(sal.profile_id),
-        entry: base ? 'Base Salary' : isOneTimeBonus(sal) ? 'One-off Bonus' : 'Recurring Extra',
-        entrySub: base ? '' : (sal.label || 'Unnamed'),
-        category: base ? 'Salary' : categoryLabel(sal),
+        // The row's Dynamic Payment Type is what payroll files the money under, so it is the
+        // column that matters — the old Entry / Payment Category pair said the same thing twice.
+        paymentType: paymentTypeLabel(sal),
+        paymentTypeSub: base ? '' : (sal.label || ''),
         from: sal.valid_from || '',
         to: sal.valid_to || '',
         basis: base ? (BASIS_LABELS[sal.basis] || sal.basis) : 'Monthly',
@@ -131,24 +133,21 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       rowGroup: true, hide: HAS_AG_GRID_LICENSE
     },
     {
-      headerName: 'Entry', field: 'entry', width: 195, sortable: true, ...excelSetFilter(['Base Salary', 'Recurring Extra', 'One-off Bonus']),
+      headerName: 'Payment Type', field: 'paymentType', width: 245, sortable: true, ...excelSetFilter(),
+      cellClass: 'text-xs text-slate-600',
+      tooltipField: 'paymentType',
       cellRenderer: (p: ICellRendererParams<LedgerRow, string>) => {
-        // Group rows carry no data — don't render a badge for them.
-        if (!p.value) return <span />;
+        // Group rows carry no data — don't render their placeholder value.
+        if (!p.data) return <span />;
         return (
-          <div>
-            <Badge variant={p.value === 'Base Salary' ? 'neutral' : p.value === 'One-off Bonus' ? 'warning' : 'info'} className="font-extrabold">
-              {p.value === 'Base Salary' ? '● BASE SALARY' : p.value === 'One-off Bonus' ? '★ ONE-OFF BONUS' : '◆ RECURRING EXTRA'}
-            </Badge>
-            {p.data?.entrySub && <div className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate">{p.data.entrySub}</div>}
+          <div className="truncate">
+            <div className="font-semibold text-slate-700 truncate">{p.value || 'Unassigned'}</div>
+            {p.data.paymentTypeSub && (
+              <div className="text-[11px] text-slate-400 font-medium truncate">{p.data.paymentTypeSub}</div>
+            )}
           </div>
         );
       }
-    },
-    {
-      headerName: 'Payment Category', field: 'category', width: 185, sortable: true, ...excelSetFilter(),
-      cellClass: 'text-xs text-slate-600',
-      tooltipField: 'category'
     },
     {
       headerName: 'Rate Change', field: 'from', width: 130, sortable: true, filter: 'agDateColumnFilter',
