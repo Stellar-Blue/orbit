@@ -983,6 +983,20 @@ export default function PayrollPage() {
               setSelectedPaymentForDocs(pay);
               setAddMoreDocs([]);
             }}
+            onUpdate={(pay, updates) => {
+              updatePaymentRecord(pay.id, updates);
+              const who = profiles.find(pr => pr.id === pay.profile_id);
+              const name = who ? `${who.first_name} ${who.last_name}` : 'Payment';
+              if (updates.status) {
+                notifySuccess(`${name} · ${pay.period} marked ${updates.status}.`);
+                // A paid row without a receipt shows up in the missing-receipt checklist above.
+                if (updates.status === 'paid' && !hasPaymentReceipt(pay.documents)) {
+                  notifySuccess('Heads-up: no receipt attached yet — it is on the missing-receipt checklist.');
+                }
+              } else if ('bank_reference' in updates) {
+                notifySuccess(`Bank reference updated for ${name} · ${pay.period}.`);
+              }
+            }}
           />
         </div>
       )}

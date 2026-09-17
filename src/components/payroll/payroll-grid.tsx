@@ -5,7 +5,6 @@ import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { PaymentRecord, Profile, PaymentType } from '@/lib/types';
-import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, Edit, Paperclip, Search } from 'lucide-react';
 
 interface PayrollRow {
@@ -32,7 +31,64 @@ interface PayrollGridProps {
   hasPaymentReceipt: (docs?: PaymentRecord['documents']) => boolean;
   onEdit: (pay: PaymentRecord) => void;
   onAttachDocs: (pay: PaymentRecord) => void;
+  /** Inline row update straight from the grid — the small fields never need the edit modal. */
+  onUpdate: (pay: PaymentRecord, updates: Partial<PaymentRecord>) => void;
 }
+
+/** Status pill colours, shared by the inline status selector. */
+const STATUS_SELECT_CLASS: Record<string, string> = {
+  planned: 'bg-amber-100 border-amber-300 text-amber-900',
+  paid: 'bg-emerald-100 border-emerald-300 text-emerald-900',
+  cancelled: 'bg-slate-100 border-slate-300 text-slate-600'
+};
+
+/**
+ * Click-to-edit bank reference. Money fields (gross / net / total cost) stay in the edit modal
+ * because the three are derived from each other and must change together.
+ */
+const InlineBankRef: React.FC<{ row: PayrollRow; onUpdate: PayrollGridProps['onUpdate'] }> = ({ row, onUpdate }) => {
+  // `null` = showing the stored value; a string = the in-progress draft. No effect needed: while
+  // not editing the cell always renders `row.bankRef`, so realtime rewrites show up directly.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    const next = (draft ?? '').trim();
+    setDraft(null);
+    if (next !== row.bankRef) onUpdate(row.pay, { bank_reference: next || undefined });
+  };
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); setDraft(row.bankRef); }}
+        onDoubleClick={e => e.stopPropagation()}
+        title="Click to edit the bank reference"
+        className="w-full text-left px-1 py-0.5 rounded hover:bg-slate-100 transition-colors cursor-text"
+      >
+        {row.bankRef
+          ? <span className="font-mono text-xs text-slate-600">{row.bankRef}</span>
+          : <span className="text-slate-400 italic text-xs">Pending Ref</span>}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onClick={e => e.stopPropagation()}
+      onDoubleClick={e => e.stopPropagation()}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') setDraft(null);
+      }}
+      className="w-full px-1 py-0.5 border border-[#3D87D3] rounded text-xs font-mono text-slate-800 focus:outline-none"
+    />
+  );
+};
 
 export const PayrollGrid: React.FC<PayrollGridProps> = ({
   payments,
@@ -40,7 +96,8 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
   paymentTypes,
   hasPaymentReceipt,
   onEdit,
-  onAttachDocs
+  onAttachDocs,
+  onUpdate
 }) => {
   const [quickFilter, setQuickFilter] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -91,6 +148,33 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
       cellClass: 'font-mono text-xs font-bold text-indigo-700'
     },
     {
+      headerName: 'Status', field: 'status', width: 145, sortable: true, ...excelSetFilter(['planned', 'paid', 'cancelled']),
+      // Inline selector: one click changes the status, no trip through the edit modal.
+      cellRenderer: (p: ICellRendererParams<PayrollRow, string>) => {
+        if (!p.data) return <span />;
+        const row = p.data;
+        return (
+          <div>
+            <select
+              value={row.status}
+              onClick={e => e.stopPropagation()}
+              onDoubleClick={e => e.stopPropagation()}
+              onChange={e => onUpdate(row.pay, { status: e.target.value as PaymentRecord['status'] })}
+              title="Set the status directly"
+              className={`w-full px-1.5 py-1 rounded-md border text-[11px] font-extrabold cursor-pointer transition-colors ${STATUS_SELECT_CLASS[row.status] || STATUS_SELECT_CLASS.planned}`}
+            >
+              <option value="planned">PLANNED</option>
+              <option value="paid">PAID</option>
+              <option value="cancelled">CANCELLED</option>
+            </select>
+            {row.missingDoc && (
+              <span className="text-[10px] text-amber-700 font-bold block mt-0.5">⚠️ Missing Receipt</span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
       headerName: 'Payment UUID', field: 'pay.id', width: 140, sortable: true, ...excelSetFilter(),
       valueGetter: (p) => p.data?.pay.id,
       cellRenderer: (p: ICellRendererParams<PayrollRow, string>) => (
@@ -130,23 +214,10 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
       valueFormatter: (p) => `€${Number(p.value).toLocaleString()}`
     },
     {
-      headerName: 'Bank Reference', field: 'bankRef', width: 130, sortable: true, ...excelSetFilter(),
+      headerName: 'Bank Reference', field: 'bankRef', width: 160, sortable: true, ...excelSetFilter(),
       cellClass: 'font-mono text-xs text-slate-600',
       cellRenderer: (p: ICellRendererParams<PayrollRow, string>) => (
-        p.value ? <span>{p.value}</span> : <span className="text-slate-400 italic font-sans font-normal">Pending Ref</span>
-      )
-    },
-    {
-      headerName: 'Status', field: 'status', width: 120, sortable: true, ...excelSetFilter(['planned', 'paid', 'cancelled']),
-      cellRenderer: (p: ICellRendererParams<PayrollRow, string>) => (
-        <div>
-          <Badge variant={p.value === 'paid' ? 'success' : p.value === 'planned' ? 'warning' : 'neutral'}>
-            {String(p.value).toUpperCase()}
-          </Badge>
-          {p.data?.missingDoc && (
-            <span className="text-[10px] text-amber-700 font-bold block mt-1">⚠️ Missing Receipt</span>
-          )}
-        </div>
+        p.data ? <InlineBankRef row={p.data} onUpdate={onUpdate} /> : <span />
       )
     },
     {
@@ -190,7 +261,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
         );
       }
     }
-  ], [copiedId, hasPaymentReceipt, onEdit, onAttachDocs]);
+  ], [copiedId, hasPaymentReceipt, onEdit, onAttachDocs, onUpdate]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
