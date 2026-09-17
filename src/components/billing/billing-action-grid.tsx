@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Badge } from '@/components/ui/primitives';
-import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, Search, EyeOff } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, EyeOff } from 'lucide-react';
 
 export interface BillingActionItem {
   contractId: string;
@@ -48,8 +48,6 @@ const timingLabel = (timing: string) => {
 };
 
 export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQuickCreate, onDismiss }) => {
-  const [quickFilter, setQuickFilter] = useState('');
-
   const rowData = useMemo<BillingActionRow[]>(() => {
     return items.map(item => ({
       item,
@@ -89,7 +87,7 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       cellClass: 'font-bold text-slate-800 capitalize'
     },
     {
-      headerName: 'Invoicing Timing', field: 'timingLabel', width: 190, sortable: true, ...excelSetFilter(),
+      headerName: 'Invoicing Timing', field: 'timingLabel', minWidth: 190, flex: 1, sortable: true, ...excelSetFilter(),
       cellClass: 'text-xs text-slate-500'
     },
     {
@@ -99,7 +97,7 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       )
     },
     {
-      headerName: 'Expected Rate (€)', field: 'expectedAmount', width: 140, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerName: 'Expected Rate (€)', field: 'expectedAmount', minWidth: 165, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
       cellClass: 'font-mono font-black text-slate-900',
       valueFormatter: (p) => `€${Number(p.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     },
@@ -166,38 +164,26 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
     }
   ], [onQuickCreate, onDismiss]);
 
+  // Fills whatever height the host gives it (see the page's viewport-sized wrapper) — no inner clamps,
+  // and no second search box: the Action Center toolbar above already filters/sorts this queue.
+  // The pivot/columns side panel and the row-group drop bar are switched off here: on a billing queue
+  // they cost ~230px of width plus 36px of height and push the Action column behind a scrollbar.
   return (
-    <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
-      <div className="sticky top-0 z-10 px-4 py-2.5 border-b border-slate-200 bg-slate-50/95 backdrop-blur flex items-center justify-between gap-3">
-        <div className="relative w-full max-w-sm">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search billing queue across all columns..."
-            value={quickFilter}
-            onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
-          />
-        </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {items.length} billing actions · use column filters for Excel-style options
-        </span>
-      </div>
-      <div className="h-[420px]">
-        <AgGridReact<BillingActionRow>
-          theme={orbitGridTheme}
-          rowData={rowData}
-          columnDefs={columnDefs}
-          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
-          quickFilterText={quickFilter}
-          rowHeight={54}
-          headerHeight={36}
-          {...GROUPING_OPTIONS}
-          pagination={true}
-          paginationPageSize={25}
-          paginationPageSizeSelector={[10, 25, 50, 100]}
-        />
-      </div>
+    <div className="h-full w-full min-h-0">
+      <AgGridReact<BillingActionRow>
+        theme={orbitGridTheme}
+        rowData={rowData}
+        columnDefs={columnDefs}
+        defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+        rowHeight={48}
+        headerHeight={36}
+        {...GROUPING_OPTIONS}
+        sideBar={false}
+        rowGroupPanelShow="never"
+        pagination={true}
+        paginationPageSize={50}
+        paginationPageSizeSelector={[10, 25, 50, 100]}
+      />
     </div>
   );
 };

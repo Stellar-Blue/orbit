@@ -623,7 +623,7 @@ export default function InvoicesRegistryPage() {
   }
 
   return (
-    <div className="w-full px-6 py-6 space-y-6 max-w-[1600px] mx-auto">
+    <div className="w-full px-4 sm:px-6 py-6 space-y-6">
 
       {/* Tabs */}
       <div className="flex space-x-6 border-b border-slate-200 pb-3 text-sm">
@@ -881,7 +881,7 @@ export default function InvoicesRegistryPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto max-h-[480px] overflow-y-auto border border-slate-200/80 rounded-xl shadow-inner">
+          <div className="h-[calc(100vh-400px)] min-h-[440px] border border-slate-200/80 rounded-xl shadow-inner overflow-hidden">
             <BillingActionGrid
               items={filteredActionQueue}
               onQuickCreate={(item) => handleQuickCreateInvoice(item as unknown as (typeof pendingInvoicesQueue)[number])}
