@@ -44,3 +44,19 @@ export function formatDayMonth(value?: string | Date | null): string {
   if (!d) return '';
   return `${d.getDate()} ${GREEK_MONTHS_SHORT[d.getMonth()]}`;
 }
+
+/**
+ * `YYYY-MM` for today's month — the default for every period / month picker.
+ * Built from local parts: `toISOString()` is UTC, which reports the previous day (and month,
+ * on the 1st) for Greece during the early hours.
+ */
+export function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+}
+
+/** `YYYY-MM-DD` for today (local time) — the default for every date field. */
+export function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

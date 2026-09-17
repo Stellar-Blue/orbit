@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { LeaveRequest, LeaveType } from '@/lib/types';
-import { formatDate } from '@/lib/date';
+import { formatDate, todayKey } from '@/lib/date';
 import {
   DETAILED_LEDGER_HEADERS, LEAVE_EXPORT_MONTHS, detailedLedgerAoa, filterLeaveExport,
   groupLeavesByEmployee, leaveCategoryName, leaveExportEmployees, leaveExportScopeLabel,
@@ -56,9 +56,9 @@ export default function CompanyLeaveManagementPage() {
   // Mandatory Leave Declaration State
   const [isMandatoryOpen, setIsMandatoryOpen] = useState(false);
   const [editingMandatoryId, setEditingMandatoryId] = useState<string | null>(null);
-  const [mName, setMName] = useState('Mandatory August Summer Bridge 2026');
-  const [mStart, setMStart] = useState('2026-08-10');
-  const [mEnd, setMEnd] = useState('2026-08-14');
+  const [mName, setMName] = useState('Company-wide closure');
+  const [mStart, setMStart] = useState(todayKey);
+  const [mEnd, setMEnd] = useState(todayKey);
   const [mNote, setMNote] = useState('Company-wide summer vacation week.');
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -66,8 +66,8 @@ export default function CompanyLeaveManagementPage() {
   const [isAddEmployeeLeaveOpen, setIsAddEmployeeLeaveOpen] = useState(false);
   const [addEmpId, setAddEmpId] = useState('');
   const [addEmpLeaveTypeId, setAddEmpLeaveTypeId] = useState('');
-  const [addEmpStart, setAddEmpStart] = useState(() => new Date().toISOString().split('T')[0]);
-  const [addEmpEnd, setAddEmpEnd] = useState(() => new Date().toISOString().split('T')[0]);
+  const [addEmpStart, setAddEmpStart] = useState(todayKey);
+  const [addEmpEnd, setAddEmpEnd] = useState(todayKey);
   const [addEmpStatus, setAddEmpStatus] = useState<'approved' | 'taken' | 'pending'>('approved');
   const [addEmpNote, setAddEmpNote] = useState('');
 
@@ -456,10 +456,10 @@ export default function CompanyLeaveManagementPage() {
           <Button
             onClick={() => {
               setEditingMandatoryId(null);
-              setMName('Mandatory August Summer Bridge 2026');
-              setMStart('2026-08-10');
-              setMEnd('2026-08-14');
-              setMNote('Offices closed company-wide for mid-August block.');
+              setMName('Company-wide closure');
+              setMStart(todayKey);
+              setMEnd(todayKey);
+              setMNote('Offices closed company-wide.');
               setIsMandatoryOpen(true);
             }}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 shadow-sm flex items-center gap-2 cursor-pointer"

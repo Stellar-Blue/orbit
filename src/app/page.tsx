@@ -404,7 +404,7 @@ export default function DashboardPage() {
   const remoteCount = teamAttendance.filter(t => t.mode === 'remote_gr' || t.mode === 'remote_abroad').length;
 
   // --- 5. UNIFIED CALENDAR GRID STATE & ENGINE ---
-  const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date(2026, 7, 1)); // Default demo view August 2026
+  const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date()); // opens on the current month
   const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [eventTypeFilter, setEventTypeFilter] = useState<'all' | 'remote' | 'leave' | 'holiday'>('all');

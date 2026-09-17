@@ -16,7 +16,7 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
 import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isOneTimeBonus, loadedExtraCost } from '@/lib/compensation';
-import { formatDate, formatDateTime } from '@/lib/date';
+import { formatDate, formatDateTime, currentMonthKey, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
@@ -138,8 +138,9 @@ export default function PayrollPage() {
   const params = useParams();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('2026-07');
-  const [endPeriod, setEndPeriod] = useState<string>('2026-07');
+  // Both period pickers open on the current month.
+  const [selectedPeriod, setSelectedPeriod] = useState<string>(currentMonthKey);
+  const [endPeriod, setEndPeriod] = useState<string>(currentMonthKey);
   const [tab, setTab] = useState<'ledger' | 'forecast' | 'payment_types'>('ledger');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'planned' | 'paid' | 'missing_receipt'>('all');
   const [personFilter, setPersonFilter] = useState<string>('all');
@@ -186,12 +187,12 @@ export default function PayrollPage() {
   // Upload New Payment State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [upProfileId, setUpProfileId] = useState('');
-  const [upPeriod, setUpPeriod] = useState('2026-07');
+  const [upPeriod, setUpPeriod] = useState(currentMonthKey);
   const [upTypeId, setUpTypeId] = useState('');
   const [upGross, setUpGross] = useState<number>(0);
   const [upEfka, setUpEfka] = useState<number>(0);
   const [upNet, setUpNet] = useState<number>(0);
-  const [upDate, setUpDate] = useState('2026-07-28');
+  const [upDate, setUpDate] = useState(todayKey);
   const [upBankRef, setUpBankRef] = useState('');
   const [upStatus, setUpStatus] = useState<'paid' | 'planned' | 'cancelled'>('paid');
   const [upNote, setUpNote] = useState('');
@@ -259,7 +260,7 @@ export default function PayrollPage() {
   const [rsGross, setRsGross] = useState<number>(3500);
   const [rsFullCost, setRsFullCost] = useState<number>(4340);
   const [rsCompanyCost, setRsCompanyCost] = useState<number>(0);
-  const [rsValidFrom, setRsValidFrom] = useState<string>('2026-08-01');
+  const [rsValidFrom, setRsValidFrom] = useState<string>(todayKey);
   const [rsNote, setRsNote] = useState<string>('Annual compensation review');
 
   // Accountant Export Modal

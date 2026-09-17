@@ -34,7 +34,7 @@ export default function RemoteWorkLogPage() {
   const todayObj = parseISO(todayStr);
 
   // Calendar & Declaration state
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date(2026, 7, 1)); // August 2026
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date()); // opens on the current month
   const [selectedDateForAction, setSelectedDateForAction] = useState<string | null>(null);
   const [actionModalMode, setActionModalMode] = useState<'declare' | 'amend' | null>(null);
 
@@ -651,8 +651,8 @@ export default function RemoteWorkLogPage() {
                   <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setCurrentMonth(new Date(2026, 7, 1))} className="px-3 py-1.5 bg-white font-bold text-xs text-slate-800 hover:bg-slate-50 border-x border-slate-200">
-                    Today (Aug '26)
+                  <button onClick={() => setCurrentMonth(new Date())} className="px-3 py-1.5 bg-white font-bold text-xs text-slate-800 hover:bg-slate-50 border-x border-slate-200">
+                    Today ({format(new Date(), "MMM ''yy")})
                   </button>
                   <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors">
                     <ChevronRight className="w-4 h-4" />

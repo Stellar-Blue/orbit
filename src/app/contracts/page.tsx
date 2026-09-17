@@ -16,7 +16,7 @@ import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
-import { formatDate } from '@/lib/date';
+import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
 
@@ -101,7 +101,7 @@ export default function ContractsRegistryPage() {
   const [isPreviewingDoc, setIsPreviewingDoc] = useState(false);
   const [previewDocUrl, setPreviewDocUrl] = useState<string>('');
   const [newNotice, setNewNotice] = useState(60);
-  const [newStarts, setNewStarts] = useState('2026-08-01');
+  const [newStarts, setNewStarts] = useState(todayKey);
   const [newEnds, setNewEnds] = useState('');
   const [newBillingCadence, setNewBillingCadence] = useState<'monthly' | 'quarterly' | 'annual' | 'milestone' | 'one_off'>('monthly');
   const [newInvoiceTiming, setNewInvoiceTiming] = useState<string>('start_of_period');

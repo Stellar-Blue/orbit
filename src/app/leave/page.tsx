@@ -13,7 +13,7 @@ import {
 import { parseISO, format, eachDayOfInterval, addDays, isAfter, isBefore, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { LeaveRequest } from '@/lib/types';
-import { formatDate } from '@/lib/date';
+import { formatDate, todayKey } from '@/lib/date';
 import { DateRangePicker } from '@/components/leave/date-range-picker';
 import {
   DETAILED_LEDGER_HEADERS, LEAVE_EXPORT_MONTHS, detailedLedgerAoa, filterLeaveExport,
@@ -36,7 +36,7 @@ export default function LeaveManagementPage() {
   const isContractor = currentUser.employment_type === 'contractor';
 
   // Interactive Calendar State in My Leaves tab
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date('2026-08-01T00:00:00'));
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date()); // opens on the current month
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<string | null>(null);
   const [dragCurrent, setDragCurrent] = useState<string | null>(null);
@@ -76,8 +76,8 @@ export default function LeaveManagementPage() {
   // New Leave Request State (< 30s filing)
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [reqType, setReqType] = useState(() => leaveTypes.find(lt => !lt.is_hidden)?.id || leaveTypes[0]?.id || 'lt-annual');
-  const [startDate, setStartDate] = useState('2026-09-14');
-  const [endDate, setEndDate] = useState('2026-09-18');
+  const [startDate, setStartDate] = useState(todayKey);
+  const [endDate, setEndDate] = useState(todayKey);
   const [note, setNote] = useState('');
 
   useEffect(() => {
@@ -137,7 +137,7 @@ export default function LeaveManagementPage() {
   const minNoticeDays = selectedLeaveType?.min_notice_days ?? 7;
   const todayStr = format(new Date(), 'yyyy-MM-dd'); // Current local reference date
   const earliestValidDate = useMemo(() => {
-    if (minNoticeDays === 0) return '2026-01-01';
+    if (minNoticeDays === 0) return todayStr;
     return format(addDays(parseISO(todayStr), minNoticeDays), 'yyyy-MM-dd');
   }, [minNoticeDays]);
 
