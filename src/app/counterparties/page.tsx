@@ -16,7 +16,7 @@ import type { AttioSyncCompany } from '@/components/counterparties/attio-compani
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
-  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge
+  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge, Award
 } from 'lucide-react';
 
 const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
@@ -36,7 +36,7 @@ export default function CounterpartiesRegistryPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [selectedEntity, setSelectedEntity] = useState<Counterparty | null>(null);
-  const [dossierTab, setDossierTab] = useState<'profile' | 'invoices'>('profile');
+  const [dossierTab, setDossierTab] = useState<'profile' | 'invoices' | 'tier'>('profile');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [isTierRecomputing, setIsTierRecomputing] = useState(false);
@@ -755,6 +755,19 @@ export default function CounterpartiesRegistryPage() {
                       )}
                     </button>
                     {getRoleBadge(selectedEntity.roles)}
+                    {selectedEntity.tier && (
+                      <button
+                        type="button"
+                        onClick={() => setDossierTab('tier')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-black border cursor-pointer hover:brightness-110 transition-all"
+                        style={{ color: selectedEntity.tier.color, borderColor: `${selectedEntity.tier.color}55`, backgroundColor: `${selectedEntity.tier.color}1a` }}
+                        title={selectedEntity.tier.score !== null ? `Client tier score ${selectedEntity.tier.score}/100 — open the Client Tier tab` : 'Open the Client Tier tab'}
+                      >
+                        <Award className="w-3.5 h-3.5 shrink-0" />
+                        {selectedEntity.tier.label}
+                        {selectedEntity.tier.overridden && <Pin className="w-3 h-3 shrink-0" />}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -787,66 +800,6 @@ export default function CounterpartiesRegistryPage() {
               </div>
             </div>
 
-            {/* Client Tier panel (configurable tiering model) */}
-            {(() => {
-              const tier = selectedEntity.tier;
-              if (!tier) return null;
-              const rawBreakdown = tier.breakdown || {};
-              const breakdown = Array.isArray(rawBreakdown)
-                ? rawBreakdown as Array<{
-                    key: string; label: string; value: number | null; points: number | null;
-                    weight: number; contribution: number | null; notApplicable: boolean;
-                  }>
-                : [];
-              return (
-                <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Client Tier</span>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-black border"
-                        style={{ color: tier.color, borderColor: `${tier.color}55`, backgroundColor: `${tier.color}14` }}>
-                        {tier.overridden && <Pin className="w-3.5 h-3.5 shrink-0" />}
-                        {tier.label}
-                      </span>
-                      {tier.score !== null && (
-                        <span className="font-mono text-xs text-slate-600">Score <strong className="text-slate-900">{tier.score}</strong>/100</span>
-                      )}
-                      {tier.overridden && (
-                        <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1" title={tier.override_reason || 'Manual override'}>
-                          <Pin className="w-3 h-3 inline mr-1" />
-                          Pinned{tier.override_reason ? ` — ${tier.override_reason}` : ''}
-                          {tier.override_expires_on ? ` · expires ${tier.override_expires_on}` : ''}
-                          {tier.tier_index !== null && <span className="text-slate-500 ml-1">(computed {tier.tier_index === null ? 'Unrated' : `Tier ${tier.tier_index + 1}`})</span>}
-                        </span>
-                      )}
-                    </div>
-                    {isAdmin && (
-                      <TierOverrideForm counterpartyId={selectedEntity.id} tierCount={tier.tier_count} currentOverride={tier} />
-                    )}
-                  </div>
-                  {breakdown.length > 0 && (
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                      {breakdown.map(m => (
-                        <div key={m.key} className={`p-2.5 rounded-xl border text-[11px] ${m.notApplicable ? 'bg-slate-50 border-slate-200' : 'bg-slate-50/60 border-slate-200'}`}>
-                          <div className="font-bold text-slate-700">{m.label}</div>
-                          {m.notApplicable ? (
-                            <div className="text-[10px] text-slate-400 italic mt-0.5">Not scored — insufficient data</div>
-                          ) : (
-                            <div className="font-mono text-slate-600 mt-0.5">
-                              {m.value !== null ? m.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'} →
-                              <strong className="text-indigo-700"> {m.points}pts</strong>
-                              <span className="text-slate-400"> · w{m.weight}</span>
-                              {m.contribution !== null && <span className="block text-emerald-700 font-bold">+{m.contribution.toFixed(1)}</span>}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
             {/* Dossier Tabs */}
             <div className="flex items-center border-b border-slate-200 pb-2 space-x-6">
               <button
@@ -870,9 +823,101 @@ export default function CounterpartiesRegistryPage() {
                   <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{invoices?.filter(i => i.counterparty_id === selectedEntity.id).length}</Badge>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setDossierTab('tier')}
+                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                  dossierTab === 'tier' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Award className="w-4 h-4 mr-2 text-indigo-600" /> Client Tier
+                {selectedEntity.tier?.tier_index !== null && selectedEntity.tier?.tier_index !== undefined && (
+                  <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">Tier {selectedEntity.tier.tier_index + 1}</Badge>
+                )}
+              </button>
             </div>
 
-            {dossierTab === 'invoices' ? (
+            {dossierTab === 'tier' ? (
+              <div className="pt-3 space-y-4 animate-fadeIn">
+                {(() => {
+                  const tier = selectedEntity.tier;
+                  if (!tier) {
+                    return (
+                      <div className="p-8 text-center rounded-2xl border border-dashed border-slate-300 bg-slate-50">
+                        <Award className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-600">No client tier has been computed for this entity yet</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Run “Recompute Client Tiers” from the registry toolbar to score the revenue of this entity, then reopen this dossier.
+                        </p>
+                      </div>
+                    );
+                  }
+                  const rawBreakdown = tier.breakdown || {};
+                  const breakdown = Array.isArray(rawBreakdown)
+                    ? rawBreakdown as Array<{
+                        key: string; label: string; value: number | null; points: number | null;
+                        weight: number; contribution: number | null; notApplicable: boolean;
+                      }>
+                    : [];
+                  return (
+                    <>
+                      <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Client Tier</span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-black border"
+                              style={{ color: tier.color, borderColor: `${tier.color}55`, backgroundColor: `${tier.color}14` }}>
+                              {tier.overridden && <Pin className="w-3.5 h-3.5 shrink-0" />}
+                              {tier.label}
+                            </span>
+                            {tier.score !== null && (
+                              <span className="font-mono text-xs text-slate-600">Score <strong className="text-slate-900">{tier.score}</strong>/100</span>
+                            )}
+                            {tier.overridden && (
+                              <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1" title={tier.override_reason || 'Manual override'}>
+                                <Pin className="w-3 h-3 inline mr-1" />
+                                Pinned{tier.override_reason ? ` — ${tier.override_reason}` : ''}
+                                {tier.override_expires_on ? ` · expires ${tier.override_expires_on}` : ''}
+                                {tier.tier_index !== null && <span className="text-slate-500 ml-1">(computed {tier.tier_index === null ? 'Unrated' : `Tier ${tier.tier_index + 1}`})</span>}
+                              </span>
+                            )}
+                          </div>
+                          {isAdmin && (
+                            <TierOverrideForm counterpartyId={selectedEntity.id} tierCount={tier.tier_count} currentOverride={tier} />
+                          )}
+                        </div>
+                        {breakdown.length > 0 && (
+                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                            {breakdown.map(m => (
+                              <div key={m.key} className={`p-2.5 rounded-xl border text-[11px] ${m.notApplicable ? 'bg-slate-50 border-slate-200' : 'bg-slate-50/60 border-slate-200'}`}>
+                                <div className="font-bold text-slate-700">{m.label}</div>
+                                {m.notApplicable ? (
+                                  <div className="text-[10px] text-slate-400 italic mt-0.5">Not scored — insufficient data</div>
+                                ) : (
+                                  <div className="font-mono text-slate-600 mt-0.5">
+                                    {m.value !== null ? m.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'} →
+                                    <strong className="text-indigo-700"> {m.points}pts</strong>
+                                    <span className="text-slate-400"> · w{m.weight}</span>
+                                    {m.contribution !== null && <span className="block text-emerald-700 font-bold">+{m.contribution.toFixed(1)}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {breakdown.length === 0 && (
+                          <p className="mt-3 text-xs text-slate-500 italic">This entity is scored, but the model produced no per-metric breakdown.</p>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Scores come from the configurable client tiering model (Settings → Tiering): each metric is weighted,
+                        normalised to points and summed into the 0–100 score. A manual pin overrides the computed tier until it expires.
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            ) : dossierTab === 'invoices' ? (
               <div className="space-y-6 pt-2 animate-fadeIn">
                 {(() => {
                   const entityInvoices = (invoices || []).filter(i => i.counterparty_id === selectedEntity.id && i.status !== 'cancelled');
