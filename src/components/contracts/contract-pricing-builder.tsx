@@ -513,7 +513,9 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                         let equiv = 0;
                         lines.forEach(l => {
                           if (l.group_id !== group.id || l.frequency === 'one_time') return;
-                          const { gross: g } = calculateLineGrossAmount(l as any, Number(l.quantity) || 0);
+                          // Same effective quantity as getGroupFloorRatio, otherwise the figure quoted
+                          // here disagrees with the ratio that was actually applied.
+                          const { gross: g } = calculateLineGrossAmount(l as any, getEffectiveQuantity(l, 0, termPeriods));
                           equiv += l.frequency === 'annual' ? g / 12 : l.frequency === 'quarterly' ? g / 3 : g;
                         });
                         return equiv.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -559,7 +561,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
               <tbody className="divide-y divide-slate-200 text-sm">
                 {lines.map((line, idx) => {
                   const baseQty = Number(line.quantity) || 0;
-                  const { gross: lineGross, minChargeApplied } = calculateLineGrossAmount(line as any, baseQty);
+                  // Money shows MONTH 1, so the quantity must be month 1's effective one (the last
+                  // override at/before period 0, else the base). Using the base quantity here made
+                  // grouped rows quote a rate the schedule and the group floor never charged.
+                  const month1Qty = getEffectiveQuantity(line, 0, termPeriods);
+                  const { gross: lineGross, minChargeApplied } = calculateLineGrossAmount(line as any, month1Qty);
                   const groupFloorRatio = getGroupFloorRatio(line.group_id, 0);
                   const groupMinApplied = groupFloorRatio > 1;
                   const scaledLineGross = lineGross * groupFloorRatio;
