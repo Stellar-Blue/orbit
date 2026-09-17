@@ -66,67 +66,13 @@ export default function MyCompensationPage() {
   );
 
   // STRICT REQUIREMENT: Only show PAID payments to employee. Draft/planned stays hidden under RLS until confirmed.
+  // No sample/fake fallback: an employee (or an admin previewing one) must see exactly the paid rows
+  // that exist for them — never a fabricated archive. Zero paid rows renders the empty state below.
   const myPayments: PaymentRecord[] = useMemo(() => {
     const records = (payments || []).filter(p => p.profile_id === currentUser.id && p.status === 'paid');
-    if (records && records.length > 0) {
-      return [...records].sort((a, b) => b.period.localeCompare(a.period));
-    }
+    return [...records].sort((a, b) => b.period.localeCompare(a.period));
+  }, [payments, currentUser.id]);
 
-    // Default sample archive if database hasn't populated payments for this user yet
-    return [
-      {
-        id: 'pay-2026-07',
-        profile_id: currentUser.id,
-        period: '2026-07',
-        payment_type_id: 'regular',
-        gross: grossSalary,
-        net: netSalary,
-        employer_contributions: Number((grossSalary - netSalary).toFixed(2)),
-        total_cost: grossSalary,
-        payment_date: '2026-07-30',
-        bank_reference: 'WIRE-GR89100010',
-        status: 'paid',
-        note: isContractor ? 'July 2026 Partner Invoice Retainer' : 'July 2026 Standard Salary',
-        documents: [
-          { id: 'doc-1', name: `Voucher_July_2026_${currentUser.last_name || 'Staff'}.pdf`, type: 'payslip', size: '154 KB', uploaded_at: '2026-07-30' }
-        ]
-      },
-      {
-        id: 'pay-2026-06',
-        profile_id: currentUser.id,
-        period: '2026-06',
-        payment_type_id: 'regular',
-        gross: grossSalary,
-        net: netSalary,
-        employer_contributions: Number((grossSalary - netSalary).toFixed(2)),
-        total_cost: grossSalary,
-        payment_date: '2026-06-29',
-        bank_reference: 'WIRE-GR89100009',
-        status: 'paid',
-        note: isContractor ? 'June 2026 Partner Invoice Retainer' : 'June 2026 Standard Salary',
-        documents: [
-          { id: 'doc-2', name: `Voucher_June_2026_${currentUser.last_name || 'Staff'}.pdf`, type: 'payslip', size: '151 KB', uploaded_at: '2026-06-29' }
-        ]
-      },
-      {
-        id: 'pay-2026-05',
-        profile_id: currentUser.id,
-        period: '2026-05',
-        payment_type_id: 'regular',
-        gross: grossSalary,
-        net: netSalary,
-        employer_contributions: Number((grossSalary - netSalary).toFixed(2)),
-        total_cost: grossSalary,
-        payment_date: '2026-05-30',
-        bank_reference: 'WIRE-GR89100005',
-        status: 'paid',
-        note: isContractor ? 'May 2026 Partner Invoice Retainer' : 'May 2026 Standard Salary',
-        documents: [
-          { id: 'doc-3', name: `Voucher_May_2026_${currentUser.last_name || 'Staff'}.pdf`, type: 'payslip', size: '148 KB', uploaded_at: '2026-05-30' }
-        ]
-      },
-    ] as PaymentRecord[];
-  }, [payments, currentUser.id, netSalary, grossSalary, isContractor, currentUser.last_name]);
 
   // Available years for filter
   const availableYears = useMemo(() => {
@@ -346,6 +292,19 @@ export default function MyCompensationPage() {
           onOpenDocs={(record) => setSelectedPaymentForDocs(record)}
           onDownloadPayslip={(record) => handleDownloadPayslip(record)}
         />
+        {filteredPayments.length === 0 && (
+          <div className="p-6 text-center bg-white border border-slate-200 rounded-2xl space-y-1">
+            <FileText className="w-8 h-8 mx-auto text-slate-300" />
+            <p className="text-sm font-bold text-slate-700">
+              {myPayments.length === 0 ? 'No confirmed payments yet' : `No payments in ${yearFilter}`}
+            </p>
+            <p className="text-xs text-slate-500 max-w-lg mx-auto">
+              {myPayments.length === 0
+                ? 'Payslips appear here once Payroll marks your monthly payment as paid. Draft rows stay internal until finalized.'
+                : 'Pick another year, or select All Years to see every confirmed payment.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* MY COMPENSATION HISTORY MODAL */}
