@@ -788,56 +788,13 @@ export default function PayrollPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-            <DollarSign className="w-6 h-6 mr-3 text-[#3D87D3]" /> Compensation & Payroll Ledger
-          </h1>
-          <p className="text-slate-500 text-xs mt-1">
-            Version 1 Simple Ledger: Greek 14-salary statutory items, contractor retainers, effective-dated raise histories, and RLS receipt vaults.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-2xs gap-1.5">
-            <span className="text-[11px] font-bold text-slate-500 px-1">From:</span>
-            <input 
-              type="month" 
-              value={selectedPeriod} 
-              onChange={e => setSelectedPeriod(e.target.value)} 
-              className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
-            />
-            <span className="text-[11px] font-bold text-slate-500 px-1">To:</span>
-            <input 
-              type="month" 
-              value={endPeriod} 
-              onChange={e => setEndPeriod(e.target.value)} 
-              className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (selectedPeriod !== endPeriod) {
-                  setEndPeriod(selectedPeriod);
-                } else {
-                  setEndPeriod(`${selectedPeriod.split('-')[0]}-12`);
-                }
-              }}
-              className="px-2 py-1 bg-blue-50 text-[#3D87D3] hover:bg-blue-100 rounded text-[11px] font-bold transition-colors cursor-pointer"
-              title="Click to toggle between single month and remainder of the year"
-            >
-              {selectedPeriod === endPeriod ? '+ Year Range' : '1 Month'}
-            </button>
-          </div>
-          <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-bold">
-            <Upload className="w-3.5 h-3.5 mr-1.5 text-white" /> Upload Payment
-          </Button>
-          <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer font-semibold" title={`Generate drafts for period range: ${periodLabel}`}>
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft ({periodLabel})
-          </Button>
-          <Button variant="primary" size="sm" onClick={() => setIsExportOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 shadow-xs cursor-pointer font-semibold">
-            <Download className="w-4 h-4 mr-1.5" /> Accountant Bundle
-          </Button>
-        </div>
+      <div className="border-b border-slate-200/80 pb-5">
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+          <DollarSign className="w-6 h-6 mr-3 text-[#3D87D3]" /> Compensation & Payroll Ledger
+        </h1>
+        <p className="text-slate-500 text-xs mt-1">
+          Version 1 Simple Ledger: Greek 14-salary statutory items, contractor retainers, effective-dated raise histories, and RLS receipt vaults.
+        </p>
       </div>
 
       {/* Missing Receipts Alert Checklist (if paid rows lack receipts) */}
@@ -909,35 +866,57 @@ export default function PayrollPage() {
         />
       </div>
 
-      {/* Tabs & Filters Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm">
-        <div className="flex space-x-6">
-          <button 
-            onClick={() => setTab('ledger')}
-            className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'ledger' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+      {/* Single control bar: every input (period range, actions, person filter, status tabs)
+          sits in one row immediately above the main tabs. */}
+      <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-2xl p-2.5 shadow-2xs">
+        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-1 gap-1.5">
+          <span className="text-[11px] font-bold text-slate-500 px-1">From:</span>
+          <input 
+            type="month" 
+            value={selectedPeriod} 
+            onChange={e => setSelectedPeriod(e.target.value)} 
+            className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
+          />
+          <span className="text-[11px] font-bold text-slate-500 px-1">To:</span>
+          <input 
+            type="month" 
+            value={endPeriod} 
+            onChange={e => setEndPeriod(e.target.value)} 
+            className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedPeriod !== endPeriod) {
+                setEndPeriod(selectedPeriod);
+              } else {
+                setEndPeriod(`${selectedPeriod.split('-')[0]}-12`);
+              }
+            }}
+            className="px-2 py-1 bg-blue-50 text-[#3D87D3] hover:bg-blue-100 rounded text-[11px] font-bold transition-colors cursor-pointer"
+            title="Click to toggle between single month and remainder of the year"
           >
-            Payment Ledger ({selectedPeriod})
-          </button>
-          <button 
-            onClick={() => setTab('forecast')}
-            className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            Salary Records & 12-Month Burn Forecast
-          </button>
-          <button 
-            onClick={() => setTab('payment_types')}
-            className={`pb-2 font-semibold transition-all flex items-center cursor-pointer ${tab === 'payment_types' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            <Sliders className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Payment Types Table
+            {selectedPeriod === endPeriod ? '+ Year Range' : '1 Month'}
           </button>
         </div>
+        <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-bold">
+          <Upload className="w-3.5 h-3.5 mr-1.5 text-white" /> Upload Payment
+        </Button>
+        <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer font-semibold" title={`Generate drafts for period range: ${periodLabel}`}>
+          <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft ({periodLabel})
+        </Button>
+        <Button variant="primary" size="sm" onClick={() => setIsExportOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 shadow-xs cursor-pointer font-semibold">
+          <Download className="w-4 h-4 mr-1.5" /> Accountant Bundle
+        </Button>
 
         {tab === 'ledger' && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <>
+            <div className="hidden md:block w-px h-6 bg-slate-200 mx-1" />
             <select 
               value={personFilter} 
               onChange={e => setPersonFilter(e.target.value)} 
-              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 font-medium"
+              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium"
+              title="Employee filter"
             >
               <option value="all">👥 All Employees & Contractors</option>
               {profiles.map(p => (
@@ -945,15 +924,37 @@ export default function PayrollPage() {
               ))}
             </select>
             <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 text-xs font-semibold">
-              <button onClick={() => setLedgerFilter('all')} className={`px-2.5 py-1 rounded-md transition-colors ${ledgerFilter === 'all' ? 'bg-white text-slate-800 shadow-2xs font-bold' : 'text-slate-600'}`}>All</button>
-              <button onClick={() => setLedgerFilter('planned')} className={`px-2.5 py-1 rounded-md transition-colors ${ledgerFilter === 'planned' ? 'bg-white text-[#3D87D3] shadow-2xs font-bold' : 'text-slate-600'}`}>Draft Planned ({plannedPayments.length})</button>
-              <button onClick={() => setLedgerFilter('paid')} className={`px-2.5 py-1 rounded-md transition-colors ${ledgerFilter === 'paid' ? 'bg-white text-emerald-700 shadow-2xs font-bold' : 'text-slate-600'}`}>Paid</button>
+              <button onClick={() => setLedgerFilter('all')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'all' ? 'bg-white text-slate-800 shadow-2xs font-bold' : 'text-slate-600'}`}>All</button>
+              <button onClick={() => setLedgerFilter('planned')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'planned' ? 'bg-white text-[#3D87D3] shadow-2xs font-bold' : 'text-slate-600'}`}>Draft Planned ({plannedPayments.length})</button>
+              <button onClick={() => setLedgerFilter('paid')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'paid' ? 'bg-white text-emerald-700 shadow-2xs font-bold' : 'text-slate-600'}`}>Paid</button>
               {paidMissingDocs.length > 0 && (
-                <button onClick={() => setLedgerFilter('missing_receipt')} className={`px-2 py-1 rounded-md transition-colors ${ledgerFilter === 'missing_receipt' ? 'bg-amber-100 text-amber-900 shadow-2xs font-extrabold' : 'text-amber-700'}`}>⚠️ Missing ({paidMissingDocs.length})</button>
+                <button onClick={() => setLedgerFilter('missing_receipt')} className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'missing_receipt' ? 'bg-amber-100 text-amber-900 shadow-2xs font-extrabold' : 'text-amber-700'}`}>⚠️ Missing ({paidMissingDocs.length})</button>
               )}
             </div>
-          </div>
+          </>
         )}
+      </div>
+
+      {/* Main tabs */}
+      <div className="flex space-x-6 border-b border-slate-200 pb-3 text-sm -mt-4">
+        <button 
+          onClick={() => setTab('ledger')}
+          className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'ledger' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          Payment Ledger ({selectedPeriod})
+        </button>
+        <button 
+          onClick={() => setTab('forecast')}
+          className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          Salary Records & 12-Month Burn Forecast
+        </button>
+        <button 
+          onClick={() => setTab('payment_types')}
+          className={`pb-2 font-semibold transition-all flex items-center cursor-pointer ${tab === 'payment_types' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          <Sliders className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Payment Types Table
+        </button>
       </div>
 
       {/* TAB 1: LEDGER TABLE */}
