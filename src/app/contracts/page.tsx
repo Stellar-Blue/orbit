@@ -973,7 +973,15 @@ export default function ContractsRegistryPage() {
                       service_start_date: startDate,
                       value: tcv
                     });
-                    alert("Modular pricing snapshot and revenue schedule locked to deal!");
+                    // Report what actually persisted so a silently-dropped field is immediately visible.
+                    const windowCount = lines.filter(l => l.starts_on || l.ends_on).length;
+                    const timingCount = lines.filter(l => l.invoice_timing).length;
+                    alert(
+                      `Modular pricing snapshot and revenue schedule locked to deal!` +
+                      (windowCount || timingCount
+                        ? `\n\nSaved per line: ${windowCount} active window${windowCount === 1 ? '' : 's'}, ${timingCount} custom invoicing timing${timingCount === 1 ? '' : 's'}.`
+                        : '')
+                    );
                   }}
                   onCancel={() => setSelectedContract(null)}
                 />

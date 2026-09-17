@@ -2005,18 +2005,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }));
       if (linesToInsert.length > 0) {
         const { error: linesErr } = await supabase.from('contract_lines').insert(linesToInsert);
-        if (linesErr && /invoice_timing|starts_on|ends_on/i.test(linesErr.message || '')) {
-          // Migration 20260917130000 / 20260917140000 not applied yet: save the price sheet without the
-          // newer line columns rather than leaving the contract with no lines at all (the old rows were
-          // already deleted by the time we get here).
-          console.warn('[contract_lines] invoice_timing / starts_on / ends_on missing — apply supabase/migrations/20260917130000_contract_line_invoice_timing.sql and 20260917140000_contract_line_active_window.sql');
-          await supabase.from('contract_lines').insert(linesToInsert.map(l => {
-            const copy: Record<string, unknown> = { ...l };
-            delete copy.invoice_timing;
-            delete copy.starts_on;
-            delete copy.ends_on;
-            return copy;
-          }));
+        if (linesErr) {
+          console.error('[contract_lines] insert failed', linesErr, linesToInsert);
+          // Never leave the contract line-less (the previous rows are already deleted), but be loud about
+          // it: retry once without the newest columns, and only when the error is about those columns.
+          const aboutNewColumns = /invoice_timing|starts_on|ends_on/i.test(linesErr.message || '');
+          if (aboutNewColumns) {
+            const { error: retryErr } = await supabase.from('contract_lines').insert(linesToInsert.map(l => {
+              const copy: Record<string, unknown> = { ...l };
+              delete copy.invoice_timing;
+              delete copy.starts_on;
+              delete copy.ends_on;
+              return copy;
+            }));
+            alert(
+              retryErr
+                ? `Could not save the contract lines: ${retryErr.message}`
+                : `Saved the price sheet, but NOT the per-line invoicing timing / active windows: ${linesErr.message}\n\nApply supabase/migrations/20260917130000_contract_line_invoice_timing.sql and 20260917140000_contract_line_active_window.sql, then save again.`
+            );
+          } else {
+            alert(`Could not save the contract lines: ${linesErr.message}`);
+          }
         }
       }
 

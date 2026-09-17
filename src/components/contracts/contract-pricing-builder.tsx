@@ -138,22 +138,33 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   const lineActiveMonthCount = (line: Omit<ContractLine, 'id' | 'contract_id'>) =>
     termPeriods.filter(p => (!line.starts_on || p >= line.starts_on.slice(0, 7)) && (!line.ends_on || p <= line.ends_on.slice(0, 7))).length;
 
-  /** Validation of every line window: range sanity plus the contract's own term bounds. */
+  /**
+   * Validation of every line window. Only a genuinely broken range blocks the save — a window that
+   * reaches past the contract term (or starts before it) is legitimate input: the line simply charges
+   * while the contract runs, so it is reported as a note instead of being rejected. Blocking those was
+   * making saves look "broken" while the dates were quietly discarded.
+   */
   const windowErrors = useMemo(() => {
     const errors = new Map<number, string>();
-    const countActive = (from: string | null, to: string | null) =>
-      termPeriods.filter(p => (!from || p >= from) && (!to || p <= to)).length;
     lines.forEach((line, idx) => {
-      const from = line.starts_on ? line.starts_on.slice(0, 7) : null;
-      const to = line.ends_on ? line.ends_on.slice(0, 7) : null;
-      if (from && to && to < from) { errors.set(idx, '“to” is before “from”'); return; }
-      if (from && from < windowBounds.firstMonth) { errors.set(idx, `starts before the contract (${monthLabel(windowBounds.min)})`); return; }
-      if (to && to > windowBounds.lastMonth) { errors.set(idx, `ends after the contract term (${monthLabel(windowBounds.max)})`); return; }
-      if (from && to && countActive(from, to) === 0) { errors.set(idx, 'window covers no chargeable month'); return; }
-      // One-time fees are legitimately deferred (billed once, in their start month) — no extra rule.
+      const from = line.starts_on ? String(line.starts_on).slice(0, 7) : null;
+      const to = line.ends_on ? String(line.ends_on).slice(0, 7) : null;
+      if (from && to && to < from) errors.set(idx, '“to” is before “from”');
     });
     return errors;
-  }, [lines, windowBounds, termPeriods]);
+  }, [lines]);
+
+  /** Non-blocking notes: the window is fine, but it extends past the contract's own term. */
+  const windowNotes = useMemo(() => {
+    const notes = new Map<number, string>();
+    lines.forEach((line, idx) => {
+      const from = line.starts_on ? String(line.starts_on).slice(0, 7) : null;
+      const to = line.ends_on ? String(line.ends_on).slice(0, 7) : null;
+      if (from && from < windowBounds.firstMonth) notes.set(idx, `starts before the contract — charges from ${monthLabel(windowBounds.min)}`);
+      else if (to && to > windowBounds.lastMonth) notes.set(idx, `runs past the term — charges until ${monthLabel(windowBounds.max)}`);
+    });
+    return notes;
+  }, [lines, windowBounds]);
 
   /** A window that fails validation is never sent to the engine. */
   const sanitizedLines = useMemo(
@@ -815,8 +826,6 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                 <input
                                   type="date"
                                   value={line.starts_on || ''}
-                                  min={windowBounds.min}
-                                  max={windowBounds.max}
                                   onChange={e => updateLine(idx, 'starts_on', e.target.value || null)}
                                   title="First chargeable month for this line (inclusive) — leave empty to start with the contract"
                                   className={`w-full bg-white border rounded px-1.5 py-1 text-[11px] font-mono focus:outline-none ${windowErrors.get(idx) ? 'border-rose-400 focus:border-rose-500' : 'border-slate-300 focus:border-blue-500'}`}
@@ -827,8 +836,6 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                 <input
                                   type="date"
                                   value={line.ends_on || ''}
-                                  min={line.starts_on || windowBounds.min}
-                                  max={windowBounds.max}
                                   onChange={e => updateLine(idx, 'ends_on', e.target.value || null)}
                                   title="Last chargeable month for this line (inclusive) — leave empty to run to the contract end"
                                   className={`w-full bg-white border rounded px-1.5 py-1 text-[11px] font-mono focus:outline-none ${windowErrors.get(idx) ? 'border-rose-400 focus:border-rose-500' : 'border-slate-300 focus:border-blue-500'}`}
@@ -843,6 +850,9 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                                     ? `charged once, in ${monthLabel(line.starts_on || windowBounds.min)}`
                                     : `charged for ${lineActiveMonthCount(line)} of ${termPeriods.length} months`}
                                 </div>
+                              )}
+                              {!windowErrors.get(idx) && windowNotes.get(idx) && (
+                                <div className="text-[10px] font-semibold text-amber-600">{windowNotes.get(idx)}</div>
                               )}
                             </div>
                           )}
@@ -1157,15 +1167,24 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
           <div className="mt-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
             <div>
-              <div>{windowErrors.size} line item{windowErrors.size === 1 ? ' has' : 's have'} an invalid active window — those months will not be charged.</div>
+              <div>{windowErrors.size} line item{windowErrors.size === 1 ? ' has' : 's have'} an end date before its start date — fix it to save.</div>
               <ul className="mt-1 space-y-0.5 font-medium">
                 {Array.from(windowErrors.entries()).map(([idx, msg]) => (
                   <li key={idx}>{lines[idx]?.name || `Line ${idx + 1}`}: {msg}</li>
                 ))}
               </ul>
-              <div className="mt-1 text-[11px] font-semibold text-rose-700">
-                Valid range for this contract: {monthLabel(windowBounds.min)} → {monthLabel(windowBounds.max)} (term {termYears} year{termYears === 1 ? '' : 's'}).
-              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Windows that reach outside the contract term are saved as typed and bounded by the term */}
+        {!readOnly && windowErrors.size === 0 && windowNotes.size > 0 && (
+          <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              {windowNotes.size} line item{windowNotes.size === 1 ? '' : 's'} reach outside the contract term
+              ({monthLabel(windowBounds.min)} → {monthLabel(windowBounds.max)}). The dates are saved as entered and the
+              line only charges while the contract runs.
             </div>
           </div>
         )}
