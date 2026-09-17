@@ -214,7 +214,9 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
   const isAdmin = currentUser.role === 'admin';
 
   const filteredProfiles = profiles.filter(p => {
-    const matchesSearch = `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email} ${p.phone || ''}`.toLowerCase().includes(searchQuery.toLowerCase());
+    // Phone is admin-only PII, so it is not even a search key for a non-admin session.
+    const haystack = [p.first_name, p.last_name, p.name_el, p.work_email, ...(isAdmin ? [p.phone || ''] : [])].join(' ');
+    const matchesSearch = haystack.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTeam = teamFilter === 'all' || p.team_id === teamFilter;
     const matchesEmployment = employmentFilter === 'all' || p.employment_type === employmentFilter;
     return matchesSearch && matchesTeam && matchesEmployment;
@@ -223,6 +225,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
   const getTeamName = (teamId: string) => teams.find(t => t.id === teamId)?.name || 'General';
 
   // Export handling: GUARANTEE explicit exclusion of profile_sensitive data!
+  // Phone is admin-only, so it only appears in an admin's export.
   const exportToXlsx = () => {
     const cleanData = filteredProfiles.map(p => ({
       ID: p.id,
@@ -230,7 +233,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
       LastName: p.last_name,
       GreekName: p.name_el,
       Email: p.work_email,
-      Phone: p.phone || '',
+      ...(isAdmin ? { Phone: p.phone || '' } : {}),
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
       StartDate: p.start_date,
@@ -249,7 +252,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
       LastName: p.last_name,
       GreekName: p.name_el,
       Email: p.work_email,
-      Phone: p.phone || '',
+      ...(isAdmin ? { Phone: p.phone || '' } : {}),
       Team: getTeamName(p.team_id),
       EmploymentType: p.employment_type.toUpperCase(),
       StartDate: p.start_date,
@@ -314,7 +317,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder="Search by name (Greek/English), email or phone..."
+            placeholder={isAdmin ? 'Search by name (Greek/English), email or phone...' : 'Search by name (Greek/English) or email...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
@@ -450,10 +453,13 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                       <span className="text-slate-500 uppercase font-semibold block">Work Email</span>
                       <span className="text-[#3D87D3] font-mono">{selectedProfile.work_email}</span>
                     </div>
-                    <div>
-                      <span className="text-slate-500 uppercase font-semibold block">Phone</span>
-                      <span className="text-slate-700 font-mono">{selectedProfile.phone || '—'}</span>
-                    </div>
+                    {/* Phone is admin-only PII in the directory. */}
+                    {isAdmin && (
+                      <div>
+                        <span className="text-slate-500 uppercase font-semibold block">Phone</span>
+                        <span className="text-slate-700 font-mono">{selectedProfile.phone || '—'}</span>
+                      </div>
+                    )}
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Employment Type</span>
                       <Badge variant="info" className="mt-0.5">{selectedProfile.employment_type.toUpperCase()}</Badge>

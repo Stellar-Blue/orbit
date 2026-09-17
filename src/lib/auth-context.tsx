@@ -265,6 +265,29 @@ const signInvoiceDocuments = async (
   }));
 };
 
+/**
+ * Phone numbers the caller is allowed to see: every row for an admin, own row for an employee.
+ * `profiles.phone` is revoked from `authenticated` (migration 20260917120000), so `select('*')` on
+ * profiles no longer returns it — the value is merged in from this admin/self-only view instead.
+ * Returns an empty map (rather than throwing) when the view is missing, e.g. before the migration
+ * has been applied; people then simply show no phone number.
+ */
+const fetchProfilePhones = async (
+  supabase: ReturnType<typeof getSupabaseBrowserClient>
+): Promise<Map<string, string | null>> => {
+  try {
+    const { data, error } = await supabase.from('profile_phones').select('id, phone');
+    if (error) {
+      console.warn('[profiles] phone lookup unavailable:', error.message);
+      return new Map();
+    }
+    return new Map((data || []).map((r: { id: string; phone: string | null }) => [r.id, r.phone]));
+  } catch (e) {
+    console.warn('[profiles] phone lookup failed:', e);
+    return new Map();
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -363,6 +386,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         const initialProfilesRes = await supabase.from('profiles').select('*');
         const loadedProfiles: Profile[] = initialProfilesRes.data || [];
+        const phones = await fetchProfilePhones(supabase);
+        loadedProfiles.forEach(p => { p.phone = phones.get(p.id) ?? null; });
         
         if (session?.user?.email) {
           const email = session.user.email.toLowerCase();
@@ -4097,14 +4122,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Profiles embed their role, sensitive record and team, so all three tables feed one reloader.
   const reloadLiveProfiles = async () => {
-    const [rows, roleRows, sensitiveRows, teamRows] = await Promise.all([
+    const [rows, roleRows, sensitiveRows, teamRows, phoneMap] = await Promise.all([
       reloadLiveTable('profiles', 'all'),
       reloadLiveTable('user_roles', 'all'),
       reloadLiveTable('profile_sensitive', 'own'),
       reloadLiveTable('teams', 'all'),
+      fetchProfilePhones(getSupabaseBrowserClient()),
     ]);
     setProfiles(rows.map(p => ({
       ...p,
+      phone: phoneMap.get(p.id) ?? null,
       role: roleRows.some(r => r.profile_id === p.id && r.role === 'admin') ? 'admin' : 'employee',
       sensitive: sensitiveRows.find(s => s.profile_id === p.id),
       team: teamRows.find(t => t.id === p.team_id),
