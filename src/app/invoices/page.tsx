@@ -277,12 +277,20 @@ export default function InvoicesRegistryPage() {
       setNewPeriodTo(todayStr);
     }
     setNewReferencePeriod(periodKey || (unbilled?.from || todayStr).slice(0, 7));
-    if (periodNet > 0) setNewNet(periodNet);
+    // A project draft always carries an explicit amount: the caller (project billing bar) sends `net`,
+    // and when nothing can be priced we open at 0 with a note instead of the register's default 1,000.
+    const explicitNet = params.get('net');
+    if (explicitNet !== null && explicitNet !== '') setNewNet(Number(explicitNet) || 0);
+    else if (periodNet > 0) setNewNet(periodNet);
     else if (unbilled && unbilled.amount > 0) setNewNet(unbilled.amount);
+    else if (project) setNewNet(0);
     setNewVatRate('24%');
     setNewNotes(
       project
-        ? `Timesheet billing — project ${project.name}${unbilled && unbilled.amount > 0 ? ` (${unbilled.hours}h approved, billable work)` : ''}`
+        ? `Timesheet billing — project ${project.name}${unbilled && unbilled.amount > 0 ? ` (${unbilled.hours}h approved, billable work)` : ''}` +
+          (explicitNet !== null && Number(explicitNet) === 0
+            ? ' — no billing rate or project value recorded yet, confirm the amount'
+            : '')
         : `Contract ${contract?.reference || contractId}${periodKey ? ` — billing period ${periodKey}` : ''}`
     );
     setNewLinks([]);
