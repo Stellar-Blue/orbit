@@ -601,7 +601,18 @@ export interface RateCardEntry {
   created_at?: string;
 }
 
-export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'archived';
+export type ProjectStatus = 'planned' | 'in_progress' | 'done' | 'active' | 'on_hold' | 'completed' | 'archived';
+
+/** Friendly labels + badge styling for the delivery lifecycle (legacy values included). */
+export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; badge: string }> = {
+  planned: { label: 'Planned', badge: 'bg-slate-100 text-slate-700 border-slate-200' },
+  in_progress: { label: 'In Progress', badge: 'bg-blue-50 text-[#3D87D3] border-blue-200' },
+  done: { label: 'Done', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  active: { label: 'Active (legacy)', badge: 'bg-blue-50 text-[#3D87D3] border-blue-200' },
+  on_hold: { label: 'On Hold', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+  completed: { label: 'Completed (legacy)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  archived: { label: 'Archived', badge: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
 export interface Project {
   id: string;
   contract_id?: string | null;
@@ -611,12 +622,40 @@ export interface Project {
   owner_profile_id?: string | null;
   default_billable: boolean;
   budget_hours?: number | null;
+  /** Effort budget in days, entered alongside the hours budget. */
+  budget_days?: number | null;
   budget_value?: number | null;
+  /** Planned window (starts_on/ends_on) and the dates the work really ran. */
   starts_on?: string | null;
   ends_on?: string | null;
+  actual_start_on?: string | null;
+  actual_end_on?: string | null;
   created_at?: string;
   contract?: Contract;
   owner_profile?: Profile;
+}
+
+export interface ProjectLink {
+  id: string;
+  project_id: string;
+  title?: string | null;
+  url: string;
+  /** Icon hint: 'linear' | 'docs' | 'repo' | 'other'. */
+  kind?: string | null;
+  created_at?: string;
+  created_by?: string | null;
+}
+
+export interface ProjectDocument {
+  id: string;
+  project_id: string;
+  file_name: string;
+  storage_path: string;
+  url?: string | null;
+  file_size?: number | null;
+  mime_type?: string | null;
+  uploaded_by?: string | null;
+  uploaded_at?: string;
 }
 
 export type WorkItemKind = 'feature' | 'epic' | 'task' | 'workstream';

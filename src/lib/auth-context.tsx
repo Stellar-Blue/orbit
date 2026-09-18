@@ -3166,7 +3166,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const saveProject = async (p: Omit<Project, 'id'> & { id?: string }): Promise<boolean> => {
-    const row = { id: p.id || generateUUID(), contract_id: p.contract_id || null, name: p.name, code: p.code || null, status: p.status || 'active', owner_profile_id: p.owner_profile_id || null, default_billable: p.default_billable !== false, budget_hours: p.budget_hours ?? null, budget_value: p.budget_value ?? null, starts_on: p.starts_on || null, ends_on: p.ends_on || null };
+    // Every delivery field must be listed here: this builds the row explicitly, so a field missing
+    // from this map is silently dropped on save (it happened with the line windows).
+    const row = {
+      id: p.id || generateUUID(),
+      contract_id: p.contract_id || null,
+      name: p.name,
+      code: p.code || null,
+      status: p.status || 'planned',
+      owner_profile_id: p.owner_profile_id || null,
+      default_billable: p.default_billable !== false,
+      budget_hours: p.budget_hours ?? null,
+      budget_days: p.budget_days ?? null,
+      budget_value: p.budget_value ?? null,
+      starts_on: p.starts_on || null,
+      ends_on: p.ends_on || null,
+      actual_start_on: p.actual_start_on || null,
+      actual_end_on: p.actual_end_on || null
+    };
     const ok = await upsertRow('projects', row);
     if (ok) setProjects(prev => prev.some(x => x.id === row.id) ? prev.map(x => x.id === row.id ? { ...x, ...row } : x) : [...prev, row as Project]);
     return ok;
