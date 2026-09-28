@@ -2,9 +2,10 @@
 
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { type ColDef, type ICellRendererParams, type ValueFormatterParams, type GridApi, type GetContextMenuItemsParams } from 'ag-grid-community';
+import { type ColDef, type ICellRendererParams, type GridApi, type GetContextMenuItemsParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { formatDate } from '@/lib/date';
+import { formatMoney, DEFAULT_CURRENCY } from '@/lib/currency';
 import { Invoice, InvoiceStatus, BudgetCategory } from '@/lib/types';
 import { useAuth } from '@/lib/auth-context';
 import { Badge } from '@/components/ui/primitives';
@@ -20,9 +21,6 @@ const STATUS_STYLES: Record<string, string> = {
   registered: 'bg-slate-50 text-slate-700 border-slate-300',
   resolved: 'bg-indigo-50 text-indigo-700 border-indigo-300'
 };
-
-const eurFormatter = (params: ValueFormatterParams) =>
-  `€${Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
 // Derive a "Year · Quarter" label from the invoice due date (YYYY-MM-DD).
 const deriveYearQuarter = (dateStr?: string | null): string => {
@@ -50,7 +48,12 @@ interface InvoiceRow {
   issueDate: string;
   dueDate: string;
   overdue: boolean;
+  /** EUR reporting amount — `gross_eur`, what every ledger/report rollup is built on. */
   gross: number;
+  /** Gross in the invoice's own currency, before FX conversion. */
+  grossOriginal: number;
+  currency: string;
+  fxRate: number;
   net: number;
   vatRate: string;
   status: string;
@@ -126,6 +129,9 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         dueDate: inv.due_date,
         overdue: isOverdue,
         gross: inv.gross_eur,
+        grossOriginal: inv.gross,
+        currency: inv.currency || DEFAULT_CURRENCY,
+        fxRate: inv.fx_rate || 1,
         net: inv.net,
         vatRate: inv.vat_rate || '',
         status: inv.status,
@@ -294,8 +300,41 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       }
     },
     {
-      headerName: 'Amount', field: 'gross', width: 120, sortable: true, filter: 'agNumberColumnFilter',
-      filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] }
+      headerName: 'Currency', field: 'currency', width: 105, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => {
+        const isForeign = p.value && p.value !== DEFAULT_CURRENCY;
+        return (
+          <div className="leading-tight">
+            <span className={`font-mono font-extrabold text-[11px] ${isForeign ? 'text-indigo-700' : 'text-slate-600'}`}>{p.value}</span>
+            {isForeign && (
+              <span className="block text-[9px] text-slate-500 font-mono" title="FX rate used for the EUR reporting amount">
+                @ {p.data?.fxRate}
+              </span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      headerName: 'Amount', field: 'gross', width: 145, sortable: true, filter: 'agNumberColumnFilter',
+      filterParams: { filterOptions: ['equals', 'greaterThan', 'lessThan'] },
+      cellRenderer: (p: ICellRendererParams<InvoiceRow, number>) => {
+        const row = p.data;
+        if (!row) return null;
+        const isForeign = row.currency !== DEFAULT_CURRENCY;
+        return (
+          <div className="leading-tight">
+            <span className="font-extrabold text-slate-900 text-xs">
+              {formatMoney(isForeign ? row.grossOriginal : p.value, row.currency)}
+            </span>
+            {isForeign && (
+              <span className="block text-[9px] text-slate-500 font-mono" title="Converted to EUR for ledger reporting">
+                ≈ {formatMoney(p.value)}
+              </span>
+            )}
+          </div>
+        );
+      }
     },
     {
       headerName: 'Due Date', field: 'dueDate', width: 110, sortable: true, filter: 'agDateColumnFilter',

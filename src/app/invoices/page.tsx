@@ -21,6 +21,7 @@ import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods } from '@/lib/billing-periods';
+import { INVOICE_CURRENCIES, DEFAULT_CURRENCY, formatMoney } from '@/lib/currency';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
@@ -119,6 +120,8 @@ export default function InvoicesRegistryPage() {
   const [newReferencePeriod, setNewReferencePeriod] = useState<string>(new Date().toISOString().slice(0, 7));
   const [newNet, setNewNet] = useState<number>(1000);
   const [newVatRate, setNewVatRate] = useState<string>('24%');
+  const [newCurrency, setNewCurrency] = useState<string>(DEFAULT_CURRENCY);
+  const [newFxRate, setNewFxRate] = useState<number>(1);
   const [newNotes, setNewNotes] = useState<string>('');
   const [newLinks, setNewLinks] = useState<{title: string, url: string}[]>([]);
   const [newFile, setNewFile] = useState<File | null>(null);
@@ -159,6 +162,8 @@ export default function InvoicesRegistryPage() {
     setNewReferencePeriod(inv.reference_period || '');
     setNewNet(inv.net || 0);
     setNewVatRate((inv.vat_rate as any) || '24%');
+    setNewCurrency(inv.currency || DEFAULT_CURRENCY);
+    setNewFxRate(inv.fx_rate || 1);
     setNewNotes(inv.notes || '');
     setNewLinks(inv.links?.map(l => ({ title: l.title || '', url: l.url })) || []);
     setDuplicateWarning('');
@@ -198,6 +203,13 @@ export default function InvoicesRegistryPage() {
 
   const calculatedGross = useMemo(() => newNet + calculatedVat, [newNet, calculatedVat]);
 
+  // EUR reporting amount. Mirrors the MCP rule (`gross_eur = gross * fx_rate`, lib/mcp/engine.ts),
+  // so a UI-registered invoice lands in the ledger exactly like an agent-registered one.
+  const calculatedGrossEur = useMemo(
+    () => Number((calculatedGross * (newFxRate || 0)).toFixed(2)),
+    [calculatedGross, newFxRate]
+  );
+
   // Handle Contract selection change -> Auto-fill terms & default categories
   const handleContractChange = (contractId: string) => {
     setNewContractId(contractId);
@@ -205,6 +217,8 @@ export default function InvoicesRegistryPage() {
     const cnt = contracts.find(c => c.id === contractId);
     if (cnt) {
       if (cnt.counterparty_id) setNewCpId(cnt.counterparty_id);
+      // A contract bills in its own currency; adopt it only while registering a new invoice.
+      if (!editingInvoiceId && cnt.currency) setNewCurrency(cnt.currency);
       const terms = cnt.payment_terms_days ?? 30;
       if (newIssueDate) {
         const idate = new Date(newIssueDate);
@@ -285,6 +299,8 @@ export default function InvoicesRegistryPage() {
     else if (unbilled && unbilled.amount > 0) setNewNet(unbilled.amount);
     else if (project) setNewNet(0);
     setNewVatRate('24%');
+    setNewCurrency(contract?.currency || DEFAULT_CURRENCY);
+    setNewFxRate(1);
     setNewNotes(
       project
         ? `Timesheet billing — project ${project.name}${unbilled && unbilled.amount > 0 ? ` (${unbilled.hours}h approved, billable work)` : ''}` +
@@ -630,6 +646,8 @@ export default function InvoicesRegistryPage() {
                   setNewReferencePeriod(new Date().toISOString().slice(0, 7));
                   setNewNet(1000);
                   setNewVatRate('24%');
+                  setNewCurrency(DEFAULT_CURRENCY);
+                  setNewFxRate(1);
                   setNewNotes('');
                   setNewLinks([]);
                   setDuplicateWarning('');
@@ -944,9 +962,53 @@ export default function InvoicesRegistryPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Invoice Currency</label>
+                <select
+                  value={newCurrency}
+                  onChange={(e) => {
+                    const code = e.target.value;
+                    setNewCurrency(code);
+                    // Only the EUR → EUR rate is knowable without an FX feed; non-EUR needs a manual rate.
+                    if (code === DEFAULT_CURRENCY) setNewFxRate(1);
+                  }}
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                >
+                  {INVOICE_CURRENCIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">FX Rate — 1 {newCurrency} = ? EUR</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  value={newFxRate}
+                  disabled={newCurrency === DEFAULT_CURRENCY}
+                  onChange={(e) => setNewFxRate(parseFloat(e.target.value) || 0)}
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                />
+                <p className="text-[10px] mt-1">
+                  {newCurrency === DEFAULT_CURRENCY ? (
+                    <span className="text-slate-400">Domestic invoice — booked 1:1 in EUR.</span>
+                  ) : (
+                    <span className="text-slate-500">
+                      EUR reporting amount:{' '}
+                      <span className="font-bold text-emerald-700">{formatMoney(calculatedGrossEur)}</span>
+                      {!(newFxRate > 0) && <span className="text-rose-600 font-bold"> · rate required</span>}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Net Amount (€) *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Net Amount ({newCurrency}) *</label>
                 <input
                   type="number"
                   value={newNet}
@@ -970,10 +1032,10 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Total Gross (€)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Total Gross ({newCurrency})</label>
                 <input
                   type="text"
-                  value={`€${calculatedGross.toFixed(2)}`}
+                  value={formatMoney(calculatedGross, newCurrency)}
                   disabled
                   className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-100 font-black text-emerald-700 cursor-not-allowed"
                 />
@@ -1230,6 +1292,11 @@ export default function InvoicesRegistryPage() {
                       return;
                     }
                   }
+                  // A missing rate would silently file the invoice as €0 in the EUR ledger.
+                  if (newCurrency !== DEFAULT_CURRENCY && !(newFxRate > 0)) {
+                    alert(`Enter the FX rate (1 ${newCurrency} = ? EUR) before saving.`);
+                    return;
+                  }
                   if (editingInvoiceId) {
                     const res = await updateInvoice(editingInvoiceId, {
                       direction: newDirection,
@@ -1244,11 +1311,13 @@ export default function InvoicesRegistryPage() {
                       period_from: newPeriodFrom || null,
                       period_to: newPeriodTo || null,
                       reference_period: newReferencePeriod.trim() || null,
+                      currency: newCurrency,
+                      fx_rate: newFxRate,
                       net: newNet,
                       vat_amount: calculatedVat,
                       vat_rate: newVatRate,
                       gross: calculatedGross,
-                      gross_eur: calculatedGross,
+                      gross_eur: calculatedGrossEur,
                       status: newStatus,
                       notes: newNotes.trim() || null,
                       links: newLinks as any
@@ -1275,13 +1344,13 @@ export default function InvoicesRegistryPage() {
                     period_from: newPeriodFrom,
                     period_to: newPeriodTo,
                     reference_period: newReferencePeriod.trim() || null,
-                    currency: 'EUR',
-                    fx_rate: 1.0,
+                    currency: newCurrency,
+                    fx_rate: newFxRate,
                     net: newNet,
                     vat_amount: calculatedVat,
                     vat_rate: newVatRate,
                     gross: calculatedGross,
-                    gross_eur: calculatedGross,
+                    gross_eur: calculatedGrossEur,
                     status: newStatus,
                     missing_document: true,
                     notes: newNotes.trim() || null,
@@ -1309,8 +1378,13 @@ export default function InvoicesRegistryPage() {
           <div className="space-y-4 px-1">
             <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between">
               <div>
-                <span className="font-extrabold block">Total Gross: €{payingInvoice.gross_eur.toFixed(2)}</span>
+                <span className="font-extrabold block">Total Gross: {formatMoney(payingInvoice.gross_eur)}</span>
                 <span className="text-[11px] text-emerald-700">Entity: {payingInvoice.counterparty?.legal_name}</span>
+                {payingInvoice.currency !== DEFAULT_CURRENCY && (
+                  <span className="text-[10px] text-emerald-700/80 block">
+                    Issued as {formatMoney(payingInvoice.gross, payingInvoice.currency)} @ {payingInvoice.fx_rate}
+                  </span>
+                )}
               </div>
               <Badge variant="success" className="font-bold text-xs">Awaiting Settlement</Badge>
             </div>

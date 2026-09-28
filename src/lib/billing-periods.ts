@@ -313,6 +313,8 @@ export function buildDraftInvoicePayload(args: {
   counterpartyId: string;
   direction: 'revenue' | 'cost';
   currency?: string | null;
+  /** FX rate for the EUR reporting amount (`gross_eur`). Optional — see the note on `fx_rate` below. */
+  fxRate?: number | null;
   expectedAmount: number;
   reference?: string | null;
   timing?: string | null;
@@ -334,12 +336,15 @@ export function buildDraftInvoicePayload(args: {
     period_to: args.period.to,
     reference_period: args.period.key,
     currency: args.currency || 'EUR',
-    fx_rate: 1.0,
+    // ponytail: no FX feed exists, so a draft only converts when the caller supplies a rate —
+    // a non-EUR contract draft stays 1:1 until the operator corrects it in the invoice modal.
+    // Upgrade path: plug a rate service into pricing-engine and pass it here.
+    fx_rate: args.fxRate || 1.0,
     net,
     vat_rate: '24',
     vat_amount: Number((gross - net).toFixed(2)),
     gross,
-    gross_eur: gross,
+    gross_eur: Number((gross * (args.fxRate || 1)).toFixed(2)),
     status: 'draft',
     missing_document: false,
     notes: `Auto-generated draft for contract ${args.reference || args.contractId} (${args.period.label}${args.timing ? ` - ${args.timing}` : ''})`,
