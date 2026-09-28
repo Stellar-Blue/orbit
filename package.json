@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "node scripts/verify-rls-and-math.js",
     "test:rls": "node scripts/verify-rls-and-math.js",
-    "test:pricing": "node scripts/verify-modular-pricing.js"
+    "test:pricing": "node scripts/verify-modular-pricing.js",
+    "test:outlook": "node scripts/verify-outlook-remote-mirror.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

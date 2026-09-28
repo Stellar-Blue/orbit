@@ -236,6 +236,8 @@ export interface DesiredTimeOff {
   startTime?: string;
   endDate: string;
   endTime?: string;
+  /** What the occurrence asserts: leave (`timeOff`, the default) or an ad-hoc declared remote day. */
+  locationType?: 'timeOff' | 'remote';
 }
 
 export function buildRemoteRulePayload(rule: DesiredRemoteRule): Record<string, unknown> {
@@ -254,27 +256,42 @@ export function buildRemoteRulePayload(rule: DesiredRemoteRule): Record<string, 
 }
 
 export function buildTimeOffPayload(t: DesiredTimeOff): Record<string, unknown> {
+  const isRemote = t.locationType === 'remote';
   const startTime = t.startTime || '00:00:00';
   const endTime = t.endTime || '23:59:59';
   return {
     start: { dateTime: `${t.startDate}T${startTime}.0000000`, timeZone: ATHENS_TIMEZONE },
     end: { dateTime: `${t.endDate}T${endTime}.0000000`, timeZone: ATHENS_TIMEZONE },
-    workLocationType: 'timeOff',
-    timeOffDetails: { subject: t.subject, isAllDay: t.allDay },
+    workLocationType: isRemote ? 'remote' : 'timeOff',
+    // A remote occurrence has no leave subject — Graph only takes `timeOffDetails` for timeOff.
+    ...(isRemote ? {} : { timeOffDetails: { subject: t.subject, isAllDay: t.allDay } }),
   };
 }
 
 // ---------- Profile sync ----------
 
-interface SyncOutlookOptions {
-  onNoMailbox?: () => Promise<void>;
-}
+/**
+ * Coalesces concurrent syncs of the same profile into the run already in flight.
+ *
+ * ponytail: single-instance guard. Two overlapping runs both read "no ref yet" and then both POST
+ * to Graph, which has no dedupe for our marker property — the calendar gets two identical events
+ * and the orphan is never reconciled away. A warm serverless instance reuses this map; the race
+ * only survives across cold instances (ceiling). Upgrade path: a DB advisory lock on the profile.
+ */
+const inFlightSyncs = new Map<string, Promise<OutlookSyncResult>>();
 
 export async function syncOutlookForProfile(
   admin: SupabaseClient,
-  profileId: string,
-  options: SyncOutlookOptions = {}
+  profileId: string
 ): Promise<OutlookSyncResult> {
+  const running = inFlightSyncs.get(profileId);
+  if (running) return running;
+  const run = runOutlookSync(admin, profileId).finally(() => { inFlightSyncs.delete(profileId); });
+  inFlightSyncs.set(profileId, run);
+  return run;
+}
+
+async function runOutlookSync(admin: SupabaseClient, profileId: string): Promise<OutlookSyncResult> {
   const result: OutlookSyncResult = { ok: false, created: 0, updated: 0, deleted: 0, unchanged: 0, mailboxErrors: 0 };
 
   if (!hasGraphCredentials()) {
@@ -486,6 +503,38 @@ async function syncWorkPlan(
     }
   }
 
+  // Ad-hoc remote days: a one-off work-plan override for that date. A day a remote pattern already
+  // covers keeps ONLY its recurring rule, so every remote day has exactly one representation in the
+  // plan — remote must never spawn a per-day "Working remotely" calendar event as well (that is
+  // what used to fill the calendar; the two passes then fought, one recreating what the other deleted).
+  const coveredByRemotePattern = (dateStr: string): boolean => {
+    const wd = weekdayOf(dateStr);
+    return (patterns || []).some((p: { weekday: string; valid_from: string; valid_to: string | null }) =>
+      p.weekday === wd && dateStr >= p.valid_from && (!p.valid_to || dateStr <= p.valid_to)
+    );
+  };
+
+  const { data: adHocRemoteDays } = await admin
+    .from('remote_days')
+    .select('id, date')
+    .eq('profile_id', profileId)
+    .in('mode', ['remote_gr', 'remote_abroad'])
+    .gte('date', today)
+    .lte('date', horizonEnd);
+
+  for (const rd of (adHocRemoteDays || []) as Array<{ id: string; date: string }>) {
+    if (coveredByRemotePattern(rd.date)) continue;
+    desiredTimeOff.set(`wpto:rd:${rd.id}`, {
+      marker: `wpto:rd:${rd.id}`,
+      orbitId: rd.id,
+      subject: settings.remoteLabel,
+      allDay: true,
+      startDate: rd.date,
+      endDate: rd.date,
+      locationType: 'remote',
+    });
+  }
+
   const existingRefs = await loadWorkPlanRefs(admin, profileId);
 
   // Office days: every work_schedule weekday that is NOT a remote-pattern day is an office day.
@@ -650,7 +699,8 @@ async function syncWorkPlan(
         continue;
       }
       await admin.from('external_refs').insert({
-        provider: 'm365', profile_id: profileId, orbit_kind: 'leave', orbit_id: t.orbitId,
+        provider: 'm365', profile_id: profileId,
+        orbit_kind: t.locationType === 'remote' ? 'remote' : 'leave', orbit_id: t.orbitId,
         external_id: String(res.event?.id), marker: t.marker,
       });
       summary.created += 1;
@@ -860,39 +910,6 @@ async function computeDesiredEvents(
         allDay: true, startDate: start, endDate: addDays(end, 1), showAs: 'oof',
       });
     }
-  }
-
-  // Ad-hoc remote days: the work plan cannot express one-off remote days without clobbering the
-  // recurring weekday rule, so they mirror as "Working remotely" calendar events (leave wins).
-  const { data: patterns } = await admin
-    .from('remote_patterns')
-    .select('id, weekday, valid_from, valid_to')
-    .eq('profile_id', profileId)
-    .in('mode', ['remote_gr', 'remote_abroad'])
-    .lte('valid_from', horizonEnd)
-    .or(`valid_to.is.null,valid_to.gte.${today}`);
-
-  const patternCovered = (dateStr: string): boolean => {
-    const wd = weekdayOf(dateStr);
-    return (patterns || []).some((p: { weekday: string; valid_from: string; valid_to: string | null }) =>
-      p.weekday === wd && dateStr >= p.valid_from && (!p.valid_to || dateStr <= p.valid_to)
-    );
-  };
-
-  const { data: remoteDays } = await admin
-    .from('remote_days')
-    .select('id, date')
-    .eq('profile_id', profileId)
-    .in('mode', ['remote_gr', 'remote_abroad'])
-    .gte('date', today)
-    .lte('date', horizonEnd);
-
-  for (const rd of (remoteDays || []) as Array<{ id: string; date: string }>) {
-    if (patternCovered(rd.date)) continue; // recurring plan rule handles it
-    events.set(`remote:day:${rd.id}`, {
-      marker: `remote:day:${rd.id}`, orbitKind: 'remote', orbitId: rd.id, subject: settings.remoteLabel,
-      allDay: true, startDate: rd.date, endDate: addDays(rd.date, 1), showAs: 'workingElsewhere',
-    });
   }
 
   return {

@@ -670,8 +670,8 @@ export function IntegrationsSettings() {
               </label>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              Approved leave becomes an all-day <strong>Out of office</strong> event (show-as <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">oof</code>) so scheduling assistants mark the person unavailable;
-              remote days become <strong>Working remotely</strong> events. Only Orbit-created events (marked with an open extended property) are ever touched. Sync runs every night + immediately on approval/cancellation/edit.
+              Approved leave becomes an all-day <strong>Out of office</strong> event (show-as <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">oof</code>) so scheduling assistants mark the person unavailable.
+              Remote days are written to the <strong>Outlook work plan</strong> instead — one recurring remote rule per remote weekday, and a single remote entry for an ad-hoc day — so a remote routine never floods the calendar with events. Both need the employee's one-time Microsoft sign-in; only Orbit-created artifacts are ever touched. Sync runs every night + immediately on approval/cancellation/edit.
             </p>
             {outlookMsg === 'saved' && <div className="mb-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5" /> Outlook settings saved — applies from the next sync.</div>}
             {outlookMsg === 'error' && <div className="mb-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Failed to save Outlook settings.</div>}

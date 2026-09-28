@@ -12,7 +12,7 @@
 | Orbit state | Slack | Outlook (Microsoft Graph) |
 |---|---|---|
 | Approved leave, per calendar day of it | Status: 🌴 `Out of office — back {return_date}` with expiration | All-day event "Out of office", **show-as: Out of Office (`oof`)**, spanning the leave's working days |
-| Remote day (`remote_gr` / `remote_abroad`) | Status: 🏠 `Working remotely` with same-day expiration | All-day event "Working remotely", **show-as: Working Elsewhere** (`workingElsewhere` — Graph supports this natively) |
+| Remote day (`remote_gr` / `remote_abroad`) | Status: 🏠 `Working remotely` with same-day expiration | **Outlook work plan only** (`workHoursAndLocations`) — a recurring `remote` rule for each remote weekday in the pattern, a single one-off `remote` occurrence for an ad-hoc day. **Never a calendar event.** |
 | Half-day leave | Status text notes it: `Out of office (afternoon)` | Timed event covering the half (per `work_schedule` day bounds, default 09:00–13:00 / 13:00–17:00 Europe/Athens) |
 | Public holiday / weekend / non-schedule day | nothing — no status, no event | nothing |
 | Mandatory leave (fan-out rows) | identical to regular leave | identical to regular leave |
@@ -112,7 +112,7 @@ Slack tokens are the only per-user secrets Orbit holds — encrypted at rest (Su
 
 ## 9. Open questions
 
-1. **Remote days in Outlook:** ship as specced (`workingElsewhere` events), or Slack-only for remote and Outlook only for leave? Some teams find remote events calendar clutter — decide after a two-week trial with the founders' own calendars.
+1. ~~**Remote days in Outlook:** ship as specced (`workingElsewhere` events), or Slack-only for remote and Outlook only for leave?~~ **Resolved 2026-09-28 — work plan only.** Per-day `workingElsewhere` events flooded calendars whenever a remote routine or an auto-filled period existed, and they duplicated the recurring work-plan rule. The work plan now carries every remote day: one recurring rule per remote weekday, one one-off occurrence per ad-hoc day. Requirement in force: **one remote day = exactly one work-plan artifact, never a calendar event.** Ad-hoc remote mirroring therefore needs the employee's one-time Microsoft sign-in (it is a delegated-token API).
 2. **Label config:** confirm the default generic labels and emoji with the team (and whether any leave type gets a distinct — still non-revealing — label).
 3. **Auto-reply default:** opt-in (specced) vs opt-out-but-on-by-default for annual leave. Opt-in is the privacy-safe start.
 4. **Slack workspace:** confirm single workspace; multi-workspace (e.g. a shared client workspace) is out of scope and statuses there are never touched.

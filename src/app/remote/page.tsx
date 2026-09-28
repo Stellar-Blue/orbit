@@ -218,7 +218,8 @@ export default function RemoteWorkLogPage() {
       const remoteEntry = (remoteDays || []).find(rd => rd.profile_id === currentUser.id && rd.date === dateStr);
       const mode = remoteEntry ? (remoteEntry.mode as 'office' | 'remote_gr' | 'remote_abroad') : 'office';
       // True ad-hoc day: declared override NOT covered by the recurring pattern.
-      // Pattern-covered days are handled by the Outlook work plan itself; ad-hoc days mirror as extra events.
+      // The Outlook work plan carries every remote day — recurring rules for pattern weekdays,
+      // a one-off remote entry for ad-hoc days. Remote days never become calendar events.
       const patternCovered = (remotePatterns || []).some(rp =>
         rp.profile_id === currentUser.id &&
         (rp.mode === 'remote_gr' || rp.mode === 'remote_abroad') &&
