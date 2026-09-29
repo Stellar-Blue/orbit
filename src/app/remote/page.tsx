@@ -13,13 +13,16 @@ import {
   startOfWeek, endOfWeek, isSameMonth, isSameDay, addMonths, subMonths, addDays 
 } from 'date-fns';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
+import {
+  findCoverageViolations, violationOnDay, describeViolation, coverageOfficeNote,
+} from '@/lib/coverage-rules';
 
 export default function RemoteWorkLogPage() {
   const { 
     currentUser, profiles, remoteDays, remotePatterns, remotePolicies, 
     remoteAmendmentRequests, remoteQuotaRequests, saveRemotePattern, addRemoteDay, bulkAddRemoteDays, 
     requestRemoteAmendment, decideRemoteAmendment, requestRemoteQuotaOverride, decideRemoteQuotaRequest, publicHolidays, mandatoryLeaves, leaveRequests,
-    employeeIntegrations 
+    employeeIntegrations, getCoverageLoadForProfile
   } = useAuth();
   
   // Scope to my own row — an admin loads every employee's integration rows.
@@ -346,6 +349,31 @@ export default function RemoteWorkLogPage() {
       }
     });
 
+    // Group coverage caps: an auto-filled day must never leave the group short-staffed,
+    // so any clashing day is written as office with the reason attached.
+    const coverageSkipped: string[] = [];
+    if (!isAdmin) {
+      const loads = await getCoverageLoadForProfile(currentUser.id, 'remote', startStr, endStr);
+      if (loads.length > 0) {
+        const selfCounted = new Set(
+          (remoteDays || []).filter(r => r.profile_id === currentUser.id && r.mode !== 'office').map(r => r.date)
+        );
+        const blocked = new Map<string, string>();
+        loads.forEach(({ group, rows }) => {
+          findCoverageViolations({ group, kind: 'remote', rows, selfCountedDates: selfCounted })
+            .forEach(v => { if (!blocked.has(v.day)) blocked.set(v.day, coverageOfficeNote(v)); });
+        });
+        declarations.forEach(d => {
+          const note = blocked.get(d.date);
+          if (note && d.mode !== 'office') {
+            d.mode = 'office';
+            d.note = note;
+            coverageSkipped.push(d.date);
+          }
+        });
+      }
+    }
+
     if (declarations.length === 0) {
       alert("No available open working days found to auto-fill in this period!");
       return;
@@ -353,7 +381,11 @@ export default function RemoteWorkLogPage() {
 
     const success = await bulkAddRemoteDays(currentUser.id, declarations);
     if (success) {
-      notifySuccess(`Applied your default pattern to ${declarations.filter(d => d.mode !== 'office').length} remote working day(s) across the selected ${periodType}.`);
+      const remoteCount = declarations.filter(d => d.mode !== 'office').length;
+      const skipNote = coverageSkipped.length > 0
+        ? ` ${coverageSkipped.length} day(s) stayed office: a team coverage rule caps how many of your group can be remote on the same day.`
+        : '';
+      notifySuccess(`Applied your default pattern to ${remoteCount} remote working day(s) across the selected ${periodType}.${skipNote}`);
     }
   };
 
@@ -416,6 +448,47 @@ export default function RemoteWorkLogPage() {
         });
         return;
       }
+      // Direct declare: enforce group coverage caps — never leave a group short-staffed.
+      if (targetMode !== 'office' && !isAdmin) {
+        const wasRemote = (remoteDays || []).some(r => r.profile_id === currentUser.id && r.date === selectedDateForAction && r.mode !== 'office');
+        const selfCounted = wasRemote ? new Set([selectedDateForAction]) : new Set<string>();
+        const loads = await getCoverageLoadForProfile(currentUser.id, 'remote', selectedDateForAction, selectedDateForAction);
+        const hit = violationOnDay(
+          loads.flatMap(l => findCoverageViolations({ group: l.group, kind: 'remote', rows: l.rows, selfCountedDates: selfCounted })),
+          selectedDateForAction,
+        );
+        if (hit) {
+          notifyValidation({
+            type: 'warning',
+            title: 'Team coverage rule',
+            message: `${describeViolation(hit)} Your group may not be away at the same time, so this remote day cannot be declared. You can still request an admin exception.`,
+            items: [
+              { label: 'Rule', value: hit.group.name },
+              { label: 'Date', value: hit.day },
+              { label: 'Already away', value: `${hit.others} of ${hit.cap} allowed` },
+              ...(hit.names.length > 0 ? [{ label: 'Who', value: hit.names.join(', ') }] : []),
+            ],
+            action: {
+              label: 'Request admin approval',
+              onClick: async () => {
+                await requestRemoteQuotaOverride({
+                  date: selectedDateForAction,
+                  requested_mode: targetMode,
+                  location: targetMode === 'remote_abroad' ? abroadLocation : undefined,
+                  reason: noteOrReason || `${hit.group.name} coverage rule — max ${hit.cap} away per day`,
+                  period_used: hit.others,
+                  period_max: hit.cap,
+                });
+                setActionModalMode(null);
+                setSelectedDateForAction(null);
+                notifySuccess('Your exception request has been submitted. An admin will review it shortly.', 'Request sent');
+              }
+            }
+          });
+          return;
+        }
+      }
+
       // Direct declare: strictly enforce admin-configured quota (weekly/monthly/etc.)
       if (targetMode !== 'office' && !isAdmin) {
         const remoteCountForDate = getRemoteCountForDatePeriod(selectedDateForAction, quotaPeriod);

@@ -10,7 +10,8 @@
     "test": "node scripts/verify-rls-and-math.js",
     "test:rls": "node scripts/verify-rls-and-math.js",
     "test:pricing": "node scripts/verify-modular-pricing.js",
-    "test:outlook": "node scripts/verify-outlook-remote-mirror.js"
+    "test:outlook": "node scripts/verify-outlook-remote-mirror.js",
+    "test:coverage": "node scripts/verify-coverage-rules.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

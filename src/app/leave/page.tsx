@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
-import { notifySuccess } from '@/lib/validation-modal';
+import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   Calendar, Plus, Clock, CheckCircle2, XCircle, AlertTriangle, 
@@ -21,6 +21,7 @@ import {
   type LeaveExportFilters, type LeaveExportPeriod,
 } from '@/lib/leave-export';
 import { countWorkingDays, holidayDates } from '@/lib/leave-days';
+import { findCoverageViolations, describeViolation } from '@/lib/coverage-rules';
 
 const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
 
@@ -29,7 +30,8 @@ export default function LeaveManagementPage() {
     currentUser, profiles, leaveTypes, 
     leaveRequests, mandatoryLeaves, publicHolidays, 
     splitAndAddLeaveRequest,
-    getEmployeeLeaveBalance
+    getEmployeeLeaveBalance,
+    leaveExceptionRequests, requestLeaveException, getCoverageLoadForProfile
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -143,6 +145,13 @@ export default function LeaveManagementPage() {
     return getEmployeeLeaveBalance(currentUser.id, currentYear);
   }, [currentUser.id, currentYear, getEmployeeLeaveBalance, leaveRequests]);
 
+  // Coverage exception requests filed when a team rule blocked a request. Admins see
+  // everyone's rows, so scope to the current employee.
+  const myLeaveExceptions = useMemo(
+    () => leaveExceptionRequests.filter(r => r.profile_id === currentUser.id),
+    [leaveExceptionRequests, currentUser.id]
+  );
+
   // Earliest valid start date based on min_notice_days (§3)
   const minNoticeDays = selectedLeaveType?.min_notice_days ?? 7;
   const todayStr = format(new Date(), 'yyyy-MM-dd'); // Current local reference date
@@ -151,7 +160,7 @@ export default function LeaveManagementPage() {
     return format(addDays(parseISO(todayStr), minNoticeDays), 'yyyy-MM-dd');
   }, [minNoticeDays]);
 
-  const handleCreateRequest = (e: React.FormEvent) => {
+  const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     // 1. Zero-working-day guard (§5)
     if (currentWorkingDays === 0) {
@@ -181,6 +190,47 @@ export default function LeaveManagementPage() {
     if (!isAdmin && selectedLeaveType.counts_against_balance !== false && currentWorkingDays > myBalance.available) {
       alert(`INSUFFICIENT BALANCE ERROR: Request exceeds your available balance (${myBalance.available} days available).`);
       return;
+    }
+
+    // 5. Team coverage rule: a group may not all be away at the same time.
+    if (!isAdmin) {
+      const loads = await getCoverageLoadForProfile(currentUser.id, 'leave', startDate, endDate);
+      const violations = loads.flatMap(l => findCoverageViolations({ group: l.group, kind: 'leave', rows: l.rows }));
+      const hit = violations[0];
+      if (hit) {
+        const clashDays = Array.from(new Set(violations.map(v => v.day))).sort();
+        notifyValidation({
+          type: 'warning',
+          title: 'Team coverage rule',
+          message: `${describeViolation(hit)} Your group may not all be away at once, so this request cannot be filed as is.${clashDays.length > 1 ? ` ${clashDays.length} days clash.` : ''} You can ask an admin for an exception.`,
+          items: [
+            { label: 'Rule', value: hit.group.name },
+            { label: 'First clash', value: hit.day },
+            { label: 'Already away', value: `${hit.others} of ${hit.cap} allowed` },
+            ...(hit.names.length > 0 ? [{ label: 'Who', value: hit.names.join(', ') }] : []),
+          ],
+          action: {
+            label: 'Request admin approval',
+            onClick: async () => {
+              const ok = await requestLeaveException({
+                profile_id: currentUser.id,
+                leave_type_id: selectedLeaveType?.id || reqType,
+                start_date: startDate,
+                end_date: endDate,
+                working_days: currentWorkingDays,
+                note: note.trim() || `${selectedLeaveType.name_en} Request`,
+                reason: describeViolation(hit),
+                group_id: hit.group.id,
+              });
+              if (ok) {
+                setIsRequestOpen(false);
+                notifySuccess('Your request was sent to an admin. If approved, the leave is filed for you.', 'Request sent');
+              }
+            }
+          }
+        });
+        return;
+      }
     }
 
     // Year-boundary automatic splitting or standard submission (§5)
@@ -354,6 +404,39 @@ export default function LeaveManagementPage() {
           </Button>
         </div>
       </div>
+
+      {/* Coverage exceptions: filed here, decided by an admin */}
+      {myLeaveExceptions.length > 0 && (
+        <Card className="shadow-xs border-amber-200 bg-amber-50/40">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-2 min-w-0 flex-1">
+              <span className="text-xs font-extrabold text-slate-900 block">Team coverage exception requests</span>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                A team coverage rule blocked these requests because too many of your group would be away at once.
+                An admin reviews them; if approved, the leave is filed on your behalf.
+              </p>
+              <div className="space-y-1.5">
+                {myLeaveExceptions.map(ex => (
+                  <div key={ex.id} className="flex items-center gap-2 flex-wrap text-[11px] bg-white rounded-xl border border-slate-200 px-3 py-2">
+                    <Badge
+                      variant={ex.status === 'pending' ? 'warning' : ex.status === 'approved' ? 'success' : 'neutral'}
+                      className="text-[10px] px-1.5 py-0 capitalize"
+                    >
+                      {ex.status}
+                    </Badge>
+                    <span className="font-bold text-slate-800 font-mono">
+                      {formatDate(ex.start_date)} → {formatDate(ex.end_date)}
+                    </span>
+                    <span className="text-slate-500 font-semibold">{Number(ex.working_days)}d</span>
+                    <span className="text-slate-400 truncate min-w-0 flex-1">{ex.reason || ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* MY LEAVES DASHBOARD CONTENT */}
       <div className="space-y-6 animate-in fade-in duration-200">

@@ -13,8 +13,10 @@ import {
   Budget, BudgetCategory, BudgetLine, RecurringCommitment,
   EmployeeContract,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
-  Role, CounterpartyRole, CompanyProfile, LeavePolicy
+  Role, CounterpartyRole, CompanyProfile, LeavePolicy,
+  CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest
 } from './types';
+import { coverageGroupsForProfile, toCoverageLoadRows, type CoverageKind } from './coverage-rules';
 import { calculateContractValuation } from './pricing-engine';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { startRealtimeSync } from './realtime-sync';
@@ -22,6 +24,31 @@ import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig,
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
+
+/** Payload for create/update of a coverage group (rule + custom member list). */
+export interface CoverageGroupInput {
+  id?: string;
+  name: string;
+  scope_type: 'team' | 'custom';
+  team_id: string | null;
+  max_remote_per_day: number | null;
+  max_leave_per_day: number | null;
+  active?: boolean;
+  /** Custom groups only: the complete replacement member list. */
+  memberIds?: string[];
+}
+
+/** Payload for an employee's coverage exception request on a blocked leave request. */
+export interface LeaveExceptionInput {
+  profile_id: string;
+  leave_type_id: string;
+  start_date: string;
+  end_date: string;
+  working_days: number;
+  note?: string | null;
+  reason?: string | null;
+  group_id?: string | null;
+}
 
 interface AppState {
   currentUser: Profile;
@@ -40,6 +67,9 @@ interface AppState {
   remotePolicies: RemotePolicy[];
   remoteAmendmentRequests: RemoteAmendmentRequest[];
   remoteQuotaRequests: RemoteQuotaRequest[];
+  coverageGroups: CoverageGroup[];
+  coverageGroupMembers: CoverageGroupMember[];
+  leaveExceptionRequests: LeaveExceptionRequest[];
   counterparties: Counterparty[];
   counterpartyRoles: Role[];
   counterpartyRoleLinks: CounterpartyRole[];
@@ -191,6 +221,21 @@ interface AppState {
   decideLeaveCancellation: (id: string, approve: boolean) => void;
   deleteLeaveRequest: (id: string) => Promise<boolean>;
   splitAndAddLeaveRequest: (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => void;
+  /** Admin: create or update a coverage group (rule + members) in one call. */
+  saveCoverageGroup: (payload: CoverageGroupInput) => Promise<boolean>;
+  deleteCoverageGroup: (id: string) => Promise<boolean>;
+  /** Raw per-day absence counts for one group, straight from the coverage_load RPC. */
+  getCoverageLoad: (groupId: string, from: string, to: string) => Promise<CoverageLoadRow[]>;
+  /**
+   * Per-day absence counts for every active coverage group containing this employee that
+   * caps `kind`. Non-admins cannot read colleagues' rows, so this is the only way the
+   * client can tell whether a declaration would break a rule.
+   */
+  getCoverageLoadForProfile: (profileId: string, kind: CoverageKind, from: string, to: string) => Promise<{ group: CoverageGroup; rows: CoverageLoadRow[] }[]>;
+  /** Employee: ask an admin to override the coverage rule blocking a leave request. */
+  requestLeaveException: (payload: LeaveExceptionInput) => Promise<boolean>;
+  /** Admin: decide a leave coverage exception (approving files the leave as an admin entry). */
+  decideLeaveException: (id: string, approve: boolean) => Promise<boolean>;
   addTeam: (name: string, leadProfileId?: string) => Promise<boolean>;
   updateTeam: (id: string, name: string, leadProfileId?: string) => Promise<boolean>;
   deleteTeam: (id: string) => Promise<boolean>;
@@ -330,6 +375,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [remotePolicies, setRemotePolicies] = useState<RemotePolicy[]>([]);
   const [remoteAmendmentRequests, setRemoteAmendmentRequests] = useState<RemoteAmendmentRequest[]>([]);
   const [remoteQuotaRequests, setRemoteQuotaRequests] = useState<RemoteQuotaRequest[]>([]);
+  const [coverageGroups, setCoverageGroups] = useState<CoverageGroup[]>([]);
+  const [coverageGroupMembers, setCoverageGroupMembers] = useState<CoverageGroupMember[]>([]);
+  const [leaveExceptionRequests, setLeaveExceptionRequests] = useState<LeaveExceptionRequest[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [counterpartyRoles, setCounterpartyRoles] = useState<Role[]>([]);
   const [counterpartyRoleLinks, setCounterpartyRoleLinks] = useState<CounterpartyRole[]>([]);
@@ -626,6 +674,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch {
           // Graceful fallback if remote_quota_requests table is not created yet
+        }
+
+        try {
+          const [groupsRes, groupMembersRes, leaveExceptionsRes] = await Promise.all([
+            supabase.from('coverage_groups').select('*').order('created_at', { ascending: true }),
+            supabase.from('coverage_group_members').select('*'),
+            supabase.from('leave_exception_requests').select('*').order('created_at', { ascending: false }),
+          ]);
+          if (groupsRes.data) setCoverageGroups(groupsRes.data as CoverageGroup[]);
+          if (groupMembersRes.data) setCoverageGroupMembers(groupMembersRes.data as CoverageGroupMember[]);
+          if (leaveExceptionsRes.data) setLeaveExceptionRequests(leaveExceptionsRes.data as LeaveExceptionRequest[]);
+        } catch {
+          // Graceful fallback if the coverage tables are not created yet
         }
 
         let loadedBudgetCategories: BudgetCategory[] = [];
@@ -3460,6 +3521,160 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  // ---- Coverage rules: at most N members of a group away on the same day ----
+
+  /** Admin: upsert a coverage group and, for custom groups, replace its member list. */
+  const saveCoverageGroup = async (payload: CoverageGroupInput): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const id = payload.id || generateUUID();
+      const row = {
+        id,
+        name: payload.name.trim(),
+        scope_type: payload.scope_type,
+        team_id: payload.scope_type === 'team' ? payload.team_id : null,
+        max_remote_per_day: payload.max_remote_per_day,
+        max_leave_per_day: payload.max_leave_per_day,
+        active: payload.active ?? true
+      };
+      const { error } = await supabase.from('coverage_groups').upsert(row);
+      if (error) {
+        console.error('Failed to save coverage group:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      if (payload.scope_type === 'custom' && payload.memberIds) {
+        await supabase.from('coverage_group_members').delete().eq('group_id', id);
+        if (payload.memberIds.length > 0) {
+          const { error: memberError } = await supabase.from('coverage_group_members')
+            .insert(payload.memberIds.map(profile_id => ({ group_id: id, profile_id })));
+          if (memberError) {
+            console.error('Failed to save coverage group members:', memberError);
+            alert(`Database Error: ${memberError.message}`);
+            return false;
+          }
+        }
+      }
+      // Small tables: reload so membership and caps stay truthful for every caller.
+      const [{ data: groups }, { data: members }] = await Promise.all([
+        supabase.from('coverage_groups').select('*').order('created_at', { ascending: true }),
+        supabase.from('coverage_group_members').select('*'),
+      ]);
+      setCoverageGroups((groups || []) as CoverageGroup[]);
+      setCoverageGroupMembers((members || []) as CoverageGroupMember[]);
+      return true;
+    } catch (e: any) {
+      console.error('saveCoverageGroup error:', e);
+      alert(`Database Error: ${e.message}`);
+      return false;
+    }
+  };
+
+  const deleteCoverageGroup = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('coverage_groups').delete().eq('id', id);
+      if (error) {
+        console.error('Failed to delete coverage group:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setCoverageGroups(prev => prev.filter(g => g.id !== id));
+      setCoverageGroupMembers(prev => prev.filter(m => m.group_id !== id));
+      return true;
+    } catch (e: any) {
+      console.error('deleteCoverageGroup error:', e);
+      return false;
+    }
+  };
+
+  const getCoverageLoad = async (groupId: string, from: string, to: string): Promise<CoverageLoadRow[]> => {
+    if (!groupId || !from || !to) return [];
+    const { data, error } = await getSupabaseBrowserClient()
+      .rpc('coverage_load', { p_group_id: groupId, p_from: from, p_to: to });
+    if (error) {
+      console.error('coverage_load failed:', error);
+      return [];
+    }
+    return toCoverageLoadRows(data);
+  };
+
+  const getCoverageLoadForProfile = async (profileId: string, kind: CoverageKind, from: string, to: string) => {
+    const profile = profiles.find(p => p.id === profileId);
+    const groups = coverageGroupsForProfile(profileId, profile?.team_id, coverageGroups, coverageGroupMembers, kind);
+    if (groups.length === 0) return [];
+    const loads = await Promise.all(groups.map(async group => ({ group, rows: await getCoverageLoad(group.id, from, to) })));
+    return loads.filter(l => l.rows.length > 0);
+  };
+
+  const requestLeaveException = async (payload: LeaveExceptionInput): Promise<boolean> => {
+    const row: LeaveExceptionRequest = {
+      id: generateUUID(),
+      profile_id: payload.profile_id,
+      leave_type_id: payload.leave_type_id,
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      working_days: payload.working_days,
+      note: payload.note || null,
+      reason: payload.reason || null,
+      group_id: payload.group_id || null,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('leave_exception_requests').insert(row);
+      if (error) {
+        console.error('Failed to file leave coverage exception:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setLeaveExceptionRequests(prev => [row, ...prev]);
+      return true;
+    } catch (e: any) {
+      console.error('requestLeaveException error:', e);
+      return false;
+    }
+  };
+
+  const decideLeaveException = async (id: string, approve: boolean): Promise<boolean> => {
+    const target = leaveExceptionRequests.find(r => r.id === id);
+    if (!target) return false;
+    const supabase = getSupabaseBrowserClient();
+    const status: LeaveExceptionRequest['status'] = approve ? 'approved' : 'rejected';
+    const decided_at = new Date().toISOString();
+    try {
+      const { error } = await supabase.from('leave_exception_requests')
+        .update({ status, decided_at, decided_by: currentUser.id }).eq('id', id);
+      if (error) {
+        console.error('Failed to decide leave coverage exception:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setLeaveExceptionRequests(prev => prev.map(r => r.id === id ? { ...r, status, decided_at, decided_by: currentUser.id } : r));
+      if (approve) {
+        // Admins are the exception path: file the leave they just authorised.
+        addLeaveRequest({
+          profile_id: target.profile_id,
+          leave_type_id: target.leave_type_id,
+          start_date: target.start_date,
+          end_date: target.end_date,
+          half_day_start: false,
+          half_day_end: false,
+          working_days: Number(target.working_days) || 0,
+          status: 'approved',
+          origin: 'admin_entry',
+          note: `Coverage exception approved${target.note ? ` — ${target.note}` : ''}`,
+          ergani_status: 'pending'
+        });
+      }
+      return true;
+    } catch (e: any) {
+      console.error('decideLeaveException error:', e);
+      return false;
+    }
+  };
+
   const addInvoice = async (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>): Promise<Invoice | null> => {
     const id = generateUUID();
     const newInv: Invoice = {
@@ -4490,6 +4705,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       remotePolicies,
       remoteAmendmentRequests,
       remoteQuotaRequests,
+      coverageGroups,
+      coverageGroupMembers,
+      leaveExceptionRequests,
       counterparties,
       counterpartyRoles,
       counterpartyRoleLinks,
@@ -4606,6 +4824,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       decideRemoteAmendment,
       requestRemoteQuotaOverride,
       decideRemoteQuotaRequest,
+      saveCoverageGroup,
+      deleteCoverageGroup,
+      getCoverageLoad,
+      getCoverageLoadForProfile,
+      requestLeaveException,
+      decideLeaveException,
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,

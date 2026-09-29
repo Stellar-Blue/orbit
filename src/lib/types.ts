@@ -303,6 +303,59 @@ export interface RemoteQuotaRequest {
   decided_by?: string;
 }
 
+/**
+ * Coverage rule: at most `max_remote_per_day` members may be remote, and at most
+ * `max_leave_per_day` members may be on leave, on the same calendar day.
+ * A group is backed either by a Team (membership follows profiles.team_id) or by a
+ * hand-picked member list in coverage_group_members. NULL cap = that kind is unrestricted.
+ */
+export interface CoverageGroup {
+  id: string;
+  name: string;
+  scope_type: 'team' | 'custom';
+  team_id: string | null;
+  max_remote_per_day: number | null;
+  max_leave_per_day: number | null;
+  active: boolean;
+  created_at?: string;
+}
+
+export interface CoverageGroupMember {
+  group_id: string;
+  profile_id: string;
+}
+
+/** One day of a group's absence load, as returned by the `coverage_load` RPC. */
+export interface CoverageLoadRow {
+  day: string;
+  remote_count: number;
+  leave_count: number;
+  remote_names: string | null;
+  leave_names: string | null;
+}
+
+/**
+ * Employee asks for admin approval after a coverage rule blocked a leave request.
+ * Approving it files the leave as an admin entry.
+ */
+export interface LeaveExceptionRequest {
+  id: string;
+  profile_id: string;
+  leave_type_id: string;
+  start_date: string;
+  end_date: string;
+  working_days: number;
+  /** Leave reason the employee typed in the blocked request. */
+  note?: string | null;
+  /** Auto-generated explanation of the coverage conflict. */
+  reason?: string | null;
+  group_id?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at?: string;
+  decided_at?: string | null;
+  decided_by?: string | null;
+}
+
 export interface AttioLink {
   id: string;
   counterparty_id: string;

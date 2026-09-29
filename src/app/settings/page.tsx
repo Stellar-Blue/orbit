@@ -7,7 +7,7 @@ import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
-  Receipt, ChevronRight, MessageSquare, FileText
+  Receipt, ChevronRight, MessageSquare, FileText, ShieldCheck
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 import { TieringSettings } from '@/components/settings/tiering-settings';
@@ -17,11 +17,13 @@ import { GeneralSettings } from '@/components/settings/general-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { LeaveDefaultsCard } from '@/components/settings/leave-defaults';
+import { CoverageRulesCard } from '@/components/settings/coverage-rules';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 
 export default function CompanySettingsPage() {
   const { 
     currentUser, remotePolicies, updateRemotePolicy, documentTypes, 
+    coverageGroups,
     teams, profiles, addTeam, updateTeam, deleteTeam,
     leaveTypes, addLeaveType, updateLeaveType, deleteLeaveType,
     catalogModules, catalogItems, saveCatalogModule, deleteCatalogModule, saveCatalogItem, deleteCatalogItem,
@@ -32,7 +34,7 @@ export default function CompanySettingsPage() {
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'coverage' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
   const [newRoleName, setNewRoleName] = useState('');
   const [newSeniorityName, setNewSeniorityName] = useState('');
   const [selectedRateCardId, setSelectedRateCardId] = useState('');
@@ -43,7 +45,7 @@ export default function CompanySettingsPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'coverage' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
@@ -52,7 +54,7 @@ export default function CompanySettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
-    if (savedTab && ['remote', 'teams', 'leaves', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'general'].includes(savedTab)) {
+    if (savedTab && ['remote', 'teams', 'leaves', 'coverage', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'general'].includes(savedTab)) {
       setSelectedTab(savedTab);
     }
   }, []);
@@ -1394,6 +1396,13 @@ export default function CompanySettingsPage() {
         </div>
       )}
 
+      {/* TAB: TEAM COVERAGE RULES (max N of a group away on the same day) */}
+      {selectedTab === 'coverage' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <CoverageRulesCard />
+        </div>
+      )}
+
       {/* TAB 4.3: JOB ROLES (workforce structure) */}
       {selectedTab === 'roles' && (
         <div className="space-y-6 animate-in fade-in duration-200">
@@ -1758,6 +1767,26 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <Badge variant="warning" className="text-[10px] px-1.5 py-0">{leaveTypes.length}</Badge>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('coverage')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'coverage'
+                  ? 'bg-indigo-50/70 border-indigo-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'coverage' ? 'bg-indigo-500 text-white shadow-xs' : 'bg-indigo-50 text-indigo-600'}`}>
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Team Coverage Rules</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Prevent whole-group absence</div>
+                </div>
+              </div>
+              <Badge variant="info" className="text-[10px] px-1.5 py-0">{coverageGroups.length}</Badge>
             </button>
 
             <button

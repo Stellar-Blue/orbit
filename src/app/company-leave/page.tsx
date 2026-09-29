@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/auth-context';
-import { notifySuccess } from '@/lib/validation-modal';
+import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { Card, Button, Badge, Modal } from '@/components/ui/primitives';
 import { DateRangePicker } from '@/components/leave/date-range-picker';
 import { ProfileAvatar } from '@/components/ui/profile-avatar';
@@ -21,6 +21,7 @@ import {
   type LeaveExportFilters, type LeaveExportPeriod,
 } from '@/lib/leave-export';
 import { countWorkingDays, holidayDates, resolveWorkSchedule } from '@/lib/leave-days';
+import { findCoverageViolations, describeViolation, expandDateRange } from '@/lib/coverage-rules';
 
 const CompanyLeaveGrid = dynamic(() => import('@/components/leave/company-leave-grid').then(m => m.CompanyLeaveGrid), { ssr: false });
 
@@ -30,10 +31,17 @@ export default function CompanyLeaveManagementPage() {
     updateLeaveRequestStatus, addMandatoryLeave, updateMandatoryLeave, deleteMandatoryLeave,
     syncAllMandatoryLeaves,
     editLeaveRequest, decideLeaveCancellation, splitAndAddLeaveRequest, deleteLeaveRequest,
-    addLeaveType, updateLeaveType, deleteLeaveType, getEmployeeLeaveBalance
+    addLeaveType, updateLeaveType, deleteLeaveType, getEmployeeLeaveBalance,
+    leaveExceptionRequests, decideLeaveException, getCoverageLoadForProfile
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
+
+  // Coverage exceptions raised when a team rule blocked an employee's leave request.
+  const pendingLeaveExceptions = useMemo(
+    () => leaveExceptionRequests.filter(r => r.status === 'pending'),
+    [leaveExceptionRequests]
+  );
 
   // Tabs
   const [activeTab, setActiveTab] = useState<'approvals' | 'categories'>('approvals');
@@ -220,6 +228,44 @@ export default function CompanyLeaveManagementPage() {
       setRejectModalTarget(null);
       setRejectionReasonInput('');
     }
+  };
+
+  /**
+   * Approving is the exception path, so a coverage clash only warns — but the admin is told
+   * exactly who would be away together before the leave lands in the register.
+   */
+  const handleApprove = async (req: LeaveRequest) => {
+    const loads = await getCoverageLoadForProfile(req.profile_id, 'leave', req.start_date, req.end_date);
+    const violations = loads.flatMap(l => findCoverageViolations({
+      group: l.group,
+      kind: 'leave',
+      rows: l.rows,
+      // The request itself already counts toward the RPC total, so remove it before the check.
+      selfCountedDates: new Set(expandDateRange(req.start_date, req.end_date)),
+    }));
+    const hit = violations[0];
+    if (!hit) {
+      updateLeaveRequestStatus(req.id, 'approved', 'Approved by Administration');
+      return;
+    }
+    const employee = profiles.find(p => p.id === req.profile_id);
+    const clashDays = Array.from(new Set(violations.map(v => v.day))).sort();
+    notifyValidation({
+      type: 'warning',
+      title: 'Team coverage rule',
+      message: `${describeViolation(hit)}${clashDays.length > 1 ? ` ${clashDays.length} days clash.` : ''} As an admin you can approve anyway — the exception is recorded in the approval note.`,
+      items: [
+        { label: 'Employee', value: employee ? `${employee.first_name} ${employee.last_name}` : 'Unknown' },
+        { label: 'Rule', value: hit.group.name },
+        { label: 'First clash', value: hit.day },
+        { label: 'Already away', value: `${hit.others} of ${hit.cap} allowed` },
+        ...(hit.names.length > 0 ? [{ label: 'Who', value: hit.names.join(', ') }] : []),
+      ],
+      action: {
+        label: 'Approve anyway',
+        onClick: () => updateLeaveRequestStatus(req.id, 'approved', 'Approved by Administration (coverage rule exception)'),
+      }
+    });
   };
 
   // Handle Save Admin Edit
@@ -597,7 +643,10 @@ export default function CompanyLeaveManagementPage() {
                   profiles={profiles}
                   leaveTypes={leaveTypes}
                   getEffectiveDays={getEffectiveDays}
-                  onApprove={(id) => updateLeaveRequestStatus(id, 'approved', 'Approved by Administration')}
+                  onApprove={(id) => {
+                    const req = leaveRequests.find(r => r.id === id);
+                    if (req) handleApprove(req);
+                  }}
                   onReject={(id) => setRejectModalTarget(id)}
                   onDecideCancellation={(id, approve) => decideLeaveCancellation(id, approve)}
                   onEdit={(req) => {
@@ -616,6 +665,54 @@ export default function CompanyLeaveManagementPage() {
               )}
             </Card>
           </div>
+
+          {/* Team Coverage Exceptions: leave blocked by a group coverage rule */}
+          {pendingLeaveExceptions.length > 0 && (
+            <Card
+              title={`Team Coverage Exceptions (${pendingLeaveExceptions.length})`}
+              subtitle="Leave requests blocked by a group coverage rule. Approving files the leave for the employee."
+              className="shadow-xs border-amber-200/90"
+            >
+              <div className="space-y-3 mt-3">
+                {pendingLeaveExceptions.map(ex => {
+                  const emp = profiles.find(p => p.id === ex.profile_id);
+                  const lt = leaveTypes.find(t => t.id === ex.leave_type_id);
+                  return (
+                    <div key={ex.id} className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-2.5">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {emp && <ProfileAvatar photoUrl={emp.photo_url} firstName={emp.first_name} lastName={emp.last_name} size="sm" />}
+                          <div className="min-w-0">
+                            <p className="text-xs font-extrabold text-slate-900 truncate">
+                              {emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown employee'}
+                            </p>
+                            <p className="text-[11px] text-slate-500 font-semibold font-mono">
+                              {formatDate(ex.start_date)} → {formatDate(ex.end_date)} · {Number(ex.working_days)}d · {lt?.name_en || 'Leave'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button type="button" variant="primary" size="sm" className="cursor-pointer" onClick={() => decideLeaveException(ex.id, true)}>
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve &amp; file leave
+                          </Button>
+                          <Button type="button" variant="secondary" size="sm" className="cursor-pointer" onClick={() => decideLeaveException(ex.id, false)}>
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                      {ex.reason && (
+                        <p className="text-[11px] text-amber-900/90 flex items-start">
+                          <ShieldAlert className="w-3.5 h-3.5 mr-1.5 mt-0.5 shrink-0 text-amber-600" />
+                          {ex.reason}
+                        </p>
+                      )}
+                      {ex.note && <p className="text-[11px] text-slate-500">Employee note: “{ex.note}”</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           {/* Mandatory Leaves Register */}
           <Card title="Company-Wide Mandatory Closure Register" subtitle="Admin-declared mandatory breaks (such as August Summer Bridge or Christmas) counting directly against employee allowances" className="shadow-xs border-slate-200/90" action={
