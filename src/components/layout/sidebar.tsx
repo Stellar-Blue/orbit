@@ -19,11 +19,15 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen }) => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview, profileRoleHistory, jobRoles, seniorityLevels } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
   const isAdmin = currentUser.role === 'admin';
+
+  // A screen is visible unless an admin hid it AND the active identity is not an admin.
+  // Previewing forces currentUser.role to 'employee', so the switches apply in preview too.
+  const canSeeScreen = (key?: string) => isAdmin || !key || !hiddenScreens.includes(key);
 
   // Primary General Links (Top)
   const primaryItems = [
@@ -32,16 +36,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
 
   // Personal Section
   const personalItems = [
-    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-3 text-emerald-500" />, show: true },
-    { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: !isContractor },
-    { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-3 text-cyan-500" />, show: !isContractor },
-    { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-3 text-sky-500" />, show: true },
-    { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-3 text-emerald-500" />, show: true },
+    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-3 text-emerald-500" />, show: canSeeScreen('profile') },
+    { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: !isContractor && canSeeScreen('leave') },
+    { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-3 text-cyan-500" />, show: !isContractor && canSeeScreen('remote') },
+    { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-3 text-sky-500" />, show: canSeeScreen('timesheets') },
+    { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-3 text-emerald-500" />, show: canSeeScreen('compensation') },
   ];
 
   // Company Section
   const companyItems = [
-    { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-blue-500" />, show: true, adminOnly: false },
+    { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-blue-500" />, show: canSeeScreen('people'), adminOnly: false },
     { label: 'Leave Management', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: isAdmin, adminOnly: true },
     { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: isAdmin, adminOnly: true },
     { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-3 text-emerald-400" />, show: isAdmin, adminOnly: true },
@@ -117,20 +121,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           </nav>
 
           {/* 2. Personal Section */}
-          <nav className="space-y-1">
-            <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-              Personal
-            </div>
-            {personalItems.map(item => renderNavItem(item))}
-          </nav>
+          {personalItems.some(i => i.show) && (
+            <nav className="space-y-1">
+              <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                Personal
+              </div>
+              {personalItems.map(item => renderNavItem(item))}
+            </nav>
+          )}
 
           {/* 3. Company Section */}
-          <nav className="space-y-1">
-            <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-              Company
-            </div>
-            {companyItems.map(item => renderNavItem(item))}
-          </nav>
+          {companyItems.some(i => i.show) && (
+            <nav className="space-y-1">
+              <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                Company
+              </div>
+              {companyItems.map(item => renderNavItem(item))}
+            </nav>
+          )}
         </div>
 
         {/* Bottom Navigation Item (Settings) */}

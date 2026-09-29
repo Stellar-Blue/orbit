@@ -6,15 +6,20 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { CommandMenu } from "@/components/layout/command-menu";
 import { useAuth } from "@/lib/auth-context";
 import { roleLabel } from "@/lib/profile-role";
-import { Menu, Search, Eye, EyeOff, Users } from "lucide-react";
+import { hiddenScreenForPath } from "@/lib/screens";
+import { Menu, Search, Eye, EyeOff, Users, ShieldAlert } from "lucide-react";
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, companyProfile, profileRoleHistory, jobRoles, seniorityLevels } = useAuth();
+  const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, companyProfile, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
   const [previewMenuOpen, setPreviewMenuOpen] = useState(false);
+
+  // Admin-switched-off screen. `currentUser.role` is 'employee' in both preview modes,
+  // so "View as Employee" / "Preview as …" show exactly what that person would see.
+  const blockedScreen = currentUser.role === 'admin' ? null : hiddenScreenForPath(pathname, hiddenScreens);
 
   if (isAuthPage) {
     return (
@@ -165,7 +170,18 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
         {/* Page Content with Responsive Full-Width Layout */}
         <main className="px-3 sm:px-4 md:px-5 py-5 w-full max-w-full flex-1 overflow-x-hidden">
-          {children}
+          {blockedScreen ? (
+            <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
+              <ShieldAlert className="w-10 h-10 mx-auto text-slate-400" />
+              <h2 className="text-xl font-bold text-slate-800">{blockedScreen.label} is not available</h2>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                An administrator has turned off this screen. If you need it, ask an administrator
+                to switch it back on in Settings &rsaquo; Screen Visibility.
+              </p>
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </>

@@ -18,6 +18,7 @@ import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { LeaveDefaultsCard } from '@/components/settings/leave-defaults';
 import { CoverageRulesCard } from '@/components/settings/coverage-rules';
+import { ScreenVisibilityCard } from '@/components/settings/screen-visibility';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 
 export default function CompanySettingsPage() {
@@ -1678,7 +1679,10 @@ export default function CompanySettingsPage() {
         <IntegrationsSettings />
       )}
       {selectedTab === 'general' && (
-        <GeneralSettings />
+        <div className="space-y-6">
+          <GeneralSettings />
+          <ScreenVisibilityCard />
+        </div>
       )}
       </div>
 

@@ -17,6 +17,7 @@ import {
   CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, type CoverageKind } from './coverage-rules';
+import { toHiddenScreenKeys } from './screens';
 import { calculateContractValuation } from './pricing-engine';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { startRealtimeSync } from './realtime-sync';
@@ -70,6 +71,8 @@ interface AppState {
   coverageGroups: CoverageGroup[];
   coverageGroupMembers: CoverageGroupMember[];
   leaveExceptionRequests: LeaveExceptionRequest[];
+  /** Keys of screens an admin has hidden from non-admins. Admins always see everything. */
+  hiddenScreens: string[];
   counterparties: Counterparty[];
   counterpartyRoles: Role[];
   counterpartyRoleLinks: CounterpartyRole[];
@@ -236,6 +239,8 @@ interface AppState {
   requestLeaveException: (payload: LeaveExceptionInput) => Promise<boolean>;
   /** Admin: decide a leave coverage exception (approving files the leave as an admin entry). */
   decideLeaveException: (id: string, approve: boolean) => Promise<boolean>;
+  /** Admin: hide or show one screen for every non-admin. */
+  setScreenHidden: (screenKey: string, hidden: boolean) => Promise<boolean>;
   addTeam: (name: string, leadProfileId?: string) => Promise<boolean>;
   updateTeam: (id: string, name: string, leadProfileId?: string) => Promise<boolean>;
   deleteTeam: (id: string) => Promise<boolean>;
@@ -378,6 +383,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [coverageGroups, setCoverageGroups] = useState<CoverageGroup[]>([]);
   const [coverageGroupMembers, setCoverageGroupMembers] = useState<CoverageGroupMember[]>([]);
   const [leaveExceptionRequests, setLeaveExceptionRequests] = useState<LeaveExceptionRequest[]>([]);
+  const [hiddenScreens, setHiddenScreens] = useState<string[]>([]);
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
   const [counterpartyRoles, setCounterpartyRoles] = useState<Role[]>([]);
   const [counterpartyRoleLinks, setCounterpartyRoleLinks] = useState<CounterpartyRole[]>([]);
@@ -687,6 +693,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (leaveExceptionsRes.data) setLeaveExceptionRequests(leaveExceptionsRes.data as LeaveExceptionRequest[]);
         } catch {
           // Graceful fallback if the coverage tables are not created yet
+        }
+
+        try {
+          const { data: screenRows } = await supabase.from('screen_visibility').select('*');
+          setHiddenScreens(toHiddenScreenKeys(screenRows));
+        } catch {
+          // Graceful fallback if screen_visibility is not created yet
         }
 
         let loadedBudgetCategories: BudgetCategory[] = [];
@@ -3675,8 +3688,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addInvoice = async (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>): Promise<Invoice | null> => {
-    const id = generateUUID();
+  // ---- Screen visibility: admins hide whole screens from non-admins ----
+
+  /**
+   * Admin: hide or show one screen for every non-admin.
+   * The row is upserted rather than deleted so `updated_by` keeps a record of the change.
+   */
+  const setScreenHidden = async (screenKey: string, hidden: boolean): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('screen_visibility').upsert({
+        screen_key: screenKey,
+        hidden,
+        updated_at: new Date().toISOString(),
+        updated_by: realProfileId
+      }, { onConflict: 'screen_key' });
+      if (error) {
+        console.error('Failed to update screen visibility:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setHiddenScreens(prev => hidden
+        ? (prev.includes(screenKey) ? prev : [...prev, screenKey])
+        : prev.filter(k => k !== screenKey));
+      return true;
+    } catch (e: any) {
+      console.error('setScreenHidden error:', e);
+      alert(`Database Error: ${e.message}`);
+      return false;
+    }
+  };
+
+  const addInvoice = async (inv: Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>): Promise<Invoice | null> => {    const id = generateUUID();
     const newInv: Invoice = {
       ...inv,
       id,
@@ -4708,6 +4751,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       coverageGroups,
       coverageGroupMembers,
       leaveExceptionRequests,
+      hiddenScreens,
       counterparties,
       counterpartyRoles,
       counterpartyRoleLinks,
@@ -4830,6 +4874,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       getCoverageLoadForProfile,
       requestLeaveException,
       decideLeaveException,
+      setScreenHidden,
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,
