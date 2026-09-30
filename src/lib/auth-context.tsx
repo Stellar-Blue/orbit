@@ -18,6 +18,7 @@ import {
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
+import { deductedDaysInYear } from './leave-days';
 import { calculateContractValuation } from './pricing-engine';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { startRealtimeSync } from './realtime-sync';
@@ -1237,8 +1238,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const userReqs = leaveRequests.filter(r => {
       if (r.profile_id !== profileId) return false;
-      const rYear = new Date(r.start_date).getFullYear();
-      if (rYear !== year && !isNaN(rYear)) return false;
+      if (!r.start_date || !r.end_date) return false;
+      // OVERLAP the year, not just start in it. A leave or company closure straddling 31 Dec is
+      // deducted from both years; which days belong to which year is worked out per request below.
+      if (r.end_date < `${year}-01-01` || r.start_date > `${year}-12-31`) return false;
       const lt = leaveTypes.find(t => t.id === r.leave_type_id) || r.leave_type;
       return lt ? lt.counts_against_balance !== false : true;
     });
@@ -1249,27 +1252,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...mandatoryLeaves.map(m => ({ start: m.start_date, end: m.end_date })),
       ...userReqs.filter(r => r.origin === 'mandatory').map(r => ({ start: r.start_date, end: r.end_date }))
     ];
+    const holidaySet = new Set((publicHolidays || []).map(h => h.date));
+    const isClosureDay = (iso: string) => mandatoryList.some(m => iso >= m.start && iso <= m.end);
 
-    const getEffectiveRegularDays = (r: LeaveRequest) => {
-      try {
-        let d = new Date(r.start_date);
-        const endD = new Date(r.end_date);
-        if (isNaN(d.getTime()) || isNaN(endD.getTime())) return Number(r.working_days || 0);
-        let count = 0;
-        while (d <= endD) {
-          const dStr = d.toISOString().split('T')[0];
-          const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
-          const isMandatory = mandatoryList.some(m => dStr >= m.start && dStr <= m.end);
-          if (!isMandatory && workSchedule.includes(dayOfWeek)) {
-            count++;
-          }
-          d.setDate(d.getDate() + 1);
-        }
-        return Math.min(Number(r.working_days || 0), count);
-      } catch {
-        return Number(r.working_days || 0);
-      }
-    };
+    // Personal leave: a scheduled working day not swallowed by a company closure.
+    const getEffectiveRegularDays = (r: LeaveRequest) => deductedDaysInYear({
+      start: r.start_date,
+      end: r.end_date,
+      workingDays: Number(r.working_days || 0),
+      year,
+      schedule: workSchedule,
+      isExcludedDate: isClosureDay,
+    });
+    // Company closure rows: their `working_days` was counted as scheduled days minus public
+    // holidays (syncMandatoryFanout), so qualify the same way — a holiday inside the range must
+    // not consume one of the N deducted slots and shift the year split.
+    const getEffectiveClosureDays = (r: LeaveRequest) => deductedDaysInYear({
+      start: r.start_date,
+      end: r.end_date,
+      workingDays: Number(r.working_days || 0),
+      year,
+      schedule: workSchedule,
+      isExcludedDate: iso => holidaySet.has(iso),
+    });
 
     const taken = userReqs
       .filter(r => (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken' || r.status === 'cancellation_requested') && r.origin !== 'mandatory')
@@ -1281,7 +1286,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const mandatory = userReqs
       .filter(r => r.origin === 'mandatory' && !r.detached && (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken'))
-      .reduce((sum, r) => sum + Number(r.working_days || 0), 0);
+      .reduce((sum, r) => sum + getEffectiveClosureDays(r), 0);
 
     const available = entitlement + carryOver - taken - reserved - mandatory;
 

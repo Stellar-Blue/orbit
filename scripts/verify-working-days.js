@@ -59,5 +59,67 @@ check('resolver normalises full names', D.resolveWorkSchedule(['Monday', 'Friday
 check('resolver drops junk', D.resolveWorkSchedule(['Mon', 'nonsense']), ['Mon']);
 check('resolver falls back on empty', D.resolveWorkSchedule([]), D.DEFAULT_WORK_SCHEDULE);
 
+// ---------------------------------------------------------------------------
+// Year-boundary attribution: a leave's total must be split by the year each
+// deducted day falls in. Real case: the Christmas closure 31/12/2025→02/01/2026
+// is 2 working days (Wed 31 Dec, Fri 2 Jan — Thu 1 Jan is a holiday) and used to
+// land entirely in 2025.
+// ---------------------------------------------------------------------------
+const NY = '2026-01-01';
+const closure = { start: '2025-12-31', end: '2026-01-02', workingDays: 2 };
+const isHoliday = iso => iso === NY;
+
+check('closure → 1 day in 2025', D.deductedDaysInYear({ ...closure, year: 2025, isExcludedDate: isHoliday }), 1);
+check('closure → 1 day in 2026', D.deductedDaysInYear({ ...closure, year: 2026, isExcludedDate: isHoliday }), 1);
+check(
+  'closure → both years add up to the stored total',
+  D.deductedDaysInYear({ ...closure, year: 2025, isExcludedDate: isHoliday }) +
+  D.deductedDaysInYear({ ...closure, year: 2026, isExcludedDate: isHoliday }),
+  2,
+);
+check('unrelated year gets nothing', D.deductedDaysInYear({ ...closure, year: 2027, isExcludedDate: isHoliday }), 0);
+
+// The reported range (30/12/2025→02/01/2026) when the holiday is NOT excluded:
+// 3 scheduled days (Tue 30, Wed 31, Fri 2) split 2 / 1.
+check(
+  'no exclusion → 30/12→02/01 splits 2 in 2025',
+  D.deductedDaysInYear({ start: '2025-12-30', end: '2026-01-02', workingDays: 3, year: 2025 }),
+  2,
+);
+check(
+  'no exclusion → 30/12→02/01 splits 1 in 2026',
+  D.deductedDaysInYear({ start: '2025-12-30', end: '2026-01-02', workingDays: 3, year: 2026 }),
+  1,
+);
+
+// Personal leave: a company closure inside the range must not consume deducted slots.
+const insideClosure = iso => iso >= '2025-12-31' && iso <= '2026-01-02';
+check(
+  'personal leave skips days swallowed by a closure',
+  D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-05', workingDays: 3, year: 2026, isExcludedDate: insideClosure }),
+  1,
+);
+check(
+  'personal leave → same range, 2025 share',
+  D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-05', workingDays: 3, year: 2025, isExcludedDate: insideClosure }),
+  2,
+);
+
+// Unchanged behaviour for single-year ranges (fast path returns the stored total).
+check('single-year range returns the stored total', D.deductedDaysInYear({ start: '2026-03-02', end: '2026-03-06', workingDays: 5, year: 2026 }), 5);
+check('single-year range, admin-adjusted total kept', D.deductedDaysInYear({ start: '2026-01-02', end: '2026-01-07', workingDays: 1, year: 2026 }), 1);
+check('zero-day leave contributes nothing', D.deductedDaysInYear({ start: '2025-12-31', end: '2026-01-02', workingDays: 0, year: 2025 }), 0);
+check('reversed range contributes nothing', D.deductedDaysInYear({ start: '2026-01-02', end: '2025-12-31', workingDays: 2, year: 2026 }), 0);
+// The same range splits differently by schedule, which is the point: the first N *scheduled*
+// days are the deducted ones. Mon/Wed/Fri → Mon 29 + Wed 31 (both 2025); Mon–Fri → Wed 31 (2025)
+// + Fri 2 Jan (2026).
+check('part-time (Mon/Wed/Fri), 2 days → both in 2025', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 2, year: 2025, schedule: ['Mon', 'Wed', 'Fri'] }), 2);
+check('part-time (Mon/Wed/Fri), 2 days → none in 2026', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 2, year: 2026, schedule: ['Mon', 'Wed', 'Fri'] }), 0);
+// Mon–Fri: the first two deducted days are Mon 29 + Tue 30 Dec, so a 2-day total stays in 2025 …
+check('full-time, 2 days → none in 2026', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 2, year: 2026 }), 0);
+// … while a 4-day total reaches Fri 2 Jan and therefore does cross into 2026.
+check('full-time, 4 days → 3 in 2025', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 4, year: 2025 }), 3);
+check('full-time, 4 days → 1 in 2026', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 4, year: 2026 }), 1);
+
 console.log(`\n${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}`);
 process.exit(failed === 0 ? 0 : 1);
