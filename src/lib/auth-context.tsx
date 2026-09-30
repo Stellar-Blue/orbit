@@ -1024,6 +1024,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await supabase.from('profile_sensitive').insert({ ...sensitive, profile_id: id });
       }
       setProfiles(prev => [profWithId, ...prev]);
+
+      // The database trigger `trg_mandatory_fanout_on_profile` gives a new employee a row for
+      // every published company closure they are eligible for (see 0076). Those rows were created
+      // on the server, so pull them in — otherwise the new hire shows up with no closure leave
+      // until the page is reloaded.
+      try {
+        const { data: seeded } = await supabase.from('leave_requests').select('*').eq('profile_id', id);
+        if (seeded && seeded.length > 0) {
+          const enriched = (seeded as LeaveRequest[]).map(r => ({
+            ...r,
+            leave_type: leaveTypes.find(lt => lt.id === r.leave_type_id),
+          }));
+          setLeaveRequests(prev => [...enriched, ...prev.filter(r => r.profile_id !== id)]);
+          if (seeded.some(r => r.origin === 'mandatory')) {
+            notifySuccess(
+              `Company closure leave assigned automatically (${seeded.filter(r => r.origin === 'mandatory').length} record(s)).`,
+              'Mandatory leave applied',
+            );
+          }
+        }
+      } catch (seedError) {
+        // The rows exist either way — this only affects what the current tab shows.
+        console.warn('Could not load auto-assigned mandatory leave for the new profile:', seedError);
+      }
       return true;
     } catch (e: any) {
       console.error('Failed to insert profile into database:', e);
