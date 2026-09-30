@@ -22,6 +22,7 @@ import {
 } from '@/lib/leave-export';
 import { countWorkingDays, holidayDates } from '@/lib/leave-days';
 import { findCoverageViolations, describeViolation } from '@/lib/coverage-rules';
+import { CarryoverWarning } from '@/components/leave/carryover-warning';
 
 const LeaveGrid = dynamic(() => import('@/components/leave/leave-grid').then(m => m.LeaveGrid), { ssr: false });
 
@@ -404,6 +405,9 @@ export default function LeaveManagementPage() {
           </Button>
         </div>
       </div>
+
+      {/* Carried-over days with a use-by date */}
+      <CarryoverWarning />
 
       {/* Coverage exceptions: filed here, decided by an admin */}
       {myLeaveExceptions.length > 0 && (

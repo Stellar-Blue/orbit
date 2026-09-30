@@ -12,7 +12,7 @@ import { CalendarDays, Save, Trash2, Plus } from 'lucide-react';
  * — use this widget to override it per year (tenure adds, mid-year joiners prorate down).
  */
 export function EmployeeLeaveEntitlement({ profileId }: { profileId: string }) {
-  const { entitlements, leaveDefaultDays, saveLeaveEntitlement, deleteLeaveEntitlement } = useAuth();
+  const { entitlements, leaveDefaultDays, saveLeaveEntitlement, deleteLeaveEntitlement, getDerivedCarryover } = useAuth();
   const currentYear = new Date().getFullYear();
 
   const rowFor = (year: number) => entitlements.find(e => e.profile_id === profileId && e.year === year);
@@ -99,7 +99,11 @@ export function EmployeeLeaveEntitlement({ profileId }: { profileId: string }) {
                   <td className="py-1.5 pr-2">
                     <span className="font-bold text-slate-800 font-mono">{year}</span>
                     {existing ? (
-                      <Badge variant="success" className="ml-1.5 text-[8px] px-1.5">CUSTOM</Badge>
+                      existing.carryover_is_manual === true ? (
+                        <Badge variant="success" className="ml-1.5 text-[8px] px-1.5">MANUAL</Badge>
+                      ) : (
+                        <Badge variant="info" className="ml-1.5 text-[8px] px-1.5">AUTO</Badge>
+                      )
                     ) : (
                       <span className="ml-1.5 text-[9px] font-semibold text-slate-400 uppercase">default</span>
                     )}
@@ -121,6 +125,14 @@ export function EmployeeLeaveEntitlement({ profileId }: { profileId: string }) {
                       onChange={e => setCarryDraft(d => ({ ...d, [year]: e.target.value }))}
                       className={inputCls}
                     />
+                    {/* The balance uses the automatic value while a row is not flagged manual, so
+                        show it here — otherwise a stale 0 would contradict the employee's balance. */}
+                    {existing?.carryover_is_manual !== true && (() => {
+                      const derived = getDerivedCarryover(profileId, year);
+                      return derived > 0 ? (
+                        <span className="text-[9px] font-bold text-sky-700 mt-0.5 block">auto: +{derived}d</span>
+                      ) : null;
+                    })()}
                   </td>
                   <td className="py-1.5 pl-2 text-right whitespace-nowrap">
                     <button type="button" onClick={() => save(year)} className="inline-flex items-center text-emerald-600 hover:text-emerald-700 px-1.5 py-0.5 cursor-pointer font-bold text-[10px]" title={`Save ${year}`}><Save className="w-3.5 h-3.5 mr-0.5" /> Save</button>

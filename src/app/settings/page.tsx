@@ -16,7 +16,7 @@ import { PaymentDocumentTypesSettings } from '@/components/settings/payment-docu
 import { GeneralSettings } from '@/components/settings/general-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
-import { LeaveDefaultsCard } from '@/components/settings/leave-defaults';
+import { LeaveDefaultsCard, CarryoverPolicyCard } from '@/components/settings/leave-defaults';
 import { CoverageRulesCard } from '@/components/settings/coverage-rules';
 import { ScreenVisibilityCard } from '@/components/settings/screen-visibility';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
@@ -675,6 +675,7 @@ export default function CompanySettingsPage() {
       {selectedTab === 'leaves' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           <div className="lg:col-span-3"><LeaveDefaultsCard /></div>
+          <div className="lg:col-span-3"><CarryoverPolicyCard /></div>
           {/* Active Leave Types List */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">

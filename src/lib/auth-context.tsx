@@ -16,9 +16,14 @@ import {
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
   CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest
 } from './types';
-import { coverageGroupsForProfile, toCoverageLoadRows, type CoverageKind } from './coverage-rules';
+import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
 import { deductedDaysInYear } from './leave-days';
+import {
+  carryoverDays, carryoverExpiryDate, carryoverExpired, remainingOfYear, previousYearHasClosed,
+  carryoverWarningLevel, autoCarryoverBookingPlan, groupAdjacentDays, DEFAULT_WARNING_MONTHS,
+  type CarryoverPolicy, type CarryoverWarningLevel,
+} from './leave-carryover';
 import { calculateContractValuation } from './pricing-engine';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { startRealtimeSync } from './realtime-sync';
@@ -242,6 +247,23 @@ interface AppState {
   decideLeaveException: (id: string, approve: boolean) => Promise<boolean>;
   /** Admin: hide or show one screen for every non-admin. */
   setScreenHidden: (screenKey: string, hidden: boolean) => Promise<boolean>;
+  /** Carry-in for a year, derived live from the closed previous year's remainder (0 if none). */
+  getDerivedCarryover: (profileId: string, year: number) => number;
+  /** Write the derived carry-over into `leave_entitlements` rows (skips manually set values). */
+  syncLeaveCarryover: () => Promise<{ created: number; updated: number; manual: number } | null>;
+  /** Due date, untaken days and warning level for an employee's expiring carry-over pot. */
+  getCarryoverStatus: (profileId: string, year?: number) => {
+    year: number;
+    expiresOn: string | null;
+    level: CarryoverWarningLevel;
+    warningMonths: number;
+    carryOver: number;
+    daysAtRisk: number;
+    expiredDays: number;
+    autoBook: boolean;
+  };
+  /** Book whatever is left of an expiring carry-over pot on the last working days before it expires. */
+  syncCarryoverExpiryBookings: (targetProfileId?: string) => Promise<{ rows: number; days: number; employees: number } | null>;
   addTeam: (name: string, leadProfileId?: string) => Promise<boolean>;
   updateTeam: (id: string, name: string, leadProfileId?: string) => Promise<boolean>;
   deleteTeam: (id: string) => Promise<boolean>;
@@ -1230,11 +1252,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const getEmployeeLeaveBalance = (profileId: string, year: number) => {
+  // ---- Automatic leave carry-over ---------------------------------------------------------
+  // Policy knobs live on the `leave_policy` singleton; see src/lib/leave-carryover.ts for the maths.
+
+  const carryoverPolicy = (): CarryoverPolicy => ({
+    maxCarryoverDays: leavePolicy?.max_carryover_days ?? null,
+    expiryMonths: leavePolicy?.carryover_expiry_months ?? null,
+  });
+
+  /**
+   * Carry-in for a year, DERIVED live so nothing has to be run to keep balances right:
+   * the remainder of the immediately preceding year, capped and expiry-aware.
+   *
+   * Returns 0 when the previous year has no explicit entitlement row (nothing was set up for it,
+   * so there is no remainder to speak of) or when the previous year is still running.
+   *
+   * `carryInOverride` lets the materialise pass feed already-computed carry-ins down the chain so
+   * a single run is exact instead of needing a second run to settle.
+   */
+  const getDerivedCarryover = (
+    profileId: string,
+    year: number,
+    carryInOverride?: Map<string, number>,
+  ): number => {
+    const already = carryInOverride?.get(`${profileId}:${year}`);
+    if (already !== undefined) return already;
+    const prevRow = entitlements.find(e => e.profile_id === profileId && e.year === year - 1);
+    if (!prevRow) return 0;
+    if (!previousYearHasClosed(year, athensTodayStr())) return 0;
+
+    const prev = computeBalance(profileId, year - 1, false, carryInOverride);
+    return carryoverDays(
+      remainingOfYear({ entitlement: prev.entitlement, carriedIn: prev.carryOver, used: prev.taken + prev.mandatory }),
+      carryoverPolicy(),
+    );
+  };
+
+  /**
+   * Core balance maths for one (employee, year).
+   *
+   * `allowDerivedCarry: false` is used when probing the PREVIOUS year from inside the carry-over
+   * calculation — it reads the stored carry-in instead of deriving it, so the recursion is bounded
+   * to a single step.
+   */
+  const computeBalance = (
+    profileId: string,
+    year: number,
+    allowDerivedCarry: boolean,
+    carryInOverride?: Map<string, number>,
+  ) => {
     const ent = entitlements.find(e => e.profile_id === profileId && e.year === year);
     const entitlement = ent?.entitlement_days ?? leaveDefaultDays;
-    const carryOver = ent?.carried_over_days ?? 0;
-    const carryOverExpires = ent?.carryover_expires_on ?? `March 31, ${year}`;
+
+    let carryOver = Number(ent?.carried_over_days ?? 0);
+    const override = carryInOverride?.get(`${profileId}:${year}`);
+    if (override !== undefined) carryOver = override;
+    else if (allowDerivedCarry && !ent?.carryover_is_manual) carryOver = getDerivedCarryover(profileId, year, carryInOverride);
+
+    // Expiry only bites on the live year: recomputing a past year must not rewrite history.
+    const todayIso = athensTodayStr();
+    const expiresOn = ent?.carryover_expires_on ?? carryoverExpiryDate(year, carryoverPolicy());
+    if (carryOver > 0 && String(year) === todayIso.slice(0, 4) && carryoverExpired(expiresOn, todayIso)) {
+      carryOver = 0;
+    }
+    const carryOverExpires = expiresOn || 'Never expires';
 
     const userReqs = leaveRequests.filter(r => {
       if (r.profile_id !== profileId) return false;
@@ -1291,6 +1372,203 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const available = entitlement + carryOver - taken - reserved - mandatory;
 
     return { entitlement, carryOver, carryOverExpires, taken, reserved, mandatory, available };
+  };
+
+  const getEmployeeLeaveBalance = (profileId: string, year: number) =>
+    computeBalance(profileId, year, true);
+
+  /**
+   * Anything an employee needs to know about a carried-over pot that has a DUE DATE:
+   * when it expires, how many days are still untaken, and how loudly to warn (see
+   * Settings → Leaves → warning window, default 3 months).
+   *
+   * The pot is treated as drained FIRST by any leave taken this year — that is what makes a
+   * use-it-or-lose-it pot behave as one, and it is also what makes the automatic booking below
+   * idempotent (booked days reduce the pot instead of eating the annual grant).
+   */
+  const getCarryoverStatus = (profileId: string, year: number = Number(athensTodayStr().slice(0, 4))) => {
+    const ent = entitlements.find(e => e.profile_id === profileId && e.year === year);
+    const expiresOn = ent?.carryover_expires_on ?? carryoverExpiryDate(year, carryoverPolicy());
+    const bal = computeBalance(profileId, year, true);
+    // Pot BEFORE the expiry rule zeroes it, so an expired pot can still be reported as lost.
+    const pot = ent?.carryover_is_manual
+      ? Number(ent?.carried_over_days ?? 0)
+      : getDerivedCarryover(profileId, year);
+    const untaken = Math.max(0, pot - (bal.taken + bal.mandatory));
+    const warningMonths = leavePolicy?.carryover_warning_months ?? DEFAULT_WARNING_MONTHS;
+    const level: CarryoverWarningLevel = carryoverWarningLevel(expiresOn, athensTodayStr(), warningMonths);
+    return {
+      year,
+      expiresOn,
+      level,
+      warningMonths,
+      /** Size of the pot carried into this year. */
+      carryOver: pot,
+      /** Untaken days that are still usable and will be lost on the due date. */
+      daysAtRisk: level === 'expired' ? 0 : Math.max(0, Math.min(untaken, bal.available)),
+      /** Untaken days that the due date already cancelled. */
+      expiredDays: level === 'expired' ? untaken : 0,
+      autoBook: leavePolicy?.carryover_auto_book !== false,
+    };
+  };
+
+  /**
+   * Save an expiring carry-over pot: book whatever is left on the last working days before the
+   * due date. Runs by itself on load (see the effect below) and is idempotent, so it is safe to
+   * call again — days already booked are excluded, which is what stops it booking twice.
+   *
+   * Without `targetProfileId` it covers every active employee, which needs the admin's wider
+   * data access; an employee can only ever cover themselves.
+   */
+  const syncCarryoverExpiryBookings = async (
+    targetProfileId?: string,
+  ): Promise<{ rows: number; days: number; employees: number } | null> => {
+    if (leavePolicy?.carryover_auto_book === false) return { rows: 0, days: 0, employees: 0 };
+    const todayIso = athensTodayStr();
+    const year = Number(todayIso.slice(0, 4));
+    const expiryDefault = carryoverExpiryDate(year, carryoverPolicy());
+    const holidaySet = new Set((publicHolidays || []).map(h => h.date));
+    // Company closures are not bookable either — nobody works them.
+    const closureDates = new Set<string>();
+    mandatoryLeaves.forEach(m => expandDateRange(m.start_date, m.end_date).forEach(d => closureDates.add(d)));
+
+    const targets = targetProfileId
+      ? profiles.filter(p => p.id === targetProfileId)
+      : profiles.filter(p => p.status === 'active' && p.employment_type !== 'contractor');
+
+    const annualType =
+      leaveTypes.find(t => !t.is_hidden && (t.code === 'annual' || (t.name_en || '').toLowerCase().includes('annual')))
+      || leaveTypes.find(t => !t.is_hidden)
+      || leaveTypes[0];
+
+    const newRows: LeaveRequest[] = [];
+    for (const p of targets) {
+      const ent = entitlements.find(e => e.profile_id === p.id && e.year === year);
+      const expiresOn = ent?.carryover_expires_on ?? expiryDefault;
+      if (!expiresOn || !annualType) continue;
+
+      const status = getCarryoverStatus(p.id, year);
+      if (status.daysAtRisk <= 0) continue;
+
+      // Never book over leave the employee already has (pending counts — it may be approved).
+      const busy = new Set<string>();
+      leaveRequests
+        .filter(r => r.profile_id === p.id && r.origin !== 'mandatory' && !['rejected', 'cancelled', 'expired'].includes(r.status))
+        .forEach(r => expandDateRange(r.start_date, r.end_date).forEach(d => busy.add(d)));
+
+      const plan = autoCarryoverBookingPlan({
+        remainingCarried: status.daysAtRisk,
+        dueOn: expiresOn,
+        todayIso,
+        schedule: p.work_schedule,
+        excludedDates: new Set<string>([...holidaySet, ...closureDates, ...busy]),
+      });
+      if (plan.length === 0) continue;
+
+      groupAdjacentDays(plan).forEach(group => {
+        newRows.push({
+          id: generateUUID(),
+          profile_id: p.id,
+          leave_type_id: annualType.id,
+          start_date: group[0],
+          end_date: group[group.length - 1],
+          half_day_start: false,
+          half_day_end: false,
+          // Every day in a group is a bookable working day (weekends and holidays never join a group).
+          working_days: group.length,
+          status: 'approved',
+          origin: 'admin_entry',
+          note: `Automatic: unused carried-over leave must be taken by ${expiresOn}`,
+          ergani_status: 'pending',
+          is_auto_carryover: true,
+        });
+      });
+    }
+
+    if (newRows.length === 0) return { rows: 0, days: 0, employees: 0 };
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('leave_requests').insert(newRows);
+      if (error) {
+        console.error('Failed to book expiring carry-over:', error);
+        return null;
+      }
+      setLeaveRequests(prev => [...newRows, ...prev]);
+      newRows.forEach(r => syncSlackStatus(r.profile_id, r.start_date, r.id));
+      return {
+        rows: newRows.length,
+        days: newRows.reduce((sum, r) => sum + Number(r.working_days || 0), 0),
+        employees: new Set(newRows.map(r => r.profile_id)).size,
+      };
+    } catch (e: any) {
+      console.error('syncCarryoverExpiryBookings error:', e);
+      return null;
+    }
+  };
+
+  /**
+   * Write the derived carry-over into `leave_entitlements` so it shows up (and stays editable) in
+   * People → Edit Profile, and in the Excel exports that read the stored column.
+   *
+   * Idempotent, like the mandatory fan-out: safe to run any time. Rows flagged
+   * `carryover_is_manual` are never touched, and only years whose PRECEDING year has both closed
+   * and been set up explicitly get a row.
+   */
+  const syncLeaveCarryover = async (): Promise<{ created: number; updated: number; manual: number } | null> => {
+    const supabase = getSupabaseBrowserClient();
+    const todayIso = athensTodayStr();
+    const currentYear = Number(todayIso.slice(0, 4));
+    const policyNow = carryoverPolicy();
+    const carryInOverride = new Map<string, number>();
+    const rows: LeaveEntitlement[] = [];
+    let created = 0, updated = 0, manual = 0;
+
+    for (const p of profiles.filter(x => x.status === 'active' && x.employment_type !== 'contractor')) {
+      const own = entitlements.filter(e => e.profile_id === p.id);
+      if (own.length === 0) continue;
+      // Walk forward so each year's freshly derived carry-in feeds the next one in the same run.
+      for (let y = Math.min(...own.map(e => e.year)) + 1; y <= currentYear; y++) {
+        if (!own.some(e => e.year === y - 1)) continue; // chain starts where explicit setup starts
+        const existing = own.find(e => e.year === y);
+        if (existing?.carryover_is_manual) { manual++; continue; }
+
+        const derived = getDerivedCarryover(p.id, y, carryInOverride);
+        carryInOverride.set(`${p.id}:${y}`, derived);
+        rows.push({
+          id: existing?.id || generateUUID(),
+          profile_id: p.id,
+          year: y,
+          // Keep an explicit allowance; otherwise the row is created on the company default.
+          entitlement_days: existing?.entitlement_days ?? leaveDefaultDays,
+          carried_over_days: derived,
+          carryover_expires_on: carryoverExpiryDate(y, policyNow) || undefined,
+          carryover_is_manual: false,
+        });
+        existing ? updated++ : created++;
+      }
+    }
+
+    if (rows.length === 0) return { created, updated, manual };
+    try {
+      const { error } = await supabase.from('leave_entitlements').upsert(
+        rows.map(r => ({ ...r, carryover_expires_on: r.carryover_expires_on || null })),
+        { onConflict: 'profile_id,year' },
+      );
+      if (error) {
+        console.error('Failed to materialise leave carry-over:', error);
+        alert(`Database Error: ${error.message}`);
+        return null;
+      }
+      setEntitlements(prev => [
+        ...prev.filter(x => !rows.some(r => r.profile_id === x.profile_id && r.year === x.year)),
+        ...rows,
+      ]);
+      return { created, updated, manual };
+    } catch (e: any) {
+      console.error('syncLeaveCarryover error:', e);
+      alert(`Database Error: ${e.message}`);
+      return null;
+    }
   };
 
 
@@ -4425,6 +4703,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const liveReloadersRef = useRef<Record<string, Array<() => void | Promise<void>>>>({});
   /** Fiscal year the budget screen last asked for, so a budget change reloads the same year. */
   const liveBudgetYearRef = useRef(0);
+  /** Carry-over expiry bookings run at most once per mount — they are a scheduled obligation. */
+  const carryoverBookingRanRef = useRef(false);
   const liveIsAdmin = !!realProfileId && profiles.some(p => p.id === realProfileId && p.role === 'admin');
   const liveProfileId = realProfileId || currentUserId || '';
   const liveAdminRef = useRef(liveIsAdmin);
@@ -4696,7 +4976,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Upsert a per-employee per-year allowance (the ACTUAL days that employee gets that year).
-  const saveLeaveEntitlement = async (e: { id?: string; profile_id: string; year: number; entitlement_days: number; carried_over_days?: number; carryover_expires_on?: string | null }): Promise<boolean> => {
+  const saveLeaveEntitlement = async (e: { id?: string; profile_id: string; year: number; entitlement_days: number; carried_over_days?: number; carryover_expires_on?: string | null; carryover_is_manual?: boolean }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     const row: LeaveEntitlement = {
       id: e.id || generateUUID(),
@@ -4705,6 +4985,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       entitlement_days: Number(e.entitlement_days) || 0,
       carried_over_days: Number(e.carried_over_days ?? 0) || 0,
       carryover_expires_on: e.carryover_expires_on || undefined,
+      // Saving from the UI IS an admin decision about that year's carry-over, so protect it from
+      // the automatic calculation unless the caller explicitly says otherwise.
+      carryover_is_manual: e.carryover_is_manual ?? true,
     };
     try {
       const { error } = await supabase.from('leave_entitlements').upsert({ ...row, carryover_expires_on: row.carryover_expires_on || null }, { onConflict: 'profile_id,year' }).select();
@@ -4735,6 +5018,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false;
     }
   };
+
+  /**
+   * Scheduled obligation: once the data is loaded, save any carried-over pot that is about to be
+   * forfeited by booking it on the remaining working days before its due date.
+   *
+   * Deliberately silent and fire-and-forget — it is a no-op unless a pot has actually run out of
+   * room, it runs at most once per mount, and the rows it writes are marked `is_auto_carryover`
+   * so admins can see and undo them. Admins cover everyone; an employee only ever covers
+   * themselves, because RLS hides colleagues' leave.
+   */
+  useEffect(() => {
+    if (isLoading || !currentUser?.id) return;
+    if (carryoverBookingRanRef.current) return;
+    if (leavePolicy?.carryover_auto_book === false) return;
+    carryoverBookingRanRef.current = true;
+    const scope = currentUser.role === 'admin' ? undefined : currentUser.id;
+    void syncCarryoverExpiryBookings(scope);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, currentUser?.id, currentUser?.role, leavePolicy?.carryover_auto_book]);
 
   return (
     <AuthContext.Provider value={{
@@ -4906,6 +5208,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       requestLeaveException,
       decideLeaveException,
       setScreenHidden,
+      getDerivedCarryover,
+      syncLeaveCarryover,
+      getCarryoverStatus,
+      syncCarryoverExpiryBookings,
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,

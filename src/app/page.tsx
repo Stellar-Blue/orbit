@@ -10,6 +10,7 @@ import {
   isSameDay, parseISO, isWithinInterval 
 } from 'date-fns';
 import { Card, StatCard, Badge, Button } from '@/components/ui/primitives';
+import { CarryoverWarning } from '@/components/leave/carryover-warning';
 import { ProfileAvatar } from '@/components/ui/profile-avatar';
 import { 
   Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
@@ -434,6 +435,9 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Carried-over days with a use-by date (renders nothing when there is no deadline) */}
+      <CarryoverWarning />
 
       {/* 4. EMPLOYEE PERSONAL SUMMARY (LEAVE QUOTA) */}
       {!isContractor ? (

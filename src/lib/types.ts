@@ -186,12 +186,25 @@ export interface LeaveEntitlement {
   entitlement_days: number;
   carried_over_days: number;
   carryover_expires_on?: string;
+  /**
+   * TRUE when an admin typed the carried-over value: the automatic carry-over calculation leaves
+   * these rows alone. FALSE/absent rows are kept in sync with the calculation.
+   */
+  carryover_is_manual?: boolean;
 }
 
 /** Company-wide leave policy (singleton row). default_annual_days is the default per-year allowance. */
 export interface LeavePolicy {
   id: boolean;
   default_annual_days: number;
+  /** Cap on days carried into the next year. `null` = uncapped, `0` = no carry-over. */
+  max_carryover_days?: number | null;
+  /** Months into the new year that carried days stay usable (3 = 31 March). `null` = never expires. */
+  carryover_expiry_months?: number | null;
+  /** How long before the deadline the employee is warned about the expiring pot. Default 3. */
+  carryover_warning_months?: number;
+  /** Book whatever is left of an expiring pot on the last working days before it expires. */
+  carryover_auto_book?: boolean;
   updated_at?: string;
   updated_by?: string | null;
 }
@@ -228,6 +241,8 @@ export interface LeaveRequest {
   ergani_submitted_at?: string;
   rejection_reason?: string;
   admin_edit_reason?: string;
+  /** TRUE for rows Orbit booked automatically to save an expiring carry-over pot. */
+  is_auto_carryover?: boolean;
   detached?: boolean;
   linked_request_id?: string;
 }

@@ -12,7 +12,8 @@
     "test:pricing": "node scripts/verify-modular-pricing.js",
     "test:outlook": "node scripts/verify-outlook-remote-mirror.js",
     "test:coverage": "node scripts/verify-coverage-rules.js",
-    "test:screens": "node scripts/verify-screen-visibility.js"
+    "test:screens": "node scripts/verify-screen-visibility.js",
+    "test:carryover": "node scripts/verify-leave-carryover.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
