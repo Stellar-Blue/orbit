@@ -130,7 +130,7 @@ export default function PeopleDirectoryPage() {
     setEditingContract(true);
   };
 
-  const handleCreatePerson = (e: React.FormEvent) => {
+  const handleCreatePerson = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newStatus === 'departed' && newEndDate && newEndDate < newStartDate) {
       alert('End date cannot be before start date.');
@@ -164,7 +164,8 @@ export default function PeopleDirectoryPage() {
       team: teams.find(t => t.id === newTeamId)
     };
 
-    addProfile(newProf);
+    const created = await addProfile(newProf);
+    if (!created) return; // keep the dialog (and everything typed) so it can be retried
     setIsAddOpen(false);
     // Reset fields
     setNewFirstName(''); setNewLastName(''); setNewGreekName(''); setNewEmail(''); setNewPhone('');

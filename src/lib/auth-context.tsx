@@ -116,7 +116,7 @@ interface AppState {
    *  effective-dated Role & Seniority assignment, which only admins set. */
   updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'phone'>> & { photo_url?: string | null }) => Promise<boolean>;
   employeeIntegrations: EmployeeIntegration[];
-  addProfile: (profile: Profile) => void;
+  addProfile: (profile: Profile) => Promise<boolean>;
   deleteProfile: (profileId: string) => Promise<boolean>;
   addLeaveRequest: (req: Omit<LeaveRequest, 'id'>) => void;
   updateLeaveRequestStatus: (id: string, status: LeaveRequest['status'], rejectionReason?: string) => void;
@@ -959,7 +959,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addProfile = async (newProf: Profile) => {
+  const addProfile = async (newProf: Profile): Promise<boolean> => {
     const id = (newProf.id && newProf.id.includes('-') && newProf.id.length === 36) ? newProf.id : generateUUID();
     const profWithId = { ...newProf, id };
     const supabase = getSupabaseBrowserClient();
@@ -969,7 +969,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         console.error('Failed to insert profile into database:', error);
         alert(`Database Error: ${error.message}`);
-        return;
+        return false;
       }
       if (role) {
         await supabase.from('user_roles').insert({ profile_id: id, role });
@@ -978,8 +978,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await supabase.from('profile_sensitive').insert({ ...sensitive, profile_id: id });
       }
       setProfiles(prev => [profWithId, ...prev]);
+      return true;
     } catch (e: any) {
       console.error('Failed to insert profile into database:', e);
+      alert(`Database Error: ${e?.message || 'Unexpected error while creating the profile.'}`);
+      return false;
     }
   };
 
