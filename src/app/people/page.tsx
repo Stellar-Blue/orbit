@@ -52,6 +52,7 @@ export default function PeopleDirectoryPage() {
 
   // Admin Add Person & Edit Person state
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isCreatingPerson, setIsCreatingPerson] = useState(false);
   const [editData, setEditData] = useState<any>(null);
 
   // Employment contract editor state. Pay (rates, extras, bonuses) is NOT part of the dossier
@@ -132,6 +133,7 @@ export default function PeopleDirectoryPage() {
 
   const handleCreatePerson = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreatingPerson) return; // guard a second submit / double Enter while the insert is in flight
     if (newStatus === 'departed' && newEndDate && newEndDate < newStartDate) {
       alert('End date cannot be before start date.');
       return;
@@ -164,7 +166,9 @@ export default function PeopleDirectoryPage() {
       team: teams.find(t => t.id === newTeamId)
     };
 
+    setIsCreatingPerson(true);
     const created = await addProfile(newProf);
+    setIsCreatingPerson(false);
     if (!created) return; // keep the dialog (and everything typed) so it can be retried
     setIsAddOpen(false);
     // Reset fields
@@ -811,7 +815,9 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
             </div>
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Work Email *</label>
-              <input type="email" placeholder="e.g. mpapadopoulou@stellarblue.eu" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
+              {/* autoComplete off: a password manager happily fills the ADMIN's own address here,
+                  which then collides with their existing profile and looks like a duplicate bug. */}
+              <input type="email" autoComplete="off" placeholder="e.g. mpapadopoulou@stellarblue.eu" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800" required />
             </div>
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Phone Number</label>
@@ -888,7 +894,9 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
           </div>
           <div className="flex justify-end space-x-3 pt-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="primary" size="sm"><Plus className="w-4 h-4 mr-1.5" /> Create Person</Button>
+            <Button type="submit" variant="primary" size="sm" disabled={isCreatingPerson}>
+              <Plus className="w-4 h-4 mr-1.5" /> {isCreatingPerson ? 'Creating…' : 'Create Person'}
+            </Button>
           </div>
         </form>
       </Modal>

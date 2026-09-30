@@ -961,14 +961,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addProfile = async (newProf: Profile): Promise<boolean> => {
     const id = (newProf.id && newProf.id.includes('-') && newProf.id.length === 36) ? newProf.id : generateUUID();
-    const profWithId = { ...newProf, id };
+
+    // `profiles.work_email` is UNIQUE. Catch the clash here so the admin gets told WHO already
+    // owns the address (and where to go instead) rather than a raw Postgres 23505.
+    const workEmail = (newProf.work_email || '').trim();
+    if (!workEmail) {
+      alert('VALIDATION ERROR: A work email is required — it is how the employee signs in and is matched on first login.');
+      return false;
+    }
+    // Compared case-insensitively on purpose: the DB constraint is case-SENSITIVE, so
+    // `Foo@x.eu` and `foo@x.eu` could otherwise become two profiles for one person, and the
+    // first-login match (lower(work_email) = lower(jwt email)) would not know which to pick.
+    const clash = profiles.find(p => (p.work_email || '').trim().toLowerCase() === workEmail.toLowerCase());
+    if (clash) {
+      alert(`DUPLICATE EMAIL: ${clash.first_name} ${clash.last_name} already uses ${clash.work_email}.\n\nOpen that person from the People Directory to edit them instead of creating a second record.`);
+      return false;
+    }
+
+    const profWithId = { ...newProf, id, work_email: workEmail };
     const supabase = getSupabaseBrowserClient();
     const { team, sensitive, role, ...cleanProfile } = profWithId as any;
     try {
       const { error } = await supabase.from('profiles').insert(cleanProfile);
       if (error) {
         console.error('Failed to insert profile into database:', error);
-        alert(`Database Error: ${error.message}`);
+        // 23505 = unique violation. `profiles` state can be stale (another admin just added
+        // them), so the DB stays the source of truth for this check.
+        if (error.code === '23505' && /work_email/i.test(error.message)) {
+          alert(`DUPLICATE EMAIL: ${workEmail} already belongs to an existing employee.\n\nOpen that person from the People Directory instead of creating a second record.`);
+        } else {
+          alert(`Database Error: ${error.message}`);
+        }
         return false;
       }
       if (role) {
