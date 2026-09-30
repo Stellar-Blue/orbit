@@ -121,5 +121,21 @@ check('full-time, 2 days → none in 2026', D.deductedDaysInYear({ start: '2025-
 check('full-time, 4 days → 3 in 2025', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 4, year: 2025 }), 3);
 check('full-time, 4 days → 1 in 2026', D.deductedDaysInYear({ start: '2025-12-29', end: '2026-01-02', workingDays: 4, year: 2026 }), 1);
 
+// ---------------------------------------------------------------------------
+// Re-costing a leave whose dates moved. Without this a 05/01→07/01 leave kept
+// the day count it had before the edit (that is how it cost 1 day instead of 2).
+// ---------------------------------------------------------------------------
+const move = over => D.needsWorkingDaysRecount({ prevStart: '2026-01-02', prevEnd: '2026-01-07', nextStart: '2026-01-05', nextEnd: '2026-01-07', origin: 'admin_entry', ...over });
+check('a moved start date triggers a recount', move({}), true);
+check('a moved end date triggers a recount', D.needsWorkingDaysRecount({ prevStart: '2026-01-05', prevEnd: '2026-01-05', nextStart: '2026-01-05', nextEnd: '2026-01-07' }), true);
+check('unchanged dates do not', D.needsWorkingDaysRecount({ prevStart: '2026-01-05', prevEnd: '2026-01-07', nextStart: '2026-01-05', nextEnd: '2026-01-07' }), false);
+check('an explicit day count always wins', move({ explicitWorkingDays: 1 }), false);
+check('mandatory closure rows are never recounted', move({ origin: 'mandatory' }), false);
+check('missing dates are never recounted', D.needsWorkingDaysRecount({ prevStart: '2026-01-05' }), false);
+
+// The reported case, end to end: 05→07 Jan 2026 is 2 working days (6 Jan is Epiphany).
+check('05→07 Jan 2026 with Epiphany excluded → 2 days', D.countWorkingDays('2026-01-05', '2026-01-07', undefined, ['2026-01-06']), 2);
+check('the pre-edit range 02→07 Jan 2026 → 2 days (2 Jan is a closure, 6 Jan a holiday)', D.countWorkingDays('2026-01-02', '2026-01-07', undefined, ['2026-01-02', '2026-01-06']), 2);
+
 console.log(`\n${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}`);
 process.exit(failed === 0 ? 0 : 1);

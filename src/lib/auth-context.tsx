@@ -18,7 +18,7 @@ import {
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
-import { deductedDaysInYear } from './leave-days';
+import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount } from './leave-days';
 import {
   carryoverDays, carryoverExpiryDate, carryoverExpired, remainingOfYear, previousYearHasClosed,
   carryoverWarningLevel, autoCarryoverBookingPlan, groupAdjacentDays, DEFAULT_WARNING_MONTHS,
@@ -1090,14 +1090,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /**
+   * Working days for one employee's date range: their scheduled days, minus public holidays and
+   * company closures. Mirrors what the leave pages count when a request is first filed, so an
+   * edited range is re-costed the same way a new one would be.
+   */
+  const countWorkingDaysForProfile = (start: string, end: string, profileId: string): number => {
+    const prof = profiles.find(p => p.id === profileId);
+    const excluded = new Set<string>(holidayDates(publicHolidays));
+    mandatoryLeaves.forEach(m => expandDateRange(m.start_date, m.end_date).forEach(d => excluded.add(d)));
+    return countWorkingDays(start, end, resolveWorkSchedule(prof?.work_schedule), excluded);
+  };
+
   const editLeaveRequest = async (id: string, updated: Partial<LeaveRequest>, editReason?: string) => {
     const supabase = getSupabaseBrowserClient();
     try {
       const target = leaveRequests.find(r => r.id === id);
       const newErganiStatus = (target?.ergani_status === 'submitted') ? 'needs_amendment' : target?.ergani_status;
       const { leave_type, ...cleanUpdate } = updated as any;
+
+      // Moving the dates invalidates the stored day count, which is what the balance is deducted
+      // by. Recompute it the same way the leave pages do (scheduled days minus public holidays and
+      // company closures) unless the caller passed an explicit count of its own — otherwise a
+      // shortened range keeps its old total and a lengthened one gains nothing. A caller that
+      // passes `working_days` still wins, so deliberate manual adjustments are preserved.
+      const nextStart = updated.start_date ?? target?.start_date;
+      const nextEnd = updated.end_date ?? target?.end_date;
+      const recount = needsWorkingDaysRecount({
+        prevStart: target?.start_date,
+        prevEnd: target?.end_date,
+        nextStart,
+        nextEnd,
+        explicitWorkingDays: updated.working_days,
+        origin: target?.origin,
+      });
+      const recomputedDays = recount && nextStart && nextEnd
+        ? countWorkingDaysForProfile(nextStart, nextEnd, target!.profile_id)
+        : null;
+
       const updateData = {
         ...cleanUpdate,
+        ...(recomputedDays !== null ? { working_days: recomputedDays } : {}),
         admin_edit_reason: editReason || cleanUpdate.admin_edit_reason,
         ...(newErganiStatus !== target?.ergani_status ? { ergani_status: newErganiStatus } : {})
       };
@@ -1113,6 +1146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           ...r,
           ...updated,
+          ...(recomputedDays !== null ? { working_days: recomputedDays } : {}),
           admin_edit_reason: editReason || updated.admin_edit_reason || r.admin_edit_reason,
           ergani_status: ergani
         };

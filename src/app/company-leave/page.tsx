@@ -85,6 +85,18 @@ export default function CompanyLeaveManagementPage() {
     return countWorkingDays(addEmpStart, addEmpEnd, targetEmp.work_schedule, holidayDates(publicHolidays));
   }, [addEmpId, addEmpStart, addEmpEnd, profiles, publicHolidays]);
 
+  /**
+   * What the edited date range will cost, recalculated live. The save path re-costs the range
+   * itself, so showing the number here keeps the admin from discovering the change afterwards.
+   */
+  const editRecalculatedDays = useMemo(() => {
+    if (!editingLeave || editingLeave.origin === 'mandatory') return null;
+    const emp = profiles.find(p => p.id === editingLeave.profile_id);
+    const excluded = new Set<string>(holidayDates(publicHolidays));
+    mandatoryLeaves.forEach(m => expandDateRange(m.start_date, m.end_date).forEach(d => excluded.add(d)));
+    return countWorkingDays(editStartDate, editEndDate, resolveWorkSchedule(emp?.work_schedule), excluded);
+  }, [editingLeave, editStartDate, editEndDate, profiles, publicHolidays, mandatoryLeaves]);
+
   // New / Edit Leave Category Modal State
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [catEditingId, setCatEditingId] = useState<string | null>(null);
@@ -360,6 +372,21 @@ export default function CompanyLeaveManagementPage() {
       alert('Please select valid start and end dates.');
       return;
     }
+    // Never silently record a rounded-up day count: `Math.max(1, 0)` is what wrote 1-day leave
+    // for multi-day ranges back when the day counter was broken.
+    if (addEmpCalculatedDays <= 0) {
+      notifyValidation({
+        type: 'error',
+        title: 'No working days in this range',
+        message: 'Every day of the selected range falls on a weekend, a public holiday or a company closure, so there is nothing to deduct. Pick a range that contains working days.',
+        items: [
+          { label: 'From', value: addEmpStart },
+          { label: 'To', value: addEmpEnd },
+          { label: 'Working days found', value: '0' },
+        ],
+      });
+      return;
+    }
     splitAndAddLeaveRequest({
       profile_id: targetEmp.id,
       leave_type_id: targetTypeId,
@@ -367,7 +394,7 @@ export default function CompanyLeaveManagementPage() {
       end_date: addEmpEnd,
       half_day_start: false,
       half_day_end: false,
-      working_days: Math.max(1, addEmpCalculatedDays),
+      working_days: addEmpCalculatedDays,
       status: addEmpStatus,
       origin: 'admin_entry',
       note: addEmpNote || `Entered by Admin (${currentUser.first_name} ${currentUser.last_name})`,
@@ -904,6 +931,22 @@ export default function CompanyLeaveManagementPage() {
               <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Updated Employee Notes (Optional)</label>
               <input type="text" value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="Updated reason..." className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-medium" />
             </div>
+            {/* The balance is deducted by the day count, so surface it before the admin commits. */}
+            {editRecalculatedDays !== null && (
+              <div className={`p-3 rounded-xl border text-[11px] font-medium flex items-center justify-between gap-3 ${
+                editRecalculatedDays === 0
+                  ? 'bg-rose-50 border-rose-200 text-rose-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-700'
+              }`}>
+                <span>
+                  Working days for this range: <strong className="font-black">{editRecalculatedDays}</strong>
+                  {editRecalculatedDays !== Number(editingLeave.working_days) && (
+                    <span className="text-slate-500"> (was {editingLeave.working_days} — will be updated)</span>
+                  )}
+                </span>
+                {editRecalculatedDays === 0 && <span className="shrink-0 font-bold">No working days in this range!</span>}
+              </div>
+            )}
             <div>
               <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Admin Modification Reason (Audit Log)</label>
               <input type="text" value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="e.g., Employee returned 2 days early due to project delivery..." className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-medium" required />

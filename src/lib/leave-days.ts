@@ -30,6 +30,31 @@ export function holidayDates(holidays?: Pick<PublicHoliday, 'date'>[] | null): s
 }
 
 /**
+ * Should a leave's stored `working_days` be recounted because its dates moved?
+ *
+ * Editing the dates of a leave does not change the stored day count, so the balance keeps being
+ * deducted by the OLD total — a range shortened from 5 days to 2 still cost 5, and one lengthened
+ * from 2 to 5 still cost 2 (that is how a 05/01–07/01 leave ended up costing 1 day).
+ *
+ * - `origin: 'mandatory'` rows are owned by the company closure, never recounted here.
+ * - An explicit `workingDays` means the caller already decided, so it always wins.
+ */
+export function needsWorkingDaysRecount(params: {
+  prevStart?: string | null;
+  prevEnd?: string | null;
+  nextStart?: string | null;
+  nextEnd?: string | null;
+  explicitWorkingDays?: number;
+  origin?: string | null;
+}): boolean {
+  const { prevStart, prevEnd, nextStart, nextEnd, explicitWorkingDays, origin } = params;
+  if (explicitWorkingDays !== undefined) return false;
+  if (origin === 'mandatory') return false;
+  if (!prevStart || !prevEnd || !nextStart || !nextEnd) return false;
+  return nextStart !== prevStart || nextEnd !== prevEnd;
+}
+
+/**
  * Inclusive count of scheduled working days between two `yyyy-MM-dd` dates, skipping weekends
  * (days off the schedule) and any date in `excludedDates` (holidays, mandatory closures, …).
  */
