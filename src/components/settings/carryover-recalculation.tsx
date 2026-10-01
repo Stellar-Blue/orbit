@@ -21,7 +21,7 @@ import { RefreshCw, Info, Lock, Unlock, CheckCircle2, Users, AlertTriangle } fro
 export function CarryoverRecalculationCard() {
   const {
     entitlements, profiles, currentUser,
-    planLeaveCarryover, syncLeaveCarryover, releaseLeaveEntitlementToAuto,
+    planLeaveCarryover, syncLeaveCarryover, releaseLeaveEntitlementToAuto, staleLeaveDayCounts,
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
@@ -31,6 +31,9 @@ export function CarryoverRecalculationCard() {
   // Recomputed on every render on purpose: it reads live state, and the table has to show the
   // values the NEXT run would write (including right after a run rewrote some of them).
   const plan = planLeaveCarryover();
+  // A leave row whose stored day count disagrees with its dates is what makes a pot wrong for no
+  // visible reason — 8 of them hid 6 missing days of a 2024 usage. Never let that be silent again.
+  const staleDays = staleLeaveDayCounts();
 
   const payable = plan.filter(r => !r.isManual);
   const moves = payable.filter(r => r.stored !== r.derived);
@@ -214,6 +217,31 @@ export function CarryoverRecalculationCard() {
               <CheckCircle2 className="w-4 h-4 text-emerald-600" /> What changed
             </p>
             {report.map((line, i) => <p key={i} className="font-mono leading-relaxed">{line}</p>)}
+          </div>
+        )}
+
+        {staleDays.length > 0 && (
+          <div className="p-4 rounded-xl border border-rose-300 bg-rose-50 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-rose-900 space-y-1 w-full">
+              <p className="font-extrabold">
+                {staleDays.length} leave record{staleDays.length === 1 ? '' : 's'} disagree with their own dates
+              </p>
+              <p className="leading-relaxed">
+                The balance is deducted by the day count stored on the record, so a wrong one quietly skews the year
+                it sits in — and every carry-over derived from that year. Fix the record in{' '}
+                <strong className="font-extrabold">Company Leave</strong> (editing the dates re-costs it), unless an
+                admin adjusted the count on purpose, in which case ignore this.
+              </p>
+              <div className="mt-1.5 space-y-0.5 font-mono">
+                {staleDays.slice(0, 6).map(s => (
+                  <p key={s.id}>
+                    {s.profileName} · {s.startDate} → {s.endDate}: stored {s.stored}, dates say {s.computed}
+                  </p>
+                ))}
+                {staleDays.length > 6 && <p>…and {staleDays.length - 6} more</p>}
+              </div>
+            </div>
           </div>
         )}
 

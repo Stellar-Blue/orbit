@@ -88,6 +88,21 @@ export interface CarryoverSyncResult {
   changes: Array<{ profileId: string; profileName: string; year: number; from: number; to: number }>;
 }
 
+/**
+ * A personal leave row whose stored `working_days` does not match the count its own dates imply.
+ * The balance is deducted by the STORED number, so one of these quietly poisons the year it sits in
+ * and every carry-over derived from that year.
+ */
+export interface StaleLeaveDayCount {
+  id: string;
+  profileId: string;
+  profileName: string;
+  startDate: string;
+  endDate: string;
+  stored: number;
+  computed: number;
+}
+
 interface AppState {
   currentUser: Profile;
   profiles: Profile[];
@@ -284,6 +299,8 @@ interface AppState {
   syncLeaveCarryover: (targetProfileId?: string) => Promise<CarryoverSyncResult | null>;
   /** The SAME walk as the sync, without writing — drives the preview table in Settings → Leaves. */
   planLeaveCarryover: (targetProfileId?: string) => CarryoverPlanRow[];
+  /** Personal leave rows whose stored day count disagrees with their dates (see the type). */
+  staleLeaveDayCounts: () => StaleLeaveDayCount[];
   /** Drop the MANUAL flag on one record and adopt the calculated value for it. */
   releaseLeaveEntitlementToAuto: (profileId: string, year: number) => Promise<boolean>;
   /** Due date, untaken days and warning level for an employee's expiring carry-over pot. */
@@ -1167,6 +1184,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     mandatoryLeaves.forEach(m => expandDateRange(m.start_date, m.end_date).forEach(d => excluded.add(d)));
     return countWorkingDays(start, end, resolveWorkSchedule(prof?.work_schedule), excluded);
   };
+
+  /**
+   * Personal leave rows whose stored `working_days` no longer matches their own dates.
+   *
+   * The balance is deducted by the STORED number, so a row of this kind is invisible but poisons
+   * everything built on it — on 2026-10-01 eight such rows made a 14-day 2024 read as 8 days and
+   * carried 11 days instead of 5 into 2025, with nothing on screen to explain why.
+   *
+   * Compared the same way the app costs a row (scheduled days − holidays − closures). A row an
+   * admin adjusted on purpose also shows up here, which is why this only ever WARNS: it takes the
+   * audit trail to tell "deliberate" from "stale", and that is not a read the client can make.
+   */
+  const staleLeaveDayCounts = (): StaleLeaveDayCount[] =>
+    leaveRequests
+      .filter(r => r.origin !== 'mandatory'
+        && !r.detached
+        && !r.half_day_start
+        && !r.half_day_end
+        && !['rejected', 'cancelled', 'expired'].includes(r.status)
+        // A leave type that does not count against the balance is never deducted at all.
+        && (leaveTypes.find(t => t.id === r.leave_type_id)?.counts_against_balance !== false))
+      .map(r => ({ r, computed: countWorkingDaysForProfile(r.start_date, r.end_date, r.profile_id) }))
+      .filter(x => Number(x.r.working_days || 0) !== x.computed)
+      .map(x => {
+        const p = profiles.find(prof => prof.id === x.r.profile_id);
+        return {
+          id: x.r.id,
+          profileId: x.r.profile_id,
+          profileName: p ? `${p.first_name} ${p.last_name}` : 'Unknown employee',
+          startDate: x.r.start_date,
+          endDate: x.r.end_date,
+          stored: Number(x.r.working_days || 0),
+          computed: x.computed,
+        };
+      });
 
   const editLeaveRequest = async (id: string, updated: Partial<LeaveRequest>, editReason?: string) => {
     const supabase = getSupabaseBrowserClient();
@@ -5542,6 +5594,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       getDerivedCarryover,
       syncLeaveCarryover,
       planLeaveCarryover,
+      staleLeaveDayCounts,
       releaseLeaveEntitlementToAuto,
       getCarryoverStatus,
       syncCarryoverExpiryBookings,
