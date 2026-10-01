@@ -1658,9 +1658,62 @@ export default function PayrollPage() {
                 <span className="text-[11px] text-slate-500 uppercase font-bold block">Net Disbursed</span>
                 <span className="text-lg font-mono font-extrabold text-emerald-700">€{selectedPaymentForDocs.net.toLocaleString()}</span>
               </div>
-              <Badge variant={selectedPaymentForDocs.status === 'paid' ? 'success' : 'warning'}>
+              <Badge variant={selectedPaymentForDocs.status === 'paid' ? 'success' : selectedPaymentForDocs.status === 'cancelled' ? 'neutral' : 'warning'}>
                 {selectedPaymentForDocs.status.toUpperCase()}
               </Badge>
+            </div>
+
+            {/* Manage the row itself from here — the same two fields the grid edits inline, so the
+                ledger stays fully manageable after a deep link into this modal. */}
+            <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
+              <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center">
+                <Edit className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Payment Record
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">Status</label>
+                  <select
+                    value={selectedPaymentForDocs.status}
+                    onChange={e => {
+                      const status = e.target.value as PaymentRecord['status'];
+                      updatePaymentRecord(selectedPaymentForDocs.id, { status });
+                      setSelectedPaymentForDocs(prev => prev ? { ...prev, status } : null);
+                      notifySuccess(`Payment marked ${status}.`);
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded p-2 font-bold text-slate-800 cursor-pointer"
+                  >
+                    <option value="planned">PLANNED / DRAFT</option>
+                    <option value="paid">PAID &amp; DISPATCHED</option>
+                    <option value="cancelled">CANCELLED</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">Bank Reference</label>
+                  {/* Uncontrolled on purpose: committed on blur/Enter, and the key re-seeds the box
+                      when a different payment is opened. */}
+                  <input
+                    key={selectedPaymentForDocs.id}
+                    type="text"
+                    defaultValue={selectedPaymentForDocs.bank_reference || ''}
+                    placeholder="e.g. WIRE-GR891000"
+                    onBlur={e => {
+                      const next = e.target.value.trim();
+                      if (next === (selectedPaymentForDocs.bank_reference || '')) return;
+                      updatePaymentRecord(selectedPaymentForDocs.id, { bank_reference: next || undefined });
+                      setSelectedPaymentForDocs(prev => prev ? { ...prev, bank_reference: next || undefined } : null);
+                      notifySuccess('Bank reference updated.');
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') {
+                        e.currentTarget.value = selectedPaymentForDocs.bank_reference || '';
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className={`p-3 rounded-xl border flex items-center justify-between ${hasPaymentReceipt(selectedPaymentForDocs.documents) ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-300 text-amber-900'}`}>
@@ -1814,7 +1867,23 @@ export default function PayrollPage() {
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end">
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const who = profiles.find(p => p.id === selectedPaymentForDocs.profile_id);
+                  const name = who ? `${who.first_name} ${who.last_name}` : 'this employee';
+                  const docCount = selectedPaymentForDocs.documents?.length || 0;
+                  if (!confirm(`Delete the ${selectedPaymentForDocs.period} payment row for ${name}?\n\nThis removes the ledger record together with its ${docCount} attached document(s), and cannot be undone.`)) return;
+                  deletePaymentRecord(selectedPaymentForDocs.id);
+                  setSelectedPaymentForDocs(null);
+                  setAddMoreDocs([]);
+                  notifySuccess(`Payment row for ${name} · ${selectedPaymentForDocs.period} deleted.`);
+                }}
+                className="text-rose-600 hover:text-rose-800 font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <Trash2 className="w-4 h-4" /> Delete Payment
+              </button>
               <Button variant="outline" size="sm" onClick={() => { setSelectedPaymentForDocs(null); setAddMoreDocs([]); }}>Close Window</Button>
             </div>
           </div>

@@ -2068,7 +2068,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const supabase = getSupabaseBrowserClient();
     try {
       const { payment_type, ...cleanUpdates } = updates as any;
-      await supabase.from('payments').update(cleanUpdates).eq('id', id);
+      // JSON.stringify drops `undefined`, so a cleared optional field (bank reference, note) would
+      // silently keep its previous value. PostgREST needs null to actually empty the column.
+      const payload = Object.fromEntries(
+        Object.entries(cleanUpdates).map(([k, v]) => [k, v === undefined ? null : v])
+      );
+      await supabase.from('payments').update(payload).eq('id', id);
     } catch (e) {
       console.error('Failed to update payment in database:', e);
     }
