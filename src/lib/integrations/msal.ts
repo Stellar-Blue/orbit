@@ -125,6 +125,13 @@ export async function getDelegatedToken(admin: SupabaseClient, profileId: string
   } catch {
     // Refresh failed (revoked / invalidated) — clear so UI can show "reconnect"
     await deleteMsalTokens(admin, profileId);
+    // The UI reads connection state from employee_integrations, and nothing else downgrades it on
+    // expiry: without this it keeps claiming "Connected" while every work-plan write is skipped.
+    await admin
+      .from('employee_integrations')
+      .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+      .eq('profile_id', profileId)
+      .eq('provider', 'm365');
     return null;
   }
   await storeMsalTokens(admin, profileId, tokens);

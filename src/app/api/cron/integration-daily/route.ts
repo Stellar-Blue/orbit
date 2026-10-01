@@ -52,12 +52,13 @@ export async function GET(request: NextRequest) {
   const outlookSummary = { ok: 0, skipped: 0, errors: [] as string[] };
   for (const profile of (activeProfiles || []) as { id: string }[]) {
     const r = await syncOutlookForProfile(admin, profile.id);
-    if (r.ok) outlookSummary.ok += 1;
-    else if (r.skipped && r.skipped !== 'no_credentials' && r.skipped !== 'disabled') {
-      outlookSummary.errors.push(`${profile.id}:${r.skipped}`);
-    } else {
-      outlookSummary.skipped += 1;
-    }
+    const failing = !!r.skipped && r.skipped !== 'no_credentials' && r.skipped !== 'disabled';
+    if (failing) outlookSummary.errors.push(`${profile.id}:${r.skipped}`);
+    else if (r.ok) outlookSummary.ok += 1;
+    else outlookSummary.skipped += 1;
+    // Work-plan writes fail independently of the calendar pass (delegated consent, Graph shape
+    // changes) — report them instead of letting them disappear.
+    for (const e of r.workPlan?.errors || []) outlookSummary.errors.push(`${profile.id}:${e}`);
   }
 
   // 4. Reconciliation checkpoint

@@ -15,6 +15,17 @@ export interface GraphSettings {
   horizonDays: number;
 }
 
+export interface WorkPlanSummary {
+  created: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+  /** Set when the pass aborted because consent is gone (403). */
+  skipped?: string;
+  /** Non-fatal Graph failures, one `<op>:<code>` entry each. Never silently dropped. */
+  errors: string[];
+}
+
 export interface OutlookSyncResult {
   ok: boolean;
   created: number;
@@ -23,7 +34,7 @@ export interface OutlookSyncResult {
   unchanged: number;
   skipped?: string;
   mailboxErrors: number;
-  workPlan?: { created: number; updated: number; deleted: number; skipped?: string };
+  workPlan?: WorkPlanSummary;
 }
 
 export function hasGraphCredentials(): boolean {
@@ -224,7 +235,6 @@ export interface DesiredRemoteRule {
   orbitId: string;
   weekday: string; // lowercase graph day, e.g. 'tuesday'
   from: string; // YYYY-MM-DD rule start
-  to: string | null; // YYYY-MM-DD rule end (null = noEnd)
 }
 
 export interface DesiredTimeOff {
@@ -236,35 +246,43 @@ export interface DesiredTimeOff {
   startTime?: string;
   endDate: string;
   endTime?: string;
-  /** What the occurrence asserts: leave (`timeOff`, the default) or an ad-hoc declared remote day. */
-  locationType?: 'timeOff' | 'remote';
 }
 
+/**
+ * A remote rule is always `weekly` + `noEnd`, because Graph accepts nothing else: `pattern.type`
+ * must be `weekly` and `range.type` must be `noEnd` (verified against a live tenant — a bounded
+ * or one-day rule is rejected with 400). A pattern carrying `valid_to` therefore stays remote in
+ * the plan and is reverted to office/unspecified by the stale sweep once that date has passed.
+ */
 export function buildRemoteRulePayload(rule: DesiredRemoteRule): Record<string, unknown> {
-  const hasEnd = !!rule.to && rule.to >= rule.from;
   return {
-    start: { dateTime: `${rule.from}T00:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
-    end: { dateTime: `${rule.to || rule.from}T23:59:59.0000000`, timeZone: ATHENS_TIMEZONE },
+    start: { dateTime: `${rule.from}T08:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
+    end: { dateTime: `${rule.from}T17:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
     workLocationType: 'remote',
     recurrence: {
       pattern: { type: 'weekly', interval: 1, daysOfWeek: [rule.weekday] },
-      range: hasEnd
-        ? { type: 'endDate', endDate: rule.to, recurrenceTimeZone: ATHENS_TIMEZONE }
-        : { type: 'noEnd', recurrenceTimeZone: ATHENS_TIMEZONE },
+      range: { type: 'noEnd', recurrenceTimeZone: ATHENS_TIMEZONE },
     },
   };
 }
 
+/**
+ * Work-plan occurrences can only ever be `timeOff`: Graph refuses a `remote` occurrence outright
+ * ("Only TimeOff work plan occurrences can be created via this endpoint"), and a timeOff one may
+ * not carry a recurrenceId or be converted afterwards. That is why the plan holds recurring
+ * remote patterns and nothing else, and why a single declared remote day is a calendar event.
+ *
+ * An all-day segment must end at 00:00 of the day AFTER its last day; `T23:59:59` is rejected
+ * with "Invalid end time for IsAllDay segment".
+ */
 export function buildTimeOffPayload(t: DesiredTimeOff): Record<string, unknown> {
-  const isRemote = t.locationType === 'remote';
-  const startTime = t.startTime || '00:00:00';
-  const endTime = t.endTime || '23:59:59';
+  const startDateTime = t.startTime ? `${t.startDate}T${t.startTime}` : `${t.startDate}T00:00:00`;
+  const endDateTime = t.endTime ? `${t.endDate}T${t.endTime}` : `${addDays(t.endDate, 1)}T00:00:00`;
   return {
-    start: { dateTime: `${t.startDate}T${startTime}.0000000`, timeZone: ATHENS_TIMEZONE },
-    end: { dateTime: `${t.endDate}T${endTime}.0000000`, timeZone: ATHENS_TIMEZONE },
-    workLocationType: isRemote ? 'remote' : 'timeOff',
-    // A remote occurrence has no leave subject — Graph only takes `timeOffDetails` for timeOff.
-    ...(isRemote ? {} : { timeOffDetails: { subject: t.subject, isAllDay: t.allDay } }),
+    start: { dateTime: `${startDateTime}.0000000`, timeZone: ATHENS_TIMEZONE },
+    end: { dateTime: `${endDateTime}.0000000`, timeZone: ATHENS_TIMEZONE },
+    workLocationType: 'timeOff',
+    timeOffDetails: { subject: t.subject, isAllDay: t.allDay },
   };
 }
 
@@ -317,7 +335,7 @@ async function runOutlookSync(admin: SupabaseClient, profileId: string): Promise
   const delegatedToken = await getDelegatedToken(admin, profileId);
 
   const desired = await computeDesiredEvents(admin, settings, profileId, today, horizonEnd);
-  const existing = await loadExistingRefs(admin, profileId, desired.eventMarkers());
+  const existing = await loadExistingRefs(admin, profileId);
 
   for (const ev of desired.events.values()) {
     const ref = existing.get(ev.marker);
@@ -433,13 +451,32 @@ async function syncWorkPlan(
   profileId: string,
   today: string,
   horizonEnd: string
-): Promise<{ created: number; updated: number; deleted: number; unchanged: number; skipped?: string }> {
-  const summary = { created: 0, updated: 0, deleted: 0, unchanged: 0 };
+): Promise<WorkPlanSummary> {
+  const summary: WorkPlanSummary = { created: 0, updated: 0, deleted: 0, unchanged: 0, errors: [] };
 
-  // Remote rules (recurrences): Orbit remote patterns + ad-hoc remote days (one-day rules)
+  /**
+   * Graph writes fail for two different reasons and they need different responses: a 403 means
+   * consent is gone for the whole plan, so the pass aborts; anything else is recorded and the pass
+   * carries on. Every non-403 failure used to be silently `continue`d, which is how months of
+   * rejected writes went unnoticed.
+   */
+  const noteFailure = (op: string, r: GraphResult): boolean => {
+    if (r.ok) return false;
+    if (isForbidden(r)) {
+      summary.skipped = `graph_error:${r.code || r.status}`;
+      return true;
+    }
+    summary.errors.push(`${op}:${r.code || r.status}`);
+    console.error(`outlook work plan ${op} failed for ${profileId}: ${r.status} ${r.code || ''} ${r.message || ''}`);
+    return false;
+  };
+
+  // Remote rules (recurrences): one `weekly` rule per remote-pattern weekday. Ad-hoc declared days
+  // have no work-plan representation at all (Graph takes `timeOff` occurrences only), so they are
+  // mirrored as calendar events by computeDesiredEvents instead.
   const { data: patterns } = await admin
     .from('remote_patterns')
-    .select('id, weekday, valid_from, valid_to')
+    .select('id, weekday, valid_from')
     .eq('profile_id', profileId)
     .in('mode', ['remote_gr', 'remote_abroad'])
     .lte('valid_from', horizonEnd)
@@ -447,7 +484,7 @@ async function syncWorkPlan(
 
   const desiredRules = new Map<string, DesiredRemoteRule>();
   const patternWeekday = new Map<string, string>();
-  for (const p of (patterns || []) as Array<{ id: string; weekday: string; valid_from: string; valid_to: string | null }>) {
+  for (const p of (patterns || []) as Array<{ id: string; weekday: string; valid_from: string }>) {
     const wd = graphWeekday(p.weekday);
     if (!wd) continue;
     patternWeekday.set(p.id, wd);
@@ -456,7 +493,6 @@ async function syncWorkPlan(
       orbitId: p.id,
       weekday: wd,
       from: p.valid_from,
-      to: p.valid_to,
     });
   }
 
@@ -503,37 +539,10 @@ async function syncWorkPlan(
     }
   }
 
-  // Ad-hoc remote days: a one-off work-plan override for that date. A day a remote pattern already
-  // covers keeps ONLY its recurring rule, so every remote day has exactly one representation in the
-  // plan — remote must never spawn a per-day "Working remotely" calendar event as well (that is
-  // what used to fill the calendar; the two passes then fought, one recreating what the other deleted).
-  const coveredByRemotePattern = (dateStr: string): boolean => {
-    const wd = weekdayOf(dateStr);
-    return (patterns || []).some((p: { weekday: string; valid_from: string; valid_to: string | null }) =>
-      p.weekday === wd && dateStr >= p.valid_from && (!p.valid_to || dateStr <= p.valid_to)
-    );
-  };
-
-  const { data: adHocRemoteDays } = await admin
-    .from('remote_days')
-    .select('id, date')
-    .eq('profile_id', profileId)
-    .in('mode', ['remote_gr', 'remote_abroad'])
-    .gte('date', today)
-    .lte('date', horizonEnd);
-
-  for (const rd of (adHocRemoteDays || []) as Array<{ id: string; date: string }>) {
-    if (coveredByRemotePattern(rd.date)) continue;
-    desiredTimeOff.set(`wpto:rd:${rd.id}`, {
-      marker: `wpto:rd:${rd.id}`,
-      orbitId: rd.id,
-      subject: settings.remoteLabel,
-      allDay: true,
-      startDate: rd.date,
-      endDate: rd.date,
-      locationType: 'remote',
-    });
-  }
+  // No ad-hoc remote block here on purpose: Graph rejects `remote` work-plan occurrences with
+  // "Only TimeOff work plan occurrences can be created via this endpoint", so a single declared
+  // day cannot live in the plan. computeDesiredEvents gives it a calendar event instead, and the
+  // stale sweep below leaves those events alone because they carry a desired event marker.
 
   const existingRefs = await loadWorkPlanRefs(admin, profileId);
 
@@ -555,34 +564,56 @@ async function syncWorkPlan(
   // when the Orbit pattern no longer calls for remote that day.
   const existingRules = await wpListRecurrences(token, mailboxEmail);
   if (!existingRules.ok) {
+    // Must fail closed: without the live rule list we would not recognise the user's own rules
+    // and would create duplicates alongside them.
     return { ...summary, skipped: `graph_error:${existingRules.code || existingRules.status}` };
   }
   const rulesByWeekday = new Map<string, Record<string, unknown>>();
   for (const r of (existingRules.event?.value as Array<Record<string, unknown>> | undefined) || []) {
     const days = (r.recurrence as { pattern?: { daysOfWeek?: string[] } } | undefined)?.pattern?.daysOfWeek || [];
-    const tzKey = r.start as { dateTime?: string } | undefined;
     if (days.length === 1 && !rulesByWeekday.has(days[0])) {
       rulesByWeekday.set(days[0], r);
     }
-    void tzKey;
   }
+
+  /**
+   * Graph replaces work-plan rule ids when it regenerates a plan (editing it in Outlook does this),
+   * which used to leave every `external_ref` pointing at a dead id and cost a doomed PUT per weekday
+   * on every single sync. Re-point the ref at the live rule for the weekday and report whether that
+   * rule is already in the wanted state.
+   */
+  const liveRule = async (
+    refId: string,
+    refExternalId: string | null,
+    wd: string,
+    want: 'office' | 'remote'
+  ): Promise<{ id: string; done: boolean } | null> => {
+    const live = rulesByWeekday.get(wd);
+    if (!live) {
+      await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', refId);
+      return null;
+    }
+    if (String(live.id) !== refExternalId) {
+      await admin.from('external_refs').update({ external_id: String(live.id) }).eq('id', refId);
+    }
+    return { id: String(live.id), done: live.workLocationType === want };
+  };
 
   for (const rule of desiredRules.values()) {
     const ref = existingRefs.get(rule.marker);
     if (ref?.external_id && !ref.deleted_at) {
-      // Rule we own — keep it remote (PUT full object with type remote)
-      const existing = rulesByWeekday.get(rule.weekday);
-      const payload = existing && existing.id === ref.external_id
-        ? { ...existing, workLocationType: 'remote' }
-        : buildRemoteRulePayload(rule);
-      const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, payload);
-      if (!res.ok) {
-        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        summary.updated += 1;
+      const live = await liveRule(ref.id, ref.external_id, rule.weekday, 'remote');
+      if (live) {
+        if (live.done) {
+          summary.unchanged += 1;
+          continue;
+        }
+        const current = rulesByWeekday.get(rule.weekday) || {};
+        const res = await wpUpdateRecurrence(token, mailboxEmail, live.id, { ...current, workLocationType: 'remote' });
+        if (noteFailure('set-remote-rule', res)) return summary;
+        if (res.ok) summary.updated += 1;
         continue;
       }
-      summary.updated += 1;
-      continue;
     }
 
     const existing = rulesByWeekday.get(rule.weekday);
@@ -593,10 +624,8 @@ async function syncWorkPlan(
       }
       // Flip the user's rule for this weekday to remote
       const res = await wpUpdateRecurrence(token, mailboxEmail, String(existing.id), { ...existing, workLocationType: 'remote' });
-      if (!res.ok) {
-        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        continue;
-      }
+      if (noteFailure('flip-remote-rule', res)) return summary;
+      if (!res.ok) continue;
       await admin.from('external_refs').insert({
         provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: rule.orbitId,
         external_id: String(existing.id), marker: rule.marker,
@@ -605,20 +634,10 @@ async function syncWorkPlan(
       continue;
     }
 
-    // No plan rule for this weekday — create one (noEnd range, bounded segment 08:00–17:00)
-    const res = await wpCreateRecurrence(token, mailboxEmail, {
-      start: { dateTime: `${rule.from}T08:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
-      end: { dateTime: `${rule.from}T17:00:00.0000000`, timeZone: ATHENS_TIMEZONE },
-      workLocationType: 'remote',
-      recurrence: {
-        pattern: { type: 'weekly', interval: 1, daysOfWeek: [rule.weekday] },
-        range: { type: 'noEnd', startDate: rule.from, recurrenceTimeZone: ATHENS_TIMEZONE },
-      },
-    });
-    if (!res.ok) {
-      if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-      continue;
-    }
+    // No plan rule for this weekday — create one (08:00–17:00 segment, `noEnd` weekly recurrence)
+    const res = await wpCreateRecurrence(token, mailboxEmail, buildRemoteRulePayload(rule));
+    if (noteFailure('create-remote-rule', res)) return summary;
+    if (!res.ok) continue;
     await admin.from('external_refs').insert({
       provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: rule.orbitId,
       external_id: String(res.event?.id), marker: rule.marker,
@@ -629,29 +648,26 @@ async function syncWorkPlan(
   // Office rules: flip/ensure `office` for every non-remote work-schedule weekday
   for (const [wd, marker] of desiredOffice) {
     const ref = existingRefs.get(marker);
-    const existing = rulesByWeekday.get(wd);
     if (ref?.external_id && !ref.deleted_at) {
-      if (existing && String(existing.id) === ref.external_id && existing.workLocationType === 'office') {
-        summary.unchanged += 1;
+      const live = await liveRule(ref.id, ref.external_id, wd, 'office');
+      if (live) {
+        if (live.done) {
+          summary.unchanged += 1;
+          continue;
+        }
+        const current = rulesByWeekday.get(wd) || {};
+        const res = await wpUpdateRecurrence(token, mailboxEmail, live.id, { ...current, workLocationType: 'office' });
+        if (noteFailure('set-office-rule', res)) return summary;
+        if (res.ok) summary.updated += 1;
         continue;
       }
-      const target = existing && String(existing.id) === ref.external_id ? existing : undefined;
-      const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...(target || {}), workLocationType: 'office' });
-      if (!res.ok) {
-        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        summary.updated += 1;
-        continue;
-      }
-      summary.updated += 1;
-      continue;
     }
+    const existing = rulesByWeekday.get(wd);
     if (existing) {
       if (existing.workLocationType === 'office') continue;
       const res = await wpUpdateRecurrence(token, mailboxEmail, String(existing.id), { ...existing, workLocationType: 'office' });
-      if (!res.ok) {
-        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        continue;
-      }
+      if (noteFailure('flip-office-rule', res)) return summary;
+      if (!res.ok) continue;
       await admin.from('external_refs').insert({
         provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: profileId,
         external_id: String(existing.id), marker,
@@ -669,10 +685,8 @@ async function syncWorkPlan(
         range: { type: 'noEnd', startDate: today, recurrenceTimeZone: ATHENS_TIMEZONE },
       },
     });
-    if (!res.ok) {
-      if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-      continue;
-    }
+    if (noteFailure('create-office-rule', res)) return summary;
+    if (!res.ok) continue;
     await admin.from('external_refs').insert({
       provider: 'm365', profile_id: profileId, orbit_kind: 'remote', orbit_id: profileId,
       external_id: String(res.event?.id), marker,
@@ -686,25 +700,24 @@ async function syncWorkPlan(
     const payload = buildTimeOffPayload(t);
     if (ref?.external_id && !ref.deleted_at) {
       const res = await wpUpdateOccurrence(token, mailboxEmail, ref.external_id, payload);
-      if (!res.ok) {
-        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
+      if (noteFailure('update-timeoff', res)) return summary;
+      if (res.ok) {
         summary.updated += 1;
         continue;
       }
-      summary.updated += 1;
-    } else {
-      const res = await wpCreateOccurrence(token, mailboxEmail, payload);
-      if (!res.ok) {
-        if (isForbidden(res)) return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        continue;
-      }
-      await admin.from('external_refs').insert({
-        provider: 'm365', profile_id: profileId,
-        orbit_kind: t.locationType === 'remote' ? 'remote' : 'leave', orbit_id: t.orbitId,
-        external_id: String(res.event?.id), marker: t.marker,
-      });
-      summary.created += 1;
+      if (!isGone(res)) continue; // recorded; leave it for the next pass
+      // Occurrence is no longer in the plan — retire the ref and recreate it below
+      await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
     }
+    const res = await wpCreateOccurrence(token, mailboxEmail, payload);
+    if (noteFailure('create-timeoff', res)) return summary;
+    if (!res.ok) continue;
+    await admin.from('external_refs').insert({
+      provider: 'm365', profile_id: profileId,
+      orbit_kind: 'leave', orbit_id: t.orbitId,
+      external_id: String(res.event?.id), marker: t.marker,
+    });
+    summary.created += 1;
   }
 
   // Stale work plan artifacts
@@ -717,27 +730,23 @@ async function syncWorkPlan(
       // Office rule no longer desired (weekday became remote or left the work schedule) — revert to unspecified
       const wd = ref.marker.replace('wprec:off:', '');
       const existing = rulesByWeekday.get(wd);
-      const gone = (res2: GraphResult) => !res2.ok && !isForbidden(res2) && !isGone(res2);
       if (existing && String(existing.id) === ref.external_id) {
         const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...existing, workLocationType: 'unspecified' });
-        if (gone(res)) {
-          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        }
+        if (noteFailure('revert-office-rule', res)) return summary;
       } else {
         const res = await wpDeleteRecurrence(token, mailboxEmail, ref.external_id);
-        if (gone(res)) {
-          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        }
+        if (noteFailure('delete-office-rule', res)) return summary;
       }
       await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
       summary.deleted += 1;
       continue;
     }
 
-    // Legacy remote-day calendar events (replaced by work plan rules) — delete as events
+    // Remote calendar events, deleted as events: pre-work-plan remote patterns (legacy markers, no
+    // longer produced by anything) and ad-hoc declared days that dropped out of the horizon.
     if (ref.marker.startsWith('remote:day:') || ref.marker.startsWith('remote:pat:')) {
       const res = await graphDeleteEvent(mailboxEmail, ref.external_id);
-      if (!res.ok && !isForbidden(res)) {
+      if (!res.ok && !isForbidden(res) && !isGone(res)) {
         return { ...summary, skipped: `graph_error:${res.code || res.status}` };
       }
       await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
@@ -758,14 +767,10 @@ async function syncWorkPlan(
       if (existing && String(existing.id) === ref.external_id) {
         const revertTo = wd && desiredOffice.has(wd) ? 'office' : 'unspecified';
         const res = await wpUpdateRecurrence(token, mailboxEmail, ref.external_id, { ...existing, workLocationType: revertTo });
-        if (!res.ok && !isForbidden(res) && !isGone(res)) {
-          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        }
+        if (noteFailure('revert-remote-rule', res)) return summary;
       } else {
         const res = await wpDeleteRecurrence(token, mailboxEmail, ref.external_id);
-        if (!res.ok && !isForbidden(res) && !isGone(res)) {
-          return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-        }
+        if (noteFailure('delete-remote-rule', res)) return summary;
       }
       await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
       summary.deleted += 1;
@@ -773,9 +778,7 @@ async function syncWorkPlan(
     }
 
     const res = await wpDeleteOccurrence(token, mailboxEmail, ref.external_id);
-    if (!res.ok && !isForbidden(res) && !isGone(res)) {
-      return { ...summary, skipped: `graph_error:${res.code || res.status}` };
-    }
+    if (noteFailure('delete-timeoff', res)) return summary;
     await admin.from('external_refs').update({ deleted_at: new Date().toISOString() }).eq('id', ref.id);
     summary.deleted += 1;
   }
@@ -853,7 +856,7 @@ async function recordMailboxException(admin: SupabaseClient, profileId: string, 
   });
 }
 
-// ---------- Desired events (leave only; remote lives in the work plan) ----------
+// ---------- Desired events (leave + ad-hoc declared remote days) ----------
 
 interface DesiredSet {
   events: Map<string, DesiredEvent>;
@@ -868,6 +871,7 @@ async function computeDesiredEvents(
   horizonEnd: string
 ): Promise<DesiredSet> {
   const events = new Map<string, DesiredEvent>();
+  const leaveRanges: Array<{ start: string; end: string }> = [];
 
   const { data: leaves } = await admin
     .from('leave_requests')
@@ -880,6 +884,7 @@ async function computeDesiredEvents(
   for (const leave of (leaves || []) as Array<{ id: string; start_date: string; end_date: string; half_day_start: boolean; half_day_end: boolean }>) {
     const start = leave.start_date < today ? today : leave.start_date;
     const end = leave.end_date > horizonEnd ? horizonEnd : leave.end_date;
+    leaveRanges.push({ start, end });
 
     if (leave.half_day_start || leave.half_day_end) {
       if (leave.half_day_start && leave.start_date >= start && leave.start_date <= end) {
@@ -912,6 +917,36 @@ async function computeDesiredEvents(
     }
   }
 
+  // Ad-hoc declared remote days become calendar events, because the Outlook work plan cannot hold
+  // one: a `remote` work-plan occurrence is rejected ("Only TimeOff work plan occurrences can be
+  // created via this endpoint") and a one-off rule is rejected too (`range.type` must be `noEnd`).
+  // A day a remote *pattern* already covers keeps only its recurring rule, so every remote day has
+  // exactly one representation, and a day inside leave keeps only the leave event (leave wins).
+  const { data: adHocRemote } = await admin
+    .from('remote_days')
+    .select('id, date')
+    .eq('profile_id', profileId)
+    .in('mode', ['remote_gr', 'remote_abroad'])
+    .gte('date', today)
+    .lte('date', horizonEnd);
+
+  const { data: remotePatterns } = await admin
+    .from('remote_patterns')
+    .select('weekday, valid_from, valid_to')
+    .eq('profile_id', profileId)
+    .in('mode', ['remote_gr', 'remote_abroad'])
+    .lte('valid_from', horizonEnd)
+    .or(`valid_to.is.null,valid_to.gte.${today}`);
+
+  for (const rd of (adHocRemote || []) as Array<{ id: string; date: string }>) {
+    if (remotePatternCovers((remotePatterns || []) as RemotePatternRow[], rd.date)) continue;
+    if (leaveRanges.some(l => rd.date >= l.start && rd.date <= l.end)) continue;
+    events.set(`remote:day:${rd.id}`, {
+      marker: `remote:day:${rd.id}`, orbitKind: 'remote', orbitId: rd.id, subject: settings.remoteLabel,
+      allDay: true, startDate: rd.date, endDate: addDays(rd.date, 1), showAs: 'workingElsewhere',
+    });
+  }
+
   return {
     events,
     eventMarkers: () => new Set(events.keys()),
@@ -920,8 +955,7 @@ async function computeDesiredEvents(
 
 async function loadExistingRefs(
   admin: SupabaseClient,
-  profileId: string,
-  desired: Set<string>
+  profileId: string
 ): Promise<Map<string, { id: string; marker: string; external_id: string | null; deleted_at: string | null }>> {
   // Query by profile_id (not orbit_id) so refs of DELETED records are still found and cleaned up
   const { data } = await admin
@@ -951,6 +985,18 @@ function addDays(dateStr: string, days: number): string {
 
 function weekdayOf(dateStr: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: ATHENS_TIMEZONE, weekday: 'short' }).format(new Date(`${dateStr}T12:00:00Z`));
+}
+
+interface RemotePatternRow {
+  weekday: string;
+  valid_from: string;
+  valid_to: string | null;
+}
+
+/** A remote pattern already covers this date, so that day must not get a second artifact. */
+function remotePatternCovers(patterns: RemotePatternRow[], dateStr: string): boolean {
+  const wd = weekdayOf(dateStr);
+  return patterns.some(p => p.weekday === wd && dateStr >= p.valid_from && (!p.valid_to || dateStr <= p.valid_to));
 }
 
 const WEEKDAY_MAP: Record<string, string> = {
