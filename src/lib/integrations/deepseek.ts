@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { getVaultSecret, setVaultSecret, deleteVaultSecret } from './server';
-import { extractPdfText, splitDataUrl } from './pdf-text';
+import { readPdfText, splitDataUrl } from './pdf-text';
 import { parseAmountInput } from '@/lib/currency';
 
 /**
@@ -199,9 +199,14 @@ export async function resolveDocuments(docs: ModelInputPayload[]): Promise<{ rea
     const kind = splitDataUrl(doc.dataUrl)?.mime || '';
     if (/^image\//i.test(kind)) { readable.push({ ...doc, images: [doc.dataUrl] }); continue; }
     if (/pdf/i.test(kind)) {
-      const text = await extractPdfText(doc.dataUrl);
-      if (text) readable.push({ ...doc, text });
-      else unreadable.push(`${doc.name} (a scan — its text layer is empty, so it needs to be a photo/PDF with readable text)`);
+      const result = await readPdfText(doc.dataUrl);
+      if (result.status === 'text') readable.push({ ...doc, text: result.text });
+      else if (result.status === 'no-text-layer') {
+        unreadable.push(`${doc.name} (no text layer — it is a scan, so the model would have to see it as an image)`);
+      } else {
+        // A read failure is OUR problem, never the document's: say what broke.
+        unreadable.push(`${doc.name} (could not be read: ${result.detail})`);
+      }
       continue;
     }
     unreadable.push(`${doc.name} (unsupported file type)`);

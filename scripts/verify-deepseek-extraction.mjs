@@ -10,7 +10,8 @@
  *      (or: npm run test:deepseek)
  */
 
-import { extractPaymentFields, normalizeExtractedFields, normalizePaymentDate, DEEPSEEK_MODEL } from '../src/lib/integrations/deepseek.ts';
+import { extractPaymentFields, normalizeExtractedFields, normalizePaymentDate, resolveDocuments, DEEPSEEK_MODEL } from '../src/lib/integrations/deepseek.ts';
+import { readFileSync } from 'node:fs';
 
 let passed = 0;
 let failed = 0;
@@ -116,6 +117,34 @@ console.log('===============================================================\n')
 
   const unreadable = await extractPaymentFields(adminWithKey('sk-test'), [{ name: 'scan.pdf' }], { employeeName: 'X', period: '2026-09' });
   check(unreadable.ok === false && /could be read/.test(unreadable.error || ''), 'documents with no text and no images → explicit error', unreadable.error);
+}
+
+// --- A read failure must never be reported as a scan ------------------------------------------
+// The reported bug: pdfjs was bundled, so its fake worker failed and EVERY read threw. The error was
+// swallowed and reported as "a scan with an empty text layer", blaming the customer's files.
+{
+  const placeholder = await resolveDocuments([{ name: 'voucher.pdf', type: 'receipt' }]);
+  check(
+    placeholder.unreadable.length === 1 && /placeholder row|no stored file/i.test(placeholder.unreadable[0]),
+    'a metadata-only placeholder row is reported as such, not as a scan',
+    placeholder.unreadable[0]
+  );
+
+  const corrupt = await resolveDocuments([{ name: 'broken.pdf', type: 'receipt', dataUrl: 'data:application/pdf;base64,bm90LWEtcGRm' }]);
+  check(corrupt.readable.length === 0 && corrupt.unreadable.length === 1, 'a PDF that cannot be opened is reported as unreadable');
+  check(/could not be read/i.test(corrupt.unreadable[0]), 'and says it could not be read', corrupt.unreadable[0]);
+  check(!/scan/i.test(corrupt.unreadable[0]), 'and is NOT mislabelled as a scan', corrupt.unreadable[0]);
+
+  // The bundler trap that caused all of the above: pdfjs must stay outside the server bundle, or its
+  // fake worker path is rewritten to a chunk that does not exist.
+  const nextConfig = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8');
+  check(/serverExternalPackages\s*:\s*\[[^\]]*['"]pdfjs-dist['"]/.test(nextConfig),
+    'next.config.ts keeps pdfjs-dist out of the server bundle (serverExternalPackages)',
+    'without this, every PDF read throws "Setting up fake worker failed" at runtime');
+
+  // An image attachment is vision input and needs no PDF machinery at all.
+  const image = await resolveDocuments([{ name: 'photo.jpg', type: 'receipt', dataUrl: 'data:image/jpeg;base64,AAAA' }]);
+  check(image.readable[0]?.images?.length === 1, 'an image attachment becomes a vision block');
 }
 
 // --- The request it sends --------------------------------------------------------------------
