@@ -200,24 +200,16 @@ export default function PayrollPage() {
   const [upNote, setUpNote] = useState('');
   const [upDocs, setUpDocs] = useState<PaymentDocument[]>([]);
 
-  // Adjust / Edit Existing Payment Modal
-  const [editingPayment, setEditingPayment] = useState<PaymentRecord | null>(null);
-  const [edGross, setEdGross] = useState<number>(0);
-  const [edEfka, setEdEfka] = useState<number>(0);
-  const [edNet, setEdNet] = useState<number>(0);
-  const [edDate, setEdDate] = useState('');
-  const [edBankRef, setEdBankRef] = useState('');
-  const [edStatus, setEdStatus] = useState<'paid' | 'planned' | 'cancelled'>('paid');
-  const [edNote, setEdNote] = useState('');
-
-  // Existing Payment Documents Management Modal State
+  // Payment Ledger modal state. One modal per ledger row: the open record doubles as the edit buffer,
+  // so the money fields exist in exactly one place and `payments` (the source of truth) is only
+  // written on Save.
   const [selectedPaymentForDocs, setSelectedPaymentForDocs] = useState<PaymentRecord | null>(null);
   const [addMoreDocs, setAddMoreDocs] = useState<PaymentDocument[]>([]);
   const [previewDoc, setPreviewDoc] = useState<{ doc: PaymentDocument; profName: string; bankRef?: string } | null>(null);
 
   // Sync initial selection from URL ID
   useEffect(() => {
-    if (urlId && payments.length > 0 && !selectedPaymentForDocs && !editingPayment) {
+    if (urlId && payments.length > 0 && !selectedPaymentForDocs) {
       const target = payments.find(p => p.id === urlId || p.bank_reference === urlId);
       if (target) {
         if (target.period && target.period !== selectedPeriod) {
@@ -232,7 +224,7 @@ export default function PayrollPage() {
   // Sync address bar when payment is selected or closed
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const active = selectedPaymentForDocs || editingPayment;
+    const active = selectedPaymentForDocs;
     if (active) {
       if (window.location.pathname !== `/payroll/${active.id}`) {
         window.history.pushState(null, '', `/payroll/${active.id}`);
@@ -240,7 +232,7 @@ export default function PayrollPage() {
     } else if (window.location.pathname !== '/payroll' && window.location.pathname.startsWith('/payroll/')) {
       window.history.pushState(null, '', '/payroll');
     }
-  }, [selectedPaymentForDocs, editingPayment]);
+  }, [selectedPaymentForDocs]);
   
   // New dynamic payment type state
   const [isTypeOpen, setIsTypeOpen] = useState(false);
@@ -629,34 +621,40 @@ export default function PayrollPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Open Adjust / Edit Modal
-  const handleOpenEditModal = (pay: PaymentRecord) => {
-    setEditingPayment(pay);
-    setEdGross(pay.gross);
-    setEdEfka(pay.employer_contributions);
-    setEdNet(pay.net);
-    setEdDate(pay.payment_date || `${selectedPeriod}-28`);
-    setEdBankRef(pay.bank_reference || '');
-    setEdStatus(pay.status);
-    setEdNote(pay.note || '');
+  // Open the Payment Ledger modal on a row — grid pencil, paperclip, row double-click or deep link.
+  const openPaymentModal = (pay: PaymentRecord) => {
+    setSelectedPaymentForDocs(pay);
+    setAddMoreDocs([]);
   };
 
-  const handleSaveEditedPayment = async () => {
-    if (!editingPayment) return;
-    const total_cost = Number((Number(edGross) + Number(edEfka)).toFixed(2));
-    
-    await updatePaymentRecord(editingPayment.id, {
-      gross: Number(edGross),
-      employer_contributions: Number(edEfka),
-      net: Number(edNet),
-      total_cost,
-      payment_date: edDate,
-      bank_reference: edBankRef.trim() || undefined,
-      status: edStatus,
-      note: edNote.trim() || undefined
-    });
+  /** Draft a field on the open record. `payments` stays untouched until Save, and closes reset it. */
+  const patchOpenPayment = (updates: Partial<PaymentRecord>) => {
+    setSelectedPaymentForDocs(prev => prev ? { ...prev, ...updates } : null);
+  };
 
-    setEditingPayment(null);
+  const openPaymentAmounts = selectedPaymentForDocs ? {
+    gross: Number(selectedPaymentForDocs.gross) || 0,
+    efka: Number(selectedPaymentForDocs.employer_contributions) || 0,
+  } : { gross: 0, efka: 0 };
+
+  /** Live derived cost of the open record — gross plus the employer's EFKA contribution. */
+  const openPaymentTotal = Number((openPaymentAmounts.gross + openPaymentAmounts.efka).toFixed(2));
+
+  /** Commit the whole row. Gross and EFKA are the inputs; total_cost is derived, never typed. */
+  const handleSaveOpenPayment = async () => {
+    const row = selectedPaymentForDocs;
+    if (!row) return;
+    await updatePaymentRecord(row.id, {
+      gross: openPaymentAmounts.gross,
+      employer_contributions: openPaymentAmounts.efka,
+      net: Number(row.net) || 0,
+      total_cost: openPaymentTotal,
+      payment_date: row.payment_date,
+      bank_reference: (row.bank_reference || '').trim() || undefined,
+      status: row.status,
+      note: (row.note || '').trim() || undefined,
+    });
+    patchOpenPayment({ total_cost: openPaymentTotal });
     notifySuccess('Payment row updated.');
   };
 
@@ -984,11 +982,8 @@ export default function PayrollPage() {
             profiles={profiles}
             paymentTypes={paymentTypes}
             hasPaymentReceipt={hasPaymentReceipt}
-            onEdit={(pay) => handleOpenEditModal(pay)}
-            onAttachDocs={(pay) => {
-              setSelectedPaymentForDocs(pay);
-              setAddMoreDocs([]);
-            }}
+            onEdit={openPaymentModal}
+            onAttachDocs={openPaymentModal}
             onUpdate={(pay, updates) => {
               updatePaymentRecord(pay.id, updates);
               const who = profiles.find(pr => pr.id === pay.profile_id);
@@ -1378,73 +1373,6 @@ export default function PayrollPage() {
         </div>
       </Modal>
 
-      {/* ADJUST / EDIT PAYMENT MODAL */}
-      <Modal isOpen={!!editingPayment} onClose={() => setEditingPayment(null)} title={`Adjust Payment Row: ${profiles.find(p => p.id === editingPayment?.profile_id)?.last_name} (${editingPayment?.period})`}>
-        {editingPayment && (
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-50 border rounded-xl text-slate-600">
-              Fix amounts against the accountant&apos;s payroll run, update bank transfer reference numbers, or transition draft rows to paid.
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€)</label>
-                <input type="number" step="0.01" value={edGross} onChange={e => setEdGross(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold" />
-              </div>
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Net Payable (€)</label>
-                <input type="number" step="0.01" value={edNet} onChange={e => setEdNet(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-emerald-700 font-bold" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Payment Date</label>
-                <input type="date" value={edDate} onChange={e => setEdDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-mono" />
-              </div>
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Bank Reference</label>
-                <input type="text" placeholder="e.g. WIRE-GR891000" value={edBankRef} onChange={e => setEdBankRef(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Status</label>
-                <select value={edStatus} onChange={e => setEdStatus(e.target.value as any)} className="w-full bg-white border border-slate-200 rounded p-2 font-bold">
-                  <option value="paid">PAID & DISPATCHED</option>
-                  <option value="planned">PLANNED / DRAFT</option>
-                  <option value="cancelled">CANCELLED</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold uppercase text-slate-500 mb-1">Note</label>
-                <input type="text" value={edNote} onChange={e => setEdNote(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2" />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
-              <button 
-                type="button" 
-                onClick={() => {
-                  if (confirm('Delete this payment ledger record?')) {
-                    deletePaymentRecord(editingPayment.id);
-                    setEditingPayment(null);
-                  }
-                }}
-                className="text-rose-600 hover:text-rose-800 font-bold text-xs flex items-center gap-1 cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" /> Delete Row
-              </button>
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm" onClick={() => setEditingPayment(null)}>Cancel</Button>
-                <Button variant="primary" size="sm" onClick={handleSaveEditedPayment} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">Save Adjustment &rarr;</Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
-
       {/* ADD / EDIT PAYMENT TYPE MODAL */}
       <Modal isOpen={isTypeOpen} onClose={() => { setIsTypeOpen(false); setEditingTypeId(null); }} title={editingTypeId ? 'Edit Dynamic Payment Category' : 'Register Dynamic Payment Category'}>
         <div className="space-y-4 text-xs">
@@ -1645,41 +1573,70 @@ export default function PayrollPage() {
       <Modal 
         isOpen={!!selectedPaymentForDocs} 
         onClose={() => { setSelectedPaymentForDocs(null); setAddMoreDocs([]); }} 
-        title={selectedPaymentForDocs ? `Payment Documents: ${profiles.find(p => p.id === selectedPaymentForDocs.profile_id)?.first_name} ${profiles.find(p => p.id === selectedPaymentForDocs.profile_id)?.last_name} (${selectedPaymentForDocs.period})` : 'Payment Documents'}
+        title={selectedPaymentForDocs ? `Payment Ledger: ${profiles.find(p => p.id === selectedPaymentForDocs.profile_id)?.first_name} ${profiles.find(p => p.id === selectedPaymentForDocs.profile_id)?.last_name} (${selectedPaymentForDocs.period})` : 'Payment Ledger'}
       >
         {selectedPaymentForDocs && (
           <div className="space-y-5 text-xs">
             <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
               <div>
                 <span className="text-[11px] text-slate-500 uppercase font-bold block">Total Company Cost</span>
-                <span className="text-lg font-mono font-extrabold text-slate-900">€{selectedPaymentForDocs.total_cost.toLocaleString()}</span>
+                <span className="text-lg font-mono font-extrabold text-slate-900">€{openPaymentTotal.toLocaleString()}</span>
               </div>
               <div>
                 <span className="text-[11px] text-slate-500 uppercase font-bold block">Net Disbursed</span>
-                <span className="text-lg font-mono font-extrabold text-emerald-700">€{selectedPaymentForDocs.net.toLocaleString()}</span>
+                <span className="text-lg font-mono font-extrabold text-emerald-700">€{(Number(selectedPaymentForDocs.net) || 0).toLocaleString()}</span>
               </div>
               <Badge variant={selectedPaymentForDocs.status === 'paid' ? 'success' : selectedPaymentForDocs.status === 'cancelled' ? 'neutral' : 'warning'}>
                 {selectedPaymentForDocs.status.toUpperCase()}
               </Badge>
             </div>
 
-            {/* Manage the row itself from here — the same two fields the grid edits inline, so the
-                ledger stays fully manageable after a deep link into this modal. */}
+            {/* The ledger row itself. Amounts, date, bank reference and status are saved together
+                because gross / employer EFKA / total cost are derived from one another. */}
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
               <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center">
                 <Edit className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Payment Record
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€)</label>
+                  <input
+                    type="number" step="0.01" value={selectedPaymentForDocs.gross}
+                    onChange={e => patchOpenPayment({ gross: Number(e.target.value) })}
+                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">Employer EFKA (€)</label>
+                  <input
+                    type="number" step="0.01" value={selectedPaymentForDocs.employer_contributions}
+                    onChange={e => patchOpenPayment({ employer_contributions: Number(e.target.value) })}
+                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">Net Payable (€)</label>
+                  <input
+                    type="number" step="0.01" value={selectedPaymentForDocs.net}
+                    onChange={e => patchOpenPayment({ net: Number(e.target.value) })}
+                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-emerald-700"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">Payment Date</label>
+                  <input
+                    type="date" value={(selectedPaymentForDocs.payment_date || '').slice(0, 10)}
+                    onChange={e => patchOpenPayment({ payment_date: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800"
+                  />
+                </div>
+                <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Status</label>
                   <select
                     value={selectedPaymentForDocs.status}
-                    onChange={e => {
-                      const status = e.target.value as PaymentRecord['status'];
-                      updatePaymentRecord(selectedPaymentForDocs.id, { status });
-                      setSelectedPaymentForDocs(prev => prev ? { ...prev, status } : null);
-                      notifySuccess(`Payment marked ${status}.`);
-                    }}
+                    onChange={e => patchOpenPayment({ status: e.target.value as PaymentRecord['status'] })}
                     className="w-full bg-white border border-slate-200 rounded p-2 font-bold text-slate-800 cursor-pointer"
                   >
                     <option value="planned">PLANNED / DRAFT</option>
@@ -1687,32 +1644,22 @@ export default function PayrollPage() {
                     <option value="cancelled">CANCELLED</option>
                   </select>
                 </div>
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Bank Reference</label>
-                  {/* Uncontrolled on purpose: committed on blur/Enter, and the key re-seeds the box
-                      when a different payment is opened. */}
                   <input
-                    key={selectedPaymentForDocs.id}
-                    type="text"
-                    defaultValue={selectedPaymentForDocs.bank_reference || ''}
-                    placeholder="e.g. WIRE-GR891000"
-                    onBlur={e => {
-                      const next = e.target.value.trim();
-                      if (next === (selectedPaymentForDocs.bank_reference || '')) return;
-                      updatePaymentRecord(selectedPaymentForDocs.id, { bank_reference: next || undefined });
-                      setSelectedPaymentForDocs(prev => prev ? { ...prev, bank_reference: next || undefined } : null);
-                      notifySuccess('Bank reference updated.');
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') e.currentTarget.blur();
-                      if (e.key === 'Escape') {
-                        e.currentTarget.value = selectedPaymentForDocs.bank_reference || '';
-                        e.currentTarget.blur();
-                      }
-                    }}
+                    type="text" placeholder="e.g. WIRE-GR891000" value={selectedPaymentForDocs.bank_reference || ''}
+                    onChange={e => patchOpenPayment({ bank_reference: e.target.value })}
                     className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block font-semibold uppercase text-slate-500 mb-1">Note / Memo</label>
+                <input
+                  type="text" placeholder="e.g. Q3 retainer & software expenses" value={selectedPaymentForDocs.note || ''}
+                  onChange={e => patchOpenPayment({ note: e.target.value })}
+                  className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
+                />
               </div>
             </div>
 
@@ -1884,7 +1831,10 @@ export default function PayrollPage() {
               >
                 <Trash2 className="w-4 h-4" /> Delete Payment
               </button>
-              <Button variant="outline" size="sm" onClick={() => { setSelectedPaymentForDocs(null); setAddMoreDocs([]); }}>Close Window</Button>
+              <div className="flex items-center space-x-2 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => { setSelectedPaymentForDocs(null); setAddMoreDocs([]); }}>Close</Button>
+                <Button variant="primary" size="sm" onClick={handleSaveOpenPayment} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">Save Changes</Button>
+              </div>
             </div>
           </div>
         )}
