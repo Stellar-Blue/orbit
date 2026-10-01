@@ -17,6 +17,7 @@ import { GeneralSettings } from '@/components/settings/general-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { LeaveDefaultsCard, CarryoverPolicyCard } from '@/components/settings/leave-defaults';
+import { CarryoverRecalculationCard } from '@/components/settings/carryover-recalculation';
 import { HolidaysCard } from '@/components/settings/holidays';
 import { CoverageRulesCard } from '@/components/settings/coverage-rules';
 import { ScreenVisibilityCard } from '@/components/settings/screen-visibility';
@@ -677,6 +678,7 @@ export default function CompanySettingsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           <div className="lg:col-span-3"><LeaveDefaultsCard /></div>
           <div className="lg:col-span-3"><CarryoverPolicyCard /></div>
+          <div className="lg:col-span-3"><CarryoverRecalculationCard /></div>
           {/* Active Leave Types List */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">

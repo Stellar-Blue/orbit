@@ -57,6 +57,37 @@ export interface LeaveExceptionInput {
   group_id?: string | null;
 }
 
+/**
+ * One line of the carry-over dry run: what the automatic rule derives for one (employee, year)
+ * against what the entitlement record currently holds. `planLeaveCarryover` returns these read-only
+ * and `syncLeaveCarryover` writes exactly them, so a preview can never disagree with the run.
+ */
+export interface CarryoverPlanRow {
+  profileId: string;
+  profileName: string;
+  year: number;
+  /** What the entitlement record holds today — `null` when there is no record for that year yet. */
+  stored: number | null;
+  /** What the automatic rule derives from the closed year's remainder, after the policy cap. */
+  derived: number;
+  /** An admin typed this value, so the recalculation never overwrites it. */
+  isManual: boolean;
+  /** Allowance the record has (or will keep, or will be created with). */
+  entitlementDays: number;
+  /** Due date the derived pot would get, when the policy sets one. */
+  expiresOn?: string;
+}
+
+/** Outcome of a carry-over recalculation, including what actually moved. */
+export interface CarryoverSyncResult {
+  created: number;
+  updated: number;
+  /** Records skipped because an admin set them by hand. */
+  manual: number;
+  /** Only the records whose stored value actually changed. */
+  changes: Array<{ profileId: string; profileName: string; year: number; from: number; to: number }>;
+}
+
 interface AppState {
   currentUser: Profile;
   profiles: Profile[];
@@ -250,7 +281,11 @@ interface AppState {
   /** Carry-in for a year, derived live from the closed previous year's remainder (0 if none). */
   getDerivedCarryover: (profileId: string, year: number) => number;
   /** Write the derived carry-over into `leave_entitlements` rows (skips manually set values). */
-  syncLeaveCarryover: () => Promise<{ created: number; updated: number; manual: number } | null>;
+  syncLeaveCarryover: (targetProfileId?: string) => Promise<CarryoverSyncResult | null>;
+  /** The SAME walk as the sync, without writing — drives the preview table in Settings → Leaves. */
+  planLeaveCarryover: (targetProfileId?: string) => CarryoverPlanRow[];
+  /** Drop the MANUAL flag on one record and adopt the calculated value for it. */
+  releaseLeaveEntitlementToAuto: (profileId: string, year: number) => Promise<boolean>;
   /** Due date, untaken days and warning level for an employee's expiring carry-over pot. */
   getCarryoverStatus: (profileId: string, year?: number) => {
     year: number;
@@ -1572,48 +1607,98 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
+   * The DRY RUN of `syncLeaveCarryover`: same walk, same maths, nothing written.
+   *
+   * Both functions call this one function, so the preview an admin approves is byte-for-byte what
+   * the run writes — a second copy of the walk would drift the moment the policy changed.
+   *
+   * Who is in the plan, and why:
+   *  - active, non-contractor employees only;
+   *  - only years from the first year an employee has a record for, walking FORWARD, and only when
+   *    the PRECEDING year has a record too — the explicit-record requirement is what stops every
+   *    employee "carrying over" the company default from years nobody set up;
+   *  - `carryover_is_manual` rows are included but flagged, so the UI can show them as protected.
+   *
+   * The `carryInOverride` map is load-bearing: a year that was just derived (or is about to be
+   * written) must feed the next year in the same pass, otherwise a chain of years needs two runs to
+   * settle. Manual rows deliberately do NOT enter the map — the balance reads their stored value,
+   * and that is what the next year has to build on.
+   */
+  const planLeaveCarryover = (targetProfileId?: string): CarryoverPlanRow[] => {
+    const currentYear = Number(athensTodayStr().slice(0, 4));
+    const policyNow = carryoverPolicy();
+    const carryInOverride = new Map<string, number>();
+    const plan: CarryoverPlanRow[] = [];
+
+    for (const p of profiles.filter(x => x.status === 'active' && x.employment_type !== 'contractor')) {
+      if (targetProfileId && p.id !== targetProfileId) continue;
+      const own = entitlements.filter(e => e.profile_id === p.id);
+      if (own.length === 0) continue;
+      const profileName = `${p.first_name} ${p.last_name}`;
+      for (let y = Math.min(...own.map(e => e.year)) + 1; y <= currentYear; y++) {
+        if (!own.some(e => e.year === y - 1)) continue; // chain starts where explicit setup starts
+        const existing = own.find(e => e.year === y);
+        const derived = getDerivedCarryover(p.id, y, carryInOverride);
+        const row: CarryoverPlanRow = {
+          profileId: p.id,
+          profileName,
+          year: y,
+          stored: existing ? Number(existing.carried_over_days ?? 0) : null,
+          derived,
+          isManual: !!existing?.carryover_is_manual,
+          // Keep an explicit allowance; otherwise the record is created on the company default.
+          entitlementDays: existing?.entitlement_days ?? leaveDefaultDays,
+          expiresOn: carryoverExpiryDate(y, policyNow) || undefined,
+        };
+        // Only a non-manual record has taken the derived value, so only it may feed the next year.
+        if (!row.isManual) carryInOverride.set(`${p.id}:${y}`, derived);
+        plan.push(row);
+      }
+    }
+    return plan;
+  };
+
+  /**
    * Write the derived carry-over into `leave_entitlements` so it shows up (and stays editable) in
    * People → Edit Profile, and in the Excel exports that read the stored column.
    *
    * Idempotent, like the mandatory fan-out: safe to run any time. Rows flagged
-   * `carryover_is_manual` are never touched, and only years whose PRECEDING year has both closed
-   * and been set up explicitly get a row.
+   * `carryover_is_manual` are never touched. Pass a `targetProfileId` to recalculate one employee —
+   * which is what you want after repairing that person's leave, since a company-wide run rewrites
+   * every other record too.
    */
-  const syncLeaveCarryover = async (): Promise<{ created: number; updated: number; manual: number } | null> => {
+  const syncLeaveCarryover = async (targetProfileId?: string): Promise<CarryoverSyncResult | null> => {
     const supabase = getSupabaseBrowserClient();
-    const todayIso = athensTodayStr();
-    const currentYear = Number(todayIso.slice(0, 4));
-    const policyNow = carryoverPolicy();
-    const carryInOverride = new Map<string, number>();
-    const rows: LeaveEntitlement[] = [];
-    let created = 0, updated = 0, manual = 0;
+    const plan = planLeaveCarryover(targetProfileId);
+    // Manual values are the admin's own decision — they are reported, never written.
+    const writes = plan.filter(r => !r.isManual);
+    const manual = plan.length - writes.length;
+    const changes = writes
+      .filter(r => r.stored !== r.derived)
+      .map(r => ({
+        profileId: r.profileId,
+        profileName: r.profileName,
+        year: r.year,
+        from: r.stored ?? 0,
+        to: r.derived,
+      }));
+    if (writes.length === 0) return { created: 0, updated: 0, manual, changes };
 
-    for (const p of profiles.filter(x => x.status === 'active' && x.employment_type !== 'contractor')) {
-      const own = entitlements.filter(e => e.profile_id === p.id);
-      if (own.length === 0) continue;
-      // Walk forward so each year's freshly derived carry-in feeds the next one in the same run.
-      for (let y = Math.min(...own.map(e => e.year)) + 1; y <= currentYear; y++) {
-        if (!own.some(e => e.year === y - 1)) continue; // chain starts where explicit setup starts
-        const existing = own.find(e => e.year === y);
-        if (existing?.carryover_is_manual) { manual++; continue; }
+    const rows: LeaveEntitlement[] = writes.map(r => {
+      const existing = entitlements.find(e => e.profile_id === r.profileId && e.year === r.year);
+      return {
+        id: existing?.id || generateUUID(),
+        profile_id: r.profileId,
+        year: r.year,
+        entitlement_days: r.entitlementDays,
+        carried_over_days: r.derived,
+        carryover_expires_on: r.expiresOn,
+        carryover_is_manual: false,
+      };
+    });
+    const created = writes.filter(r => r.stored === null).length;
+    const updated = writes.length - created;
 
-        const derived = getDerivedCarryover(p.id, y, carryInOverride);
-        carryInOverride.set(`${p.id}:${y}`, derived);
-        rows.push({
-          id: existing?.id || generateUUID(),
-          profile_id: p.id,
-          year: y,
-          // Keep an explicit allowance; otherwise the row is created on the company default.
-          entitlement_days: existing?.entitlement_days ?? leaveDefaultDays,
-          carried_over_days: derived,
-          carryover_expires_on: carryoverExpiryDate(y, policyNow) || undefined,
-          carryover_is_manual: false,
-        });
-        existing ? updated++ : created++;
-      }
-    }
-
-    if (rows.length === 0) return { created, updated, manual };
     try {
       const { error } = await supabase.from('leave_entitlements').upsert(
         rows.map(r => ({ ...r, carryover_expires_on: r.carryover_expires_on || null })),
@@ -1628,11 +1713,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...prev.filter(x => !rows.some(r => r.profile_id === x.profile_id && r.year === x.year)),
         ...rows,
       ]);
-      return { created, updated, manual };
+      return { created, updated, manual, changes };
     } catch (e: any) {
       console.error('syncLeaveCarryover error:', e);
       alert(`Database Error: ${e.message}`);
       return null;
+    }
+  };
+
+  /**
+   * Drop the MANUAL flag on one record and adopt the calculated value for it.
+   *
+   * Until this existed a hand-set carry-over was a one-way door: `saveLeaveEntitlement` always sets
+   * `carryover_is_manual = true`, the recalculation skips those rows, and nothing in the UI could
+   * hand them back to the automatic rule — so an admin who wanted the newer calculated number had no
+   * way to take it.
+   */
+  const releaseLeaveEntitlementToAuto = async (profileId: string, year: number): Promise<boolean> => {
+    const existing = entitlements.find(e => e.profile_id === profileId && e.year === year);
+    if (!existing) return false;
+    const derived = planLeaveCarryover(profileId).find(r => r.year === year)?.derived ?? 0;
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase
+        .from('leave_entitlements')
+        .update({ carried_over_days: derived, carryover_is_manual: false, carryover_expires_on: carryoverExpiryDate(year, carryoverPolicy()) || null })
+        .eq('profile_id', profileId)
+        .eq('year', year);
+      if (error) {
+        console.error('Error releasing carry-over to automatic:', error);
+        alert(`Database Error: ${error.message}`);
+        return false;
+      }
+      setEntitlements(prev => prev.map(e => (
+        e.profile_id === profileId && e.year === year
+          ? { ...e, carried_over_days: derived, carryover_is_manual: false }
+          : e
+      )));
+      return true;
+    } catch (e: any) {
+      console.error('Exception releasing carry-over to automatic:', e);
+      alert(`Exception: ${e.message}`);
+      return false;
     }
   };
 
@@ -5419,6 +5541,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setScreenHidden,
       getDerivedCarryover,
       syncLeaveCarryover,
+      planLeaveCarryover,
+      releaseLeaveEntitlementToAuto,
       getCarryoverStatus,
       syncCarryoverExpiryBookings,
       editLeaveRequest,

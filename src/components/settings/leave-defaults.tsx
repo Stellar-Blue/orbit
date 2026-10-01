@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { notifySuccess } from '@/lib/validation-modal';
-import { CalendarDays, Save, CheckCircle2, RefreshCw, Info, Infinity as InfinityIcon, AlertTriangle } from 'lucide-react';
+import { CalendarDays, Save, CheckCircle2, Info, Infinity as InfinityIcon, AlertTriangle } from 'lucide-react';
 import { carryoverExpiryDate } from '@/lib/leave-carryover';
 
 /**
@@ -81,7 +81,7 @@ const EXPIRY_OPTIONS: Array<{ value: string; label: string }> = [
  * record (People → Edit Profile), which is what the Excel exports read.
  */
 export function CarryoverPolicyCard() {
-  const { leavePolicy, saveLeavePolicy, syncLeaveCarryover, getCarryoverStatus, profiles } = useAuth();
+  const { leavePolicy, saveLeavePolicy, getCarryoverStatus, profiles } = useAuth();
   const currentYear = new Date().getFullYear();
 
   const [maxDays, setMaxDays] = useState(() => leavePolicy?.max_carryover_days === null || leavePolicy?.max_carryover_days === undefined ? '' : String(leavePolicy.max_carryover_days));
@@ -89,8 +89,6 @@ export function CarryoverPolicyCard() {
   const [warningMonths, setWarningMonths] = useState(() => String(leavePolicy?.carryover_warning_months ?? 3));
   const [autoBook, setAutoBook] = useState(() => leavePolicy?.carryover_auto_book !== false);
   const [saved, setSaved] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
 
   const capLabel = maxDays.trim() === ''
     ? 'Uncapped — every unused day moves over'
@@ -119,19 +117,6 @@ export function CarryoverPolicyCard() {
     }
   };
 
-  const runNow = async () => {
-    setSyncing(true);
-    setSummary(null);
-    const result = await syncLeaveCarryover();
-    setSyncing(false);
-    if (!result) return;
-    setSummary(
-      `${result.created} entitlement record(s) created, ${result.updated} refreshed` +
-      (result.manual > 0 ? `, ${result.manual} left alone because they were set by hand` : '') + '.'
-    );
-    notifySuccess('Carry-over written to the entitlement records.', 'Carry-over recalculated');
-  };
-
   // Quick preview of who the automatic rule currently credits, so the policy can be sanity-checked.
   const dueSoon = profiles
     .filter(p => p.status === 'active' && p.employment_type !== 'contractor')
@@ -157,8 +142,8 @@ export function CarryoverPolicyCard() {
             <p className="leading-relaxed">
               Orbit takes what each employee had left of the previous year (grant + carry-in − days actually
               taken, company closures included) and adds it to the new year. Nothing needs to be run — the
-              balances already include it. Use the button at the bottom only to freeze the numbers into the
-              entitlement records so they can be edited per person.
+              balances already include it. Use <strong className="font-extrabold">Carry-Over Recalculation</strong> below
+              only to freeze the numbers into the entitlement records so they can be edited per person.
             </p>
           </div>
         </div>
@@ -252,24 +237,6 @@ export function CarryoverPolicyCard() {
             </span>
           </div>
         )}
-
-        <div className="pt-4 border-t border-slate-200/80 space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <span className="text-xs font-extrabold text-slate-800 block">Write carry-over into entitlement records</span>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Safe to run whenever — it never overwrites a value an admin typed by hand.
-              </p>
-            </div>
-            <Button type="button" variant="secondary" size="sm" onClick={runNow} disabled={syncing} className="cursor-pointer shrink-0">
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Recalculating…' : 'Recalculate carry-over'}
-            </Button>
-          </div>
-          {summary && (
-            <p className="text-[11px] font-bold text-emerald-700 animate-in fade-in">{summary}</p>
-          )}
-        </div>
 
         {dueSoon.length > 0 && (
           <div className="pt-4 border-t border-slate-200/80">
