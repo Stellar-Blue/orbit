@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { ATHENS_TIMEZONE, DEFAULT_SLACK_SETTINGS, IntegrationSettings } from './types';
+import { ATHENS_TIMEZONE, DEFAULT_SLACK_SETTINGS } from './types';
+import type { IntegrationSettings } from './types';
 
 const SLACK_API = 'https://slack.com/api';
 

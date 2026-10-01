@@ -210,6 +210,21 @@ export default function PayrollPage() {
   const [addMoreDocs, setAddMoreDocs] = useState<PaymentDocument[]>([]);
   const [previewDoc, setPreviewDoc] = useState<{ doc: PaymentDocument; profName: string; bankRef?: string } | null>(null);
 
+  // AI extraction (DeepSeek): the button only appears once an admin has stored an API key, so it can
+  // never be pressed into a guaranteed failure. See Settings → Integrations → AI Extraction.
+  const [aiReady, setAiReady] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<{ kind: 'ok' | 'error'; text: string; details: string[] } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/integrations/deepseek')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!cancelled && data?.configured) setAiReady(true); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Sync initial selection from URL ID
   useEffect(() => {
     if (urlId && payments.length > 0 && !selectedPaymentForDocs) {
@@ -660,6 +675,69 @@ export default function PayrollPage() {
     });
     patchOpenPayment({ total_cost: openPaymentTotal });
     notifySuccess('Payment row updated.');
+  };
+
+  /**
+   * Read the attached receipt/payslip with DeepSeek and prefill the ledger row for review.
+   * Amounts come back as numbers and go straight into the drafts; nothing is saved here.
+   */
+  const handleExtractFromDocuments = async () => {
+    const row = selectedPaymentForDocs;
+    if (!row) return;
+    const docs = [...(row.documents || []), ...addMoreDocs].filter(d => d.url);
+    if (!docs.length) return;
+
+    setExtracting(true);
+    setExtractResult(null);
+    try {
+      const who = profiles.find(p => p.id === row.profile_id);
+      // The stored data URLs go as they are: reading the PDFs (text layer, or the scan check)
+      // happens on the server, so no PDF library ships to the browser.
+      const res = await fetch('/api/integrations/deepseek/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documents: docs.map(d => ({ name: d.name, type: d.type, dataUrl: d.url })),
+          employeeName: who ? `${who.first_name} ${who.last_name}` : '',
+          period: row.period,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setExtractResult({ kind: 'error', text: data.error || 'The documents could not be read.', details: [] });
+        return;
+      }
+
+      const f = data.fields as {
+        gross: number | null; net: number | null; payment_date: string | null;
+        bank_reference: string | null; employee_name: string | null;
+        evidence?: Record<string, string>; warnings?: string[];
+      };
+      patchOpenPayment({
+        ...(f.gross !== null ? { gross: f.gross } : {}),
+        ...(f.net !== null ? { net: f.net } : {}),
+        ...(f.payment_date ? { payment_date: f.payment_date } : {}),
+        ...(f.bank_reference ? { bank_reference: f.bank_reference } : {}),
+      });
+
+      const money = (n: number | null) => (n === null ? null : `€${n.toLocaleString('de-DE', { minimumFractionDigits: 2 })}`);
+      const details = [
+        `Gross: ${money(f.gross) || 'not found'}${f.evidence?.gross ? ` — from “${f.evidence.gross}”` : ''}`,
+        `Net: ${money(f.net) || 'not found'}${f.evidence?.net ? ` — from “${f.evidence.net}”` : ''}`,
+        `Date: ${f.payment_date || 'not found'}${f.evidence?.payment_date ? ` — from “${f.evidence.payment_date}”` : ''}`,
+        `Bank ref: ${f.bank_reference || 'not found'}${f.evidence?.bank_reference ? ` — from “${f.evidence.bank_reference}”` : ''}`,
+        // Greek payslips print the name in Greek capitals while profiles are Latin, so this is shown
+        // for the admin to eyeball rather than compared automatically.
+        ...(f.employee_name ? [`Documents name “${f.employee_name}” — check it matches ${who ? `${who.first_name} ${who.last_name}` : 'the selected employee'}.`] : []),
+        ...(f.warnings || []),
+      ];
+      setExtractResult({ kind: 'ok', text: 'Filled from the documents. Review before saving.', details });
+    } catch (e) {
+      console.error('payment extraction error:', e);
+      setExtractResult({ kind: 'error', text: 'Could not read the documents.', details: [] });
+    } finally {
+      setExtracting(false);
+    }
   };
 
   // ---- Raise modal derived state -----------------------------------------------------------------
@@ -1593,9 +1671,39 @@ export default function PayrollPage() {
                 Employer EFKA is intentionally not editable here: it is set by the payroll run and
                 still feeds Total Company Cost (header) plus the derived total_cost on save. */}
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
-              <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center">
-                <Edit className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Payment Record
-              </h4>
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center">
+                  <Edit className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Payment Record
+                </h4>
+                {aiReady && (selectedPaymentForDocs.documents?.length || 0) + addMoreDocs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleExtractFromDocuments}
+                    disabled={extracting}
+                    title="Read the attached bank receipt / payslip and fill these fields"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-[11px] font-bold shadow-2xs transition-colors cursor-pointer shrink-0"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {extracting ? 'Reading documents…' : 'Extract from documents'}
+                  </button>
+                )}
+              </div>
+
+              {extractResult && (
+                <div className={`p-3 rounded-lg border text-[11px] ${extractResult.kind === 'ok' ? 'bg-violet-50 border-violet-200 text-violet-950' : 'bg-rose-50 border-rose-200 text-rose-900'}`}>
+                  <div className="font-bold flex items-center gap-1.5">
+                    {extractResult.kind === 'ok'
+                      ? <><Sparkles className="w-3.5 h-3.5 text-violet-600" /> {extractResult.text}</>
+                      : <><AlertTriangle className="w-3.5 h-3.5" /> {extractResult.text}</>}
+                  </div>
+                  {extractResult.details.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5 font-mono text-[10px] leading-relaxed">
+                      {extractResult.details.map((line, i) => <li key={i}>• {line}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€)</label>

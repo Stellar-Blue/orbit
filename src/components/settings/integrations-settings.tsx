@@ -7,6 +7,7 @@ import { MessageSquare, RefreshCw, ShieldCheck, AlertTriangle, Trash2, Plus, Clo
 import { IntegrationSettings } from '@/lib/integrations/types';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { AttioSettings } from '@/components/settings/attio-settings';
+import { DeepSeekSettings } from '@/components/settings/deepseek-settings';
 
 interface OutlookSettings {
   enabled: boolean;
@@ -25,7 +26,7 @@ const DEFAULT_OUTLOOK: OutlookSettings = {
 };
 
 export function IntegrationsSettings() {
-  type IntegrationTab = 'slack' | 'outlook' | 'attio' | 'mydata' | 'mcp';
+  type IntegrationTab = 'slack' | 'outlook' | 'attio' | 'mydata' | 'mcp' | 'ai';
   const [activeTab, setActiveTab] = useState<IntegrationTab>('slack');
 
   const { profiles, employeeIntegrations, integrationSettings, integrationExceptions, integrationLastReconciledAt, refreshIntegrationState } = useAuth();
@@ -468,7 +469,7 @@ export function IntegrationsSettings() {
     <div className="space-y-6">
       {/* Sub-tab Navigation */}
       <div className="flex items-center space-x-2 border-b border-slate-200 pb-3 overflow-x-auto">
-        {(['slack', 'outlook', 'attio', 'mydata', 'mcp'] as IntegrationTab[]).map(tab => (
+        {(['slack', 'outlook', 'attio', 'mydata', 'mcp', 'ai'] as IntegrationTab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -483,6 +484,7 @@ export function IntegrationsSettings() {
             {tab === 'attio' && 'Attio CRM'}
             {tab === 'mydata' && 'AADE myDATA'}
             {tab === 'mcp' && 'Orbit MCP Server'}
+            {tab === 'ai' && 'AI Extraction'}
           </button>
         ))}
       </div>
@@ -847,6 +849,9 @@ export function IntegrationsSettings() {
           <AttioSettings />
         </div>
       )}
+
+      {/* DeepSeek document extraction */}
+      {activeTab === 'ai' && <DeepSeekSettings />}
 
       {/* AADE myDATA issued-invoice import */}
       {activeTab === 'mydata' && (

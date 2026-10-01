@@ -15,7 +15,8 @@
     "test:screens": "node scripts/verify-screen-visibility.js",
     "test:carryover": "node scripts/verify-leave-carryover.js",
     "test:holidays": "node scripts/verify-public-holidays.js",
-    "test:amount": "node scripts/verify-amount-input.mjs"
+    "test:amount": "node scripts/verify-amount-input.mjs",
+    "test:deepseek": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-deepseek-extraction.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -33,6 +34,7 @@
     "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "papaparse": "^5.5.4",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0",
