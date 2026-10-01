@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
@@ -424,7 +423,6 @@ const fetchProfilePhones = async (
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState<boolean>(true);
   /** Real Supabase auth user id — gates the live row-change subscription (anon has no rows to hear about). */
   const [liveSessionUserId, setLiveSessionUserId] = useState<string>('');
@@ -434,6 +432,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isViewAsEmployee, setIsViewAsEmployee] = useState<boolean>(false);
   const [previewProfileId, setPreviewProfileId] = useState<string | null>(null);
   const [realProfileId, setRealProfileId] = useState<string>('');
+  /** The loader's authoritative answer (a `user_roles` lookup), mirrored for the live gate below. */
+  const sessionIsAdminRef = useRef(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [paymentTypes, setPaymentTypes] = useState<PaymentType[]>([]);  const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
@@ -541,6 +541,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (matchedId) {
           const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', matchedId).eq('role', 'admin').maybeSingle();
           isAdmin = !!roleRow;
+          sessionIsAdminRef.current = isAdmin;
           setCurrentUserId(matchedId);
           setRealProfileId(matchedId);
         }
@@ -935,7 +936,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.error("Sign out exception:", e);
     } finally {
-      router.push("/login");
+      // Hard navigation, deliberately: the provider unmounts and every cached slice goes with it.
+      // A client-side push left the one-shot loader un-rerun, so the next sign-in could serve the
+      // previous user's rows from memory.
+      window.location.href = '/login';
     }
   };
 
@@ -5093,20 +5097,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const liveBudgetYearRef = useRef(0);
   /** Carry-over expiry bookings run at most once per mount — they are a scheduled obligation. */
   const carryoverBookingRanRef = useRef(false);
-  const liveIsAdmin = !!realProfileId && profiles.some(p => p.id === realProfileId && p.role === 'admin');
+  // Combining both sources keeps the reload gate in step with what was actually loaded: the
+  // `user_roles` answer above, or a role the profiles slice happens to carry. Either alone can
+  // read false (profiles not yet enriched), and a false here narrows `own` to the admin's own
+  // rows — which is an empty ledger, not a smaller one.
+  const liveIsAdmin = sessionIsAdminRef.current
+    || (!!realProfileId && profiles.some(p => p.id === realProfileId && p.role === 'admin'));
   const liveProfileId = realProfileId || currentUserId || '';
   const liveAdminRef = useRef(liveIsAdmin);
   const liveProfileIdRef = useRef(liveProfileId);
   liveAdminRef.current = liveIsAdmin;
   liveProfileIdRef.current = liveProfileId;
 
-  /** Re-runs one table's query with the same admin / own-row gating the first load used. */
-  // Returns loosely-typed rows: callers map them onto the entity shape they already know.
-  const reloadLiveTable = async (table: string, gate: 'all' | 'own' | 'admin'): Promise<any[]> => {
+  /**
+   * Re-runs one table's query with the same admin / own-row gating the first load used.
+   *
+   * Returns `null` when the read did not happen — blocked by the gate or the request failed.
+   * That is deliberately NOT the same as an empty array: callers must leave their slice alone
+   * instead of overwriting good rows with nothing. Returning `[]` on error used to blank the
+   * whole payment ledger whenever a save's realtime event failed to refetch `payments` (a 15 MB
+   * table, because attached documents live in the row as base64 data URLs).
+   */
+  // Rows are loosely typed: callers map them onto the entity shape they already know.
+  const reloadLiveTable = async (table: string, gate: 'all' | 'own' | 'admin'): Promise<any[] | null> => {
     const admin = liveAdminRef.current;
     const myId = liveProfileIdRef.current;
-    if (gate === 'admin' && !admin) return [];
-    if (gate === 'own' && !admin && !myId) return [];
+    if (gate === 'admin' && !admin) return null;
+    if (gate === 'own' && !admin && !myId) {
+      console.warn(`[live] not reloading ${table}: no admin rights and no profile id yet`);
+      return null;
+    }
     try {
       const supabase = getSupabaseBrowserClient();
       let query = supabase.from(table).select('*');
@@ -5114,12 +5134,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data, error } = await query;
       if (error) {
         console.warn(`[live] reload of ${table} failed:`, error.message);
-        return [];
+        return null;
+      }
+      // An empty answer is only believable for a live session. With the token gone the request
+      // goes out anonymous, RLS returns nothing, and applying that would erase the screen —
+      // silently, because it is not an error. (getSession stays local unless it must refresh.)
+      if (!data?.length) {
+        const { data: auth } = await supabase.auth.getSession();
+        if (!auth.session) {
+          console.warn(`[live] not reloading ${table}: no session, so the empty result is not real`);
+          return null;
+        }
       }
       return data || [];
     } catch (e) {
       console.warn(`[live] reload of ${table} threw:`, e);
-      return [];
+      return null;
     }
   };
 
@@ -5132,6 +5162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       reloadLiveTable('teams', 'all'),
       fetchProfilePhones(getSupabaseBrowserClient()),
     ]);
+    if (!rows || !roleRows || !sensitiveRows || !teamRows) return;
     setProfiles(rows.map(p => ({
       ...p,
       // Same rule as the initial load: a missing view must not blank the phone.
@@ -5147,6 +5178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       reloadLiveTable('payments', 'own'),
       reloadLiveTable('payment_types', 'all'),
     ]);
+    if (!rows || !types) return;
     setPayments(rows.map(p => ({ ...p, documents: p.documents || [], payment_type: types.find(t => t.id === p.payment_type_id) })));
   };
 
@@ -5155,6 +5187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       reloadLiveTable('leave_requests', 'own'),
       reloadLiveTable('leave_types', 'all'),
     ]);
+    if (!rows || !types) return;
     setLeaveRequests(rows.map(r => ({ ...r, leave_type: types.find(t => t.id === r.leave_type_id) })));
   };
 
@@ -5177,6 +5210,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       reloadLiveTable('contract_schedule', 'admin'),
       reloadLiveTable('profiles', 'all'),
     ]);
+    // Every input feeds the joins below; a partial read would publish half-built counterparties.
+    if (!cpRows || !attioLinks || !contacts || !roleLinks || !cpRoles || !tierStates || !tierVersions
+      || !tierOverrides || !contractRows || !lineRows || !groupRows || !scheduleRows || !profileRows) return;
 
     const enrichedCps = cpRows.map(cp => {
       const cpContracts = contractRows.filter(c => c.counterparty_id === cp.id && c.status !== 'archived');
@@ -5227,6 +5263,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       reloadLiveTable('remote_amendments', 'own') as Promise<RemoteAmendmentRequest[]>,
       reloadLiveTable('remote_quota_requests', 'own') as Promise<RemoteQuotaRequest[]>,
     ]);
+    if (!amendments || !quotas) return;
     setRemoteAmendmentRequests(amendments);
     setRemoteQuotaRequests(quotas);
   };
@@ -5289,7 +5326,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ['remote_policies', 'all', setRemotePolicies],
         ['invoice_categories', 'all', setInvoiceCategories],
       ] as Array<[string, 'all' | 'own' | 'admin', (rows: any[]) => void]>
-    ).forEach(([table, gate, apply]) => on(table, async () => apply(await reloadLiveTable(table, gate))));
+    ).forEach(([table, gate, apply]) => on(table, async () => {
+      const rows = await reloadLiveTable(table, gate);
+      if (rows) apply(rows);
+    }));
 
     // Derived / enriched slices (see each reloader).
     on('profiles', reloadLiveProfiles);
