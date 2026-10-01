@@ -18,6 +18,7 @@ import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib
 import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isOneTimeBonus, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime, currentMonthKey, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
+import { MonthRangePicker } from '@/components/ui/month-range-picker';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
 const SalaryLedgerGrid = dynamic(() => import('@/components/payroll/salary-ledger-grid').then(m => m.SalaryLedgerGrid), { ssr: false });
@@ -877,19 +878,10 @@ export default function PayrollPage() {
           person filter, status tabs) render just for the Payment Ledger tab. */}
       <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-2xl p-2.5 shadow-2xs">
         <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-1 gap-1.5">
-          <span className="text-[11px] font-bold text-slate-500 px-1">From:</span>
-          <input 
-            type="month" 
-            value={selectedPeriod} 
-            onChange={e => setSelectedPeriod(e.target.value)} 
-            className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
-          />
-          <span className="text-[11px] font-bold text-slate-500 px-1">To:</span>
-          <input 
-            type="month" 
-            value={endPeriod} 
-            onChange={e => setEndPeriod(e.target.value)} 
-            className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 font-mono font-bold focus:outline-[#3D87D3]"
+          <MonthRangePicker
+            from={selectedPeriod}
+            to={endPeriod}
+            onChange={(from, to) => { setSelectedPeriod(from); setEndPeriod(to); }}
           />
           <button
             type="button"
