@@ -637,10 +637,11 @@ export default function PayrollPage() {
     efka: Number(selectedPaymentForDocs.employer_contributions) || 0,
   } : { gross: 0, efka: 0 };
 
-  /** Live derived cost of the open record — gross plus the employer's EFKA contribution. */
+  /** Live derived cost of the open record — gross plus the employer's EFKA contribution,
+   *  which the payroll run owns and the modal does not edit. */
   const openPaymentTotal = Number((openPaymentAmounts.gross + openPaymentAmounts.efka).toFixed(2));
 
-  /** Commit the whole row. Gross and EFKA are the inputs; total_cost is derived, never typed. */
+  /** Commit the whole row. Gross and net are typed; EFKA is carried through; total_cost is derived. */
   const handleSaveOpenPayment = async () => {
     const row = selectedPaymentForDocs;
     if (!row) return;
@@ -1591,27 +1592,20 @@ export default function PayrollPage() {
               </Badge>
             </div>
 
-            {/* The ledger row itself. Amounts, date, bank reference and status are saved together
-                because gross / employer EFKA / total cost are derived from one another. */}
+            {/* The ledger row itself. Amounts, date, bank reference and status are saved together.
+                Employer EFKA is intentionally not editable here: it is set by the payroll run and
+                still feeds Total Company Cost (header) plus the derived total_cost on save. */}
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
               <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center">
                 <Edit className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Payment Record
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€)</label>
                   <input
                     type="number" step="0.01" value={selectedPaymentForDocs.gross}
                     onChange={e => patchOpenPayment({ gross: Number(e.target.value) })}
                     className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold uppercase text-slate-500 mb-1">Employer EFKA (€)</label>
-                  <input
-                    type="number" step="0.01" value={selectedPaymentForDocs.employer_contributions}
-                    onChange={e => patchOpenPayment({ employer_contributions: Number(e.target.value) })}
-                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800"
                   />
                 </div>
                 <div>

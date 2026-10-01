@@ -200,17 +200,18 @@ export default function MyCompensationPage() {
         {/* Active Remuneration Card */}
         <Card title="Active Remuneration Structure" subtitle="Current effective rates & personal earnings (Confidential)" className="lg:col-span-2 shadow-xs border-slate-200/90">
           <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mt-3 space-y-6 shadow-md">
-            {/* Primary figure = what actually lands in the bank each month. */}
+            {/* Primary figure = the contractual monthly gross; the estimated net that lands in the
+                bank each month sits in the stat row below. */}
             <div className="flex items-start justify-between gap-4">
               <div>
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
-                  Estimated Net Payable Salary
+                  {isContractor ? 'Monthly Retainer (Gross)' : 'Monthly Gross Salary'}
                 </span>
                 <div className="text-3xl sm:text-4xl font-extrabold text-emerald-300 font-mono">
-                  €{netSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
+                  €{grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
                 </div>
                 <span className="text-[10px] text-slate-400 block mt-1">
-                  {isContractor ? 'Contracted net payout' : 'Contracted net, as recorded in the salary ledger'}
+                  {isContractor ? 'Retainer incl. VAT / withholding' : 'Net + employer contributions (ΕΦΚΑ)'}
                 </span>
               </div>
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-extrabold flex items-center shadow-2xs shrink-0">
@@ -220,14 +221,12 @@ export default function MyCompensationPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-700/80 text-xs">
               <div>
-                <span className="text-slate-400 font-medium block mb-0.5">
-                  {isContractor ? 'Monthly Retainer (Gross)' : 'Monthly Gross Salary'}
-                </span>
+                <span className="text-slate-400 font-medium block mb-0.5">Estimated Net Payable Salary</span>
                 <strong className="text-white font-mono font-bold text-base">
-                  €{grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
+                  €{netSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
                 </strong>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {isContractor ? 'Retainer incl. VAT / withholding' : 'Net + employer contributions (ΕΦΚΑ)'}
+                  {isContractor ? 'Contracted net payout' : 'Contracted net, as recorded in the salary ledger'}
                 </span>
               </div>
               <div>
