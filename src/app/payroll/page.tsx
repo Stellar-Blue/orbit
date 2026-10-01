@@ -19,6 +19,7 @@ import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isOneTimeBonus, loa
 import { formatDate, formatDateTime, currentMonthKey, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { MonthRangePicker } from '@/components/ui/month-range-picker';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
 const SalaryLedgerGrid = dynamic(() => import('@/components/payroll/salary-ledger-grid').then(m => m.SalaryLedgerGrid), { ssr: false });
@@ -1431,15 +1432,18 @@ export default function PayrollPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Employee / Partner</label>
-              <select 
-                value={upProfileId} 
-                onChange={e => handleEmployeeSelectChange(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-bold shadow-2xs"
-              >
-                {profiles.map(p => (
-                  <option key={p.id} value={p.id}>{p.first_name} {p.last_name} ({p.employment_type.toUpperCase()})</option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={upProfileId}
+                onChange={handleEmployeeSelectChange}
+                emptyLabel="Select employee or partner…"
+                placeholder="Search by name or employment type…"
+                options={profiles.map(p => ({
+                  value: p.id,
+                  label: `${p.first_name} ${p.last_name}`,
+                  hint: p.employment_type.replace('_', ' ').toUpperCase(),
+                  keywords: `${p.employment_type} ${p.status || ''}`,
+                }))}
+              />
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Payment Period</label>
