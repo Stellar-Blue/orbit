@@ -72,7 +72,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
       valueFormatter: (p) => deEur(p.value)
     },
     {
-      headerName: 'Net Disbursed', field: 'net', width: 130, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
+      headerName: 'Net Earnings', field: 'net', width: 130, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
       cellClass: 'font-mono font-extrabold text-emerald-700 text-sm',
       valueFormatter: (p) => deEur(p.value)
     },
