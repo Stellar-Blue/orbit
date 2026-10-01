@@ -20,6 +20,7 @@ import { formatDate, formatDateTime, currentMonthKey, todayKey } from '@/lib/dat
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { MonthRangePicker } from '@/components/ui/month-range-picker';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { AmountInput } from '@/components/ui/amount-input';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
 const SalaryLedgerGrid = dynamic(() => import('@/components/payroll/salary-ledger-grid').then(m => m.SalaryLedgerGrid), { ssr: false });
@@ -1473,11 +1474,11 @@ export default function PayrollPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Gross Amount (€)</label>
-              <input type="number" step="0.01" value={upGross} onChange={e => setUpGross(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono font-bold" />
+              <AmountInput value={upGross} onValueChange={setUpGross} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono font-bold" />
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Net Pay (€)</label>
-              <input type="number" step="0.01" value={upNet} onChange={e => setUpNet(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded p-2 text-emerald-700 font-mono font-bold" />
+              <AmountInput value={upNet} onValueChange={setUpNet} className="w-full bg-white border border-slate-200 rounded p-2 text-emerald-700 font-mono font-bold" />
             </div>
           </div>
 
@@ -1598,17 +1599,17 @@ export default function PayrollPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Gross (€)</label>
-                  <input
-                    type="number" step="0.01" value={selectedPaymentForDocs.gross}
-                    onChange={e => patchOpenPayment({ gross: Number(e.target.value) })}
+                  <AmountInput
+                    value={selectedPaymentForDocs.gross}
+                    onValueChange={gross => patchOpenPayment({ gross })}
                     className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
                   />
                 </div>
                 <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Net Payable (€)</label>
-                  <input
-                    type="number" step="0.01" value={selectedPaymentForDocs.net}
-                    onChange={e => patchOpenPayment({ net: Number(e.target.value) })}
+                  <AmountInput
+                    value={selectedPaymentForDocs.net}
+                    onValueChange={net => patchOpenPayment({ net })}
                     className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-emerald-700"
                   />
                 </div>

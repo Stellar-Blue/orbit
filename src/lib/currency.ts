@@ -35,3 +35,54 @@ export function formatMoney(amount: number | null | undefined, currency: string 
     return `${value.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currency}`;
   }
 }
+
+/** `1785.12` → `1.785,12` — the convention the app displays money in (el-GR / de-DE style). */
+export function formatAmountInput(amount: number | null | undefined, decimals = 2): string {
+  return (Number(amount) || 0).toLocaleString('de-DE', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/**
+ * Parse an amount typed or pasted in **either** separator convention:
+ * `1.785,12` (el/de/fr) and `1,785.12` (en) both mean one thousand seven hundred eighty-five twelve.
+ *
+ * Needed because `type="number"` silently drops the comma: pasting `1.785,12` turned into `1.78512`
+ * and saved €1.79. Currency symbols, spaces, NBSPs, apostrophes and a leading minus are tolerated.
+ *
+ * Returns `null` when nothing numeric is present, so callers can keep their own empty/zero semantics.
+ */
+export function parseAmountInput(raw: string | null | undefined): number | null {
+  if (raw == null) return null;
+  const cleaned = String(raw).replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(cleaned)) return null;
+
+  const negative = cleaned.trimStart().startsWith('-');
+  const digits = cleaned.replace(/-/g, '');
+
+  const lastDot = digits.lastIndexOf('.');
+  const lastComma = digits.lastIndexOf(',');
+  const dotCount = (digits.match(/\./g) || []).length;
+  const commaCount = (digits.match(/,/g) || []).length;
+
+  let decimalAt = -1;
+  if (dotCount > 0 && commaCount > 0) {
+    // Both separators present: the trailing one is the decimal point, the other groups thousands.
+    decimalAt = Math.max(lastDot, lastComma);
+  } else if (dotCount + commaCount === 1) {
+    // A single separator: 3 digits behind it means thousands (`1.785`), anything else is a decimal.
+    const at = dotCount ? lastDot : lastComma;
+    const behind = digits.length - at - 1;
+    if (behind > 0 && behind !== 3) decimalAt = at;
+  }
+  // Two or more of the same separator (`1.234.567`) are all thousands separators — decimalAt stays -1.
+
+  const normalised = decimalAt === -1
+    ? digits.replace(/[.,]/g, '')
+    : `${digits.slice(0, decimalAt).replace(/[.,]/g, '')}.${digits.slice(decimalAt + 1).replace(/[.,]/g, '')}`;
+
+  const parsed = Number(normalised);
+  if (!Number.isFinite(parsed)) return null;
+  return negative ? -parsed : parsed;
+}

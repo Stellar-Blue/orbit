@@ -14,7 +14,8 @@
     "test:coverage": "node scripts/verify-coverage-rules.js",
     "test:screens": "node scripts/verify-screen-visibility.js",
     "test:carryover": "node scripts/verify-leave-carryover.js",
-    "test:holidays": "node scripts/verify-public-holidays.js"
+    "test:holidays": "node scripts/verify-public-holidays.js",
+    "test:amount": "node scripts/verify-amount-input.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
