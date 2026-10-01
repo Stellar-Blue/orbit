@@ -207,7 +207,7 @@ export default function MyCompensationPage() {
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
                   {isContractor ? 'Monthly Retainer (Gross)' : 'Monthly Gross Salary'}
                 </span>
-                <div className="text-3xl sm:text-4xl font-extrabold text-emerald-300 font-mono">
+                <div className="text-3xl sm:text-4xl font-extrabold text-white font-mono">
                   €{grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
                 </div>
                 <span className="text-[10px] text-slate-400 block mt-1">
@@ -222,7 +222,7 @@ export default function MyCompensationPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-700/80 text-xs">
               <div>
                 <span className="text-slate-400 font-medium block mb-0.5">Estimated Net Payable Salary</span>
-                <strong className="text-white font-mono font-bold text-base">
+                <strong className="text-emerald-300 font-mono font-bold text-base">
                   €{netSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
                 </strong>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
