@@ -270,6 +270,13 @@ interface AppState {
   addLeaveType: (payload: Omit<LeaveType, 'id'>) => Promise<boolean>;
   updateLeaveType: (id: string, payload: Partial<LeaveType>) => Promise<boolean>;
   deleteLeaveType: (id: string) => Promise<boolean>;
+  /**
+   * Public-holiday calendar (Settings → Leaves → Public Holidays). Editing it re-costs the leave
+   * rows the change reaches — see `syncLeaveCostsForHolidayChange`.
+   */
+  addPublicHoliday: (payload: Omit<PublicHoliday, 'id'>) => Promise<{ ok: boolean; recosted: number }>;
+  updatePublicHoliday: (id: string, payload: Partial<PublicHoliday>) => Promise<{ ok: boolean; recosted: number }>;
+  deletePublicHoliday: (id: string) => Promise<{ ok: boolean; recosted: number }>;
   getEmployeeLeaveBalance: (profileId: string, year: number) => {
     entitlement: number;
     carryOver: number;
@@ -3285,6 +3292,150 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // ---- Public holidays (Settings → Leaves → Public Holidays) ---------------------------------
+
+  const sortHolidays = (a: PublicHoliday, b: PublicHoliday) =>
+    a.date.localeCompare(b.date) || a.scope.localeCompare(b.scope);
+
+  /**
+   * Re-cost the personal leave rows a change to the holiday calendar invalidates.
+   *
+   * `leave_requests.working_days` is the STORED deduction — the balance is subtracted by it — so a
+   * row filed while a holiday was missing keeps charging that day no matter what the calendar says
+   * now (the leave pages only clamp the DISPLAY to `min(stored, recount)`, which is why 15 August
+   * 2024 sat there deducting a day for everyone).
+   *
+   * The rule is deliberately narrow — touch a row only when its stored count equals the cost
+   * counted against the calendar as it was BEFORE the change, and only when the cost actually moves:
+   *
+   *   before = scheduled days − (previous holidays + company closures)
+   *   after  = scheduled days − (next holidays + company closures)
+   *   update where stored = before and before ≠ after
+   *
+   * `stored = before` is the "this row was costed correctly at the time" test. Rows that disagree
+   * with the old calendar are legacy (the pre-2026-09-15 broken counter wrote 1 day for a whole
+   * range) or a deliberate admin adjustment, so they are left alone — the 0078 migration applies
+   * this same rule to the historical rows.
+   *
+   * Returns how many rows were re-costed.
+   */
+  const syncLeaveCostsForHolidayChange = async (previousDates: string[], nextDates: string[]): Promise<number> => {
+    const touched = [
+      ...nextDates.filter(d => !previousDates.includes(d)),
+      ...previousDates.filter(d => !nextDates.includes(d)),
+    ];
+    if (touched.length === 0) return 0;
+
+    // Company closures are not bookable either — personal leave is costed net of them.
+    const closures = new Set<string>();
+    mandatoryLeaves.forEach(m => expandDateRange(m.start_date, m.end_date).forEach(d => closures.add(d)));
+    const excluded = (holidays: string[]) => new Set<string>([...holidays, ...closures]);
+
+    const targets = leaveRequests.filter(r =>
+      r.origin !== 'mandatory'
+      && !r.detached
+      && !['rejected', 'cancelled', 'expired'].includes(r.status)
+      && !r.half_day_start
+      && !r.half_day_end
+      // Only rows the changed date can reach.
+      && touched.some(d => d >= r.start_date && d <= r.end_date)
+    );
+    if (targets.length === 0) return 0;
+
+    const updates = targets.flatMap(r => {
+      const schedule = resolveWorkSchedule(profiles.find(p => p.id === r.profile_id)?.work_schedule);
+      const beforeDays = countWorkingDays(r.start_date, r.end_date, schedule, excluded(previousDates));
+      if (Number(r.working_days || 0) !== beforeDays) return [];
+      const afterDays = countWorkingDays(r.start_date, r.end_date, schedule, excluded(nextDates));
+      return afterDays === beforeDays ? [] : [{ id: r.id, afterDays }];
+    });
+    if (updates.length === 0) return 0;
+
+    const supabase = getSupabaseBrowserClient();
+    for (const u of updates) {
+      const { error } = await supabase.from('leave_requests').update({ working_days: u.afterDays }).eq('id', u.id);
+      if (error) {
+        console.error('Failed to re-cost leave after a holiday change:', error);
+        continue;
+      }
+      setLeaveRequests(prev => prev.map(r => (r.id === u.id ? { ...r, working_days: u.afterDays } : r)));
+    }
+    return updates.length;
+  };
+
+  const addPublicHoliday = async (payload: Omit<PublicHoliday, 'id'>): Promise<{ ok: boolean; recosted: number }> => {
+    const supabase = getSupabaseBrowserClient();
+    const created: PublicHoliday = {
+      id: generateUUID(),
+      ...payload,
+      year: Number(payload.date.slice(0, 4)),
+    };
+    try {
+      const { error } = await supabase.from('public_holidays').insert(created);
+      if (error) {
+        console.error('Error creating public holiday:', error);
+        alert(`Database Error: ${error.message}`);
+        return { ok: false, recosted: 0 };
+      }
+      // Re-cost BEFORE publishing the new calendar, so the rows are judged against the old one.
+      const recosted = await syncLeaveCostsForHolidayChange(holidayDates(publicHolidays), [...holidayDates(publicHolidays), created.date]);
+      setPublicHolidays(prev => [...prev, created].sort(sortHolidays));
+      return { ok: true, recosted };
+    } catch (e: any) {
+      console.error('Exception adding public holiday:', e);
+      alert(`Exception: ${e.message}`);
+      return { ok: false, recosted: 0 };
+    }
+  };
+
+  const updatePublicHoliday = async (id: string, payload: Partial<PublicHoliday>): Promise<{ ok: boolean; recosted: number }> => {
+    const supabase = getSupabaseBrowserClient();
+    const target = publicHolidays.find(h => h.id === id);
+    if (!target) return { ok: false, recosted: 0 };
+    const nextDate = payload.date ?? target.date;
+    const update = { ...payload, ...(payload.date ? { year: Number(nextDate.slice(0, 4)) } : {}) };
+    try {
+      const { error } = await supabase.from('public_holidays').update(update).eq('id', id);
+      if (error) {
+        console.error('Error updating public holiday:', error);
+        alert(`Database Error: ${error.message}`);
+        return { ok: false, recosted: 0 };
+      }
+      const prevDates = holidayDates(publicHolidays);
+      const recosted = await syncLeaveCostsForHolidayChange(prevDates, prevDates.filter(d => d !== target.date).concat(nextDate));
+      setPublicHolidays(prev =>
+        prev.map(h => (h.id === id ? { ...h, ...update } : h)).sort(sortHolidays)
+      );
+      return { ok: true, recosted };
+    } catch (e: any) {
+      console.error('Exception updating public holiday:', e);
+      alert(`Exception: ${e.message}`);
+      return { ok: false, recosted: 0 };
+    }
+  };
+
+  const deletePublicHoliday = async (id: string): Promise<{ ok: boolean; recosted: number }> => {
+    const supabase = getSupabaseBrowserClient();
+    const target = publicHolidays.find(h => h.id === id);
+    if (!target) return { ok: false, recosted: 0 };
+    try {
+      const { error } = await supabase.from('public_holidays').delete().eq('id', id);
+      if (error) {
+        console.error('Error deleting public holiday:', error);
+        alert(`Database Error: ${error.message}`);
+        return { ok: false, recosted: 0 };
+      }
+      const prevDates = holidayDates(publicHolidays);
+      const recosted = await syncLeaveCostsForHolidayChange(prevDates, prevDates.filter(d => d !== target.date));
+      setPublicHolidays(prev => prev.filter(h => h.id !== id));
+      return { ok: true, recosted };
+    } catch (e: any) {
+      console.error('Exception deleting public holiday:', e);
+      alert(`Exception: ${e.message}`);
+      return { ok: false, recosted: 0 };
+    }
+  };
+
   const saveRemotePattern = async (profileId: string, patternEntries: { weekday: string; mode: RemoteMode }[]): Promise<boolean> => {
     // Enforce Company Remote Quota
     const employeePolicy = remotePolicies.find(p => p.scope_type === 'employee' && p.scope_id === profileId);
@@ -5281,6 +5432,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addLeaveType,
       updateLeaveType,
       deleteLeaveType,
+      addPublicHoliday,
+      updatePublicHoliday,
+      deletePublicHoliday,
       getEmployeeLeaveBalance,
       addInvoice,
       updateInvoice,

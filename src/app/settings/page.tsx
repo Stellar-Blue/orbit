@@ -17,6 +17,7 @@ import { GeneralSettings } from '@/components/settings/general-settings';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { LeaveDefaultsCard, CarryoverPolicyCard } from '@/components/settings/leave-defaults';
+import { HolidaysCard } from '@/components/settings/holidays';
 import { CoverageRulesCard } from '@/components/settings/coverage-rules';
 import { ScreenVisibilityCard } from '@/components/settings/screen-visibility';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
@@ -990,6 +991,8 @@ export default function CompanySettingsPage() {
               </form>
             </Card>
           </div>
+          {/* Public holiday calendar — the single source of truth for working-day maths */}
+          <div className="lg:col-span-3"><HolidaysCard /></div>
         </div>
       )}
 
