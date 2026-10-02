@@ -13,6 +13,9 @@ export interface MsalTokens {
   scope: string;
 }
 
+/** Work plan writes need `Calendars.ReadWrite`; `offline_access` is what returns a refresh token. */
+const MSAL_SCOPES = 'Calendars.ReadWrite offline_access openid profile';
+
 export function msalTokenSecretName(profileId: string): string {
   return `ms365_token:${profileId}`;
 }
@@ -21,27 +24,38 @@ export function hasMsalCredentials(): boolean {
   return !!(process.env.GRAPH_CLIENT_ID && process.env.GRAPH_CLIENT_SECRET && process.env.GRAPH_TENANT_ID);
 }
 
-export function msalAuthorizeUrl(state: string): string | null {
+/**
+ * The callback must live on the origin the sign-in STARTED from, because `connect` stores the OAuth
+ * state in a cookie on that origin. `NEXT_PUBLIC_APP_URL` points at production, so using it sent
+ * localhost users to the deployed app — which had no state cookie for them, so every attempt failed
+ * with "Microsoft sign-in failed or was interrupted". Azure must have this exact URI registered for
+ * each origin (localhost and the deployed domain both).
+ */
+export function msalRedirectUri(origin: string): string {
+  return `${origin.replace(/\/+$/, '')}/api/msal/callback`;
+}
+
+export function msalAuthorizeUrl(state: string, origin: string): string | null {
   if (!hasMsalCredentials()) return null;
-  const redirectUri = process.env.NEXT_PUBLIC_APP_URL
-    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/msal/callback`
-    : `http://localhost:3000/api/msal/callback`;
   const params = new URLSearchParams({
     client_id: process.env.GRAPH_CLIENT_ID!,
     response_type: 'code',
-    redirect_uri: redirectUri,
-    scope: 'Calendars.ReadWrite offline_access openid profile',
+    redirect_uri: msalRedirectUri(origin),
+    scope: MSAL_SCOPES,
     response_mode: 'query',
     state,
   });
   return `https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
-export async function exchangeMsalCode(code: string): Promise<MsalTokens | null> {
-  if (!hasMsalCredentials()) return null;
-  const redirectUri = process.env.NEXT_PUBLIC_APP_URL
-    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/msal/callback`
-    : `http://localhost:3000/api/msal/callback`;
+export interface MsalExchangeResult {
+  tokens: MsalTokens | null;
+  /** Microsoft's own code (e.g. `AADSTS50011`) so the UI can say what actually broke. */
+  errorCode: string | null;
+}
+
+export async function exchangeMsalCode(code: string, origin: string): Promise<MsalExchangeResult> {
+  if (!hasMsalCredentials()) return { tokens: null, errorCode: null };
   const res = await fetch(`https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -49,19 +63,32 @@ export async function exchangeMsalCode(code: string): Promise<MsalTokens | null>
       client_id: process.env.GRAPH_CLIENT_ID!,
       client_secret: process.env.GRAPH_CLIENT_SECRET!,
       code,
-      redirect_uri: redirectUri,
+      redirect_uri: msalRedirectUri(origin),
       grant_type: 'authorization_code',
-      scope: 'Calendars.ReadWrite offline_access openid profile',
+      scope: MSAL_SCOPES,
     }).toString(),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // `error_codes` is Microsoft's AADSTS number; the description can carry PII, so only the code
+    // is kept. Without this the reason was discarded and every failure looked the same.
+    const detail = await res.json().catch(() => null) as { error?: string; error_codes?: unknown } | null;
+    const codes = Array.isArray(detail?.error_codes) ? detail!.error_codes : [];
+    const errorCode = codes.length
+      ? `AADSTS${codes[0]}`
+      : typeof detail?.error === 'string' ? detail.error : null;
+    console.error('msal token exchange rejected by Microsoft:', errorCode ?? `HTTP ${res.status}`);
+    return { tokens: null, errorCode };
+  }
   const data = await res.json();
-  if (!data.access_token || !data.refresh_token) return null;
+  if (!data.access_token || !data.refresh_token) return { tokens: null, errorCode: null };
   return {
-    access_token: data.access_token as string,
-    refresh_token: data.refresh_token as string,
-    expires_at: Date.now() + (Number(data.expires_in) || 3600) * 1000,
-    scope: data.scope as string,
+    tokens: {
+      access_token: data.access_token as string,
+      refresh_token: data.refresh_token as string,
+      expires_at: Date.now() + (Number(data.expires_in) || 3600) * 1000,
+      scope: data.scope as string,
+    },
+    errorCode: null,
   };
 }
 

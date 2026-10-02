@@ -9,18 +9,19 @@ export async function GET(request: NextRequest) {
   const stateParam = request.nextUrl.searchParams.get('state');
   const code = request.nextUrl.searchParams.get('code');
   const errorParam = request.nextUrl.searchParams.get('error');
-  const fallback = new URL('/profile?msal=error', request.url);
 
   if (!stateCookie || !stateParam || stateCookie !== stateParam) {
-    return NextResponse.redirect(fallback);
+    // Almost always an origin mismatch: the cookie is set where sign-in started, so a callback on a
+    // different host (or a fresh cookie jar) cannot see it.
+    return NextResponse.redirect(new URL('/profile?msal=state', request.url));
   }
   let state: { profile_id: string; next: string } | null = null;
   try {
     state = JSON.parse(Buffer.from(stateCookie, 'base64url').toString('utf8'));
   } catch {
-    return NextResponse.redirect(fallback);
+    return NextResponse.redirect(new URL('/profile?msal=state', request.url));
   }
-  if (!state?.profile_id) return NextResponse.redirect(fallback);
+  if (!state?.profile_id) return NextResponse.redirect(new URL('/profile?msal=state', request.url));
 
   const supabase = await getSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -30,18 +31,18 @@ export async function GET(request: NextRequest) {
     .eq('auth_user_id', user?.id || '')
     .maybeSingle();
   if (!user || !profile || profile.id !== state.profile_id) {
-    return NextResponse.redirect(fallback);
+    // The state was minted for one profile and the callback arrived on another session.
+    return NextResponse.redirect(new URL('/profile?msal=identity', request.url));
   }
 
   if (errorParam || !code) {
-    return NextResponse.redirect(new URL('/profile?msal=cancelled', request.url));
+    return NextResponse.redirect(new URL(`/profile?msal=cancelled${errorParam ? `&code=${encodeURIComponent(errorParam)}` : ''}`, request.url));
   }
 
-  console.log('msal callback: hit, state ok', state.profile_id, 'code?', !!code);
-  const tokens = await exchangeMsalCode(code);
+  const { tokens, errorCode } = await exchangeMsalCode(code, request.nextUrl.origin);
   if (!tokens) {
-    console.error('msal callback: exchange failed for profile', state.profile_id, 'tenant', process.env.GRAPH_TENANT_ID);
-    return NextResponse.redirect(new URL('/profile?msal=exchange_failed', request.url));
+    console.error('msal callback: exchange failed for profile', state.profile_id, errorCode ?? 'no code');
+    return NextResponse.redirect(new URL(`/profile?msal=exchange_failed${errorCode ? `&code=${encodeURIComponent(errorCode)}` : ''}`, request.url));
   }
 
   const admin = getAdminClient();

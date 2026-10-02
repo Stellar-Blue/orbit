@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const state = JSON.stringify({ profile_id: profile.id, next: safeNext, nonce: crypto.randomUUID() });
   const stateB64 = Buffer.from(state).toString('base64url');
 
-  const url = msalAuthorizeUrl(stateB64);
+  const url = msalAuthorizeUrl(stateB64, request.nextUrl.origin);
   if (!url) {
     return NextResponse.json({ error: 'Microsoft Graph is not configured.' }, { status: 503 });
   }

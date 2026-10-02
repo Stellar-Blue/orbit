@@ -21,11 +21,16 @@ function MyProfileInner() {
   const { currentUser, updateMyProfile, slackIntegration, myIntegrationExemption, revokeSlackConnection, employeeIntegrations, refreshIntegrationState, profileRoleHistory, jobRoles, seniorityLevels } = useAuth();
   const searchParams = useSearchParams();
   const msalError = searchParams.get('msal');
+  // Only ever rendered as text, and clamped: the code is ours or Microsoft's AADSTS number.
+  const msalCodeRaw = searchParams.get('code') || '';
+  const msalCode = /^(AADSTS\d{3,7}|[a-z_]{3,40})$/i.test(msalCodeRaw) ? msalCodeRaw : '';
 
   // Scope to my own row — an admin loads every employee's integration rows.
   const m365Integration = employeeIntegrations.find(i => i.provider === 'm365' && i.profile_id === currentUser.id) || null;
 
   const MSAL_ERRORS: Record<string, string> = {
+    state: 'Sign-in came back to a different address than it started from. The redirect URI in the Azure app registration must match the address you are using Orbit on.',
+    identity: 'Sign-in completed for a different account than the one signed in to Orbit.',
     error: 'Microsoft sign-in failed or was interrupted.',
     cancelled: 'Microsoft sign-in was cancelled.',
     exchange_failed: 'Microsoft rejected the authorization code (check the app registration: redirect URI and delegated Calendars.ReadWrite permission).',
@@ -312,6 +317,7 @@ function MyProfileInner() {
               <div>
                 <div className="font-bold">Microsoft connection failed</div>
                 <div className="text-xs mt-0.5">{MSAL_ERRORS[msalError]}</div>
+                {msalCode && <div className="text-[11px] mt-1 font-mono">Reported: {msalCode}</div>}
               </div>
             </div>
           )}
