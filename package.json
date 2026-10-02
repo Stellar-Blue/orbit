@@ -17,6 +17,7 @@
     "test:holidays": "node scripts/verify-public-holidays.js",
     "test:amount": "node scripts/verify-amount-input.mjs",
     "test:live": "node scripts/verify-live-reload-guard.mjs",
+    "test:bankrefs": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-bank-references.mjs",
     "test:deepseek": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-deepseek-extraction.mjs"
   },
   "dependencies": {

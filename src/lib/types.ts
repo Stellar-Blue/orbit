@@ -158,7 +158,8 @@ export interface PaymentRecord {
   employer_contributions: number;
   total_cost: number;
   payment_date: string;
-  bank_reference?: string;
+  /** One settlement can arrive as several transfers. Read it with `bankReferences()`. */
+  bank_reference?: string[];
   status: 'planned' | 'paid' | 'cancelled';
   note?: string;
   documents?: PaymentDocument[];

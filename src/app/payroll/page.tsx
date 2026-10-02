@@ -15,6 +15,7 @@ import {
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { PaymentRecord, PaymentDocument, SalaryRecord, PaymentType } from '@/lib/types';
+import { bankReferences, formatBankReferences } from '@/lib/bank-references';
 import { loadedMonthlyCost, employerCostRatio, isBaseSalary, isOneTimeBonus, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime, currentMonthKey, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
@@ -228,7 +229,7 @@ export default function PayrollPage() {
   // Sync initial selection from URL ID
   useEffect(() => {
     if (urlId && payments.length > 0 && !selectedPaymentForDocs) {
-      const target = payments.find(p => p.id === urlId || p.bank_reference === urlId);
+      const target = payments.find(p => p.id === urlId || bankReferences(p.bank_reference).includes(urlId));
       if (target) {
         if (target.period && target.period !== selectedPeriod) {
           setSelectedPeriod(target.period);
@@ -366,7 +367,7 @@ export default function PayrollPage() {
           Employer_Contributions: p.employer_contributions,
           Total_Company_Cost: p.total_cost,
           Payment_Date: p.payment_date,
-          Bank_Reference: p.bank_reference || 'N/A',
+          Bank_Reference: formatBankReferences(p.bank_reference) || 'N/A',
           Status: p.status.toUpperCase(),
           Attached_Receipts: p.documents?.length || 0
         };
@@ -395,7 +396,7 @@ export default function PayrollPage() {
               const filename = `${afm}_${pt?.code || 'pay'}_${p.period}${suffix}.pdf`;
               
               // Generate verifiable mock content representing the stored receipt voucher
-              const receiptContent = `STELLARBLUE SYSTEMS ORBIT — ACCOUNTANT RECEIPT ARCHIVE\nFile Name: ${filename}\nOriginal Upload: ${doc.name} (${doc.size})\nEmployee: ${prof?.first_name} ${prof?.last_name} (AFM: ${afm})\nPeriod: ${p.period}\nPayment Type: ${pt?.name_el} (${pt?.name_en})\nTotal Cost: €${p.total_cost} | Net Disbursed: €${p.net}\nBank Ref: ${p.bank_reference || 'WIRE-TRANSFER'}\nUploaded At: ${formatDateTime(doc.uploaded_at)}\nEncrypted & Stored in Private Supabase Vault under RLS`;
+              const receiptContent = `STELLARBLUE SYSTEMS ORBIT — ACCOUNTANT RECEIPT ARCHIVE\nFile Name: ${filename}\nOriginal Upload: ${doc.name} (${doc.size})\nEmployee: ${prof?.first_name} ${prof?.last_name} (AFM: ${afm})\nPeriod: ${p.period}\nPayment Type: ${pt?.name_el} (${pt?.name_en})\nTotal Cost: €${p.total_cost} | Net Disbursed: €${p.net}\nBank Ref: ${formatBankReferences(p.bank_reference) || 'WIRE-TRANSFER'}\nUploaded At: ${formatDateTime(doc.uploaded_at)}\nEncrypted & Stored in Private Supabase Vault under RLS`;
               
               receiptsFolder?.file(filename, receiptContent);
               totalDocsAdded++;
@@ -584,6 +585,7 @@ export default function PayrollPage() {
     }
     const pt = paymentTypes.find(t => t.id === upTypeId) || paymentTypes[0];
     const total_cost = Number((Number(upGross) + Number(upEfka)).toFixed(2));
+    const bankRefs = bankReferences(upBankRef);
     
     addPaymentRecord({
       profile_id: upProfileId,
@@ -595,7 +597,7 @@ export default function PayrollPage() {
       employer_contributions: Number(upEfka),
       total_cost,
       payment_date: upDate,
-      bank_reference: upBankRef.trim() || undefined,
+      bank_reference: bankRefs.length ? bankRefs : undefined,
       status: upStatus,
       note: upNote.trim() || undefined,
       documents: upDocs.length > 0 ? upDocs : []
@@ -655,6 +657,25 @@ export default function PayrollPage() {
     efka: Number(selectedPaymentForDocs.employer_contributions) || 0,
   } : { gross: 0, efka: 0 };
 
+  /**
+   * Bank references for the open row. Blank entries are kept while editing — dropping them on every
+   * keystroke would make the input disappear as soon as it is cleared — and filtered on save.
+   * Always at least one row, so an unset payment still shows where the first reference goes.
+   */
+  const openBankRefRows = (() => {
+    const stored = selectedPaymentForDocs?.bank_reference;
+    const refs = Array.isArray(stored)
+      ? stored.filter((ref): ref is string => typeof ref === 'string')
+      : bankReferences(stored);
+    return refs.length ? refs : [''];
+  })();
+
+  const setOpenBankRef = (index: number, value: string) => {
+    const next = [...openBankRefRows];
+    next[index] = value;
+    patchOpenPayment({ bank_reference: next });
+  };
+
   /** Live derived cost of the open record — gross plus the employer's EFKA contribution,
    *  which the payroll run owns and the modal does not edit. */
   const openPaymentTotal = Number((openPaymentAmounts.gross + openPaymentAmounts.efka).toFixed(2));
@@ -663,13 +684,15 @@ export default function PayrollPage() {
   const handleSaveOpenPayment = async () => {
     const row = selectedPaymentForDocs;
     if (!row) return;
+    // Blank rows are dropped here, not while editing, so an empty input can stay on screen.
+    const refs = bankReferences(row.bank_reference);
     await updatePaymentRecord(row.id, {
       gross: openPaymentAmounts.gross,
       employer_contributions: openPaymentAmounts.efka,
       net: Number(row.net) || 0,
       total_cost: openPaymentTotal,
       payment_date: row.payment_date,
-      bank_reference: (row.bank_reference || '').trim() || undefined,
+      bank_reference: refs.length ? refs : undefined,
       status: row.status,
       note: (row.note || '').trim() || undefined,
     });
@@ -717,7 +740,9 @@ export default function PayrollPage() {
         ...(f.gross !== null ? { gross: f.gross } : {}),
         ...(f.net !== null ? { net: f.net } : {}),
         ...(f.payment_date ? { payment_date: f.payment_date } : {}),
-        ...(f.bank_reference ? { bank_reference: f.bank_reference } : {}),
+        // The model reads one transfer number per receipt; keep any already typed. `bankReferences`
+        // drops the duplicate if the extracted number is already in the list.
+        ...(f.bank_reference ? { bank_reference: bankReferences([...bankReferences(row.bank_reference), f.bank_reference]) } : {}),
       });
 
       const money = (n: number | null) => (n === null ? null : `€${n.toLocaleString('de-DE', { minimumFractionDigits: 2 })}`);
@@ -1563,7 +1588,7 @@ export default function PayrollPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Bank Reference Number</label>
-              <input type="text" placeholder="WIRE-GR890001" value={upBankRef} onChange={e => setUpBankRef(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800" />
+              <input type="text" placeholder="WIRE-GR890001 · separate several with commas" value={upBankRef} onChange={e => setUpBankRef(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800" />
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Disbursement Status</label>
@@ -1744,12 +1769,50 @@ export default function PayrollPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold uppercase text-slate-500 mb-1">Bank Reference</label>
-                  <input
-                    type="text" placeholder="e.g. WIRE-GR891000" value={selectedPaymentForDocs.bank_reference || ''}
-                    onChange={e => patchOpenPayment({ bank_reference: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
-                  />
+                  <label className="block font-semibold uppercase text-slate-500 mb-1">
+                    Bank Reference{openBankRefRows.length > 1 ? 's' : ''}
+                    {openBankRefRows.length > 1 && (
+                      <span className="ml-2 normal-case font-bold text-[10px] text-[#3D87D3]">
+                        {openBankRefRows.length} transfers
+                      </span>
+                    )}
+                  </label>
+                  <div className="space-y-1.5">
+                    {openBankRefRows.map((ref, index) => (
+                      <div key={index} className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          placeholder={index === 0 ? 'e.g. 700BCP36CAU' : 'Reference of the next transfer'}
+                          value={ref}
+                          onChange={e => setOpenBankRef(index, e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-2 font-mono font-bold text-slate-800"
+                        />
+                        {openBankRefRows.length > 1 && (
+                          <button
+                            type="button"
+                            title="Remove this reference"
+                            onClick={() => {
+                              const next = openBankRefRows.filter((_, i) => i !== index);
+                              patchOpenPayment({ bank_reference: next.length ? next : [''] });
+                            }}
+                            className="p-2 rounded-md bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-700 transition-colors cursor-pointer shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => patchOpenPayment({ bank_reference: [...openBankRefRows, ''] })}
+                      className="text-[11px] font-bold text-[#3D87D3] hover:text-[#2f6ca8] flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Add another transfer reference
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1.5 normal-case">
+                    One reference per bank transfer. A payment settled by two transfers needs both transaction numbers.
+                  </p>
                 </div>
               </div>
               <div>
@@ -1832,14 +1895,14 @@ export default function PayrollPage() {
                           </select>
                           <button
                             type="button"
-                            onClick={() => setPreviewDoc({ doc, profName: `${prof?.first_name} ${prof?.last_name}`, bankRef: selectedPaymentForDocs.bank_reference })}
+                            onClick={() => setPreviewDoc({ doc, profName: `${prof?.first_name} ${prof?.last_name}`, bankRef: formatBankReferences(selectedPaymentForDocs.bank_reference) })}
                             className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md font-semibold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
                           >
                             <Eye className="w-3.5 h-3.5 text-indigo-600" /> Preview
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDownloadDoc(doc, `${prof?.first_name} ${prof?.last_name}`, selectedPaymentForDocs.bank_reference)}
+                            onClick={() => handleDownloadDoc(doc, `${prof?.first_name} ${prof?.last_name}`, formatBankReferences(selectedPaymentForDocs.bank_reference))}
                             className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
                           >
                             <Download className="w-3.5 h-3.5 text-[#3D87D3]" /> Download
@@ -2002,7 +2065,7 @@ export default function PayrollPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const val = `€${pay.net.toLocaleString()} Net (Total Cost: €${pay.total_cost.toLocaleString()}) - Bank Ref: ${pay.bank_reference || 'Wire Transfer'}`;
+                      const val = `€${pay.net.toLocaleString()} Net (Total Cost: €${pay.total_cost.toLocaleString()}) - Bank Ref: ${formatBankReferences(pay.bank_reference) || 'Wire Transfer'}`;
                       copyToClipboard(val, `Disbursement Info (€${pay.net.toLocaleString()})`, undefined);
                       setContextMenu(null);
                     }}
@@ -2029,7 +2092,7 @@ export default function PayrollPage() {
                         `• Payment Category: ${pt?.name_el || 'Μισθός'} (${pt?.name_en || 'Salary'})`,
                         `• Status: ${pay.status.toUpperCase()}`,
                         `• Financial Breakdown: Gross €${(pay.gross || 0).toLocaleString()} | Employer EFKA: €${(pay.employer_contributions || 0).toLocaleString()} | Total Cost: €${(pay.total_cost || 0).toLocaleString()} | Net Payable: €${(pay.net || 0).toLocaleString()}`,
-                        `• Bank Ref & Note: ${pay.bank_reference || 'WIRE-TRANSFER'} / ${pay.note || 'Regular scheduled settlement'}`,
+                        `• Bank Ref & Note: ${formatBankReferences(pay.bank_reference) || 'WIRE-TRANSFER'} / ${pay.note || 'Regular scheduled settlement'}`,
                         `• Compliance & Receipts: ${pay.documents?.length || 0} document(s) verified in Supabase RLS vault`
                       ].join('\n');
                       copyToClipboard(report, `Payroll Fast Report (${pay.period})`, undefined);

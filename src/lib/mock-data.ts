@@ -260,21 +260,21 @@ export const MOCK_SALARIES: SalaryRecord[] = [
 
 export const MOCK_PAYMENTS: PaymentRecord[] = [
   { 
-    id: 'pay-1', profile_id: 'prof-eleni', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid', bank_reference: 'WIRE-GR8910-ELENI',
+    id: 'pay-1', profile_id: 'prof-eleni', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid', bank_reference: ['WIRE-GR8910-ELENI'],
     documents: [
       { id: 'doc-1', name: 'Payslip_July2026_Eleni.pdf', type: 'payslip', size: '245 KB', uploaded_at: '2026-07-28' },
       { id: 'doc-2', name: 'Bank_Remittance_Receipt_0726.pdf', type: 'receipt', size: '112 KB', uploaded_at: '2026-07-28' }
     ]
   },
   { 
-    id: 'pay-2', profile_id: 'prof-nikos', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid', bank_reference: 'WIRE-GR8911-NIKOS',
+    id: 'pay-2', profile_id: 'prof-nikos', period: '2026-07', payment_type_id: 'pt-salary', gross: 5200, net: 3650, employer_contributions: 1159.08, total_cost: 6359.08, payment_date: '2026-07-28', status: 'paid', bank_reference: ['WIRE-GR8911-NIKOS'],
     documents: [
       { id: 'doc-3', name: 'Payslip_July2026_Nikos.pdf', type: 'payslip', size: '240 KB', uploaded_at: '2026-07-28' }
     ]
   },
-  { id: 'pay-3', profile_id: 'prof-dimitris', period: '2026-07', payment_type_id: 'pt-salary', gross: 4100, net: 2880, employer_contributions: 913.89, total_cost: 5013.89, payment_date: '2026-07-28', status: 'paid', bank_reference: 'WIRE-GR8912-DIMITRIS', documents: [] },
+  { id: 'pay-3', profile_id: 'prof-dimitris', period: '2026-07', payment_type_id: 'pt-salary', gross: 4100, net: 2880, employer_contributions: 913.89, total_cost: 5013.89, payment_date: '2026-07-28', status: 'paid', bank_reference: ['WIRE-GR8912-DIMITRIS'], documents: [] },
   { 
-    id: 'pay-4', profile_id: 'prof-sofia', period: '2026-07', payment_type_id: 'pt-contractor', gross: 3500, net: 3500, employer_contributions: 0, total_cost: 3500, payment_date: '2026-07-28', status: 'paid', bank_reference: 'INV-891-WIRE',
+    id: 'pay-4', profile_id: 'prof-sofia', period: '2026-07', payment_type_id: 'pt-contractor', gross: 3500, net: 3500, employer_contributions: 0, total_cost: 3500, payment_date: '2026-07-28', status: 'paid', bank_reference: ['INV-891-WIRE'],
     documents: [
       { id: 'doc-4', name: 'Invoice_INV-891_Sofia.pdf', type: 'invoice', size: '512 KB', uploaded_at: '2026-07-25' },
       { id: 'doc-5', name: 'Wire_Transfer_Confirmation.pdf', type: 'receipt', size: '130 KB', uploaded_at: '2026-07-28' }

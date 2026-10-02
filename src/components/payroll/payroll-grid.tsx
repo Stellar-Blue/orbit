@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { bankReferences, formatBankReferences } from '@/lib/bank-references';
 import { PaymentRecord, Profile, PaymentType } from '@/lib/types';
 import { Copy, Check, Edit, Paperclip, Search } from 'lucide-react';
 
@@ -43,8 +44,9 @@ const STATUS_SELECT_CLASS: Record<string, string> = {
 };
 
 /**
- * Click-to-edit bank reference. Money fields (gross / net / total cost) stay in the edit modal
- * because the three are derived from each other and must change together.
+ * Click-to-edit bank references. A settlement can arrive as several transfers, so the cell shows the
+ * joined list and editing accepts commas. Money fields (gross / net / total cost) stay in the edit
+ * modal because the three are derived from each other and must change together.
  */
 const InlineBankRef: React.FC<{ row: PayrollRow; onUpdate: PayrollGridProps['onUpdate'] }> = ({ row, onUpdate }) => {
   // `null` = showing the stored value; a string = the in-progress draft. No effect needed: while
@@ -52,9 +54,10 @@ const InlineBankRef: React.FC<{ row: PayrollRow; onUpdate: PayrollGridProps['onU
   const [draft, setDraft] = useState<string | null>(null);
 
   const commit = () => {
-    const next = (draft ?? '').trim();
+    const refs = bankReferences(draft ?? '');
     setDraft(null);
-    if (next !== row.bankRef) onUpdate(row.pay, { bank_reference: next || undefined });
+    const next = refs.join(', ');
+    if (next !== row.bankRef) onUpdate(row.pay, { bank_reference: refs.length ? refs : undefined });
   };
 
   if (draft === null) {
@@ -63,7 +66,7 @@ const InlineBankRef: React.FC<{ row: PayrollRow; onUpdate: PayrollGridProps['onU
         type="button"
         onClick={e => { e.stopPropagation(); setDraft(row.bankRef); }}
         onDoubleClick={e => e.stopPropagation()}
-        title="Click to edit the bank reference"
+        title="Click to edit · separate several references with commas"
         className="w-full text-left px-1 py-0.5 rounded hover:bg-slate-100 transition-colors cursor-text"
       >
         {row.bankRef
@@ -124,7 +127,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
         gross: pay.gross,
         net: pay.net,
         totalCost: pay.total_cost,
-        bankRef: pay.bank_reference || '',
+        bankRef: formatBankReferences(pay.bank_reference),
         status: pay.status,
         missingDoc,
         docCount: (pay.documents || []).length,

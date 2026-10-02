@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { formatBankReferences } from '@/lib/bank-references';
 import { formatDate } from '@/lib/date';
 import { PaymentRecord } from '@/lib/types';
 import { Card } from '@/components/ui/primitives';
@@ -47,7 +48,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
       gross: record.gross,
       net: record.net,
       paymentDate: record.payment_date || `${record.period}-28`,
-      bankRef: record.bank_reference || 'WIRE-TRANSFER',
+      bankRef: formatBankReferences(record.bank_reference) || 'WIRE-TRANSFER',
       docCount: (record.documents || []).length
     }));
   }, [payments, isContractor]);

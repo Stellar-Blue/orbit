@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PaymentRecord, SalaryRecord, PaymentDocument } from '@/lib/types';
+import { formatBankReferences } from '@/lib/bank-references';
 import { formatDate, formatDateTime, todayKey } from '@/lib/date';
 import { isBaseSalary, isRecurringExtra, isOneTimeBonus, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
 import { BenefitsList } from '@/components/compensation/benefits-list';
@@ -122,7 +123,7 @@ export default function MyCompensationPage() {
       ['Employment Type:', currentUser.employment_type.toUpperCase()],
       ['Work Email:', currentUser.work_email],
       ['Pay Period:', record.period],
-      ['Bank Reference:', record.bank_reference || 'DIRECT-DEPOSIT'],
+      ['Bank Reference:', formatBankReferences(record.bank_reference) || 'DIRECT-DEPOSIT'],
       ['Statement Date:', record.payment_date ? record.payment_date.split('T')[0] : new Date().toISOString().split('T')[0]],
       [''],
       ['DESCRIPTION', 'AMOUNT (EUR)'],
@@ -419,7 +420,7 @@ export default function MyCompensationPage() {
           <div className="space-y-4 text-xs">
             <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-800 text-sm block">Period: {selectedPaymentForDocs.period} (Bank Ref: {selectedPaymentForDocs.bank_reference || 'WIRE'})</span>
+                <span className="font-bold text-slate-800 text-sm block">Period: {selectedPaymentForDocs.period} (Bank Ref: {formatBankReferences(selectedPaymentForDocs.bank_reference) || 'WIRE'})</span>
                 <span className="text-slate-500 text-[11px]">{selectedPaymentForDocs.note || 'Regular Monthly Disbursement'}</span>
               </div>
               <div className="text-right">
