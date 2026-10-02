@@ -29,6 +29,9 @@ function MyProfileInner() {
   const m365Integration = employeeIntegrations.find(i => i.provider === 'm365' && i.profile_id === currentUser.id) || null;
 
   const MSAL_ERRORS: Record<string, string> = {
+    not_configured: 'This deployment has no Microsoft Graph credentials configured (GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_TENANT_ID).',
+    no_session: 'Orbit has no Supabase session in this browser, and Microsoft sign-in is tied to it. Local dev mode signs you in as a mock profile, so connect from the deployed app.',
+    no_profile: 'Signed in, but there is no employee profile linked to your account yet.',
     state: 'Sign-in came back to a different address than it started from. The redirect URI in the Azure app registration must match the address you are using Orbit on.',
     identity: 'Sign-in completed for a different account than the one signed in to Orbit.',
     error: 'Microsoft sign-in failed or was interrupted.',

@@ -5,8 +5,11 @@ import { msalAuthorizeUrl } from '@/lib/integrations/msal';
 export async function GET(request: NextRequest) {
   const supabase = await getSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
+  // Local dev runs on a mock identity and deliberately has no Supabase session, so sending the
+  // browser to /login would loop forever with no explanation. Name the reason instead.
   if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    const reason = process.env.DEV_AUTH_MODE === 'true' ? '/profile?msal=no_session' : '/login';
+    return NextResponse.redirect(new URL(reason, request.url));
   }
   const { data: profile } = await supabase
     .from('profiles')
@@ -14,7 +17,7 @@ export async function GET(request: NextRequest) {
     .eq('auth_user_id', user.id)
     .maybeSingle();
   if (!profile) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/profile?msal=no_profile', request.url));
   }
 
   const next = request.nextUrl.searchParams.get('next') || '/';
@@ -25,7 +28,9 @@ export async function GET(request: NextRequest) {
 
   const url = msalAuthorizeUrl(stateB64, request.nextUrl.origin);
   if (!url) {
-    return NextResponse.json({ error: 'Microsoft Graph is not configured.' }, { status: 503 });
+    // A raw JSON body told the user nothing; the profile page explains it in place.
+    console.error('msal connect: GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET / GRAPH_TENANT_ID not set');
+    return NextResponse.redirect(new URL('/profile?msal=not_configured', request.url));
   }
 
   const response = NextResponse.redirect(url);
