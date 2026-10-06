@@ -519,9 +519,6 @@ export default function LeaveManagementPage() {
                         <span className="text-[11px] font-extrabold text-slate-800 flex items-center">
                           <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3] shrink-0" /> No leaves yet
                         </span>
-                        <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-[11px] font-extrabold py-1 px-2.5 rounded-lg shadow-2xs cursor-pointer shrink-0">
-                          <Plus className="w-3 h-3 mr-1" /> Plan Now
-                        </Button>
                       </div>
                       <div className="mt-2 pt-2 border-t border-slate-200/80">
                         <p className="text-[11px] text-slate-500 font-medium">You have <strong className="text-slate-800 font-extrabold">{myBalance.available} available vacation days</strong> remaining. Select dates on the grid below!</p>
