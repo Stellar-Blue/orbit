@@ -32,7 +32,8 @@ export default function LeaveManagementPage() {
     leaveRequests, mandatoryLeaves, publicHolidays, 
     splitAndAddLeaveRequest,
     getEmployeeLeaveBalance,
-    leaveExceptionRequests, requestLeaveException, getCoverageLoadForProfile
+    leaveExceptionRequests, requestLeaveException, getCoverageLoadForProfile,
+    requestLeaveCancellation, cancelLeaveRequest,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -280,6 +281,25 @@ export default function LeaveManagementPage() {
       r.profile_id === currentUser.id && r.start_date.startsWith(String(selectedYear))
     ).sort((a, b) => b.start_date.localeCompare(a.start_date));
   }, [leaveRequests, currentUser.id, selectedYear]);
+
+  /**
+   * Employee self-service on their own leave rows: a still-pending request is withdrawn
+   * outright (no admin decision needed), while an upcoming approved one becomes an admin
+   * cancellation request — already-taken/in-progress leave can only be corrected by an admin.
+   */
+  const handleCancelLeaveRequest = async (req: LeaveRequest) => {
+    if (req.status === 'pending') {
+      if (!window.confirm(`Withdraw your pending leave request for ${formatDate(req.start_date)} – ${formatDate(req.end_date)}?\n\nIt will be cancelled immediately.`)) return;
+      const ok = await cancelLeaveRequest(req.id);
+      if (ok) notifySuccess('Your pending leave request was withdrawn.', 'Request cancelled');
+      else notifyValidation({ type: 'error', title: 'Could not withdraw request', message: 'The request was not cancelled — please try again.' });
+      return;
+    }
+    if (!window.confirm(`Request cancellation of your approved leave for ${formatDate(req.start_date)} – ${formatDate(req.end_date)}?\n\nAn administrator will review the cancellation.`)) return;
+    const ok = await requestLeaveCancellation(req.id);
+    if (ok) notifySuccess('An administrator will review your cancellation request.', 'Cancellation requested');
+    else notifyValidation({ type: 'error', title: 'Could not request cancellation', message: 'Nothing was changed — please try again.' });
+  };
 
   const handleConfirmExport = () => {
     const targetLeaves = exportLeaves;
@@ -840,6 +860,7 @@ export default function LeaveManagementPage() {
                 leaves={exportYearLeaves}
                 leaveTypes={leaveTypes}
                 getEffectiveDays={getEffectiveDays}
+                onCancelRequest={handleCancelLeaveRequest}
               />
             </div>
           </Card>

@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
-import { formatDate } from '@/lib/date';
+import { formatDate, todayKey } from '@/lib/date';
 import { LeaveRequest, LeaveType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Search } from 'lucide-react';
@@ -17,16 +17,20 @@ interface LeaveRow {
   workDays: number;
   status: string;
   note: string;
+  raw: LeaveRequest;
 }
 
 interface LeaveGridProps {
   leaves: LeaveRequest[];
   leaveTypes: LeaveType[];
   getEffectiveDays: (req: LeaveRequest) => number;
+  /** Employee action: withdraws a pending request, or asks an admin to cancel an approved one. */
+  onCancelRequest?: (req: LeaveRequest) => void;
 }
 
-export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEffectiveDays }) => {
+export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEffectiveDays, onCancelRequest }) => {
   const [quickFilter, setQuickFilter] = useState('');
+  const today = todayKey();
 
   const rowData = useMemo<LeaveRow[]>(() => {
     return leaves.map(req => {
@@ -38,7 +42,8 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
         categoryColour: lt?.colour || '#3D87D3',
         workDays: getEffectiveDays(req),
         status: req.status,
-        note: req.note || ''
+        note: req.note || '',
+        raw: req,
       };
     });
   }, [leaves, leaveTypes, getEffectiveDays]);
@@ -72,21 +77,52 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
       )
     },
     {
-      headerName: 'Status', field: 'status', width: 130, sortable: true, ...excelSetFilter(['approved', 'pending', 'rejected', 'taken']),
+      headerName: 'Status', field: 'status', width: 150, sortable: true, ...excelSetFilter(['approved', 'pending', 'rejected', 'taken', 'in_progress', 'cancellation_requested', 'cancelled']),
       cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => {
-        if (p.value === 'approved') return <Badge variant="success">✓ APPROVED</Badge>;
-        if (p.value === 'pending') return <Badge variant="warning">⏳ PENDING</Badge>;
-        if (p.value === 'rejected') return <Badge variant="error">✕ REJECTED</Badge>;
-        return <Badge variant="neutral">✓ TAKEN</Badge>;
+        switch (p.value) {
+          case 'approved': return <Badge variant="success">✓ APPROVED</Badge>;
+          case 'pending': return <Badge variant="warning">⏳ PENDING</Badge>;
+          case 'rejected': return <Badge variant="error">✕ REJECTED</Badge>;
+          case 'cancellation_requested': return <Badge variant="warning">⚠ CANCEL PENDING</Badge>;
+          case 'cancelled': return <Badge variant="error">✕ CANCELLED</Badge>;
+          case 'in_progress': return <Badge variant="info">▶ IN PROGRESS</Badge>;
+          case 'expired': return <Badge variant="neutral">EXPIRED</Badge>;
+          default: return <Badge variant="neutral">✓ TAKEN</Badge>;
+        }
       }
     },
     {
-      headerName: 'Memo & Notes', field: 'note', minWidth: 220, sortable: true, ...excelSetFilter(),
+      headerName: 'Memo & Notes', field: 'note', minWidth: 200, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => (
         <span className="text-slate-500 truncate block max-w-[220px]" title={p.value || ''}>{p.value || 'Standard time off'}</span>
       )
+    },
+    {
+      headerName: 'Actions', width: 190, sortable: false, filter: false, pinned: 'right',
+      cellRenderer: (p: ICellRendererParams<LeaveRow>) => {
+        const req = p.data?.raw;
+        if (!req || !onCancelRequest) return null;
+        if (req.status === 'cancelled') return <span className="text-[11px] font-bold text-slate-400">Withdrawn</span>;
+        if (req.status === 'cancellation_requested') return <span className="text-[11px] font-bold text-amber-700">Awaiting admin</span>;
+        const isPending = req.status === 'pending';
+        const isUpcomingApproved = req.status === 'approved' && req.end_date >= today;
+        if (!isPending && !isUpcomingApproved) return <span className="text-[11px] font-bold text-slate-300">—</span>;
+        return (
+          <button
+            type="button"
+            onClick={() => onCancelRequest(req)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              isPending
+                ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+            }`}
+          >
+            {isPending ? 'Cancel request' : 'Request cancellation'}
+          </button>
+        );
+      }
     }
-  ], []);
+  ], [onCancelRequest, today]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 shadow-xs">

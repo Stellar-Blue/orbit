@@ -313,7 +313,7 @@ export interface RemoteQuotaRequest {
   reason?: string;
   period_used?: number;
   period_max?: number;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   created_at?: string;
   decided_at?: string;
   decided_by?: string;

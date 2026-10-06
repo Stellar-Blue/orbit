@@ -16,12 +16,13 @@ import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import {
   findCoverageViolations, violationOnDay, describeViolation, coverageOfficeNote,
 } from '@/lib/coverage-rules';
+import { RemoteQuotaRequest } from '@/lib/types';
 
 export default function RemoteWorkLogPage() {
   const { 
     currentUser, profiles, remoteDays, remotePatterns, remotePolicies, 
     remoteAmendmentRequests, remoteQuotaRequests, saveRemotePattern, addRemoteDay, bulkAddRemoteDays, 
-    requestRemoteAmendment, decideRemoteAmendment, requestRemoteQuotaOverride, decideRemoteQuotaRequest, publicHolidays, mandatoryLeaves, leaveRequests,
+    requestRemoteAmendment, decideRemoteAmendment, requestRemoteQuotaOverride, decideRemoteQuotaRequest, cancelRemoteQuotaRequest, publicHolidays, mandatoryLeaves, leaveRequests,
     employeeIntegrations, getCoverageLoadForProfile
   } = useAuth();
   
@@ -562,6 +563,14 @@ export default function RemoteWorkLogPage() {
     return (remoteQuotaRequests || []).filter(r => r.status === 'pending');
   }, [remoteQuotaRequests, isAdmin]);
 
+  /** Employee withdraws a still-pending quota exception request (decided ones are admin-owned). */
+  const handleCancelQuotaRequest = async (req: RemoteQuotaRequest) => {
+    if (!window.confirm(`Withdraw your remote quota exception request for ${req.date}?\n\nNo remote day will be added.`)) return;
+    const ok = await cancelRemoteQuotaRequest(req.id);
+    if (ok) notifySuccess('Your quota exception request was withdrawn.', 'Request cancelled');
+    else notifyValidation({ type: 'error', title: 'Could not withdraw request', message: 'The request was not cancelled — please try again.' });
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200 pb-20">
       {/* Header */}
@@ -1062,10 +1071,22 @@ export default function RemoteWorkLogPage() {
                           {req.reason && <span className="text-slate-500 italic truncate max-w-[160px]">{req.reason}</span>}
                         </div>
                       </div>
-                      <div>
-                        {req.status === 'pending' && <Badge variant="warning">Pending Approval</Badge>}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {req.status === 'pending' && (
+                          <>
+                            <Badge variant="warning">Pending Approval</Badge>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelQuotaRequest(req)}
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 transition-all cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
                         {req.status === 'approved' && <Badge variant="success">Approved</Badge>}
                         {req.status === 'rejected' && <Badge variant="error">Rejected</Badge>}
+                        {req.status === 'cancelled' && <Badge variant="neutral">Withdrawn</Badge>}
                       </div>
                     </div>
                   ))}

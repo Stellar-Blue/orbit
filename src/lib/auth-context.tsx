@@ -270,9 +270,13 @@ interface AppState {
   decideRemoteAmendment: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   requestRemoteQuotaOverride: (payload: { date: string; requested_mode: RemoteMode | 'office'; location?: string; reason?: string; period_used?: number; period_max?: number }) => Promise<boolean>;
   decideRemoteQuotaRequest: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
+  /** Employee withdraws their own still-pending remote-quota exception request. */
+  cancelRemoteQuotaRequest: (id: string) => Promise<boolean>;
   editLeaveRequest: (id: string, updated: Partial<LeaveRequest>, editReason?: string) => void;
-  requestLeaveCancellation: (id: string) => void;
+  requestLeaveCancellation: (id: string) => Promise<boolean>;
   decideLeaveCancellation: (id: string, approve: boolean) => void;
+  /** Employee withdraws their own still-pending leave request. */
+  cancelLeaveRequest: (id: string) => Promise<boolean>;
   deleteLeaveRequest: (id: string) => Promise<boolean>;
   splitAndAddLeaveRequest: (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => void;
   /** Admin: create or update a coverage group (rule + members) in one call. */
@@ -1282,18 +1286,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const requestLeaveCancellation = async (id: string) => {
+  const requestLeaveCancellation = async (id: string): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
-      const { error } = await supabase.from('leave_requests').update({ status: 'cancellation_requested' }).eq('id', id);
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .update({ status: 'cancellation_requested' })
+        .eq('id', id)
+        .select('id');
       if (error) {
         console.error('Failed to request leave cancellation:', error);
-        alert(`Database Error: ${error.message}`);
-        return;
+        return false;
+      }
+      // RLS can silently match zero rows; surface that instead of a phantom success.
+      if (!data || data.length === 0) {
+        console.error('Leave cancellation request updated no rows (permission or missing row).');
+        return false;
       }
       setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancellation_requested' } : r));
-    } catch (e: any) {
+      return true;
+    } catch (e) {
       console.error('Failed to request leave cancellation:', e);
+      return false;
     }
   };
 
@@ -1321,6 +1335,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e: any) {
       console.error('Failed to decide leave cancellation:', e);
+    }
+  };
+
+  /** Employee withdraws their own still-pending leave request before it is decided. */
+  const cancelLeaveRequest = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .update({ status: 'cancelled' })
+        .eq('id', id)
+        .select('id');
+      if (error) {
+        console.error('Failed to cancel leave request:', error);
+        return false;
+      }
+      if (!data || data.length === 0) {
+        console.error('Leave request cancel updated no rows (permission or missing row).');
+        return false;
+      }
+      setLeaveRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancelled' } : r));
+      return true;
+    } catch (e) {
+      console.error('Failed to cancel leave request:', e);
+      return false;
     }
   };
 
@@ -4235,6 +4274,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  /** Employee withdraws their own still-pending remote-quota exception request. */
+  const cancelRemoteQuotaRequest = async (id: string): Promise<boolean> => {
+    const previous = remoteQuotaRequests;
+    setRemoteQuotaRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancelled', decided_at: new Date().toISOString() } : r));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from('remote_quota_requests')
+        .update({ status: 'cancelled', decided_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('id');
+      if (error) throw error;
+      // An RLS-blocked UPDATE matches zero rows without error — treat that as a failure.
+      if (!data || data.length === 0) throw new Error('no row updated (permission or missing row)');
+      return true;
+    } catch (e) {
+      console.error('Failed to cancel remote quota request:', e);
+      setRemoteQuotaRequests(previous);
+      return false;
+    }
+  };
+
   // ---- Coverage rules: at most N members of a group away on the same day ----
 
   /** Admin: upsert a coverage group and, for custom groups, replace its member list. */
@@ -5629,6 +5690,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       decideRemoteAmendment,
       requestRemoteQuotaOverride,
       decideRemoteQuotaRequest,
+      cancelRemoteQuotaRequest,
       saveCoverageGroup,
       deleteCoverageGroup,
       getCoverageLoad,
@@ -5646,6 +5708,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       editLeaveRequest,
       requestLeaveCancellation,
       decideLeaveCancellation,
+      cancelLeaveRequest,
       deleteLeaveRequest,
       splitAndAddLeaveRequest,
       addTeam,
