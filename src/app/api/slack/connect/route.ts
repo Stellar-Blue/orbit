@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, slack_required')
+    .select('id')
     .eq('auth_user_id', user.id)
     .maybeSingle();
 
@@ -19,10 +19,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Only users the admin has marked as required go through the Slack connect flow.
-  if (!profile.slack_required) {
-    return NextResponse.redirect(new URL('/', request.url));
-  }
+  // Slack is only *required* for users the admin flagged, but connecting is always
+  // available: opting in is what enables status mirroring, so never turn an
+  // optional user away here.
 
   const next = request.nextUrl.searchParams.get('next') || '/';
   const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';

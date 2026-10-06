@@ -295,7 +295,7 @@ function MyProfileInner() {
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
                       {!currentUser.slack_required
-                        ? 'Slack mirroring is not required for your account. An administrator can enable it if you want your status mirrored.'
+                        ? 'Slack mirroring is optional for your account. Connect if you want Orbit to mirror your leave & remote statuses.'
                         : myIntegrationExemption
                           ? `Temporarily exempt${myIntegrationExemption.expires_at ? ` until ${formatDateTime(myIntegrationExemption.expires_at)}` : ''} (admin-granted)`
                           : isRevoked
@@ -304,13 +304,10 @@ function MyProfileInner() {
                     </div>
                   </div>
                 </div>
-                {/* /api/slack/connect turns non-required users away, so don't offer a dead link. */}
-                {currentUser.slack_required && (
-                  <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
-                    {isRevoked ? <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> : <MessageSquare className="w-3.5 h-3.5 mr-1.5" />}
-                    {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}
-                  </a>
-                )}
+                <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
+                  {isRevoked ? <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> : <MessageSquare className="w-3.5 h-3.5 mr-1.5" />}
+                  {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}
+                </a>
               </div>
             )}
           </Card>

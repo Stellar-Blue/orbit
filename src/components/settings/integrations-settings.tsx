@@ -559,8 +559,9 @@ export function IntegrationsSettings() {
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              Slack connection is not mandatory for everyone. Check the users who should mirror their leave &amp; remote
-              days to Slack — they&apos;ll be prompted to connect at their next sign-in. Users left unchecked can use Orbit without connecting.
+              Slack connection is not mandatory for everyone. Check the users who must connect — they&apos;ll be prompted
+              to connect at their next sign-in, and their leave &amp; remote days are mirrored to Slack. Users left
+              unchecked can use Orbit without connecting, and can still connect from their profile if they choose.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
@@ -638,7 +639,7 @@ export function IntegrationsSettings() {
                         onChange={e => toggleRequired(p.id, e.target.checked)}
                         className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
                       />
-                      {p.slack_required ? 'Required' : 'Optional'}
+                      Required
                     </label>
                   </div>
                 ))}

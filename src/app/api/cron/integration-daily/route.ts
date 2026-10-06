@@ -12,15 +12,24 @@ export async function GET(request: NextRequest) {
   const settings = await getSlackSettings(admin);
   const today = athensToday();
 
-  // Every active employee. Outlook mirroring applies to all of them; only the
-  // Slack-required subset gets a Slack status mirror.
+  // Every active employee. Outlook mirroring applies to all of them; the Slack
+  // status mirror covers the admin-required set plus optional users who connected.
   const { data: activeProfiles } = await admin
     .from('profiles')
     .select('id, employment_type, slack_required')
     .eq('status', 'active');
 
-  // 1. Enqueue today's status mirror for every active Slack-required employee
-  const profiles = (activeProfiles || []).filter(p => (p as { slack_required?: boolean }).slack_required);
+  const { data: connectedSlack } = await admin
+    .from('employee_integrations')
+    .select('profile_id')
+    .eq('provider', 'slack')
+    .eq('status', 'connected');
+  const connectedSlackIds = new Set((connectedSlack || []).map(i => i.profile_id));
+
+  // 1. Enqueue today's status mirror for every active employee who needs one
+  const profiles = (activeProfiles || []).filter(
+    p => (p as { slack_required?: boolean }).slack_required || connectedSlackIds.has(p.id)
+  );
 
   const ops: Array<{ provider: 'slack'; operation: string; orbit_kind: string; orbit_id: string; payload: Record<string, unknown>; idempotency_key: string; ordering_key: string }> = [];
   let leaveCount = 0;

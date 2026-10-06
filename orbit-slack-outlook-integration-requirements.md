@@ -1,6 +1,6 @@
 # Orbit — Slack Status & Outlook Calendar Integration Requirements
 
-**Status:** Draft v1.1 — Slack connection now a mandatory first-login gate (§2.1); self-service opt-out removed in favor of admin exemptions
+**Status:** Draft v1.2 — Slack connection is per-user and admin-controlled (§2.1): required users are gated at first login, optional users connect only if they choose; self-service opt-out removed in favor of admin exemptions
 **Purpose:** when Orbit knows someone is on leave or working remotely, the tools where colleagues actually look — Slack and Outlook — should reflect it automatically. No more setting the palm-tree emoji by hand, no more meetings booked over someone's approved vacation.
 **Direction (the core rule):** **Orbit → outward only.** Orbit is the master of leave/remote state; Slack statuses and Outlook events are mirrors. Nothing flows back — same ownership philosophy as the Attio integration. Editing a mirrored artifact in Slack/Outlook changes nothing in Orbit and gets re-asserted by reconciliation.
 **Inherits:** leave lifecycle & privacy rules (leave spec), remote days/patterns, `work_schedule`, mandatory-leave fan-out, outbox + reconciliation patterns (Attio guide), Entra ID tenant.
@@ -22,19 +22,19 @@
 
 ## 2. Slack integration
 
-- **Per-user OAuth is mandatory — enforced at first login (§2.1).** Setting a user's status requires a *user* token with `users.profile:write` — a bot token cannot do it. Slack connection is therefore a required onboarding step, not an optional profile setting.
+- **Per-user OAuth via a *user* token.** Setting a user's status requires a user token with `users.profile:write` — a bot token cannot do it. Whether connecting is *required* is admin-controlled per user (`profiles.slack_required`): required users are gated at first login (§2.1); optional users may connect voluntarily from their profile, and once connected their status is mirrored like anyone else's.
 - **Setting:** a morning job (07:30 Europe/Athens, before the workday) sets the status for anyone whose day is leave/remote, using Slack's `status_expiration` set to end-of-day (or leave end for multi-day) — **statuses self-clear**, so the common case needs no cleanup call and a crashed evening job can't leave stale statuses.
 - **Never fight the human:** before writing, read the current status; overwrite only if it's empty or matches the last status Orbit set (stored per user). An employee who manually set something custom keeps it — Orbit logs a skip, doesn't clobber.
 - **Immediate updates:** approval of leave starting today, same-day cancellation, or an admin edit triggers an immediate set/clear through the outbox, not just the next morning job.
 - **No self-service opt-out (changed from v1.0 draft):** a per-employee "don't touch my Slack status" toggle would contradict mandatory connection — connect-but-never-write is connection theater. Exemptions exist but are **admin-granted only** (`integration_exemptions`), with a reason and optional expiry. The "never fight the human" rule above remains the everyday pressure valve: anyone can override any single day by setting their own status manually.
 - Out of scope v1: DND scheduling, Slack profile fields, channel announcements ("X is off today" bot posts — revisit only if asked; it's noise at 20 people with a good calendar).
 
-### 2.1 Mandatory Slack connection at first login
+### 2.1 Slack connection at first login
 
-**Requirement:** an employee signing in to Orbit for the first time must complete Slack connection before reaching any other part of the app.
+**Requirement:** an employee the admin has marked as Slack-required must complete Slack connection before reaching any other part of the app. Optional users are never gated; they can connect from their profile if they choose, and their status is mirrored once connected.
 
-- **Gate mechanics:** after the first successful Entra sign-in and profile auto-link, middleware routes any profile with `onboarding_completed_at IS NULL` to `/onboarding` for every app route (deep links included; the intended destination is preserved and restored after completion). The flow: (1) confirm profile basics, (2) **Connect Slack** — OAuth completes, token stored, a test `users.profile:get` verifies it — then `onboarding_completed_at` is stamped and the app opens.
-- **Who is gated:** employment types that use leave/remote (`full_time`, `part_time`, `intern`). **Contractors are exempt** — they have no leave or remote records, so a Slack token would mirror nothing; gating them would be friction with zero payoff.
+- **Gate mechanics:** after the first successful Entra sign-in and profile auto-link, middleware routes any profile with `slack_required = true` and no completed Slack onboarding to `/onboarding` for every app route (deep links included; the intended destination is preserved and restored after completion). The flow: (1) confirm profile basics, (2) **Connect Slack** — OAuth completes, token stored, a test `users.profile:get` verifies it — then `onboarding_completed_at` is stamped and the app opens.
+- **Who is gated:** only profiles with `slack_required = true`, which admins control per user in Settings → Integrations. Everyone else — e.g. contractors, who have no leave or remote records — is not gated and may connect voluntarily.
 - **Escape hatches (both explicit, both audited):**
   - *Admin deferral:* an admin can grant a time-boxed exemption (default 7 days, reason required) for the legitimate case — a new hire whose Slack workspace invite hasn't arrived yet. The gate converts to a countdown banner; at expiry it hardens again.
   - *Slack-outage grace:* if the OAuth handshake fails with a Slack-side error (5xx/timeout — not a user cancellation), the gate auto-grants a 72-hour grace so a Slack incident can never lock the whole company out of Orbit. User-cancelled OAuth does **not** trigger grace — cancelling re-presents the gate.
