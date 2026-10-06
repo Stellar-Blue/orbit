@@ -1,5 +1,15 @@
 export const GATED_EMPLOYMENT_TYPES = ['full_time', 'part_time', 'intern'];
 
+/**
+ * The `employee_integrations` columns `authenticated` may SELECT. 0063 revoked the table-wide
+ * grant and re-granted this exact list, which deliberately omits `token_ref` — so `select('*')`
+ * fails with 42501 "permission denied for table employee_integrations" and every integration
+ * read comes back empty (Slack and Microsoft both render "not connected" while the row exists).
+ * Always select this list, never `*`.
+ */
+export const EMPLOYEE_INTEGRATION_COLUMNS =
+  'id, profile_id, provider, external_user_id, status, auto_reply_opt_in, auto_reply_template, last_set_status_text, last_set_status_emoji, last_set_expiration_ts, connected_at, last_synced_at, revoked_at, created_at';
+
 export type IntegrationProvider = 'slack' | 'm365';
 export type IntegrationStatus = 'connected' | 'revoked' | 'skipped' | 'exempt';
 

@@ -28,7 +28,7 @@ import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } f
 import { startRealtimeSync } from './realtime-sync';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
-import { DEFAULT_SLACK_SETTINGS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
+import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
 
 /** Payload for create/update of a coverage group (rule + custom member list). */
@@ -628,7 +628,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isAdmin ? supabase.from('counterparty_tiers').select('*') : Promise.resolve(emptyRes),
           isAdmin ? supabase.from('counterparty_tier_history').select('*').order('changed_at', { ascending: false }).limit(300) : Promise.resolve(emptyRes),
           isAdmin ? supabase.from('counterparty_tier_overrides').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('employee_integrations').select('*') : (matchedId ? supabase.from('employee_integrations').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('employee_integrations').select(EMPLOYEE_INTEGRATION_COLUMNS) : (matchedId ? supabase.from('employee_integrations').select(EMPLOYEE_INTEGRATION_COLUMNS).eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           isAdmin ? supabase.from('integration_exemptions').select('*') : (matchedId ? supabase.from('integration_exemptions').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('integration_settings').select('*'),
           supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true }),
@@ -5092,7 +5092,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const supabase = getSupabaseBrowserClient();
       const [{ data: integRows }, { data: exemptRows }, { data: settingsRows }] = await Promise.all([
-        supabase.from('employee_integrations').select('*'),
+        supabase.from('employee_integrations').select(EMPLOYEE_INTEGRATION_COLUMNS),
         supabase.from('integration_exemptions').select('*'),
         supabase.from('integration_settings').select('*'),
       ]);
@@ -5228,7 +5228,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     try {
       const supabase = getSupabaseBrowserClient();
-      let query = supabase.from(table).select('*');
+      // employee_integrations is column-granted without `token_ref` (0063), where `*` would 42501.
+      let query = supabase.from(table).select(table === 'employee_integrations' ? EMPLOYEE_INTEGRATION_COLUMNS : '*');
       if (gate === 'own' && !admin) query = query.eq('profile_id', myId);
       const { data, error } = await query;
       if (error) {

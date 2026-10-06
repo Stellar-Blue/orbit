@@ -7,7 +7,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDateTime } from '@/lib/date';
 import { Button, Card } from '@/components/ui/primitives';
 import { ShieldCheck, AlertTriangle, Clock, LogOut, CheckCircle2, Loader2, MessageSquare } from 'lucide-react';
-import { EmployeeIntegration, IntegrationExemption } from '@/lib/integrations/types';
+import { EmployeeIntegration, IntegrationExemption, EMPLOYEE_INTEGRATION_COLUMNS } from '@/lib/integrations/types';
 
 const ERROR_MESSAGES: Record<string, string> = {
   slack_oauth_failed: 'Slack connection failed. Please try again.',
@@ -43,7 +43,7 @@ function OnboardingInner() {
     (async () => {
       const supabase = getSupabaseBrowserClient();
       const [{ data: integ }, { data: ex }] = await Promise.all([
-        supabase.from('employee_integrations').select('*').eq('profile_id', profileId).eq('provider', 'slack').maybeSingle(),
+        supabase.from('employee_integrations').select(EMPLOYEE_INTEGRATION_COLUMNS).eq('profile_id', profileId).eq('provider', 'slack').maybeSingle(),
         supabase.from('integration_exemptions').select('*').eq('profile_id', profileId).eq('provider', 'slack').limit(1).maybeSingle(),
       ]);
       if (cancelled) return;
