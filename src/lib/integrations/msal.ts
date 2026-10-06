@@ -48,6 +48,23 @@ export function msalAuthorizeUrl(state: string, origin: string): string | null {
   return `https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
+/**
+ * Tenant-wide admin consent ("Grant admin consent"). When the tenant disables user
+ * consent — or the app holds application permissions, which always need an admin —
+ * employees hit Microsoft's "Need admin approval" wall. Sending an Entra admin here
+ * approves the app for the whole tenant in one step. It reuses the same registered
+ * redirect URI as the per-user flow, so no extra Azure configuration is required.
+ */
+export function msalAdminConsentUrl(state: string, origin: string): string | null {
+  if (!hasMsalCredentials()) return null;
+  const params = new URLSearchParams({
+    client_id: process.env.GRAPH_CLIENT_ID!,
+    redirect_uri: msalRedirectUri(origin),
+    state,
+  });
+  return `https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/adminconsent?${params.toString()}`;
+}
+
 export interface MsalExchangeResult {
   tokens: MsalTokens | null;
   /** Microsoft's own code (e.g. `AADSTS50011`) so the UI can say what actually broke. */

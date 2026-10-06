@@ -27,7 +27,20 @@ const DEFAULT_OUTLOOK: OutlookSettings = {
 
 export function IntegrationsSettings() {
   type IntegrationTab = 'slack' | 'outlook' | 'attio' | 'mydata' | 'mcp' | 'ai';
-  const [activeTab, setActiveTab] = useState<IntegrationTab>('slack');
+
+  // The Microsoft consent callback redirects to /settings?msalAdmin=… . Read it once
+  // here (before other state) so the Outlook tab opens on the outcome. This panel only
+  // ever mounts in the browser — the parent restores its tab from localStorage after
+  // hydration — so a guarded lazy read is safe and avoids a setState-in-effect render.
+  const [msalAdminResult] = useState(() =>
+    typeof window === 'undefined'
+      ? { result: null as string | null, code: null as string | null }
+      : {
+          result: new URLSearchParams(window.location.search).get('msalAdmin'),
+          code: new URLSearchParams(window.location.search).get('code'),
+        }
+  );
+  const [activeTab, setActiveTab] = useState<IntegrationTab>(msalAdminResult.result ? 'outlook' : 'slack');
 
   const { profiles, employeeIntegrations, integrationSettings, integrationExceptions, integrationLastReconciledAt, refreshIntegrationState } = useAuth();
   const [settings, setSettings] = useState<IntegrationSettings>(integrationSettings);
@@ -84,6 +97,19 @@ export function IntegrationsSettings() {
 
   const [mydataLoaded, setMydataLoaded] = useState(false);
   const [exemptionsLoaded, setExemptionsLoaded] = useState(false);
+  // Human-readable form of the ?msalAdmin= outcome (null when there was no round-trip).
+  const msalAdminMsg = useMemo(() => {
+    const { result, code } = msalAdminResult;
+    if (!result) return null;
+    const messages: Record<string, { kind: 'ok' | 'error' | 'info'; text: string }> = {
+      granted: { kind: 'ok', text: 'Microsoft admin consent granted for the whole tenant. Employees can now connect Outlook without the “Need admin approval” prompt.' },
+      error: { kind: 'error', text: `Microsoft rejected the admin consent request${code ? ` (${code})` : ''}. The account that approves must be an Entra Global Administrator or Privileged Role Administrator.` },
+      forbidden: { kind: 'info', text: 'Only an Orbit admin can start the Microsoft consent flow.' },
+      not_configured: { kind: 'error', text: 'This deployment has no Microsoft Graph credentials configured (GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_TENANT_ID).' },
+      no_session: { kind: 'error', text: 'Orbit has no active session for this browser, so the consent flow could not start. Sign in and retry.' },
+    };
+    return messages[result] || { kind: 'error' as const, text: 'Microsoft consent did not complete.' };
+  }, [msalAdminResult]);
 
   const SectionLoader = ({ text = "Loading configuration..." }: { text?: string }) => (
     <div className="flex flex-col items-center justify-center py-10 text-slate-400 space-y-3">
@@ -218,6 +244,18 @@ export function IntegrationsSettings() {
     };
     // EventSource auto-reconnects on drop; no manual handling needed.
     return () => es.close();
+  }, []);
+
+  // Tidy the consent params out of the address bar so a manual refresh doesn't repeat
+  // the banner. No setState here — the outcome is already captured above.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('msalAdmin')) return;
+    params.delete('msalAdmin');
+    params.delete('code');
+    const qs = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
   }, []);
 
   // Pull the authoritative slack_required flags; failure is non-fatal because the
@@ -467,6 +505,22 @@ export function IntegrationsSettings() {
 
   return (
     <div className="space-y-6">
+      {msalAdminMsg && (
+        <div className={`rounded-2xl border p-4 text-xs flex items-start gap-2.5 ${
+          msalAdminMsg.kind === 'ok'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : msalAdminMsg.kind === 'info'
+              ? 'bg-blue-50 border-blue-200 text-blue-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+        }`}>
+          {msalAdminMsg.kind === 'ok'
+            ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+            : msalAdminMsg.kind === 'info'
+              ? <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
+              : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
+          <span>{msalAdminMsg.text}</span>
+        </div>
+      )}
       {/* Sub-tab Navigation */}
       <div className="flex items-center space-x-2 border-b border-slate-200 pb-3 overflow-x-auto">
         {(['slack', 'outlook', 'attio', 'mydata', 'mcp', 'ai'] as IntegrationTab[]).map(tab => (
@@ -714,6 +768,25 @@ export function IntegrationsSettings() {
               <Button size="sm" variant="primary" onClick={handleSaveOutlook} disabled={savingOutlook} className="bg-[#3D87D3] text-white cursor-pointer">
                 {savingOutlook ? 'Saving…' : 'Save Outlook Settings'}
               </Button>
+            </div>
+            <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/60 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Microsoft admin consent</div>
+                  <div className="text-[11px] text-slate-600 mt-0.5">
+                    If employees see &ldquo;Need admin approval&rdquo; when connecting, an Entra admin must approve the
+                    Orbit Graph app once for the whole tenant. Granting consent requires a Global Administrator or
+                    Privileged Role Administrator, and it covers every employee at once.
+                  </div>
+                </div>
+              </div>
+              <a
+                href="/api/msal/admin-consent"
+                className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#3D87D3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Grant admin consent
+              </a>
             </div>
           </>
         )}

@@ -40,6 +40,16 @@ function MyProfileInner() {
     store_failed: 'Orbit could not securely store your Microsoft session. Please contact an administrator.',
   };
 
+  // A blocked consent (not a genuine cancel) means an Entra admin must approve the Orbit
+  // app for the tenant. Microsoft reports it as consent_required / access_denied or an
+  // AADSTS code; point the employee at the fix instead of "sign-in was cancelled".
+  const consentBlocked = msalCode === 'consent_required' || msalCode === 'AADSTS65001' || msalCode === 'AADSTS90094';
+  const msalErrorMessage = msalError
+    ? consentBlocked
+      ? 'Your organization requires an administrator to approve the Orbit app before you can connect Outlook. Ask a Microsoft admin to grant consent in Settings → Integrations → Outlook.'
+      : MSAL_ERRORS[msalError]
+    : null;
+
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(currentUser.first_name);
   const [lastName, setLastName] = useState(currentUser.last_name);
@@ -311,12 +321,12 @@ function MyProfileInner() {
               </div>
             )}
           </Card>
-          {msalError && MSAL_ERRORS[msalError] && (
+          {msalErrorMessage && (
             <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800 flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
               <div>
                 <div className="font-bold">Microsoft connection failed</div>
-                <div className="text-xs mt-0.5">{MSAL_ERRORS[msalError]}</div>
+                <div className="text-xs mt-0.5">{msalErrorMessage}</div>
                 {msalCode && <div className="text-[11px] mt-1 font-mono">Reported: {msalCode}</div>}
               </div>
             </div>
