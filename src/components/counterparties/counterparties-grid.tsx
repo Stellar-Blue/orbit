@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { Counterparty, Contract, CatalogModule, CatalogItem, Role } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, MapPin, ShieldCheck, RefreshCw, ExternalLink, Unlink, Trash2, Search, Pin } from 'lucide-react';
@@ -27,6 +28,8 @@ interface CpRow {
 interface CounterpartiesGridProps {
   counterparties: Counterparty[];
   isAdmin: boolean;
+  /** Filters the page applies before rows reach this grid, so "Clear filters" resets them too. */
+  externalFilters?: ExternalFilterSource;
   onOpen: (cp: Counterparty) => void;
   onDelete: (cp: Counterparty) => void;
   getContractCount: (cpId: string) => number;
@@ -49,12 +52,14 @@ const roleBadge = (roles: Role[]) => {
 export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
   counterparties,
   isAdmin,
+  externalFilters,
   onOpen,
   onDelete,
   getContractCount,
   getContractArr
 }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls(externalFilters);
+  const { quickFilter, setQuickFilter } = gridFilters;
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const copyUuid = (id: string, e: React.MouseEvent) => {
@@ -242,9 +247,12 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {counterparties.length} entities · double-click a row to open the dossier
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {counterparties.length} entities · double-click a row to open the dossier
+          </span>
+        </div>
       </div>
       <div className="h-[540px]">
         <AgGridReact<CpRow>
@@ -252,6 +260,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={58}
           headerHeight={36}

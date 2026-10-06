@@ -516,6 +516,10 @@ export default function CounterpartiesRegistryPage() {
           <CounterpartiesGrid
             counterparties={filteredRegistry}
             isAdmin={isAdmin}
+            externalFilters={{
+              active: search.trim().length > 0 || roleFilter !== 'all',
+              onClear: () => { setSearch(''); setRoleFilter('all'); }
+            }}
             onOpen={(cp) => openDossier(cp)}
             onDelete={async (cp) => {
               if (confirm(`Delete corporate entity "${cp.legal_name}"?`)) {

@@ -670,6 +670,10 @@ export default function CompanyLeaveManagementPage() {
                   profiles={profiles}
                   leaveTypes={leaveTypes}
                   getEffectiveDays={getEffectiveDays}
+                  externalFilters={{
+                    active: searchQuery.trim().length > 0 || filterStatus !== 'all',
+                    onClear: () => { setSearchQuery(''); setFilterStatus('all'); }
+                  }}
                   onApprove={(id) => {
                     const req = leaveRequests.find(r => r.id === id);
                     if (req) handleApprove(req);

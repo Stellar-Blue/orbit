@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams, type GridApi, type GetContextMenuItemsParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { formatMoney, DEFAULT_CURRENCY } from '@/lib/currency';
 import { Invoice, InvoiceStatus, BudgetCategory } from '@/lib/types';
@@ -77,6 +78,8 @@ interface InvoicesGridProps {
   onLinkToContract?: (inv: Invoice) => void;
   hideToolbar?: boolean;
   compact?: boolean;
+  /** Filters the page applies before rows reach this grid, so "Clear filters" resets them too. */
+  externalFilters?: ExternalFilterSource;
 }
 
 export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
@@ -92,10 +95,12 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   onOpenCounterparty,
   onLinkToContract,
   hideToolbar,
-  compact
+  compact,
+  externalFilters
 }) => {
   const { budgetCategories, updateInvoiceCategory } = useAuth();
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls(externalFilters);
+  const { quickFilter, setQuickFilter } = gridFilters;
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
 
@@ -509,6 +514,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
               />
             </div>
+            <ClearFiltersButton controls={gridFilters} />
             {HAS_AG_GRID_LICENSE && (
               <div className="flex items-center gap-2 pl-1">
                 <button
@@ -533,7 +539,8 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )}
       <div className={compact ? "h-[calc(100vh-280px)] min-h-[400px]" : "h-[calc(100vh-220px)] min-h-[600px]"}>
         <AgGridReact<InvoiceRow>
-          onGridReady={params => setGridApi(params.api)}
+          onGridReady={params => { setGridApi(params.api); gridFilters.gridProps.onGridReady(params); }}
+          onFilterChanged={gridFilters.gridProps.onFilterChanged}
           theme={orbitGridTheme}
           rowData={rowData}
           columnDefs={columnDefs}

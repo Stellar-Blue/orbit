@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { formatBankReferences } from '@/lib/bank-references';
 import { formatDate } from '@/lib/date';
 import { PaymentRecord } from '@/lib/types';
@@ -25,6 +26,8 @@ interface CompRow {
 interface CompensationGridProps {
   payments: PaymentRecord[];
   isContractor: boolean;
+  /** Filters the page applies before rows reach this grid, so "Clear filters" resets them too. */
+  externalFilters?: ExternalFilterSource;
   onOpenDocs: (record: PaymentRecord) => void;
   onDownloadPayslip: (record: PaymentRecord) => void;
 }
@@ -34,10 +37,12 @@ const deEur = (value: number) => `€${Number(value).toLocaleString('de-DE', { m
 export const CompensationGrid: React.FC<CompensationGridProps> = ({
   payments,
   isContractor,
+  externalFilters,
   onOpenDocs,
   onDownloadPayslip
 }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls(externalFilters);
+  const { quickFilter, setQuickFilter } = gridFilters;
 
   const rowData = useMemo<CompRow[]>(() => {
     return payments.map(record => ({
@@ -134,9 +139,12 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {payments.length} disbursements · use column filters for Excel-style options
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {payments.length} disbursements · use column filters for Excel-style options
+          </span>
+        </div>
       </div>
       <div className="h-[480px]">
         <AgGridReact<CompRow>
@@ -144,6 +152,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={56}
           headerHeight={36}

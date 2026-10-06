@@ -363,6 +363,10 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
           jobRoles={jobRoles}
           seniorityLevels={seniorityLevels}
           isAdmin={isAdmin}
+          externalFilters={{
+            active: searchQuery.trim().length > 0 || teamFilter !== 'all' || employmentFilter !== 'all',
+            onClear: () => { setSearchQuery(''); setTeamFilter('all'); setEmploymentFilter('all'); }
+          }}
           onSelect={(p) => { setSelectedProfile(p); setActiveTab('overview'); }}
         />
       ) : (

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
@@ -59,6 +60,8 @@ interface ContractsGridProps {
   catalogModules: CatalogModule[];
   catalogItems: CatalogItem[];
   isAdmin: boolean;
+  /** Filters the page applies before rows reach this grid, so "Clear filters" resets them too. */
+  externalFilters?: ExternalFilterSource;
   onSelect: (contract: Contract) => void;
   onDelete: (contract: Contract) => void;
   onOpenCounterparty: (contract: Contract) => void;
@@ -69,11 +72,13 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
   catalogModules,
   catalogItems,
   isAdmin,
+  externalFilters,
   onSelect,
   onDelete,
   onOpenCounterparty
 }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls(externalFilters);
+  const { quickFilter, setQuickFilter } = gridFilters;
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const copyUuid = (id: string, e: React.MouseEvent) => {
@@ -281,9 +286,12 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {contracts.length} contracts · double-click a row to open the dossier · right-click column headers for sort/filter menu
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {contracts.length} contracts · double-click a row to open the dossier · right-click column headers for sort/filter menu
+          </span>
+        </div>
       </div>
       <div className="ag-theme-quartz h-[560px]">
         <AgGridReact<ContractRow>
@@ -291,6 +299,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={40}
           headerHeight={36}

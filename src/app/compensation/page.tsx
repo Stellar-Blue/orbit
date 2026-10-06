@@ -324,6 +324,7 @@ export default function MyCompensationPage() {
         <CompensationGrid
           payments={filteredPayments}
           isContractor={isContractor}
+          externalFilters={{ active: yearFilter !== 'all', onClear: () => setYearFilter('all') }}
           onOpenDocs={(record) => setSelectedPaymentForDocs(record)}
           onDownloadPayslip={(record) => handleDownloadPayslip(record)}
         />

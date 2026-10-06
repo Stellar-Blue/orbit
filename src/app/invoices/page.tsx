@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { ClearFiltersControl } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
@@ -664,6 +665,16 @@ export default function InvoicesRegistryPage() {
           {/* Table View (AG Grid) */}
           <InvoicesGrid
             invoices={filteredInvoices}
+            externalFilters={{
+              active: searchQuery.trim().length > 0 || directionFilter !== 'all' || statusFilter !== 'all' || selectedCpId !== 'all' || selectedContractId !== 'all',
+              onClear: () => {
+                setSearchQuery('');
+                setDirectionFilter('all');
+                setStatusFilter('all');
+                setSelectedCpId('all');
+                setSelectedContractId('all');
+              }
+            }}
             onOpen={(inv) => openInvoiceModal(inv)}
             onStatusChange={(inv, status) => updateInvoiceStatus(inv.id, status)}
             onMassStatusChange={async (selectedInvoices, status) => {
@@ -774,6 +785,10 @@ export default function InvoicesRegistryPage() {
                 <option value="revenue">Revenue Only</option>
                 <option value="cost">Spend Only</option>
               </select>
+              <ClearFiltersControl
+                active={actionSearchQuery.trim().length > 0 || actionFilterStatus !== 'all' || actionFilterDirection !== 'all'}
+                onClear={() => { setActionSearchQuery(''); setActionFilterStatus('all'); setActionFilterDirection('all'); }}
+              />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-500">Sort:</span>

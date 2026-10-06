@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-filter-controls';
 import { Badge } from '@/components/ui/primitives';
 import { Plus, RefreshCw, CheckCircle2, Search } from 'lucide-react';
 
@@ -49,7 +50,8 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
   isImported,
   onImport
 }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls();
+  const { quickFilter, setQuickFilter } = gridFilters;
 
   const rowData = useMemo<AttioCompanyRow[]>(() => {
     return companies.map(comp => ({
@@ -169,9 +171,12 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
             className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-500"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {companies.length} companies from Attio · default view: not imported first · click any column header to sort/filter
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} tone="dark" />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {companies.length} companies from Attio · default view: not imported first · click any column header to sort/filter
+          </span>
+        </div>
       </div>
       <div className="h-[520px]">
         <AgGridReact<AttioCompanyRow>
@@ -179,6 +184,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={50}
           headerHeight={36}

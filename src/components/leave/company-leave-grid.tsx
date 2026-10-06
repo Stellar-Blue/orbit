@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { LeaveRequest, Profile, LeaveType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
@@ -36,6 +37,8 @@ interface CompanyLeaveGridProps {
   onDecideCancellation: (id: string, approve: boolean) => void;
   onEdit: (req: LeaveRequest) => void;
   onDelete: (id: string) => void;
+  /** Filters the page applies before rows reach this grid, so "Clear filters" resets them too. */
+  externalFilters?: ExternalFilterSource;
 }
 
 export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
@@ -47,9 +50,11 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
   onReject,
   onDecideCancellation,
   onEdit,
-  onDelete
+  onDelete,
+  externalFilters
 }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls(externalFilters);
+  const { quickFilter, setQuickFilter } = gridFilters;
 
   const rowData = useMemo<LeaveRow[]>(() => {
     return requests.map(req => {
@@ -243,9 +248,12 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {requests.length} requests · {mandatoryCount} from mandatory closures · use column filters for Excel-style options
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {requests.length} requests · {mandatoryCount} from mandatory closures · use column filters for Excel-style options
+          </span>
+        </div>
       </div>
       <div className="h-[540px]">
         <AgGridReact<LeaveRow>
@@ -253,6 +261,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={60}
           headerHeight={36}

@@ -607,6 +607,10 @@ export default function ContractsRegistryPage() {
           catalogModules={catalogModules}
           catalogItems={catalogItems}
           isAdmin={isAdmin}
+          externalFilters={{
+            active: directionFilter !== 'all' || statusFilter !== 'all',
+            onClear: () => { setDirectionFilter('all'); setStatusFilter('all'); }
+          }}
           onSelect={setSelectedContract}
           onDelete={(c) => {
             if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {

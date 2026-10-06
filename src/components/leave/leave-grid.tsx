@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-filter-controls';
 import { formatDate, todayKey } from '@/lib/date';
 import { LeaveRequest, LeaveType } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
@@ -29,7 +30,8 @@ interface LeaveGridProps {
 }
 
 export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEffectiveDays, onCancelRequest }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls();
+  const { quickFilter, setQuickFilter } = gridFilters;
   const today = todayKey();
 
   const rowData = useMemo<LeaveRow[]>(() => {
@@ -137,9 +139,12 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {leaves.length} requests · use column filters for Excel-style options
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {leaves.length} requests · use column filters for Excel-style options
+          </span>
+        </div>
       </div>
       <div className="h-[420px]">
         <AgGridReact<LeaveRow>
@@ -147,6 +152,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={48}
           headerHeight={36}

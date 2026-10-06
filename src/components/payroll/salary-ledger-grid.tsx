@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
+import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { SalaryRecord, PaymentType, Profile } from '@/lib/types';
 import { loadedMonthlyCost, isBaseSalary, isOneTimeBonus, loadedExtraCost } from '@/lib/compensation';
@@ -76,7 +77,8 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
   onBackfill,
   onDelete
 }) => {
-  const [quickFilter, setQuickFilter] = useState('');
+  const gridFilters = useGridFilterControls();
+  const { quickFilter, setQuickFilter } = gridFilters;
 
   const rowData = useMemo<LedgerRow[]>(() => {
     const employeeName = (profileId: string) => {
@@ -263,9 +265,12 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
             className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
           />
         </div>
-        <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-          {rowData.filter(r => r.kind === 'salary').length} base rate(s) · {rowData.filter(r => r.kind === 'extra').length} recurring extra(s) · {rowData.filter(r => r.kind === 'bonus').length} one-off bonus(es) · grouped per employee
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <ClearFiltersButton controls={gridFilters} />
+          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
+            {rowData.filter(r => r.kind === 'salary').length} base rate(s) · {rowData.filter(r => r.kind === 'extra').length} recurring extra(s) · {rowData.filter(r => r.kind === 'bonus').length} one-off bonus(es) · grouped per employee
+          </span>
+        </div>
       </div>
       <div className="h-[520px]">
         <AgGridReact<LedgerRow>
@@ -273,6 +278,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          {...gridFilters.gridProps}
           quickFilterText={quickFilter}
           rowHeight={52}
           headerHeight={36}

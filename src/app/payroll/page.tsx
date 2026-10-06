@@ -1080,6 +1080,10 @@ export default function PayrollPage() {
             profiles={profiles}
             paymentTypes={paymentTypes}
             hasPaymentReceipt={hasPaymentReceipt}
+            externalFilters={{
+              active: personFilter !== 'all' || ledgerFilter !== 'all',
+              onClear: () => { setPersonFilter('all'); setLedgerFilter('all'); }
+            }}
             onEdit={openPaymentModal}
             onAttachDocs={openPaymentModal}
             onUpdate={(pay, updates) => {
