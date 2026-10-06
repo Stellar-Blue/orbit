@@ -4279,15 +4279,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const previous = remoteQuotaRequests;
     setRemoteQuotaRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'cancelled', decided_at: new Date().toISOString() } : r));
     try {
-      const supabase = getSupabaseBrowserClient();
-      const { data, error } = await supabase
-        .from('remote_quota_requests')
-        .update({ status: 'cancelled', decided_at: new Date().toISOString() })
-        .eq('id', id)
-        .select('id');
-      if (error) throw error;
-      // An RLS-blocked UPDATE matches zero rows without error — treat that as a failure.
-      if (!data || data.length === 0) throw new Error('no row updated (permission or missing row)');
+      // 0063 makes every write to remote_quota_requests admin-only and the live status CHECK
+      // rejects 'cancelled', so the withdrawal runs through the service-role route instead.
+      const res = await fetch('/api/remote/quota-withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => ({} as { error?: string; mode?: string }));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      // Pre-migration the route had to delete the row; drop it from view so the list matches.
+      if (data?.mode === 'deleted') {
+        setRemoteQuotaRequests(prev => prev.filter(r => r.id !== id));
+      }
       return true;
     } catch (e) {
       console.error('Failed to cancel remote quota request:', e);
