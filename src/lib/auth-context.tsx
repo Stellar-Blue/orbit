@@ -426,6 +426,28 @@ const fetchProfilePhones = async (
   }
 };
 
+/**
+ * The employee's own confirmed payment rows.
+ *
+ * `policy_payments_employee_select` (0008) keys on `profiles.auth_user_id`, which several
+ * directory profiles still lack, so the browser's direct SELECT returns nothing for those
+ * employees. The service-role route resolves the caller the same way current_profile_id()
+ * does and returns only their own paid rows, so the "Confirmed Payment History" grid is not
+ * hostage to the unlinked rows. Returns null when the read failed — callers must leave their
+ * slice alone rather than blank it.
+ */
+async function fetchOwnPaidPayments(): Promise<PaymentRecord[] | null> {
+  try {
+    const res = await fetch('/api/compensation/payments', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return Array.isArray(json?.payments) ? (json.payments as PaymentRecord[]) : [];
+  } catch (e) {
+    console.warn('[payments] own-ledger fetch failed:', e);
+    return null;
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   /** Real Supabase auth user id — gates the live row-change subscription (anon has no rows to hear about). */
@@ -568,7 +590,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isAdmin ? supabase.from('profile_sensitive').select('*') : (matchedId ? supabase.from('profile_sensitive').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('payment_types').select('*').order('sort_order', { ascending: true }),
           isAdmin ? supabase.from('salary_history').select('*') : (matchedId ? supabase.from('my_compensation').select('*') : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('payments').select('*') : (matchedId ? supabase.from('payments').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
+          isAdmin ? supabase.from('payments').select('*') : (matchedId ? fetchOwnPaidPayments().then(data => ({ data: data ?? [], error: null })) : Promise.resolve(emptyRes)),
           supabase.from('leave_types').select('*').order('sort_order', { ascending: true }),
           isAdmin ? supabase.from('leave_entitlements').select('*') : (matchedId ? supabase.from('leave_entitlements').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
           supabase.from('mandatory_leaves').select('*'),
@@ -5240,7 +5262,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const reloadLivePayments = async () => {
     const [rows, types] = await Promise.all([
-      reloadLiveTable('payments', 'own'),
+      liveAdminRef.current ? reloadLiveTable('payments', 'own') : fetchOwnPaidPayments(),
       reloadLiveTable('payment_types', 'all'),
     ]);
     if (!rows || !types) return;

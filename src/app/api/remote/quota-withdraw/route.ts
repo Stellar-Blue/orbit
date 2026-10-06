@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/integrations/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { resolveCallerProfileId } from '@/lib/supabase/caller';
 
 /**
  * Employee withdrawal of their own still-pending remote-quota exception request.
@@ -35,15 +36,8 @@ export async function POST(request: NextRequest) {
 
   const admin = getAdminClient();
 
-  // Resolve the caller's own profile the same way current_profile_id() does: by the linked
-  // auth user, then by the verified email (a freshly provisioned profile may not be linked).
-  let profileId: string | null = null;
-  const byAuth = await admin.from('profiles').select('id').eq('auth_user_id', user.id).maybeSingle();
-  if (byAuth.data?.id) profileId = byAuth.data.id;
-  if (!profileId && user.email) {
-    const byEmail = await admin.from('profiles').select('id').ilike('work_email', user.email).maybeSingle();
-    if (byEmail.data?.id) profileId = byEmail.data.id;
-  }
+  // Resolve the caller's own profile the same way current_profile_id() does.
+  const profileId = await resolveCallerProfileId(admin, user);
   if (!profileId) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
   }
