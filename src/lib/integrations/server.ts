@@ -260,19 +260,33 @@ export async function deliverSlackOutbox(admin: SupabaseClient, limit = 50): Pro
   const summary: DeliverySummary = { delivered: 0, skipped: 0, failed: 0, exceptions: 0 };
   const settings = await getSlackSettings(admin);
 
+  // Due = never tried (next_retry_at IS NULL, the usual case) OR a backoff that has elapsed.
+  // Both must live in ONE `.or`: chaining `.lte()` with a separate `.or('…is.null')` ANDs them,
+  // so the query matched nothing and every op sat pending forever. Retries land in 'failed' with
+  // a next_retry_at (see handleSlackApiError), so those rows have to be selected too — the
+  // partial index over ('pending','failed') is the tell.
+  const nowIso = new Date().toISOString();
   const { data: rows } = await admin
     .from('integration_outbox')
     .select('*')
     .eq('provider', 'slack')
-    .eq('status', 'pending')
-    .lte('next_retry_at', new Date().toISOString())
-    .or('next_retry_at.is.null')
+    .in('status', ['pending', 'failed'])
+    .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
     .order('ordering_key', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(limit);
 
   for (const row of (rows || []) as OutboxRowLike[]) {
     const { profile_id, date } = row.payload as { profile_id: string; date: string };
+
+    // A mirror for a day that has already passed is meaningless — writing it would only push a
+    // status that expires in the past. The outage above left exactly this backlog; retire it
+    // instead of replaying history (today's and future-dated ops still deliver normally).
+    if (!date || date < athensToday()) {
+      await markOutbox(row.id, 'skipped', 'stale_date', admin);
+      summary.skipped += 1;
+      continue;
+    }
 
     const { data: integration } = await admin
       .from('employee_integrations')
