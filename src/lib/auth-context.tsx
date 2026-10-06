@@ -548,7 +548,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let isAdmin = false;
         const { data: { session } } = await supabase.auth.getSession();
         setLiveSessionUserId(session?.user?.id || '');
-        
+
+        // Repair this session's directory link BEFORE any own-row read. Policies on payments,
+        // time entries, contract timesheets, project assignments and profile self-edit still key
+        // on `auth_user_id`, and profiles provisioned before the callback linked it (10 of 15)
+        // would otherwise read nothing. Idempotent; a no-op once linked.
+        if (session?.user) {
+          try {
+            await fetch('/api/auth/link-profile', { method: 'POST' });
+          } catch (linkError) {
+            console.warn('[auth] profile link repair failed; own-row reads may be empty this session:', linkError);
+          }
+        }
+
         const initialProfilesRes = await supabase.from('profiles').select('*');
         const loadedProfiles: Profile[] = initialProfilesRes.data || [];
         // Only overwrite when the view answered — otherwise keep the value the row already carries.
