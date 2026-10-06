@@ -284,11 +284,14 @@ export default function RemoteWorkLogPage() {
   // Auto-Fill helpers based on Recurring Pattern
   const handleAutoFill = async (periodType: 'week' | 'month' | 'quarter') => {
     const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    let startDate = parseISO(todayStr);
+    let startDate: Date;
     let endDate: Date;
 
     if (periodType === 'week') {
-      endDate = addDays(startDate, 7);
+      // "Next week" is the whole following Monday–Sunday block (weekends are skipped below),
+      // not a rolling 7 days from today. Weeks start on Monday, matching the rest of the app.
+      startDate = addDays(startOfWeek(parseISO(todayStr), { weekStartsOn: 1 }), 7);
+      endDate = endOfWeek(startDate, { weekStartsOn: 1 });
     } else if (periodType === 'month') {
       startDate = startOfMonth(currentMonth);
       endDate = endOfMonth(currentMonth);
@@ -383,10 +386,11 @@ export default function RemoteWorkLogPage() {
     const success = await bulkAddRemoteDays(currentUser.id, declarations);
     if (success) {
       const remoteCount = declarations.filter(d => d.mode !== 'office').length;
+      const filledRange = `${format(startDate, 'd MMM')} – ${format(endDate, 'd MMM yyyy')}`;
       const skipNote = coverageSkipped.length > 0
         ? ` ${coverageSkipped.length} day(s) stayed office: a team coverage rule caps how many of your group can be remote on the same day.`
         : '';
-      notifySuccess(`Applied your default pattern to ${remoteCount} remote working day(s) across the selected ${periodType}.${skipNote}`);
+      notifySuccess(`Applied your default pattern to ${remoteCount} remote working day(s) for ${filledRange}.${skipNote}`);
     }
   };
 
