@@ -50,9 +50,25 @@ export async function getSupabaseServerClient() {
 /**
  * Admin service role client for background jobs and headless OAuth / MCP execution.
  * Bypasses RLS to allow authenticated OAuth AI operator tokens to query business tables cleanly.
+ *
+ * The service key MUST be present: falling back to the anon key makes every privileged write
+ * (profile↔auth linking, JIT role seeding, vault secrets) an RLS no-op that reports no error —
+ * which is how directory profiles silently end up without an `auth_user_id` (see 0066 / the
+ * payments RLS fix). Warn loudly instead of failing silently.
  */
+let warnedMissingServiceKey = false;
+
 export async function getSupabaseAdminClient() {
   assertNoDevAuthInProduction();
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !warnedMissingServiceKey) {
+    warnedMissingServiceKey = true;
+    console.error(
+      '[supabase] SUPABASE_SERVICE_ROLE_KEY is not set — the admin client is falling back to the ' +
+      'anon key, so service-role writes (profile/account linking, vault storage, JIT role seeding) ' +
+      'will silently affect zero rows.'
+    );
+  }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dev-placeholder';
   return createServerClient(
