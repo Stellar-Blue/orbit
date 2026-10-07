@@ -3776,7 +3776,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
         return [newDay, ...filtered];
       });
-      syncSlackStatus(newDay.profile_id, newDay.date);
+      // Day-scoped mirror: only a change to today flips Slack now. A remote day for another day
+      // waits for the morning job on that day (enqueueStatusSync enforces this too).
+      if (newDay.date === athensTodayStr()) {
+        syncSlackStatus(newDay.profile_id, newDay.date);
+      }
     } catch (e: any) {
       console.error("Exception saving remote day:", e);
     }

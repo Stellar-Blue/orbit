@@ -276,14 +276,16 @@ export async function deliverSlackOutbox(admin: SupabaseClient, limit = 50): Pro
     .order('created_at', { ascending: true })
     .limit(limit);
 
+  const today = athensToday();
   for (const row of (rows || []) as OutboxRowLike[]) {
     const { profile_id, date } = row.payload as { profile_id: string; date: string };
 
-    // A mirror for a day that has already passed is meaningless — writing it would only push a
-    // status that expires in the past. The outage above left exactly this backlog; retire it
-    // instead of replaying history (today's and future-dated ops still deliver normally).
-    if (!date || date < athensToday()) {
-      await markOutbox(row.id, 'skipped', 'stale_date', admin);
+    // Slack status is day-scoped: only today's op may be written. A past-dated mirror would only
+    // push a status that already expired, and a future-dated one (e.g. a remote day added for
+    // tomorrow) would flip the employee to remote now instead of on that day. Retire both — the
+    // morning job enqueues today's op when the day actually starts (cron/integration-daily).
+    if (!date || date !== today) {
+      await markOutbox(row.id, 'skipped', !date ? 'missing_date' : date < today ? 'stale_date' : 'future_date', admin);
       summary.skipped += 1;
       continue;
     }

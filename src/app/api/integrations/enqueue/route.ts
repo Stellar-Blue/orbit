@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { enqueueOutbox, getAdminClient } from '@/lib/integrations/server';
+import { enqueueOutbox, getAdminClient, athensToday } from '@/lib/integrations/server';
 
 interface SyncRequest {
   profile_id: string;
@@ -72,6 +72,12 @@ export async function POST(request: NextRequest) {
   const date = body.date;
   if (!isValidDate(date)) {
     return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
+  }
+
+  // Slack status is day-scoped. An immediate sync only makes sense for today: a future date
+  // (e.g. a remote day added for tomorrow) must not touch Slack until the morning job sets it.
+  if (date !== athensToday()) {
+    return NextResponse.json({ ok: true, enqueued: 0, skipped: 'not_today' });
   }
 
   const idempotencyKey = `slack:status:${syncProfileId}:${date}:${crypto.randomUUID()}`;

@@ -8,9 +8,14 @@ export function athensTodayStr(): string {
 /**
  * Enqueue a Slack status sync for the given date, then attempt an immediate
  * delivery. Used by leave/remote approval, cancellation, edit and add flows.
- * Only meaningful for today (morning job covers future dates).
+ *
+ * Slack status is day-scoped: it must always reflect the current day, and a new
+ * day is set when it starts (the morning job). A change dated in the future —
+ * e.g. a remote day declared for tomorrow — is therefore a no-op here instead of
+ * flipping the employee's status a day early.
  */
 export async function enqueueStatusSync(profileId: string, date: string, orbitId?: string): Promise<void> {
+  if (date !== athensTodayStr()) return;
   try {
     await fetch('/api/integrations/enqueue', {
       method: 'POST',
