@@ -26,7 +26,7 @@ import {
   MOCK_PUBLIC_HOLIDAYS, MOCK_REMOTE_PATTERNS,
   MOCK_COUNTERPARTIES, MOCK_CONTRACTS,
 } from './mock-data';
-import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount } from './leave-days';
+import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount, publishedClosureIds, mandatoryRowDeducts } from './leave-days';
 import {
   carryoverDays, carryoverExpiryDate, carryoverExpired, remainingOfYear, previousYearHasClosed,
   carryoverWarningLevel, autoCarryoverBookingPlan, groupAdjacentDays, DEFAULT_WARNING_MONTHS,
@@ -1927,8 +1927,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .filter(r => r.status === 'pending' && r.origin !== 'mandatory')
       .reduce((sum, r) => sum + getEffectiveRegularDays(r), 0);
 
+    // A closure that is no longer published (draft / cancelled) must not deduct anything, even if
+    // its fan-out rows are still in the table — they are cleaned up, but stale rows must never
+    // inflate the deduction in the meantime.
+    const liveClosureIds = publishedClosureIds(mandatoryLeaves);
     const mandatory = userReqs
-      .filter(r => r.origin === 'mandatory' && !r.detached && (r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken'))
+      .filter(r => mandatoryRowDeducts(r, liveClosureIds))
       .reduce((sum, r) => sum + getEffectiveClosureDays(r), 0);
 
     const available = entitlement + carryOver - taken - reserved - mandatory;
@@ -2225,6 +2229,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const localIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   /**
+   * Drop the automatic rows of a closure that is no longer published (draft / cancelled), so it
+   * stops deducting days from every allowance. Admin-detached manual corrections are preserved.
+   */
+  const clearMandatoryFanout = async (mandatoryLeaveId: string): Promise<number> => {
+    const rows = leaveRequests.filter(r =>
+      r.mandatory_leave_id === mandatoryLeaveId && r.origin === 'mandatory' && !r.detached);
+    if (rows.length === 0) return 0;
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.from('leave_requests').delete().in('id', rows.map(r => r.id));
+    if (error) {
+      console.error('Failed to clear mandatory fan-out:', error);
+      return 0;
+    }
+    setLeaveRequests(prev => prev.filter(r => !rows.some(t => t.id === r.id)));
+    return rows.length;
+  };
+
+  /**
    * Correct + idempotent mandatory fan-out for one closure:
    *  - only employees ACTIVE (non-contractor) and employed during the closure get a row;
    *  - exactly one row each (skips existing; keeps admin 'detached' manual corrections);
@@ -2232,7 +2254,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    *  - working_days = the employee's scheduled weekdays in range that are NOT public holidays.
    */
   const syncMandatoryFanout = async (m: MandatoryLeave): Promise<{ added: number; updated: number; removed: number } | null> => {
-    if (!m || m.status === 'cancelled') return null;
+    // Only a PUBLISHED closure deducts days; drafts and cancellations are cleared instead.
+    if (!m || m.status !== 'published') return null;
     const supabase = getSupabaseBrowserClient();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     let added = 0, updated = 0, removed = 0;
@@ -2327,8 +2350,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const syncAllMandatoryLeaves = async () => {
     let closures = 0, added = 0, updated = 0, removed = 0;
     for (const m of mandatoryLeaves) {
+      // Unpublished closures must contribute nothing — repair also clears their leftover rows.
+      if (m.status !== 'published') {
+        removed += await clearMandatoryFanout(m.id);
+        continue;
+      }
       const res = await syncMandatoryFanout(m);
-      if (!res) continue; // cancelled / deleted / failed
+      if (!res) continue; // deleted / failed
       closures++;
       added += res.added; updated += res.updated; removed += res.removed;
     }
@@ -2372,8 +2400,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       setMandatoryLeaves(prevList => prevList.map(m => m.id === id ? { ...m, ...updated } : m));
-      // Re-sync the fan-out after a date/type/name change (idempotent).
-      if (eff && eff.status !== 'cancelled') await syncMandatoryFanout(eff);
+      // Published → (re)fan out; unpublished (draft / cancelled) → stop deducting immediately.
+      if (eff) {
+        if (eff.status === 'published') await syncMandatoryFanout(eff);
+        else await clearMandatoryFanout(eff.id);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('Failed to update mandatory leave:', e);

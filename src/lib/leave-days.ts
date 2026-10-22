@@ -133,3 +133,30 @@ export function deductedDaysInYear(params: {
   }
   return inYear;
 }
+
+/** Statuses whose days are already eaten out of the allowance. */
+const DEDUCTED_STATUSES = ['approved', 'in_progress', 'taken'];
+
+/**
+ * Ids of the company closures that may deduct anything. A draft or cancelled closure is register
+ * history: its leftover fan-out rows used to keep eating everyone's allowance until an admin
+ * noticed the pool did not add up.
+ */
+export function publishedClosureIds(closures: { id: string; status: string }[]): Set<string> {
+  return new Set(closures.filter(c => c.status === 'published').map(c => c.id));
+}
+
+/**
+ * Does this company-closure (mandatory) row still deduct from the allowance?
+ *
+ * Only rows of a published closure count. Rows an admin detached by hand never deduct, and legacy
+ * rows with no closure link are honoured as-is.
+ */
+export function mandatoryRowDeducts(
+  row: { origin?: string | null; detached?: boolean | null; status: string; mandatory_leave_id?: string | null },
+  liveClosureIds: ReadonlySet<string>,
+): boolean {
+  if (row.origin !== 'mandatory' || row.detached) return false;
+  if (!DEDUCTED_STATUSES.includes(row.status)) return false;
+  return !row.mandatory_leave_id || liveClosureIds.has(row.mandatory_leave_id);
+}

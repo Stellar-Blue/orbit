@@ -497,6 +497,14 @@ export default function CompanyLeaveManagementPage() {
 
   const pendingCount = leaveRequests.filter(r => r.status === 'pending' || r.status === 'cancellation_requested').length;
   const mandatoryRowCount = leaveRequests.filter(r => r.origin === 'mandatory').length;
+  // Only PUBLISHED closures that reach the current year actually deduct days. Drafts, cancelled
+  // ones and other years are register history, not "active" — counting them made the KPI lie.
+  const closureYear = new Date().getFullYear();
+  const activeClosureCount = mandatoryLeaves.filter(m =>
+    m.status === 'published'
+    && m.start_date <= `${closureYear}-12-31`
+    && m.end_date >= `${closureYear}-01-01`
+  ).length;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200 pb-20">
@@ -599,8 +607,8 @@ export default function CompanyLeaveManagementPage() {
             <Card className="p-5 border-slate-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-slate-400 text-[11px] font-extrabold uppercase tracking-wider block">Active Mandatory Closures</span>
-                <div className="text-3xl font-black text-slate-900 mt-1 font-mono">{mandatoryLeaves.length}</div>
-                <span className="text-slate-500 text-[11px] block mt-1">Company-wide breaks deducted in 2026</span>
+                <div className="text-3xl font-black text-slate-900 mt-1 font-mono">{activeClosureCount}</div>
+                <span className="text-slate-500 text-[11px] block mt-1">Published company-wide breaks deducted in {closureYear}</span>
               </div>
               <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
                 <Calendar className="w-6 h-6" />
@@ -639,7 +647,7 @@ export default function CompanyLeaveManagementPage() {
                     {st === 'pending' && `Pending Queue (${pendingCount})`}
                     {st === 'approved' && 'Approved / Taken'}
                     {st === 'rejected' && 'Rejected Archive'}
-                    {st === 'mandatory' && `📌 Mandatory Closures (${mandatoryRowCount})`}
+                    {st === 'mandatory' && `📌 Mandatory Entries (${mandatoryRowCount})`}
                     {st === 'all' && `All Records (${leaveRequests.length})`}
                   </button>
                 ))}

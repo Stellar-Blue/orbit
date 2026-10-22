@@ -137,5 +137,24 @@ check('missing dates are never recounted', D.needsWorkingDaysRecount({ prevStart
 check('05→07 Jan 2026 with Epiphany excluded → 2 days', D.countWorkingDays('2026-01-05', '2026-01-07', undefined, ['2026-01-06']), 2);
 check('the pre-edit range 02→07 Jan 2026 → 2 days (2 Jan is a closure, 6 Jan a holiday)', D.countWorkingDays('2026-01-02', '2026-01-07', undefined, ['2026-01-02', '2026-01-06']), 2);
 
+// ---------------------------------------------------------------------------
+// Company closures only deduct while PUBLISHED. Draft/cancelled leftovers used
+// to keep eating the allowance (the pool read 5d while fewer closures were live).
+// ---------------------------------------------------------------------------
+const live = D.publishedClosureIds([
+  { id: 'ml-xmas', status: 'published' },
+  { id: 'ml-draft', status: 'draft' },
+  { id: 'ml-off', status: 'cancelled' },
+]);
+check('published closure ids only', [...live], ['ml-xmas']);
+const closureRow = over => ({ origin: 'mandatory', status: 'approved', mandatory_leave_id: 'ml-xmas', ...over });
+check('a published closure row deducts', D.mandatoryRowDeducts(closureRow({}), live), true);
+check('a cancelled closure row does not deduct', D.mandatoryRowDeducts(closureRow({ mandatory_leave_id: 'ml-off' }), live), false);
+check('a draft closure row does not deduct', D.mandatoryRowDeducts(closureRow({ mandatory_leave_id: 'ml-draft' }), live), false);
+check('an unlinked legacy closure row still deducts', D.mandatoryRowDeducts(closureRow({ mandatory_leave_id: null }), live), true);
+check('a detached correction does not deduct', D.mandatoryRowDeducts(closureRow({ detached: true }), live), false);
+check('a rejected closure row does not deduct', D.mandatoryRowDeducts(closureRow({ status: 'rejected' }), live), false);
+check('personal leave is not counted as a closure', D.mandatoryRowDeducts({ origin: 'employee_request', status: 'approved' }, live), false);
+
 console.log(`\n${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}`);
 process.exit(failed === 0 ? 0 : 1);

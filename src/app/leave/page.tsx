@@ -483,7 +483,7 @@ export default function LeaveManagementPage() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center space-x-2">
                   <BarChart3 className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span className="text-xs font-extrabold tracking-wider uppercase text-slate-200">2026 Leave Pool Balance</span>
+                  <span className="text-xs font-extrabold tracking-wider uppercase text-slate-200">{currentYear} Leave Pool Balance</span>
                 </div>
                 <span className="px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-xs font-mono shadow-xs shrink-0">
                   {myBalance.available} Days Available
