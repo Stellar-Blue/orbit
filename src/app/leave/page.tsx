@@ -256,7 +256,12 @@ export default function LeaveManagementPage() {
 
   // Grid View & Export state
   const [viewMode, setViewMode] = useState<'calendar' | 'grid' | 'category'>('calendar');
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear() || 2026);
+  // Previous / current / next year, anchored to the real current year so it doesn't drift.
+  const yearOptions = useMemo(() => {
+    const base = new Date().getFullYear() || 2026;
+    return [base + 1, base, base - 1];
+  }, []);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportTargetYear, setExportTargetYear] = useState<number>(() => new Date().getFullYear() || 2026);
   const [exportScope, setExportScope] = useState<string>('me');
@@ -281,6 +286,13 @@ export default function LeaveManagementPage() {
       r.profile_id === currentUser.id && r.start_date.startsWith(String(selectedYear))
     ).sort((a, b) => b.start_date.localeCompare(a.start_date));
   }, [leaveRequests, currentUser.id, selectedYear]);
+
+  // Same year as the grid/export, so per-category quotas and the pool bar never mix years.
+  const categoryBalance = useMemo(
+    () => getEmployeeLeaveBalance(currentUser.id, selectedYear),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentUser.id, selectedYear, getEmployeeLeaveBalance, leaveRequests]
+  );
 
   /**
    * Employee self-service on their own leave rows: a still-pending request is withdrawn
@@ -866,9 +878,9 @@ export default function LeaveManagementPage() {
                   onChange={e => setSelectedYear(Number(e.target.value))}
                   className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
                 >
-                  <option value={2027}>2027</option>
-                  <option value={2026}>2026</option>
-                  <option value={2025}>2025</option>
+                  {yearOptions.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
                 </select>
               </div>
             }
@@ -891,10 +903,14 @@ export default function LeaveManagementPage() {
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-2">
                   {leaveTypes.map(lt => {
-                    const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id && r.origin !== 'mandatory');
+                    const myCatLeaves = leaveRequests.filter(r => r.profile_id === currentUser.id && r.leave_type_id === lt.id && r.origin !== 'mandatory' && r.start_date.startsWith(String(selectedYear)));
                     const approvedDays = myCatLeaves.filter(r => r.status === 'approved' || r.status === 'taken').reduce((a, b) => a + getEffectiveDays(b), 0);
                     const pendingDays = myCatLeaves.filter(r => r.status === 'pending').reduce((a, b) => a + getEffectiveDays(b), 0);
                     const isAnnual = lt.id === 'lt-annual' || lt.id === 'vacation' || lt.name_en?.toLowerCase().includes('annual') || lt.name_en?.toLowerCase().includes('vacation');
+                    // The pool is drained by every balance-counting leave type plus company closures,
+                    // so measure it from the balance itself instead of one category's raw rows.
+                    const poolUsed = categoryBalance.taken + categoryBalance.mandatory;
+                    const poolTotal = categoryBalance.entitlement + categoryBalance.carryOver;
 
                     return (
                       <Card key={lt.id} className="border-slate-200 shadow-2xs hover:shadow-xs transition-all relative overflow-hidden p-4 bg-white">
@@ -915,20 +931,20 @@ export default function LeaveManagementPage() {
                         {isAnnual ? (
                           <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5">
                             <div className="flex justify-between text-[11px] font-extrabold text-slate-700">
-                              <span>Annual Pool Utilization</span>
-                              <span>{approvedDays + myBalance.mandatory} / {myBalance.entitlement + myBalance.carryOver} Total Pool</span>
+                              <span>Annual Pool Utilization ({selectedYear})</span>
+                              <span>{poolUsed} / {poolTotal} Total Pool</span>
                             </div>
                             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden flex shadow-inner">
                               <div 
                                 className="bg-[#3D87D3] h-full transition-all duration-500 rounded-full" 
-                                style={{ width: `${Math.min(100, ((approvedDays + myBalance.mandatory) / (myBalance.entitlement + myBalance.carryOver || 1)) * 100)}%` }} 
+                                style={{ width: `${Math.min(100, (poolUsed / (poolTotal || 1)) * 100)}%` }}
                               />
                             </div>
                           </div>
                         ) : (
                           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
                             <span>Pending requests: <strong className="text-slate-800 font-bold">{pendingDays}d</strong></span>
-                            <span>Total logged in 2026: <strong className="text-slate-800 font-bold">{approvedDays + pendingDays}d</strong></span>
+                            <span>Total logged in {selectedYear}: <strong className="text-slate-800 font-bold">{approvedDays + pendingDays}d</strong></span>
                           </div>
                         )}
                       </Card>
