@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { DEMO_COOKIE, DEMO_ENTRY_PATH } from '@/lib/demo-mode';
 
 /**
  * Cookie set by the login page's local "Enter Workspace" bypass. Only honoured while
@@ -51,6 +52,11 @@ export async function proxy(request: NextRequest) {
 
   const devMode = process.env.DEV_AUTH_MODE === 'true' && process.env.NODE_ENV !== 'production';
   const devWorkspace = devMode && request.cookies.get(DEV_WORKSPACE_COOKIE)?.value === '1';
+  // The public demo is deliberately open: `/demo` plants the cookie, and the app then renders only
+  // sample rows (the provider never reaches Supabase in that mode).
+  const demoWorkspace = request.cookies.get(DEMO_COOKIE)?.value === '1'
+    || pathname === DEMO_ENTRY_PATH
+    || pathname.startsWith(`${DEMO_ENTRY_PATH}/`);
   /** Machine endpoints authenticate with their own credentials, never a browser session. */
   const isMachineRoute = pathname.startsWith('/oauth/token') || pathname.startsWith('/.well-known');
 
@@ -59,7 +65,7 @@ export async function proxy(request: NextRequest) {
   // No session: the workspace is closed. Nobody — first-time visitor or expired session — may see
   // it with a placeholder identity, so send them to the login page and remember where they wanted
   // to go.
-  if (!user && !devWorkspace && !isMachineRoute) {
+  if (!user && !devWorkspace && !demoWorkspace && !isMachineRoute) {
     const url = new URL('/login', request.url);
     if (pathname !== '/') url.searchParams.set('next', pathname + search);
     const redirect = NextResponse.redirect(url);
@@ -68,8 +74,8 @@ export async function proxy(request: NextRequest) {
     return redirect;
   }
 
-  // Local prototype mode (or a machine route): nothing else to gate.
-  if (devMode || !user) {
+  // Local prototype mode, the public demo, or a machine route: nothing else to gate.
+  if (devMode || demoWorkspace || !user) {
     return response;
   }
 

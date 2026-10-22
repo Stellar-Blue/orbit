@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
+import { getSupabaseBrowserClient, setDemoDataMode, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
@@ -19,6 +19,13 @@ import {
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
 import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
+import { isDemoMode, exitDemoMode } from './demo-mode';
+import {
+  MOCK_TEAMS, MOCK_PROFILES, MOCK_PAYMENT_TYPES, MOCK_SALARIES, MOCK_PAYMENTS,
+  MOCK_LEAVE_TYPES, MOCK_ENTITLEMENTS, MOCK_MANDATORY_LEAVES,
+  MOCK_PUBLIC_HOLIDAYS, MOCK_REMOTE_PATTERNS,
+  MOCK_COUNTERPARTIES, MOCK_CONTRACTS,
+} from './mock-data';
 import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount } from './leave-days';
 import {
   carryoverDays, carryoverExpiryDate, carryoverExpired, remainingOfYear, previousYearHasClosed,
@@ -158,6 +165,8 @@ interface AppState {
   startPreviewAs: (profileId: string) => void;
   stopPreview: () => void;
   isLoading: boolean;
+  /** True inside the public `/demo` workspace: sample rows, no Supabase, actions are not saved. */
+  isDemo: boolean;
   signOut: () => Promise<void> | void;
   companyProfile: CompanyProfile | null;
   updateCompanyProfile: (profile: Partial<CompanyProfile>) => Promise<boolean>;
@@ -468,6 +477,7 @@ async function fetchOwnPaidPayments(): Promise<PaymentRecord[] | null> {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isDemo, setIsDemo] = useState<boolean>(false);
   /** Real Supabase auth user id — gates the live row-change subscription (anon has no rows to hear about). */
   const [liveSessionUserId, setLiveSessionUserId] = useState<string>('');
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -678,6 +688,88 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       groups: groups.filter(g => g.contract_id === cnt.id),
       schedule: schedule.filter(s => s.contract_id === cnt.id),
     }));
+  }
+
+
+  /**
+   * Demo workspace hydration: the same shapes the slices produce, filled from `mock-data.ts`.
+   * Nothing here touches the network, so a demo can never read — or write — company records.
+   */
+  function hydrateDemoWorkspace() {
+    const teams = MOCK_TEAMS;
+    const demoProfiles: Profile[] = MOCK_PROFILES.map(p => ({
+      ...p,
+      team: teams.find(t => t.id === p.team_id),
+    }));
+    setTeams(teams);
+    setProfiles(demoProfiles);
+    rawRef.current.profiles = demoProfiles;
+
+    const leaveTypes = [...MOCK_LEAVE_TYPES].sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
+    setLeaveTypes(leaveTypes);
+    rawRef.current.leaveTypes = leaveTypes;
+
+    // Attendance and leave are generated around TODAY, not from the frozen mock rows, so the demo
+    // always has one person on leave, one at home and one out of town — otherwise every sample
+    // date ages out and the status scene collapses to "everyone in the office".
+    const dayFromToday = (offset: number) => {
+      const day = new Date(`${athensTodayStr()}T00:00:00`);
+      day.setDate(day.getDate() + offset);
+      // Local parts, not toISOString(): local midnight is the previous day in UTC.
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+    };
+    const demoLeave = (
+      id: string, profileId: string, typeId: string, from: number, to: number,
+      status: LeaveRequest['status'], note: string,
+    ): LeaveRequest => {
+      const start = dayFromToday(from);
+      const end = dayFromToday(to);
+      return {
+        id, profile_id: profileId, leave_type_id: typeId, start_date: start, end_date: end,
+        half_day_start: false, half_day_end: false,
+        working_days: countWorkingDays(start, end),
+        status, origin: 'employee_request', note, ergani_status: 'not_required',
+      };
+    };
+
+    const demoRequests: LeaveRequest[] = [
+      demoLeave('demo-lr-1', 'prof-maria', 'lt-annual', -2, 3, 'approved', 'Autumn break'),
+      demoLeave('demo-lr-2', 'prof-dimitris', 'lt-annual', 9, 13, 'approved', 'Family trip'),
+      demoLeave('demo-lr-3', 'prof-giorgis', 'lt-annual', 18, 22, 'pending', 'Long weekend away'),
+      demoLeave('demo-lr-4', 'prof-eleni', 'lt-annual', 5, 9, 'approved', 'Autumn break'),
+      demoLeave('demo-lr-5', 'prof-eleni', 'lt-annual', 16, 17, 'pending', 'Long weekend'),
+    ];
+    setLeaveRequests(demoRequests.map(r => ({
+      ...r,
+      leave_type: leaveTypes.find(lt => lt.id === r.leave_type_id),
+    })));
+    setEntitlements(MOCK_ENTITLEMENTS);
+    setMandatoryLeaves(MOCK_MANDATORY_LEAVES);
+    setPublicHolidays(MOCK_PUBLIC_HOLIDAYS);
+    setRemoteDays([
+      { id: 'demo-rd-1', profile_id: 'prof-dimitris', date: dayFromToday(0), mode: 'remote_gr', note: 'Working from home', ergani_status: 'submitted' },
+      { id: 'demo-rd-2', profile_id: 'prof-yannis', date: dayFromToday(0), mode: 'remote_abroad', location: 'London, UK', note: 'Energy summit', ergani_status: 'pending' },
+      { id: 'demo-rd-3', profile_id: 'prof-alexandra', date: dayFromToday(1), mode: 'remote_gr', ergani_status: 'not_required' },
+    ]);
+    setRemotePatterns(MOCK_REMOTE_PATTERNS);
+
+    setPaymentTypes(MOCK_PAYMENT_TYPES);
+    rawRef.current.paymentTypes = MOCK_PAYMENT_TYPES;
+    setSalaries(MOCK_SALARIES);
+    setPayments(MOCK_PAYMENTS.map(p => ({
+      ...p,
+      documents: p.documents || [],
+      payment_type: MOCK_PAYMENT_TYPES.find(pt => pt.id === p.payment_type_id),
+    })));
+
+    rawRef.current.counterparties = MOCK_COUNTERPARTIES;
+    rawRef.current.contracts = MOCK_CONTRACTS;
+    setCounterparties(MOCK_COUNTERPARTIES);
+    setContracts(MOCK_CONTRACTS);
+
+    setHiddenScreens([]);
+    setIntegrationSettings(DEFAULT_SLACK_SETTINGS);
   }
 
   /** Directory + master data every screen shares. Loaded once, before any slice. */
@@ -1084,6 +1176,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsDevMode(isLocal && process.env.NODE_ENV !== 'production');
 
     const bootstrap = async () => {
+      // Public demo: sample rows only. No session, no queries, no realtime.
+      if (isDemoMode()) {
+        setDemoDataMode(true);
+        setIsDemo(true);
+        setIsDevMode(false);
+        setRealProfileId(MOCK_PROFILES[0]?.id || '');
+        hydrateDemoWorkspace();
+        // Nothing to fetch — mark every slice present so the route effect stays quiet.
+        (Object.keys(SLICE_LOADERS) as DataSliceKey[]).forEach(key => loadedSlicesRef.current.add(key));
+        setIsLoading(false);
+        setBootReady(true);
+        return;
+      }
+
       const supabase = getSupabaseBrowserClient();
       try {
         // 1. Authenticate and determine admin status to prevent data leakage
@@ -1199,6 +1305,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.error("Sign out exception:", e);
     } finally {
+      // Leaving the demo must also drop its cookie, or the middleware would let this browser back in.
+      if (isDemo) exitDemoMode();
       // Hard navigation, deliberately: the provider unmounts and every cached slice goes with it.
       // A client-side push left the one-shot loader un-rerun, so the next sign-in could serve the
       // previous user's rows from memory.
@@ -6021,6 +6129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       refreshInvoices,
       // A first visit to a route waits for its slices; a revisit is already in memory.
       isLoading: isLoading || missingSlices.length > 0,
+      isDemo,
       ensureData,
     }}>
       {children}

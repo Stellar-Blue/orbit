@@ -7,14 +7,15 @@ import { CommandMenu } from "@/components/layout/command-menu";
 import { useAuth } from "@/lib/auth-context";
 import { roleLabel } from "@/lib/profile-role";
 import { hiddenScreenForPath } from "@/lib/screens";
-import { Menu, Search, Eye, EyeOff, Users, ShieldAlert } from "lucide-react";
+import { exitDemoMode } from "@/lib/demo-mode";
+import { Menu, Search, Eye, EyeOff, Users, ShieldAlert, Sparkles, LogOut } from "lucide-react";
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, companyProfile, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
+  const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, isDemo, companyProfile, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
   const [previewMenuOpen, setPreviewMenuOpen] = useState(false);
 
   // Admin-switched-off screen. `currentUser.role` is 'employee' in both preview modes,
@@ -44,6 +45,21 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
       <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
       <CommandMenu />
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden w-full max-w-full">
+        {isDemo && (
+          <div className="bg-slate-900 text-white px-3 sm:px-4 md:px-5 py-2 text-[11px] sm:text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-sm">
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span>Demo workspace — sample data only. Nothing you change here is saved.</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => { exitDemoMode(); window.location.assign('/login'); }}
+              className="flex items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 hover:bg-white/20 px-2.5 py-1 font-extrabold transition-colors cursor-pointer shrink-0"
+            >
+              <LogOut className="w-3 h-3" /> Exit demo
+            </button>
+          </div>
+        )}
         {/* Header / Quick Action & Mobile Toggle Bar */}
         <header className="h-16 border-b border-slate-200/80 bg-white/85 backdrop-blur-md px-3 sm:px-4 md:px-5 flex items-center justify-between sticky top-0 z-20 shadow-xs">
           <div className="flex items-center space-x-3 text-sm text-slate-500 overflow-hidden">

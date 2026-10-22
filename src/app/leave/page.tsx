@@ -579,7 +579,7 @@ export default function LeaveManagementPage() {
               {viewMode === 'calendar' ? (
                 <Card 
                   title="Leave Schedule & Holiday Calendar" 
-                subtitle="Click & drag across dates on the grid below to instantly select your vacation days and apply."
+                subtitle="Click & drag across dates to select vacation days and apply. Click your own leave bar to withdraw a pending request or ask an admin to cancel it."
                 className="border-slate-200 shadow-sm"
               >
                 <div className="space-y-3 mt-2">
@@ -795,28 +795,50 @@ export default function LeaveManagementPage() {
                                   }
                                   const span = Math.max(1, endCol - startCol + 1);
 
+                                  // Same self-service rule as the Annual Leave Grid: a pending
+                                  // request is withdrawn outright, an upcoming approved one becomes
+                                  // an admin cancellation request. Taken leave is admin-only.
+                                  const isPendingRow = req.status === 'pending';
+                                  const isUpcomingApproved = req.status === 'approved' && req.end_date >= todayKey();
+                                  const canCancel = isPendingRow || isUpcomingApproved;
+                                  const statusTag =
+                                    req.status === 'pending' ? '⏳ PENDING'
+                                    : req.status === 'cancellation_requested' ? '⏳ CANCELLING'
+                                    : '✓ APPROVED';
+                                  const dateRange = `${formatDate(req.start_date)} → ${formatDate(req.end_date)}`;
+
                                   return (
                                     <div key={`l-${req.id || rIdx}`} className="grid grid-cols-7 px-1 pointer-events-auto">
-                                      <div
+                                      <button
+                                        type="button"
+                                        disabled={!canCancel}
+                                        onClick={() => { if (canCancel) void handleCancelLeaveRequest(req); }}
                                         style={{ gridColumn: `${startCol} / span ${span}`, backgroundColor: lt?.colour || '#3D87D3' }}
-                                        className={`py-1.5 px-2.5 text-[11px] font-extrabold text-white shadow-xs flex items-center justify-between transition-transform hover:scale-[1.01] ${
+                                        className={`py-1.5 px-2.5 text-[11px] font-extrabold text-white shadow-xs flex items-center justify-between transition-transform text-left ${
+                                          canCancel
+                                            ? 'cursor-pointer hover:scale-[1.01] hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#3D87D3]'
+                                            : 'cursor-default'
+                                        } ${
                                           isActualStart && isActualEnd ? 'rounded-lg' :
                                           isActualStart ? 'rounded-l-lg rounded-r-none pr-1' :
                                           isActualEnd ? 'rounded-r-lg rounded-l-none pl-1' :
                                           'rounded-none px-1'
                                         }`}
-                                        title={`${lt?.name_en} (${formatDate(req.start_date)} → ${formatDate(req.end_date)})`}
+                                        title={canCancel
+                                          ? `${lt?.name_en} (${dateRange}) — click to ${isPendingRow ? 'withdraw this request' : 'request cancellation'}`
+                                          : `${lt?.name_en} (${dateRange})`}
                                       >
                                         <span className="truncate flex items-center font-black text-white">
                                           <span className="mr-1.5">🏖️</span>
                                           <span className="truncate">{lt?.name_el || 'Leave'}</span>
                                         </span>
                                         {isActualEnd && (
-                                          <span className="ml-2 text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/25 text-white font-black shrink-0">
-                                            {req.status === 'pending' ? '⏳ PENDING' : '✓ APPROVED'}
+                                          <span className="ml-2 text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/25 text-white font-black shrink-0 flex items-center gap-1">
+                                            {statusTag}
+                                            {canCancel && <XCircle className="w-2.5 h-2.5" />}
                                           </span>
                                         )}
-                                      </div>
+                                      </button>
                                     </div>
                                   );
                                 })}
