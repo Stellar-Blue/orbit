@@ -14,7 +14,7 @@ import { formatBankReferences } from '@/lib/bank-references';
 import { formatDate, formatDateTime, todayKey } from '@/lib/date';
 import { isBaseSalary, isRecurringExtra, isOneTimeBonus, extrasFor, loadedMonthlyCost } from '@/lib/compensation';
 import { BenefitsList } from '@/components/compensation/benefits-list';
-import { BlurredReveal } from '@/components/ui/blurred-reveal';
+import { BlurredReveal, useReveal } from '@/components/ui/blurred-reveal';
 import { DocumentPreviewModal, dataUrlToObjectUrl } from '@/components/ui/document-preview-modal';
 
 const CompensationGrid = dynamic(() => import('@/components/compensation/compensation-grid').then(m => m.CompensationGrid), { ssr: false });
@@ -26,6 +26,8 @@ export default function MyCompensationPage() {
   const [previewDoc, setPreviewDoc] = useState<PaymentDocument | null>(null);
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  // One reveal toggle for both the gross and net salary figures.
+  const salaryReveal = useReveal();
 
   // My effective-dated remuneration ledger (base rates + contractual extras + one-off bonuses).
   // Admin-visible in full; an employee reads only their own rows through the RLS-safe view.
@@ -209,7 +211,15 @@ export default function MyCompensationPage() {
                   {isContractor ? 'Monthly Retainer (Gross)' : 'Monthly Gross Salary'}
                 </span>
                 <div className="text-3xl sm:text-4xl font-extrabold text-white font-mono">
-                  €{grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-300 font-sans">/ month</span>
+                  <BlurredReveal
+                    value={`€${grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}`}
+                    valueClassName="text-white font-extrabold"
+                    blurClassName="blur-[12px]"
+                    buttonClassName="bg-white/10 border-white/25 text-slate-200 hover:text-white hover:border-[#3D87D3]/70"
+                    suffix={<span className="text-sm font-bold text-slate-300 font-sans">/ month</span>}
+                    revealed={salaryReveal.revealed}
+                    onToggle={salaryReveal.toggle}
+                  />
                 </div>
                 <span className="text-[10px] text-slate-400 block mt-1">
                   {isContractor ? 'Retainer incl. VAT / withholding' : 'Net + employer contributions (ΕΦΚΑ)'}
@@ -223,8 +233,14 @@ export default function MyCompensationPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-700/80 text-xs">
               <div>
                 <span className="text-slate-400 font-medium block mb-0.5">Estimated Net Payable Salary</span>
-                <strong className="text-emerald-300 font-mono font-bold text-base">
-                  €{netSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
+                <strong className="block">
+                  <BlurredReveal
+                    value={`€${netSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}`}
+                    valueClassName="text-emerald-300 font-bold text-base"
+                    blurClassName="blur-[8px]"
+                    revealed={salaryReveal.revealed}
+                    showButton={false}
+                  />
                 </strong>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
                   {isContractor ? 'Contracted net payout' : 'Contracted net, as recorded in the salary ledger'}
