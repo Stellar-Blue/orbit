@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Search, Users, FileText, Calendar, ArrowRight, CornerDownLeft } from 'lucide-react';
@@ -10,7 +10,8 @@ export const CommandMenu: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const router = useRouter();
-  const { profiles, contracts } = useAuth();
+  const { currentUser, profiles, contracts, ensureData } = useAuth();
+  const contractsRequested = useRef(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -22,6 +23,16 @@ export const CommandMenu: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Contracts are a route slice, so screens that do not render them start empty. The palette
+  // opens them on demand — searching costs one fetch, never a background load for every page.
+  useEffect(() => {
+    if (!isOpen || query.trim() === '' || contractsRequested.current) return;
+    contractsRequested.current = true;
+    // Employees cannot read the commercial registry at all, so do not ask for it.
+    if (currentUser.role === 'admin' && contracts.length === 0) void ensureData(['contracts']);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, query, contracts.length, currentUser.role]);
 
   const filteredProfiles = profiles.filter(p => 
     `${p.first_name} ${p.last_name} ${p.name_el} ${p.work_email}`.toLowerCase().includes(query.toLowerCase())

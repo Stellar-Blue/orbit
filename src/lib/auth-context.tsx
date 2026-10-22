@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { 
   Profile, Team, PaymentType, SalaryRecord, PaymentRecord, PaymentDocument, 
@@ -17,6 +18,7 @@ import {
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
+import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
 import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount } from './leave-days';
 import {
   carryoverDays, carryoverExpiryDate, carryoverExpired, remainingOfYear, previousYearHasClosed,
@@ -368,7 +370,23 @@ interface AppState {
   syncSlackStatus: (profileId: string, date: string, orbitId?: string) => Promise<void>;
   revokeSlackConnection: () => Promise<void>;
   refreshInvoices: () => Promise<void>;
+  /**
+   * Load extra data on demand (with dependencies). Used by surfaces that need a slice the current
+   * route does not render — the command palette searching contracts from any screen.
+   */
+  ensureData: (keys: DataSliceKey[]) => Promise<void>;
 }
+
+/**
+ * Tables the boot slice always loads (directory + master data shared by every screen). They are
+ * the only realtime subscriptions that exist before a route asks for its own slice.
+ */
+const CORE_TABLES = [
+  'profiles', 'user_roles', 'profile_sensitive', 'teams',
+  'job_roles', 'seniority_levels', 'profile_role_history',
+  'screen_visibility', 'company_profile', 'leave_policy', 'integration_settings',
+  'public_holidays', 'leave_types', 'employee_integrations', 'integration_exemptions',
+];
 
 const AuthContext = createContext<AppState | undefined>(undefined);
 
@@ -527,6 +545,532 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }>({ exceptions: [], revoked: [], notConnectedCount: 0 });
   const [integrationLastReconciledAt, setIntegrationLastReconciledAt] = useState<string | null>(null);
 
+  /* ------------------------------------------------------------------------- *
+   * Route-scoped data loading (catalogue: lib/data-slices.ts)
+   *
+   * Orbit used to select every table on every load, so the dashboard paid for payroll ledgers,
+   * invoice PDFs and Attio mirrors it never renders. Each slice is fetched the first time a route
+   * needs it and then served from memory for the rest of the session, so egress is paid once per
+   * screen that actually renders the data.
+   * ------------------------------------------------------------------------- */
+  const pathname = usePathname();
+  const [bootReady, setBootReady] = useState(false);
+  /** Bumped whenever a slice lands, so realtime re-subscribes to the tables now in view. */
+  const [dataVersion, setDataVersion] = useState(0);
+  const loadedSlicesRef = useRef<Set<DataSliceKey>>(new Set());
+  const sliceLoadsRef = useRef<Map<DataSliceKey, Promise<void>>>(new Map());
+  /** Identity the slice queries gate on, captured during boot. */
+  const identityRef = useRef<{ isAdmin: boolean; profileId: string }>({ isAdmin: false, profileId: '' });
+  /**
+   * Raw rows later slices join against (counterparties/contracts, payment and leave types). They
+   * live in a ref because a slice loads inside one render, before React has published the previous
+   * slice's state.
+   */
+  const rawRef = useRef<{
+    profiles: Profile[];
+    leaveTypes: LeaveType[];
+    paymentTypes: PaymentType[];
+    counterparties: Counterparty[];
+    contracts: Contract[];
+    cpRoles: Role[];
+    cpRoleLinks: CounterpartyRole[];
+    tierVersions: TierModelVersion[];
+    tierStates: CounterpartyTierRow[];
+    tierOverrides: CounterpartyTierOverride[];
+    budgetCategories: BudgetCategory[];
+  }>({
+    profiles: [], leaveTypes: [], paymentTypes: [],
+    counterparties: [], contracts: [], cpRoles: [], cpRoleLinks: [],
+    tierVersions: [], tierStates: [], tierOverrides: [], budgetCategories: [],
+  });
+
+  /** Gate a query the way the old one-shot loader did: admins read the company, everyone else own rows. */
+  const fetchRows = async (
+    table: string,
+    gate: 'all' | 'own' | 'self' | 'admin',
+    opts: { select?: string; order?: [string, boolean?]; limit?: number } = {}
+  ): Promise<any[]> => {
+    const { isAdmin, profileId } = identityRef.current;
+    if (gate === 'admin' && !isAdmin) return [];
+    if ((gate === 'own' || gate === 'self') && !profileId) return [];
+    try {
+      const supabase = getSupabaseBrowserClient();
+      let query = supabase
+        .from(table)
+        .select(opts.select || (table === 'employee_integrations' ? EMPLOYEE_INTEGRATION_COLUMNS : '*'));
+      if ((gate === 'own' && !isAdmin) || gate === 'self') query = query.eq('profile_id', profileId);
+      if (opts.order) query = query.order(opts.order[0], { ascending: opts.order[1] ?? true });
+      if (opts.limit) query = query.limit(opts.limit);
+      const { data, error } = await query;
+      if (error) {
+        console.warn(`[data] ${table} read failed:`, error.message);
+        return [];
+      }
+      return data || [];
+    } catch (error) {
+      console.warn(`[data] ${table} read threw:`, error);
+      return [];
+    }
+  };
+
+  /** Counterparties joined for display: Attio mirror, contacts, explicit roles and tier state. */
+  function assembleCounterparties(args: {
+    cps: Counterparty[];
+    cpRoleLinks: CounterpartyRole[];
+    cpRoles: Role[];
+    contractRows: Contract[];
+    attioLinks: AttioLink[];
+    contacts: CounterpartyContact[];
+    tierVersions: TierModelVersion[];
+    tierStates: CounterpartyTierRow[];
+    tierOverrides: CounterpartyTierOverride[];
+  }): Counterparty[] {
+    const { cps, cpRoleLinks, cpRoles, contractRows, attioLinks, contacts, tierVersions, tierStates, tierOverrides } = args;
+    return cps.map(cp => {
+      const attio_link = attioLinks.find(l => l.counterparty_id === cp.id);
+      const cpContacts = contacts.filter(ct => ct.counterparty_id === cp.id);
+      const cpContracts = contractRows.filter(c => c.counterparty_id === cp.id && (c.status as string) !== 'archived');
+      const hasRevenue = cpContracts.some(c => (c.direction as string) === 'revenue');
+      const hasCost = cpContracts.some(c => ['cost', 'supplier'].includes(c.direction as string));
+
+      const explicitRoles = cpRoleLinks
+        .filter(l => l.counterparty_id === cp.id)
+        .map(l => cpRoles.find(r => r.id === l.role_id))
+        .filter(Boolean) as Role[];
+
+      // Map to lowercase slugs for easier derived calculations
+      const combinedSlugs = new Set(explicitRoles.map(r => r.slug.toLowerCase()));
+      if (hasRevenue) combinedSlugs.add('client');
+      if (hasCost) combinedSlugs.add('supplier');
+
+      const finalSlugs = Array.from(combinedSlugs);
+      let derived_role: 'client' | 'supplier' | 'both' | 'none yet' = 'none yet';
+      if (finalSlugs.includes('client') && finalSlugs.includes('supplier')) derived_role = 'both';
+      else if (finalSlugs.includes('client')) derived_role = 'client';
+      else if (finalSlugs.includes('supplier')) derived_role = 'supplier';
+
+      return {
+        ...cp,
+        attio_link,
+        contacts: cpContacts,
+        derived_role,
+        roles: finalSlugs.map(slug => cpRoles.find(r => r.slug === slug)).filter(Boolean) as Role[],
+        tier: attachTierToCounterparty(cp, tierVersions, tierStates, tierOverrides),
+      };
+    });
+  }
+
+  /** Contracts joined for display: counterparty, owner, pricing lines, groups and schedule. */
+  function assembleContracts(args: {
+    rows: Contract[];
+    counterparties: Counterparty[];
+    profiles: Profile[];
+    lines: ContractLine[];
+    groups: ContractLineGroup[];
+    schedule: ContractSchedule[];
+  }): Contract[] {
+    const { rows, counterparties, profiles: people, lines, groups, schedule } = args;
+    return rows.map(cnt => ({
+      ...cnt,
+      counterparty: counterparties.find(c => c.id === cnt.counterparty_id),
+      owner_profile: people.find(p => p.id === cnt.owner_profile_id),
+      lines: lines.filter(l => l.contract_id === cnt.id),
+      groups: groups.filter(g => g.contract_id === cnt.id),
+      schedule: schedule.filter(s => s.contract_id === cnt.id),
+    }));
+  }
+
+  /** Directory + master data every screen shares. Loaded once, before any slice. */
+  async function loadCoreSlice(initial: { loadedProfiles: Profile[]; matchedId: string }) {
+    const { loadedProfiles, matchedId } = initial;
+    const supabase = getSupabaseBrowserClient();
+    const [teamsRows, roleRows, sensitiveRows, jobRows, seniorityRows, historyRows, screenRows,
+      companyRes, policyRes, settingsRows, holidayRows, leaveTypeRows, integrationRows, exemptionRows] = await Promise.all([
+      fetchRows('teams', 'all'),
+      fetchRows('user_roles', 'all'),
+      fetchRows('profile_sensitive', 'own'),
+      fetchRows('job_roles', 'all', { order: ['sort_order'] }),
+      fetchRows('seniority_levels', 'all', { order: ['rank'] }),
+      fetchRows('profile_role_history', 'all'),
+      fetchRows('screen_visibility', 'all'),
+      supabase.from('company_profile').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('leave_policy').select('*').eq('id', true).maybeSingle(),
+      fetchRows('integration_settings', 'all'),
+      fetchRows('public_holidays', 'all'),
+      fetchRows('leave_types', 'all', { order: ['sort_order'] }),
+      fetchRows('employee_integrations', 'self'),
+      fetchRows('integration_exemptions', 'self'),
+    ]);
+
+    const loadedTeams: Team[] = teamsRows;
+    setTeams(loadedTeams);
+
+    const finalProfiles: Profile[] = loadedProfiles.map(p => ({
+      ...p,
+      role: roleRows.some(r => r.profile_id === p.id && r.role === 'admin') ? 'admin' : 'employee',
+      sensitive: sensitiveRows.find(s => s.profile_id === p.id),
+      team: loadedTeams.find(t => t.id === p.team_id),
+    }));
+    setProfiles(finalProfiles);
+    rawRef.current.profiles = finalProfiles;
+
+    setJobRoles(jobRows as JobRole[]);
+    setSeniorityLevels(seniorityRows as SeniorityLevel[]);
+    setProfileRoleHistory(historyRows as ProfileRoleHistory[]);
+    setHiddenScreens(toHiddenScreenKeys(screenRows));
+    setCompanyProfile(companyRes.data || null);
+    setLeavePolicy((policyRes.data as LeavePolicy) || null);
+    setPublicHolidays(holidayRows as PublicHoliday[]);
+
+    const loadedLeaveTypes: LeaveType[] = (leaveTypeRows as LeaveType[])
+      .sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
+    setLeaveTypes(loadedLeaveTypes);
+    rawRef.current.leaveTypes = loadedLeaveTypes;
+
+    // Own integration rows only — the full company list is the `integrations` slice, loaded by the
+    // screens that actually show other people's connections.
+    const myIntegrationRows = integrationRows as EmployeeIntegration[];
+    setEmployeeIntegrations(myIntegrationRows);
+    setSlackIntegration(matchedId
+      ? (myIntegrationRows.find(i => i.provider === 'slack' && i.profile_id === matchedId) || null)
+      : null);
+    const activeExemptions = (exemptionRows as IntegrationExemption[])
+      .filter(x => x.provider === 'slack' && (!x.expires_at || new Date(x.expires_at) > new Date()));
+    setMyIntegrationExemption(activeExemptions.sort((a, b) => (a.expires_at || '').localeCompare(b.expires_at || ''))[0] || null);
+
+    const settingsMap: Record<string, string> = {};
+    settingsRows.forEach(r => { settingsMap[r.key] = r.value; });
+    setIntegrationSettings({
+      leave_label: settingsMap.leave_label ?? DEFAULT_SLACK_SETTINGS.leave_label,
+      leave_emoji: settingsMap.leave_emoji ?? DEFAULT_SLACK_SETTINGS.leave_emoji,
+      remote_label: settingsMap.remote_label ?? DEFAULT_SLACK_SETTINGS.remote_label,
+      remote_emoji: settingsMap.remote_emoji ?? DEFAULT_SLACK_SETTINGS.remote_emoji,
+      half_day_label: settingsMap.half_day_label ?? DEFAULT_SLACK_SETTINGS.half_day_label,
+    });
+    setIntegrationLastReconciledAt(settingsMap.last_reconciled_at ?? null);
+  }
+
+  async function loadLeaveSlice() {
+    const [requestRows, entitlementRows, mandatoryRows, groupRows, memberRows, exceptionRows] = await Promise.all([
+      fetchRows('leave_requests', 'own'),
+      fetchRows('leave_entitlements', 'own'),
+      fetchRows('mandatory_leaves', 'all'),
+      fetchRows('coverage_groups', 'all', { order: ['created_at'] }),
+      fetchRows('coverage_group_members', 'all'),
+      fetchRows('leave_exception_requests', 'all', { order: ['created_at', false] }),
+    ]);
+    const types = rawRef.current.leaveTypes;
+    setLeaveRequests((requestRows as LeaveRequest[]).map(req => ({
+      ...req,
+      leave_type: types.find(lt => lt.id === req.leave_type_id),
+    })));
+    setEntitlements(entitlementRows as LeaveEntitlement[]);
+    setMandatoryLeaves(mandatoryRows as MandatoryLeave[]);
+    setCoverageGroups(groupRows as CoverageGroup[]);
+    setCoverageGroupMembers(memberRows as CoverageGroupMember[]);
+    setLeaveExceptionRequests(exceptionRows as LeaveExceptionRequest[]);
+  }
+
+  async function loadRemoteDaysSlice() {
+    setRemoteDays((await fetchRows('remote_days', 'own')) as RemoteDay[]);
+  }
+
+  async function loadRemoteSlice() {
+    setRemotePatterns((await fetchRows('remote_patterns', 'own')) as RemotePattern[]);
+    // Both tables ship as separate migrations; a pending one must not break the screen.
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const amendmentsRes = await supabase.from('remote_amendments').select('*');
+      if (amendmentsRes.data) setRemoteAmendmentRequests(amendmentsRes.data as RemoteAmendmentRequest[]);
+    } catch {
+      // table not created yet
+    }
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const quotaRes = await supabase.from('remote_quota_requests').select('*');
+      if (quotaRes.data) setRemoteQuotaRequests(quotaRes.data as RemoteQuotaRequest[]);
+    } catch {
+      // table not created yet
+    }
+  }
+
+  async function loadSalarySlice() {
+    const { isAdmin, profileId } = identityRef.current;
+    const [typeRows, salaryRows, documentTypeRows] = await Promise.all([
+      fetchRows('payment_types', 'all', { order: ['sort_order'] }),
+      isAdmin
+        ? fetchRows('salary_history', 'all')
+        : (profileId ? fetchRows('my_compensation', 'all') : Promise.resolve([])),
+      fetchRows('payment_document_types', 'all', { order: ['sort_order'] }),
+    ]);
+    setPaymentTypes(typeRows as PaymentType[]);
+    rawRef.current.paymentTypes = typeRows as PaymentType[];
+    setSalaries(salaryRows as SalaryRecord[]);
+    setDocumentTypes(documentTypeRows as PaymentDocumentType[]);
+  }
+
+  async function loadPaymentsSlice() {
+    const { isAdmin, profileId } = identityRef.current;
+    const rows: PaymentRecord[] = isAdmin
+      ? (await fetchRows('payments', 'all')) as PaymentRecord[]
+      : (profileId ? (await fetchOwnPaidPayments()) || [] : []);
+    const types = rawRef.current.paymentTypes;
+    setPayments(rows.map(pay => ({
+      ...pay,
+      documents: pay.documents || [],
+      payment_type: types.find(pt => pt.id === pay.payment_type_id),
+    })));
+  }
+
+  /** Counterparties + contracts without their pricing children — what the dashboard needs. */
+  async function loadContractsSlice() {
+    const [cpRows, roleRows, cpLinkRows, contractRows, versionRows, tierRows, historyRows, overrideRows] = await Promise.all([
+      fetchRows('counterparties', 'admin'),
+      fetchRows('roles', 'all'),
+      fetchRows('counterparty_roles', 'admin'),
+      fetchRows('contracts', 'admin'),
+      fetchRows('tier_model_versions', 'admin'),
+      fetchRows('counterparty_tiers', 'admin'),
+      fetchRows('counterparty_tier_history', 'admin', { order: ['changed_at', false], limit: 300 }),
+      fetchRows('counterparty_tier_overrides', 'admin'),
+    ]);
+    rawRef.current.cpRoles = roleRows as Role[];
+    rawRef.current.cpRoleLinks = cpLinkRows as CounterpartyRole[];
+    rawRef.current.counterparties = cpRows as Counterparty[];
+    rawRef.current.contracts = contractRows as Contract[];
+    rawRef.current.tierVersions = versionRows as TierModelVersion[];
+    rawRef.current.tierStates = tierRows as CounterpartyTierRow[];
+    rawRef.current.tierOverrides = overrideRows as CounterpartyTierOverride[];
+
+    setCounterpartyRoles(roleRows as Role[]);
+    setCounterpartyRoleLinks(cpLinkRows as CounterpartyRole[]);
+    setTierModelVersions(versionRows as TierModelVersion[]);
+    setTierStates(tierRows as CounterpartyTierRow[]);
+    setTierHistory(historyRows as CounterpartyTierHistoryRow[]);
+    setTierOverrides(overrideRows as CounterpartyTierOverride[]);
+
+    const counterparties = assembleCounterparties({
+      cps: rawRef.current.counterparties,
+      cpRoleLinks: cpLinkRows as CounterpartyRole[],
+      cpRoles: rawRef.current.cpRoles,
+      contractRows: rawRef.current.contracts,
+      attioLinks: [],
+      contacts: [],
+      tierVersions: versionRows as TierModelVersion[],
+      tierStates: tierRows as CounterpartyTierRow[],
+      tierOverrides: overrideRows as CounterpartyTierOverride[],
+    });
+    setCounterparties(counterparties);
+    setContracts(assembleContracts({
+      rows: rawRef.current.contracts,
+      counterparties,
+      profiles: rawRef.current.profiles,
+      lines: [],
+      groups: [],
+      schedule: [],
+    }));
+  }
+
+  /** Everything the commercial screens join on top of `contracts`: catalog, pricing, Attio mirror. */
+  async function loadCommercialSlice() {
+    const [moduleRows, itemRows, lineRows, groupRows, scheduleRows, attioLinkRows, contactRows,
+      eventRows, timesheetRows, cardRows, entryRows] = await Promise.all([
+      fetchRows('catalog_modules', 'admin', { order: ['sort_order'] }),
+      fetchRows('catalog_items', 'admin'),
+      fetchRows('contract_lines', 'admin'),
+      fetchRows('contract_line_groups', 'admin'),
+      fetchRows('contract_schedule', 'admin', { order: ['period'] }),
+      fetchRows('attio_links', 'admin'),
+      fetchRows('counterparty_contacts', 'admin'),
+      fetchRows('attio_events', 'admin'),
+      fetchRows('contract_timesheets', 'own'),
+      fetchRows('rate_cards', 'admin'),
+      fetchRows('rate_card_entries', 'admin'),
+    ]);
+    setRateCards(cardRows as RateCard[]);
+    setRateCardEntries(entryRows as RateCardEntry[]);
+    setCatalogModules(moduleRows as CatalogModule[]);
+    setCatalogItems(itemRows as CatalogItem[]);
+    setContractLines(lineRows as ContractLine[]);
+    setContractSchedules(scheduleRows as ContractSchedule[]);
+    setAttioEvents(eventRows as AttioEvent[]);
+    setTimesheets(timesheetRows as ContractTimesheet[]);
+
+    const counterparties = assembleCounterparties({
+      cps: rawRef.current.counterparties,
+      cpRoleLinks: rawRef.current.cpRoleLinks,
+      cpRoles: rawRef.current.cpRoles,
+      contractRows: rawRef.current.contracts,
+      attioLinks: attioLinkRows as AttioLink[],
+      contacts: contactRows as CounterpartyContact[],
+      tierVersions: rawRef.current.tierVersions,
+      tierStates: rawRef.current.tierStates,
+      tierOverrides: rawRef.current.tierOverrides,
+    });
+    setCounterparties(counterparties);
+    setContracts(assembleContracts({
+      rows: rawRef.current.contracts,
+      counterparties,
+      profiles: rawRef.current.profiles,
+      lines: lineRows as ContractLine[],
+      groups: groupRows as ContractLineGroup[],
+      schedule: scheduleRows as ContractSchedule[],
+    }));
+  }
+
+  async function loadInvoicesSlice() {
+    const { isAdmin } = identityRef.current;
+    const supabase = getSupabaseBrowserClient();
+    const [invoiceRows, categoryRows, documentRows, paymentRows, allocationRows, budgetCategoryRows] = await Promise.all([
+      isAdmin ? fetchRows('invoices', 'all', { select: '*, links:invoice_links(*)', order: ['issue_date', false] }) : Promise.resolve([]),
+      fetchRows('invoice_categories', 'all', { order: ['name'] }),
+      fetchRows('invoice_documents', 'admin'),
+      fetchRows('invoice_payments', 'admin'),
+      fetchRows('invoice_allocations', 'admin'),
+      fetchRows('budget_categories', 'admin', { order: ['sort_order'] }),
+    ]);
+
+    const loadedCats: InvoiceCategory[] = categoryRows as InvoiceCategory[];
+    if (loadedCats.length === 0) {
+      setInvoiceCategories([
+        { id: 'cat-1', name: 'Infrastructure & Hosting', description: 'Servers and cloud computing', is_default: true },
+        { id: 'cat-2', name: 'Marketing & Sales', description: 'Advertising and campaigns', is_default: true },
+        { id: 'cat-3', name: 'Office & Admin', description: 'Office rent and supplies', is_default: true },
+        { id: 'cat-4', name: 'Travel & Expense', description: 'Corporate travel and flights', is_default: true },
+        { id: 'cat-5', name: 'Legal & Accounting', description: 'Audit fees and advisory', is_default: true },
+        { id: 'cat-6', name: 'Other Operational', description: 'Miscellaneous operational expenses', is_default: true },
+      ]);
+    } else {
+      setInvoiceCategories(loadedCats);
+    }
+
+    const loadedDocs = await signInvoiceDocuments(supabase, documentRows as InvoiceDocument[]);
+    const loadedPays = paymentRows as InvoicePayment[];
+    const loadedAlloc = allocationRows as InvoiceAllocation[];
+    const loadedBudgetCategories = budgetCategoryRows as BudgetCategory[];
+    setInvoiceDocuments(loadedDocs);
+    setInvoicePayments(loadedPays);
+    setInvoiceAllocations(loadedAlloc);
+    setBudgetCategories(loadedBudgetCategories);
+    rawRef.current.budgetCategories = loadedBudgetCategories;
+
+    setInvoices((invoiceRows as Invoice[]).map(inv => ({
+      ...inv,
+      counterparty: rawRef.current.counterparties.find(c => c.id === inv.counterparty_id),
+      contract: rawRef.current.contracts.find(c => c.id === inv.contract_id),
+      documents: loadedDocs.filter(d => d.invoice_id === inv.id),
+      payments: loadedPays.filter(p => p.invoice_id === inv.id),
+      allocations: loadedAlloc.filter(a => a.invoice_id === inv.id),
+      qr_url: inv.qr_url || null,
+      budget_category: loadedBudgetCategories.find(c => c.id === inv.category_id),
+    })));
+  }
+
+  async function loadBudgetSlice() {
+    const [budgetRows, lineRows, recurringRows] = await Promise.all([
+      fetchRows('budgets', 'admin', { order: ['fiscal_year', false] }),
+      fetchRows('budget_lines', 'admin'),
+      fetchRows('recurring_commitments', 'admin'),
+    ]);
+    setBudgets(budgetRows as Budget[]);
+    setBudgetLines(lineRows as BudgetLine[]);
+    setRecurringCommitments(recurringRows as RecurringCommitment[]);
+  }
+
+  async function loadTimesheetsSlice() {
+    const [projectRows, workItemRows, assignmentRows, forecastRows, entryRows, periodRows] = await Promise.all([
+      fetchRows('projects', 'all'),
+      fetchRows('work_items', 'all'),
+      fetchRows('project_assignments', 'own'),
+      fetchRows('project_role_forecasts', 'admin'),
+      fetchRows('time_entries', 'own'),
+      fetchRows('timesheet_periods', 'all'),
+    ]);
+    setProjects(projectRows as Project[]);
+    setWorkItems(workItemRows as WorkItem[]);
+    setProjectAssignments(assignmentRows as ProjectAssignment[]);
+    setProjectRoleForecasts(forecastRows as ProjectRoleForecast[]);
+    setTimeEntries(entryRows as TimeEntry[]);
+    setTimesheetPeriods(periodRows as TimesheetPeriod[]);
+  }
+
+  async function loadPeopleSlice() {
+    setEmployeeContracts((await fetchRows('employee_contracts', 'own')) as EmployeeContract[]);
+  }
+
+  async function loadIntegrationsSlice() {
+    const [integrationRows, exemptionRows] = await Promise.all([
+      fetchRows('employee_integrations', 'own'),
+      fetchRows('integration_exemptions', 'own'),
+    ]);
+    const rows = integrationRows as EmployeeIntegration[];
+    setEmployeeIntegrations(rows);
+    const { profileId } = identityRef.current;
+    setSlackIntegration(rows.find(i => i.provider === 'slack' && i.profile_id === profileId) || null);
+    const active = (exemptionRows as IntegrationExemption[])
+      .filter(x => x.provider === 'slack' && (!x.expires_at || new Date(x.expires_at) > new Date()))
+      .sort((a, b) => (a.expires_at || '').localeCompare(b.expires_at || ''));
+    setMyIntegrationExemption(active[0] || null);
+  }
+
+  /** Per-employee/company remote quotas — shown by the remote log, people and settings screens. */
+  async function loadPoliciesSlice() {
+    const policyRows = await fetchRows('remote_policies', 'all');
+    setRemotePolicies((policyRows as any[]).map(p => ({
+      ...p,
+      max_days: p.max_days ?? p.max_days_per_month ?? 8,
+      period_type: p.period_type || 'month',
+    })) as RemotePolicy[]);
+  }
+
+  const SLICE_LOADERS: Record<DataSliceKey, () => Promise<void>> = {
+    leave: loadLeaveSlice,
+    remoteDays: loadRemoteDaysSlice,
+    remote: loadRemoteSlice,
+    salary: loadSalarySlice,
+    payments: loadPaymentsSlice,
+    contracts: loadContractsSlice,
+    commercial: loadCommercialSlice,
+    invoices: loadInvoicesSlice,
+    budget: loadBudgetSlice,
+    timesheets: loadTimesheetsSlice,
+    people: loadPeopleSlice,
+    integrations: loadIntegrationsSlice,
+    policies: loadPoliciesSlice,
+  };
+
+  /** Public on-demand entry point for surfaces outside the route's slice list. */
+  const ensureData = async (keys: DataSliceKey[]): Promise<void> => {
+    for (const key of withDependencies(keys)) await loadSlice(key);
+  };
+
+  /** Load a slice once. Concurrent callers share the same promise; a loaded slice never refetches. */
+  const loadSlice = (key: DataSliceKey): Promise<void> => {
+    if (loadedSlicesRef.current.has(key)) return Promise.resolve();
+    const inFlight = sliceLoadsRef.current.get(key);
+    if (inFlight) return inFlight;
+    const task = (async () => {
+      try {
+        await SLICE_LOADERS[key]();
+      } catch (error) {
+        console.error(`[data] slice "${key}" failed to load:`, error);
+      } finally {
+        // Settled either way: a permanent spinner is worse than a screen with an empty table, and
+        // the bump is what clears it (and re-subscribes realtime to the new tables).
+        loadedSlicesRef.current.add(key);
+        sliceLoadsRef.current.delete(key);
+        setDataVersion(v => v + 1);
+      }
+    })();
+    sliceLoadsRef.current.set(key, task);
+    return task;
+  };
+
+  /** Slices this route needs that are not in memory yet — drives the loading screen. */
+  const missingSlices = bootReady
+    ? withDependencies(slicesForPath(pathname)).filter(key => !loadedSlicesRef.current.has(key))
+    : [];
+
   useEffect(() => {
     // Intercept OAuth authorization code if Supabase redirects to site root instead of /auth/callback
     if (typeof window !== 'undefined' && window.location.search.includes('code=') && !window.location.pathname.startsWith('/auth/callback')) {
@@ -535,14 +1079,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Detect environment: local dev mode vs production / Vercel cloud
-    const isLocal = typeof window !== 'undefined' && 
+    const isLocal = typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
     setIsDevMode(isLocal && process.env.NODE_ENV !== 'production');
 
-    const fetchLiveSupabaseData = async () => {
+    const bootstrap = async () => {
+      const supabase = getSupabaseBrowserClient();
       try {
-        const supabase = getSupabaseBrowserClient();
-        
         // 1. Authenticate and determine admin status to prevent data leakage
         let matchedId = '';
         let isAdmin = false;
@@ -566,7 +1109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Only overwrite when the view answered — otherwise keep the value the row already carries.
         const phones = await fetchProfilePhones(supabase);
         if (phones) loadedProfiles.forEach(p => { p.phone = phones.get(p.id) ?? null; });
-        
+
         if (session?.user?.email) {
           const email = session.user.email.toLowerCase();
           const match = loadedProfiles.find(p => p.work_email?.toLowerCase() === email);
@@ -575,7 +1118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!matchedId && loadedProfiles.length > 0 && isLocal) {
           matchedId = loadedProfiles[0].id;
         }
-        
+
         if (matchedId) {
           const { data: roleRow } = await supabase.from('user_roles').select('role').eq('profile_id', matchedId).eq('role', 'admin').maybeSingle();
           isAdmin = !!roleRow;
@@ -583,356 +1126,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCurrentUserId(matchedId);
           setRealProfileId(matchedId);
         }
-        
-        const emptyRes = { data: [] as any[] };
+        identityRef.current = { isAdmin, profileId: matchedId };
 
-        // 2. Fetch data selectively based on authorization clearance
-        const [
-          teamsRes, profilesRes, rolesRes, sensitiveRes, paymentTypesRes, salariesRes,
-          paymentsRes, leaveTypesRes, entitlementsRes, mandatoryRes, leaveRequestsRes,
-          holidaysRes, remoteDaysRes, remotePatternsRes, timesheetsRes, counterpartiesRes, cpRolesTableRes, cpRoleLinksRes, contractsRes, remotePoliciesRes,
-          catalogModulesRes, catalogItemsRes, contractLinesRes, contractLineGroupsRes, contractScheduleRes, attioLinksRes, cpContactsRes, attioEventsRes,
-          tierModelVersionsRes, counterpartyTiersRes, tierHistoryRes, tierOverridesRes,
-          integrationsRes, exemptionsRes, integrationSettingsRes, documentTypesRes, contractsRes2,
-          jobRolesRes, seniorityLevelsRes, profileRoleHistoryRes, rateCardsRes, rateCardEntriesRes, projectsRes, workItemsRes, projectAssignmentsRes, projectRoleForecastsRes, timeEntriesRes, timesheetPeriodsRes, companyProfileRes, leavePolicyRes
-        ] = await Promise.all([
-          supabase.from('teams').select('*'),
-          Promise.resolve(initialProfilesRes),
-          supabase.from('user_roles').select('*'),
-          isAdmin ? supabase.from('profile_sensitive').select('*') : (matchedId ? supabase.from('profile_sensitive').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          supabase.from('payment_types').select('*').order('sort_order', { ascending: true }),
-          isAdmin ? supabase.from('salary_history').select('*') : (matchedId ? supabase.from('my_compensation').select('*') : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('payments').select('*') : (matchedId ? fetchOwnPaidPayments().then(data => ({ data: data ?? [], error: null })) : Promise.resolve(emptyRes)),
-          supabase.from('leave_types').select('*').order('sort_order', { ascending: true }),
-          isAdmin ? supabase.from('leave_entitlements').select('*') : (matchedId ? supabase.from('leave_entitlements').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          supabase.from('mandatory_leaves').select('*'),
-          isAdmin ? supabase.from('leave_requests').select('*') : (matchedId ? supabase.from('leave_requests').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          supabase.from('public_holidays').select('*'),
-          isAdmin ? supabase.from('remote_days').select('*') : (matchedId ? supabase.from('remote_days').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('remote_patterns').select('*') : (matchedId ? supabase.from('remote_patterns').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('contract_timesheets').select('*') : (matchedId ? supabase.from('contract_timesheets').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('counterparties').select('*') : Promise.resolve(emptyRes),
-          supabase.from('roles').select('*'),
-          isAdmin ? supabase.from('counterparty_roles').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('contracts').select('*') : Promise.resolve(emptyRes),
-          supabase.from('remote_policies').select('*'),
-          isAdmin ? supabase.from('catalog_modules').select('*').order('sort_order', { ascending: true }) : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('catalog_items').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('contract_lines').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('contract_line_groups').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('contract_schedule').select('*').order('period', { ascending: true }) : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('attio_links').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('counterparty_contacts').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('attio_events').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('tier_model_versions').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('counterparty_tiers').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('counterparty_tier_history').select('*').order('changed_at', { ascending: false }).limit(300) : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('counterparty_tier_overrides').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('employee_integrations').select(EMPLOYEE_INTEGRATION_COLUMNS) : (matchedId ? supabase.from('employee_integrations').select(EMPLOYEE_INTEGRATION_COLUMNS).eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('integration_exemptions').select('*') : (matchedId ? supabase.from('integration_exemptions').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          supabase.from('integration_settings').select('*'),
-          supabase.from('payment_document_types').select('*').order('sort_order', { ascending: true }),
-          isAdmin ? supabase.from('employee_contracts').select('*') : (matchedId ? supabase.from('employee_contracts').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          supabase.from('job_roles').select('*').order('sort_order', { ascending: true }),
-          supabase.from('seniority_levels').select('*').order('rank', { ascending: true }),
-          supabase.from('profile_role_history').select('*'),
-          isAdmin ? supabase.from('rate_cards').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('rate_card_entries').select('*') : Promise.resolve(emptyRes),
-          supabase.from('projects').select('*'),
-          supabase.from('work_items').select('*'),
-          isAdmin ? supabase.from('project_assignments').select('*') : (matchedId ? supabase.from('project_assignments').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          isAdmin ? supabase.from('project_role_forecasts').select('*') : Promise.resolve(emptyRes),
-          isAdmin ? supabase.from('time_entries').select('*') : (matchedId ? supabase.from('time_entries').select('*').eq('profile_id', matchedId) : Promise.resolve(emptyRes)),
-          supabase.from('timesheet_periods').select('*'),
-          supabase.from('company_profile').select('*').eq('id', 1).maybeSingle(),
-          supabase.from('leave_policy').select('*').eq('id', true).maybeSingle()
-        ]);
-
-        const loadedCpRoles: Role[] = cpRolesTableRes?.data || [];
-        const loadedCpRoleLinks: CounterpartyRole[] = cpRoleLinksRes?.data || [];
-        setCounterpartyRoles(loadedCpRoles);
-        setCounterpartyRoleLinks(loadedCpRoleLinks);
-
-        const loadedAttioLinks: AttioLink[] = (attioLinksRes.data || []) as AttioLink[];
-        const loadedContacts: CounterpartyContact[] = (cpContactsRes.data || []) as CounterpartyContact[];
-        setAttioEvents((attioEventsRes.data || []) as AttioEvent[]);
-
-        const loadedTierVersions: TierModelVersion[] = (tierModelVersionsRes?.data || []) as TierModelVersion[];
-        const loadedTierStates: CounterpartyTierRow[] = (counterpartyTiersRes?.data || []) as CounterpartyTierRow[];
-        const loadedTierHistory: CounterpartyTierHistoryRow[] = (tierHistoryRes?.data || []) as CounterpartyTierHistoryRow[];
-        const loadedTierOverrides: CounterpartyTierOverride[] = (tierOverridesRes?.data || []) as CounterpartyTierOverride[];
-        setTierModelVersions(loadedTierVersions);
-        setTierStates(loadedTierStates);
-        setTierHistory(loadedTierHistory);
-        setTierOverrides(loadedTierOverrides);
-
-        const loadedTeams: Team[] = teamsRes.data || [];
-        setTeams(loadedTeams);
-
-        const loadedPaymentTypes: PaymentType[] = paymentTypesRes.data || [];
-        setPaymentTypes(loadedPaymentTypes);
-
-        const loadedSalaries: SalaryRecord[] = salariesRes.data || [];
-        setSalaries(loadedSalaries);
-
-        const loadedLeaveTypes: LeaveType[] = ((leaveTypesRes.data || []) as LeaveType[]).sort((a, b) => (a.sort_order ?? 100) - (b.sort_order ?? 100));
-        setLeaveTypes(loadedLeaveTypes);
-
-        const loadedEntitlements: LeaveEntitlement[] = entitlementsRes.data || [];
-        setEntitlements(loadedEntitlements);
-
-        const loadedMandatory: MandatoryLeave[] = mandatoryRes.data || [];
-        setMandatoryLeaves(loadedMandatory);
-
-        const loadedHolidays: PublicHoliday[] = holidaysRes.data || [];
-        setPublicHolidays(loadedHolidays);
-
-        const loadedRemoteDays: RemoteDay[] = remoteDaysRes.data || [];
-        setRemoteDays(loadedRemoteDays);
-
-        const loadedTimesheets: ContractTimesheet[] = (timesheetsRes?.data || []) as ContractTimesheet[];
-        setTimesheets(loadedTimesheets);
-
-        const loadedRemotePatterns: RemotePattern[] = remotePatternsRes.data || [];
-        setRemotePatterns(loadedRemotePatterns);
-
-        const loadedCounterparties: Counterparty[] = counterpartiesRes.data || [];
-        setCounterparties(loadedCounterparties);
-
-        if (loadedProfiles.length > 0) {
-          const roles = rolesRes.data || [];
-          const sensitives = sensitiveRes.data || [];
-          const finalProfiles = loadedProfiles.map((p: any) => {
-            const userRoles = roles.filter((r: any) => r.profile_id === p.id);
-            const role = userRoles.some((r: any) => r.role === 'admin') ? 'admin' : 'employee';
-            const sensitive = sensitives.find((s: any) => s.profile_id === p.id);
-            const team = loadedTeams.find(t => t.id === p.team_id);
-            return { ...p, role, sensitive, team };
-          });
-          setProfiles(finalProfiles);
-        }
-
-        const enrichedPayments = (paymentsRes.data || []).map((pay: any) => {
-          const payment_type = loadedPaymentTypes.find(pt => pt.id === pay.payment_type_id);
-          return { ...pay, documents: pay.documents || [], payment_type };
-        });
-        setPayments(enrichedPayments);
-
-        const enrichedRequests = (leaveRequestsRes.data || []).map((req: any) => {
-          const leave_type = loadedLeaveTypes.find(lt => lt.id === req.leave_type_id);
-          return { ...req, leave_type };
-        });
-        setLeaveRequests(enrichedRequests);
-
-        const loadedCatalogModules: CatalogModule[] = catalogModulesRes?.data || [];
-        setCatalogModules(loadedCatalogModules);
-
-        const loadedCatalogItems: CatalogItem[] = catalogItemsRes?.data || [];
-        setCatalogItems(loadedCatalogItems);
-
-        const loadedContractLines: ContractLine[] = contractLinesRes?.data || [];
-        setContractLines(loadedContractLines);
-
-        const loadedContractSchedules: ContractSchedule[] = contractScheduleRes?.data || [];
-        setContractSchedules(loadedContractSchedules);
-
-        const enrichedCounterparties = loadedCounterparties.map(cp => {
-          const attio_link = loadedAttioLinks.find(l => l.counterparty_id === cp.id);
-          const contacts = loadedContacts.filter(ct => ct.counterparty_id === cp.id);
-          const cpContracts = (contractsRes.data || []).filter((cnt: any) => cnt.counterparty_id === cp.id && cnt.status !== 'archived');
-          const hasRevenue = cpContracts.some((cnt: any) => cnt.direction === 'revenue');
-          const hasCost = cpContracts.some((cnt: any) => cnt.direction === 'cost' || cnt.direction === 'supplier');
-          
-          const cpLinks = loadedCpRoleLinks.filter(l => l.counterparty_id === cp.id);
-          const explicitRoles = cpLinks.map(l => loadedCpRoles.find(r => r.id === l.role_id)).filter(Boolean) as Role[];
-          
-          // Map to lowercase slugs for easier derived calculations
-          const explicitSlugs = explicitRoles.map(r => r.slug.toLowerCase());
-          const combinedSlugs = new Set(explicitSlugs);
-          
-          if (hasRevenue) combinedSlugs.add('client');
-          if (hasCost) combinedSlugs.add('supplier');
-          
-          const finalSlugs = Array.from(combinedSlugs);
-          
-          let derived_role: 'client' | 'supplier' | 'both' | 'none yet' = 'none yet';
-          if (finalSlugs.includes('client') && finalSlugs.includes('supplier')) derived_role = 'both';
-          else if (finalSlugs.includes('client')) derived_role = 'client';
-          else if (finalSlugs.includes('supplier')) derived_role = 'supplier';
-          
-          // Resolve the final slugs back to Role objects to pass to the UI
-          const finalRoles = finalSlugs.map(slug => loadedCpRoles.find(r => r.slug === slug)).filter(Boolean) as Role[];
-          
-          const tier = attachTierToCounterparty(cp, loadedTierVersions, loadedTierStates, loadedTierOverrides);
-          return { ...cp, attio_link, contacts, derived_role, roles: finalRoles, tier };
-        });
-        setCounterparties(enrichedCounterparties);
-
-        const enrichedContracts = (contractsRes.data || []).map((cnt: any) => {
-          const counterparty = enrichedCounterparties.find(c => c.id === cnt.counterparty_id);
-          const owner_profile = loadedProfiles.find(p => p.id === cnt.owner_profile_id);
-          const lines = loadedContractLines.filter(l => l.contract_id === cnt.id);
-          const groups = (contractLineGroupsRes?.data || []).filter((g: ContractLineGroup) => g.contract_id === cnt.id);
-          const schedule = loadedContractSchedules.filter(s => s.contract_id === cnt.id);
-          return { ...cnt, counterparty, owner_profile, lines, groups, schedule };
-        });
-        setContracts(enrichedContracts);
-
-        const loadedPolicies: RemotePolicy[] = (remotePoliciesRes.data || []).map((p: any) => ({
-          ...p,
-          max_days: p.max_days ?? p.max_days_per_month ?? 8,
-          period_type: p.period_type || 'month'
-        }));
-        setRemotePolicies(loadedPolicies);
-
-        try {
-          const amendmentsRes = await supabase.from('remote_amendments').select('*');
-          if (amendmentsRes.data) {
-            setRemoteAmendmentRequests(amendmentsRes.data as RemoteAmendmentRequest[]);
-          }
-        } catch {
-          // Graceful fallback if remote_amendments table is not created yet
-        }
-
-        try {
-          const quotaRes = await supabase.from('remote_quota_requests').select('*');
-          if (quotaRes.data) {
-            setRemoteQuotaRequests(quotaRes.data as RemoteQuotaRequest[]);
-          }
-        } catch {
-          // Graceful fallback if remote_quota_requests table is not created yet
-        }
-
-        try {
-          const [groupsRes, groupMembersRes, leaveExceptionsRes] = await Promise.all([
-            supabase.from('coverage_groups').select('*').order('created_at', { ascending: true }),
-            supabase.from('coverage_group_members').select('*'),
-            supabase.from('leave_exception_requests').select('*').order('created_at', { ascending: false }),
-          ]);
-          if (groupsRes.data) setCoverageGroups(groupsRes.data as CoverageGroup[]);
-          if (groupMembersRes.data) setCoverageGroupMembers(groupMembersRes.data as CoverageGroupMember[]);
-          if (leaveExceptionsRes.data) setLeaveExceptionRequests(leaveExceptionsRes.data as LeaveExceptionRequest[]);
-        } catch {
-          // Graceful fallback if the coverage tables are not created yet
-        }
-
-        try {
-          const { data: screenRows } = await supabase.from('screen_visibility').select('*');
-          setHiddenScreens(toHiddenScreenKeys(screenRows));
-        } catch {
-          // Graceful fallback if screen_visibility is not created yet
-        }
-
-        let loadedBudgetCategories: BudgetCategory[] = [];
-        try {
-          if (isAdmin) {
-            const [bcRes, bRes, blRes, rcRes] = await Promise.all([
-              supabase.from('budget_categories').select('*').order('sort_order', { ascending: true }),
-              supabase.from('budgets').select('*').order('fiscal_year', { ascending: false }),
-              supabase.from('budget_lines').select('*'),
-              supabase.from('recurring_commitments').select('*')
-            ]);
-            
-            loadedBudgetCategories = bcRes.data || [];
-            setBudgetCategories(loadedBudgetCategories);
-            setBudgets(bRes.data || []);
-            setBudgetLines(blRes.data || []);
-            setRecurringCommitments(rcRes.data || []);
-          }
-        } catch (e) {
-          console.warn('Budgeting tables sync notice (migration pending):', e);
-        }
-
-        try {
-          const [invRes, catRes, docRes, payRes, allocRes] = await Promise.all([
-            isAdmin ? supabase.from('invoices').select('*, links:invoice_links(*)').order('issue_date', { ascending: false }) : Promise.resolve(emptyRes),
-            supabase.from('invoice_categories').select('*').order('name', { ascending: true }),
-            isAdmin ? supabase.from('invoice_documents').select('*') : Promise.resolve(emptyRes),
-            isAdmin ? supabase.from('invoice_payments').select('*') : Promise.resolve(emptyRes),
-            isAdmin ? supabase.from('invoice_allocations').select('*') : Promise.resolve(emptyRes),
-          ]);
-          
-          const loadedCats: InvoiceCategory[] = catRes.data || [];
-          if (loadedCats.length === 0) {
-            const defaultCats: InvoiceCategory[] = [
-              { id: 'cat-1', name: 'Infrastructure & Hosting', description: 'Servers and cloud computing', is_default: true },
-              { id: 'cat-2', name: 'Marketing & Sales', description: 'Advertising and campaigns', is_default: true },
-              { id: 'cat-3', name: 'Office & Admin', description: 'Office rent and supplies', is_default: true },
-              { id: 'cat-4', name: 'Travel & Expense', description: 'Corporate travel and flights', is_default: true },
-              { id: 'cat-5', name: 'Legal & Accounting', description: 'Audit fees and advisory', is_default: true },
-              { id: 'cat-6', name: 'Other Operational', description: 'Miscellaneous operational expenses', is_default: true },
-            ];
-            setInvoiceCategories(defaultCats);
-          } else {
-            setInvoiceCategories(loadedCats);
-          }
-          const loadedDocs: InvoiceDocument[] = await signInvoiceDocuments(supabase, docRes.data || []);
-          setInvoiceDocuments(loadedDocs);
-          const loadedPays: InvoicePayment[] = payRes.data || [];
-          setInvoicePayments(loadedPays);
-          const loadedAlloc: InvoiceAllocation[] = allocRes.data || [];
-          setInvoiceAllocations(loadedAlloc);
-
-          const enrichedInvoices: Invoice[] = (invRes.data || []).map((inv: any) => {
-            const cp = enrichedCounterparties.find(c => c.id === inv.counterparty_id);
-            const cnt = enrichedContracts.find(c => c.id === inv.contract_id);
-            const docs = loadedDocs.filter(d => d.invoice_id === inv.id);
-            const pays = loadedPays.filter(p => p.invoice_id === inv.id);
-            const allocs = loadedAlloc.filter(a => a.invoice_id === inv.id);
-            const budgetCat = loadedBudgetCategories.find(c => c.id === inv.category_id);
-            return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs, qr_url: inv.qr_url || null, budget_category: budgetCat };
-          });
-          setInvoices(enrichedInvoices);
-        } catch (e) {
-          console.warn('Invoice tracking tables sync notice (migration pending):', e);
-        }
-
-        setDocumentTypes((documentTypesRes?.data || []) as PaymentDocumentType[]);
-        setEmployeeContracts((contractsRes2?.data || []) as EmployeeContract[]);
-
-        setJobRoles((jobRolesRes?.data || []) as JobRole[]);
-        setSeniorityLevels((seniorityLevelsRes?.data || []) as SeniorityLevel[]);
-        setProfileRoleHistory((profileRoleHistoryRes?.data || []) as ProfileRoleHistory[]);
-        setRateCards((rateCardsRes?.data || []) as RateCard[]);
-        setRateCardEntries((rateCardEntriesRes?.data || []) as RateCardEntry[]);
-        setProjects((projectsRes?.data || []) as Project[]);
-        setWorkItems((workItemsRes?.data || []) as WorkItem[]);
-        setProjectAssignments((projectAssignmentsRes?.data || []) as ProjectAssignment[]);
-        setProjectRoleForecasts((projectRoleForecastsRes?.data || []) as ProjectRoleForecast[]);
-        setTimeEntries((timeEntriesRes?.data || []) as TimeEntry[]);
-        setTimesheetPeriods((timesheetPeriodsRes?.data || []) as TimesheetPeriod[]);
-        setCompanyProfile(companyProfileRes?.data || null);
-        setLeavePolicy((leavePolicyRes?.data as LeavePolicy) || null);
-
-        const myIntegrationRows: EmployeeIntegration[] = (integrationsRes?.data || []) as EmployeeIntegration[];
-        setEmployeeIntegrations(myIntegrationRows);
-        const myExemptions: IntegrationExemption[] = (exemptionsRes?.data || []) as IntegrationExemption[];
-        // Scope to my own row — an admin loads every employee's rows here.
-        const myInteg = matchedId
-          ? (myIntegrationRows.find(i => i.provider === 'slack' && i.profile_id === matchedId) || null)
-          : null;
-        setSlackIntegration(myInteg);
-        const activeExemptions = myExemptions.filter(x => x.provider === 'slack' && (!x.expires_at || new Date(x.expires_at) > new Date()));
-        setMyIntegrationExemption(activeExemptions.sort((a, b) => (a.expires_at || '').localeCompare(b.expires_at || ''))[0] || null);
-        const settingsMap: Record<string, string> = {};
-        (integrationSettingsRes?.data || []).forEach((r: any) => { settingsMap[r.key] = r.value; });
-        setIntegrationSettings({
-          leave_label: settingsMap.leave_label ?? DEFAULT_SLACK_SETTINGS.leave_label,
-          leave_emoji: settingsMap.leave_emoji ?? DEFAULT_SLACK_SETTINGS.leave_emoji,
-          remote_label: settingsMap.remote_label ?? DEFAULT_SLACK_SETTINGS.remote_label,
-          remote_emoji: settingsMap.remote_emoji ?? DEFAULT_SLACK_SETTINGS.remote_emoji,
-          half_day_label: settingsMap.half_day_label ?? DEFAULT_SLACK_SETTINGS.half_day_label,
-        });
-        setIntegrationLastReconciledAt(settingsMap.last_reconciled_at ?? null);
+        // 2. Directory + master data every screen shares; route slices load from here.
+        await loadCoreSlice({ loadedProfiles, matchedId });
       } catch (err) {
         console.error("Live database sync exception:", err);
       } finally {
         setIsLoading(false);
+        setBootReady(true);
       }
     };
 
-    fetchLiveSupabaseData();
+    void bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch the active route's slices (and their dependencies) in dependency order.
+  useEffect(() => {
+    if (!bootReady) return;
+    const needed = withDependencies(slicesForPath(pathname))
+      .filter(key => !loadedSlicesRef.current.has(key));
+    if (needed.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const key of needed) {
+        if (cancelled) return;
+        await loadSlice(key);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, bootReady]);
 
   // Derive active user
   const fallbackProfile: Profile = {
@@ -5461,7 +5686,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!liveSessionUserId) return;
     const supabase = getSupabaseBrowserClient();
-    const tables = Object.keys(liveReloadersRef.current);
+    // Only tables a loaded slice owns are subscribed, so a screen never pays for changes to data
+    // it has not fetched. Re-runs when a slice lands (`dataVersion`) to add its tables.
+    const allowed = new Set([...CORE_TABLES, ...tablesForSlices(loadedSlicesRef.current)]);
+    const tables = Object.keys(liveReloadersRef.current).filter(table => allowed.has(table));
     return startRealtimeSync(
       supabase,
       tables.map(table => ({
@@ -5471,7 +5699,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       }))
     );
-  }, [liveSessionUserId]);
+  }, [liveSessionUserId, dataVersion]);
 
   const updateCompanyProfile = async (updates: Partial<CompanyProfile>): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
@@ -5562,13 +5790,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   useEffect(() => {
     if (isLoading || !currentUser?.id) return;
+    // Nothing to book until the leave slice has actually arrived: on a screen that never shows
+    // leave, running now would find no entitlements and burn the once-per-mount flag.
+    if (!loadedSlicesRef.current.has('leave')) return;
     if (carryoverBookingRanRef.current) return;
     if (leavePolicy?.carryover_auto_book === false) return;
     carryoverBookingRanRef.current = true;
     const scope = currentUser.role === 'admin' ? undefined : currentUser.id;
     void syncCarryoverExpiryBookings(scope);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, currentUser?.id, currentUser?.role, leavePolicy?.carryover_auto_book]);
+  }, [isLoading, currentUser?.id, currentUser?.role, leavePolicy?.carryover_auto_book, dataVersion]);
 
   return (
     <AuthContext.Provider value={{
@@ -5788,7 +6019,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       syncSlackStatus,
       revokeSlackConnection,
       refreshInvoices,
-      isLoading,
+      // A first visit to a route waits for its slices; a revisit is already in memory.
+      isLoading: isLoading || missingSlices.length > 0,
+      ensureData,
     }}>
       {children}
     </AuthContext.Provider>

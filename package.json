@@ -13,6 +13,7 @@
     "test:outlook": "node scripts/verify-outlook-remote-mirror.js",
     "test:coverage": "node scripts/verify-coverage-rules.js",
     "test:screens": "node scripts/verify-screen-visibility.js",
+    "test:slices": "node scripts/verify-data-slices.js",
     "test:carryover": "node scripts/verify-leave-carryover.js",
     "test:holidays": "node scripts/verify-public-holidays.js",
     "test:amount": "node scripts/verify-amount-input.mjs",
