@@ -160,3 +160,54 @@ export function mandatoryRowDeducts(
   if (!DEDUCTED_STATUSES.includes(row.status)) return false;
   return !row.mandatory_leave_id || liveClosureIds.has(row.mandatory_leave_id);
 }
+
+/** One calendar year's slice of a leave that crossed 31 December. */
+export interface YearSegment {
+  start: string;
+  end: string;
+  workingDays: number;
+}
+
+/**
+ * Slice a leave at 31 December so every stored row belongs to exactly one calendar year.
+ *
+ * A leave of 31/12/2025 → 02/01/2026 becomes `31/12/2025 → 31/12/2025` (1d) plus
+ * `01/01/2026 → 02/01/2026` (1d, New Year's Day being a holiday), so each year's allowance is
+ * deducted only for the days that actually fall in it.
+ *
+ * The day counts are distributed by re-walking the range in the order the stored total was counted
+ * (`deductedDaysInYear`), so the segments always add back up to `workingDays` — including rows an
+ * admin adjusted by hand. A range that sits inside one year comes back as a single segment, so
+ * callers can split unconditionally.
+ */
+export function splitAcrossYears(params: {
+  start: string;
+  end: string;
+  workingDays: number;
+  schedule?: string[] | null;
+  isExcludedDate?: (iso: string) => boolean;
+}): YearSegment[] {
+  const { start, end, workingDays, schedule, isExcludedDate } = params;
+  const budget = Number(workingDays) || 0;
+  const whole = [{ start, end, workingDays: budget }];
+  if (!start || !end || start > end) return whole;
+
+  const startYear = Number(start.slice(0, 4));
+  const endYear = Number(end.slice(0, 4));
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear) || startYear === endYear) return whole;
+
+  const segments: YearSegment[] = [];
+  for (let year = startYear; year <= endYear; year++) {
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+    const days = deductedDaysInYear({ start, end, workingDays: budget, year, schedule, isExcludedDate });
+    // Every year of the range gets a segment, even one that happens to carry no deductible days:
+    // the invariant is that no stored row may straddle 31 December.
+    segments.push({
+      start: start > yearStart ? start : yearStart,
+      end: end < yearEnd ? end : yearEnd,
+      workingDays: days,
+    });
+  }
+  return segments.length > 0 ? segments : whole;
+}

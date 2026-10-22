@@ -156,5 +156,33 @@ check('a detached correction does not deduct', D.mandatoryRowDeducts(closureRow(
 check('a rejected closure row does not deduct', D.mandatoryRowDeducts(closureRow({ status: 'rejected' }), live), false);
 check('personal leave is not counted as a closure', D.mandatoryRowDeducts({ origin: 'employee_request', status: 'approved' }, live), false);
 
+// ---------------------------------------------------------------------------
+// Year-boundary split: a row may never straddle 31 December. 31/12/2025 → 02/01/2026
+// is 2 working days (1 Jan is New Year's Day), so it becomes 1 day in each year.
+// ---------------------------------------------------------------------------
+const NEW_YEAR = ['2026-01-01'];
+const split = D.splitAcrossYears({
+  start: '2025-12-31', end: '2026-01-02', workingDays: 2, isExcludedDate: iso => NEW_YEAR.includes(iso),
+});
+check('the reported range splits into two years', split.map(s => [s.start, s.end, s.workingDays]), [
+  ['2025-12-31', '2025-12-31', 1],
+  ['2026-01-01', '2026-01-02', 1],
+]);
+check('the split preserves the total', split.reduce((a, s) => a + s.workingDays, 0), 2);
+check('first half ends with its year', split[0].end, '2025-12-31');
+check('second half starts with the new year', split[1].start, '2026-01-01');
+
+const inOneYear = D.splitAcrossYears({ start: '2026-03-02', end: '2026-03-06', workingDays: 5 });
+check('a same-year leave is left whole', inOneYear.map(s => [s.start, s.end, s.workingDays]), [['2026-03-02', '2026-03-06', 5]]);
+
+// An admin-adjusted total that does not match the schedule is still distributed, not recounted.
+const adjusted = D.splitAcrossYears({ start: '2025-12-31', end: '2026-01-02', workingDays: 1, isExcludedDate: iso => NEW_YEAR.includes(iso) });
+check('an adjusted total stays on the first year', adjusted.map(s => s.workingDays), [1, 0]);
+check('an adjusted total is never inflated', adjusted.reduce((a, s) => a + s.workingDays, 0), 1);
+
+const noDays = D.splitAcrossYears({ start: '2025-12-31', end: '2026-01-01', workingDays: 0 });
+check('a zero-day crossing range is still split by year', noDays.map(s => [s.start, s.end]), [['2025-12-31', '2025-12-31'], ['2026-01-01', '2026-01-01']]);
+check('and no row straddles a year', noDays.every(s => s.start.slice(0, 4) === s.end.slice(0, 4)), true);
+
 console.log(`\n${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}`);
 process.exit(failed === 0 ? 0 : 1);

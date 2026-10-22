@@ -26,7 +26,7 @@ import {
   MOCK_PUBLIC_HOLIDAYS, MOCK_REMOTE_PATTERNS,
   MOCK_COUNTERPARTIES, MOCK_CONTRACTS,
 } from './mock-data';
-import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount, publishedClosureIds, mandatoryRowDeducts } from './leave-days';
+import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount, publishedClosureIds, mandatoryRowDeducts, splitAcrossYears } from './leave-days';
 import {
   carryoverDays, carryoverExpiryDate, carryoverExpired, remainingOfYear, previousYearHasClosed,
   carryoverWarningLevel, autoCarryoverBookingPlan, groupAdjacentDays, DEFAULT_WARNING_MONTHS,
@@ -1490,13 +1490,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addLeaveRequest = async (req: Omit<LeaveRequest, 'id'>) => {
-    let finalTypeId = req.leave_type_id;
-    if (finalTypeId === 'lt-annual' || !leaveTypes.some(lt => lt.id === finalTypeId)) {
-      const validLt = leaveTypes.find(t => !t.is_hidden && (t.code === 'annual' || (t.name_en && t.name_en.toLowerCase().includes('annual')))) || leaveTypes.find(t => !t.is_hidden) || leaveTypes[0];
-      if (validLt) finalTypeId = validLt.id;
-    }
-    const newReq: LeaveRequest = { ...req, leave_type_id: finalTypeId, id: generateUUID() };
+  const crossesYearBoundary = (start?: string | null, end?: string | null) =>
+    !!start && !!end && start.slice(0, 4) !== end.slice(0, 4);
+
+  /** Single-row insert. Every leave write funnels through here so the split logic stays in one place. */
+  const insertLeaveRow = async (newReq: LeaveRequest) => {
     const supabase = getSupabaseBrowserClient();
     const { leave_type, ...cleanReq } = newReq as any;
     try {
@@ -1504,7 +1502,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         console.error('Failed to insert leave request into database:', error);
         alert(`Database Error: ${error.message}`);
-        return;
+        return false;
       }
       const savedReq = (data && data[0]) ? { ...data[0], leave_type: leaveTypes.find(lt => lt.id === data[0].leave_type_id) } : newReq;
       setLeaveRequests(prev => [savedReq, ...prev]);
@@ -1512,9 +1510,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Admin-created approved leave (e.g. admin_entry) mirrors immediately
         syncSlackStatus(savedReq.profile_id, athensTodayStr(), savedReq.id);
       }
+      return true;
     } catch (e: any) {
       console.error('Failed to insert leave request into database:', e);
+      return false;
     }
+  };
+
+  const addLeaveRequest = async (req: Omit<LeaveRequest, 'id'>) => {
+    let finalTypeId = req.leave_type_id;
+    if (finalTypeId === 'lt-annual' || !leaveTypes.some(lt => lt.id === finalTypeId)) {
+      const validLt = leaveTypes.find(t => !t.is_hidden && (t.code === 'annual' || (t.name_en && t.name_en.toLowerCase().includes('annual')))) || leaveTypes.find(t => !t.is_hidden) || leaveTypes[0];
+      if (validLt) finalTypeId = validLt.id;
+    }
+
+    // Invariant: a stored row never crosses 31 December (see migration 0082). Everyone who files
+    // leave goes through here, so the split lives here rather than in each caller.
+    if (crossesYearBoundary(req.start_date, req.end_date)) {
+      await splitAndAddLeaveRequest(
+        { ...req, leave_type_id: finalTypeId },
+        resolveWorkSchedule(profiles.find(p => p.id === req.profile_id)?.work_schedule),
+        publicHolidays || [],
+      );
+      return;
+    }
+
+    await insertLeaveRow({ ...req, leave_type_id: finalTypeId, id: generateUUID() });
   };
 
   const updateLeaveRequestStatus = async (id: string, status: LeaveRequest['status'], rejectionReason?: string) => {
@@ -1620,6 +1641,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const recomputedDays = recount && nextStart && nextEnd
         ? countWorkingDaysForProfile(nextStart, nextEnd, target!.profile_id)
         : null;
+
+      // An edit that moves the range across 31 December has to become two linked rows, same as a
+      // fresh filing — otherwise the row spans two entitlements again (migration 0082 invariant).
+      if (recount && target && crossesYearBoundary(nextStart, nextEnd)) {
+        await deleteLeaveRequest(id);
+        await splitAndAddLeaveRequest(
+          {
+            ...target,
+            ...cleanUpdate,
+            start_date: nextStart!,
+            end_date: nextEnd!,
+            working_days: recomputedDays ?? Number(target.working_days || 0),
+            admin_edit_reason: editReason || cleanUpdate.admin_edit_reason,
+          },
+          resolveWorkSchedule(profiles.find(p => p.id === target.profile_id)?.work_schedule),
+          publicHolidays || [],
+        );
+        return;
+      }
 
       const updateData = {
         ...cleanUpdate,
@@ -1751,65 +1791,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /**
+   * File a leave, split at 31 December when it crosses a year boundary: each half becomes its own
+   * row (linked through `linked_request_id`) so it deducts from its own year's entitlement only.
+   * The two halves always add back up to the day count the form showed.
+   */
+  /**
+   * File a leave, split at 31 December when it crosses a year boundary: each half becomes its own
+   * row (linked through `linked_request_id`) so it deducts from its own year's entitlement only.
+   * The halves always add back up to the day count the form showed.
+   */
   const splitAndAddLeaveRequest = async (req: Omit<LeaveRequest, 'id'>, workSchedule: string[], holidays: PublicHoliday[]) => {
-    const startYear = new Date(req.start_date).getFullYear();
-    const endYear = new Date(req.end_date).getFullYear();
+    const excluded = new Set<string>(holidays.map(h => h.date));
+    mandatoryLeaves.forEach(m => expandDateRange(m.start_date, m.end_date).forEach(d => excluded.add(d)));
+    leaveRequests
+      .filter(r => r.origin === 'mandatory' && r.profile_id === req.profile_id)
+      .forEach(r => expandDateRange(r.start_date, r.end_date).forEach(d => excluded.add(d)));
 
-    if (startYear === endYear || isNaN(startYear) || isNaN(endYear)) {
-      await addLeaveRequest(req);
+    const segments = splitAcrossYears({
+      start: req.start_date,
+      end: req.end_date,
+      workingDays: Number(req.working_days || 0),
+      schedule: workSchedule,
+      isExcludedDate: iso => excluded.has(iso),
+    });
+
+    // A split that finds deductible days in only one year is not a split at all — store it whole
+    // and let the caller's edited range stand.
+    if (segments.length <= 1) {
+      const only = segments[0];
+      await insertLeaveRow({
+        ...req,
+        id: generateUUID(),
+        start_date: only?.start ?? req.start_date,
+        end_date: only?.end ?? req.end_date,
+        working_days: only ? only.workingDays : Number(req.working_days || 0),
+      });
       return;
     }
 
-    const endOfFirstYear = `${startYear}-12-31`;
-    const startOfSecondYear = `${endYear}-01-01`;
-    
-    const calcDays = (s: string, e: string) => {
-      let d = new Date(s);
-      const endD = new Date(e);
-      let count = 0;
-      while (d <= endD) {
-        const dStr = d.toISOString().split('T')[0];
-        const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
-        const isHol = holidays.some(h => h.date === dStr);
-        const isMandatory = mandatoryLeaves.some(m => dStr >= m.start_date && dStr <= m.end_date) ||
-                            leaveRequests.some(r => r.origin === 'mandatory' && r.profile_id === req.profile_id && dStr >= r.start_date && dStr <= r.end_date);
-        if (!isHol && !isMandatory && workSchedule.includes(dayOfWeek)) count++;
-        d.setDate(d.getDate() + 1);
-      }
-      return count;
-    };
-
-    const firstId = generateUUID();
-    const secondId = generateUUID();
-
-    const req1: LeaveRequest = {
+    const ids = segments.map(() => generateUUID());
+    const rows: LeaveRequest[] = segments.map((seg, i) => ({
       ...req,
-      id: firstId,
-      end_date: endOfFirstYear,
-      working_days: calcDays(req.start_date, endOfFirstYear),
-      linked_request_id: secondId
-    };
-
-    const req2: LeaveRequest = {
-      ...req,
-      id: secondId,
-      start_date: startOfSecondYear,
-      working_days: calcDays(startOfSecondYear, req.end_date),
-      linked_request_id: firstId
-    };
+      id: ids[i],
+      start_date: seg.start,
+      end_date: seg.end,
+      working_days: seg.workingDays,
+      linked_request_id: ids[(i + 1) % ids.length],
+    }));
 
     const supabase = getSupabaseBrowserClient();
     try {
-      const { leave_type: lt1, ...clean1 } = req1 as any;
-      const { leave_type: lt2, ...clean2 } = req2 as any;
-      const { error } = await supabase.from('leave_requests').insert([clean1, clean2]);
+      const clean = rows.map(({ leave_type, ...rest }) => rest);
+      const { error, data } = await supabase.from('leave_requests').insert(clean).select();
       if (error) {
         console.error('Failed to save year-boundary split leave requests:', error);
         alert(`Database Error: ${error.message}`);
         return;
       }
-      setLeaveRequests(prev => [req2, req1, ...prev]);
-    } catch (e: any) {
+      const saved = (data && data.length > 0)
+        ? data.map(row => ({ ...row, leave_type: leaveTypes.find(lt => lt.id === row.leave_type_id) }))
+        : rows;
+      setLeaveRequests(prev => [...saved].reverse().concat(prev));
+    } catch (e) {
       console.error('Failed to save year-boundary split leave requests:', e);
     }
   };
@@ -2296,44 +2340,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         removed += toDelete.length;
       }
 
-      // 2) Ensure exactly one correct row per eligible employee.
+      // 2) Ensure exactly one correct row per eligible employee PER CALENDAR YEAR. A closure that
+      //    straddles 31 December (31/12/2025 → 02/01/2026) is stored as one row per year, linked to
+      //    its sibling, so the 2025 allowance pays for 31 Dec and the 2026 allowance for 2 Jan.
       for (const p of eligible) {
         const start = m.start_date < p.start_date ? p.start_date : m.start_date;
-        const wd = wdFor(p);
-        const row = existing.find(r => r.profile_id === p.id && !r.detached);
-        if (row) {
-          const patch: Partial<LeaveRequest> = {};
-          if (row.working_days !== wd) patch.working_days = wd;
-          if (row.start_date !== start) patch.start_date = start;
-          if (row.end_date !== m.end_date) patch.end_date = m.end_date;
-          if (row.leave_type_id !== m.leave_type_id) patch.leave_type_id = m.leave_type_id;
-          if (row.note !== note) patch.note = note;
-          if (Object.keys(patch).length > 0) {
-            await supabase.from('leave_requests').update(patch).eq('id', row.id);
-            setLeaveRequests(prev => prev.map(r => r.id === row.id ? { ...r, ...patch } : r));
-            updated++;
+        const schedule = p.work_schedule && p.work_schedule.length ? p.work_schedule : dayNames.slice(1, 6);
+        const segments = splitAcrossYears({
+          start,
+          end: m.end_date,
+          workingDays: wdFor(p),
+          schedule,
+          isExcludedDate: iso => holidays.includes(iso),
+        });
+
+        const mine = existing.filter(r => r.profile_id === p.id && !r.detached);
+        /** Final row id per segment, in segment order. */
+        const rowIds: string[] = [];
+
+        for (const seg of segments) {
+          // Match the row already covering this segment's year, so a re-sync patches instead of
+          // duplicating.
+          const row = mine.find(r => r.start_date.slice(0, 4) === seg.start.slice(0, 4));
+          if (row) {
+            const patch: Partial<LeaveRequest> = {};
+            if (row.working_days !== seg.workingDays) patch.working_days = seg.workingDays;
+            if (row.start_date !== seg.start) patch.start_date = seg.start;
+            if (row.end_date !== seg.end) patch.end_date = seg.end;
+            if (row.leave_type_id !== m.leave_type_id) patch.leave_type_id = m.leave_type_id;
+            if (row.note !== note) patch.note = note;
+            if (Object.keys(patch).length > 0) {
+              await supabase.from('leave_requests').update(patch).eq('id', row.id);
+              setLeaveRequests(prev => prev.map(r => r.id === row.id ? { ...r, ...patch } : r));
+              updated++;
+            }
+            rowIds.push(row.id);
+            continue;
           }
-        } else {
+
+          const id = generateUUID();
           const newReq: LeaveRequest = {
-            id: generateUUID(),
+            id,
             profile_id: p.id,
             leave_type_id: m.leave_type_id,
-            start_date: start,
-            end_date: m.end_date,
+            start_date: seg.start,
+            end_date: seg.end,
             half_day_start: false,
             half_day_end: false,
-            working_days: wd,
+            working_days: seg.workingDays,
             status: 'approved',
             origin: 'mandatory',
             mandatory_leave_id: m.id,
             note,
-            ergani_status: 'not_required'
+            ergani_status: 'not_required',
           };
           await supabase.from('leave_requests').insert(newReq);
           setLeaveRequests(prev => [newReq, ...prev]);
           added++;
+          rowIds.push(id);
+        }
+
+        // Rows left over from a shape this closure no longer produces (e.g. the old single
+        // year-crossing row) would double-deduct, so retire them.
+        const orphans = mine.filter(r => !rowIds.includes(r.id));
+        if (orphans.length > 0) {
+          await supabase.from('leave_requests').delete().in('id', orphans.map(r => r.id));
+          setLeaveRequests(prev => prev.filter(r => !orphans.some(o => o.id === r.id)));
+          removed += orphans.length;
+        }
+
+        // Wire the halves together so the UI can show them as one request.
+        if (rowIds.length > 1) {
+          for (let i = 0; i < rowIds.length; i++) {
+            const target = rowIds[(i + 1) % rowIds.length];
+            await supabase.from('leave_requests').update({ linked_request_id: target }).eq('id', rowIds[i]);
+            setLeaveRequests(prev => prev.map(r => r.id === rowIds[i] ? { ...r, linked_request_id: target } : r));
+          }
         }
       }
+
       return { added, updated, removed };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
