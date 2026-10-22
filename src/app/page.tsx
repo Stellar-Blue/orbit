@@ -99,38 +99,7 @@ export default function DashboardPage() {
   /** True when the year is still running on the company default (no per-employee row configured). */
   const usesDefaultEntitlement = !entitlements.some(e => e.profile_id === currentUser.id && e.year === leaveYear);
 
-  // --- 4. ORGANIZATIONAL OFFICE & REMOTE ROSTER STATE ---
-  const [rosterDate, setRosterDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  
-  const teamAttendance = useMemo(() => {
-    const activeMembers = (profiles || []).filter(p => p.status === 'active' && p.employment_type !== 'contractor');
-    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    let weekdayStr = 'Mon';
-    try {
-      const dateObj = new Date(rosterDate + 'T00:00:00');
-      if (!isNaN(dateObj.getTime())) {
-        weekdayStr = weekdayNames[dateObj.getDay()];
-      }
-    } catch {
-      // fallback
-    }
-
-    return activeMembers.map(prof => {
-      if (weekdayStr === 'Sat' || weekdayStr === 'Sun') {
-        return { profile: prof, mode: 'weekend', source: 'Non-working day' };
-      }
-      const decl = (remoteDays || []).find(rd => rd.profile_id === prof.id && rd.date === rosterDate);
-      if (decl && decl.mode !== 'office') {
-        return { profile: prof, mode: decl.mode, location: decl.location, source: 'Declared Remote Log' };
-      }
-      return { profile: prof, mode: 'office', source: 'Office Routine' };
-    });
-  }, [profiles, remoteDays, rosterDate]);
-
-  const officeCount = teamAttendance.filter(t => t.mode === 'office').length;
-  const remoteCount = teamAttendance.filter(t => t.mode === 'remote_gr' || t.mode === 'remote_abroad').length;
-
-  // --- 5. UNIFIED CALENDAR GRID STATE & ENGINE ---
+  // --- 4. UNIFIED CALENDAR GRID STATE & ENGINE ---
   const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date()); // opens on the current month
   const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -510,99 +479,7 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* 5. ORGANIZATIONAL OFFICE & REMOTE ROSTER (Moved from /remote to Unified Homepage) */}
-      <div className="space-y-4 pt-6 border-t border-slate-200/80">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center">
-              <Building2 className="w-6 h-6 mr-2.5 text-emerald-600" /> Organizational Office &amp; Remote Roster
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              Live daily schedule inspection across all departments based on declared remote work logs.
-            </p>
-          </div>
-          <div className="flex items-center space-x-2 text-xs font-bold">
-            <Badge variant="neutral">{officeCount} at Office HQ</Badge>
-            <Badge variant="info">{remoteCount} working Remotely</Badge>
-          </div>
-        </div>
-
-        <Card className="shadow-xs border-slate-200/90">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200/80 mb-5">
-            <div className="flex items-center space-x-2.5">
-              <CalendarIcon className="w-4 h-4 text-slate-500 shrink-0" />
-              <label htmlFor="roster-date-picker" className="text-xs font-extrabold uppercase tracking-wider text-slate-700 select-none">
-                Inspect Date:
-              </label>
-              <input
-                id="roster-date-picker"
-                type="date"
-                value={rosterDate}
-                onChange={(e) => setRosterDate(e.target.value)}
-                className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-slate-900 text-xs font-mono font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#3D87D3] cursor-pointer"
-              />
-            </div>
-            <span className="text-xs text-slate-600 font-medium">
-              Active schedule roster for <strong className="text-slate-900 font-mono font-extrabold">{rosterDate}</strong>
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {teamAttendance.map((item) => {
-              const { profile, mode, location, source } = item;
-              return (
-                <div 
-                  key={profile.id} 
-                  className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between space-y-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <ProfileAvatar photoUrl={profile.photo_url} firstName={profile.first_name} lastName={profile.last_name} size="md" />
-                      <div className="min-w-0">
-                        <p className="font-extrabold text-slate-900 text-sm leading-snug truncate">{profile.first_name} {profile.last_name}</p>
-                        <p className="text-xs text-slate-500 font-medium truncate">{roleLabel(profile, profileRoleHistory, jobRoles, seniorityLevels)}</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-                      {profile.team?.name || 'Staff'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                    <span className="text-[11px] text-slate-600 font-medium italic">{source}</span>
-                    <div>
-                      {mode === 'office' && (
-                        <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs font-extrabold border border-slate-200 shadow-2xs flex items-center">
-                          🏢 Office HQ
-                        </span>
-                      )}
-                      {mode === 'remote_gr' && (
-                        <span className="px-2.5 py-1 rounded-md bg-cyan-100 text-cyan-950 text-xs font-extrabold border border-cyan-200 shadow-2xs flex items-center">
-                          🏠 Remote (GR)
-                        </span>
-                      )}
-                      {mode === 'remote_abroad' && (
-                        <span 
-                          title={`Location: ${location || 'Not declared'}`}
-                          className="px-2.5 py-1 rounded-md bg-blue-100 text-blue-900 text-xs font-extrabold border border-blue-200 shadow-2xs flex items-center truncate max-w-[140px]"
-                        >
-                          📍 Other City {location ? `(${location})` : ''}
-                        </span>
-                      )}
-                      {mode === 'weekend' && (
-                        <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-500 text-xs font-bold">
-                          ☕ Weekend
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      </div>
-
-      {/* 6. UNIFIED COMPANY & TEAM CALENDAR */}
+      {/* 5. UNIFIED COMPANY & TEAM CALENDAR */}
       <div className="space-y-4 pt-6 border-t border-slate-200/80">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1154,7 +1031,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 7. INTERACTIVE DAY DETAILS MODAL / SLIDE-OVER */}
+      {/* 6. INTERACTIVE DAY DETAILS MODAL / SLIDE-OVER */}
       {selectedDay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
