@@ -407,7 +407,7 @@ export default function DashboardPage() {
               )}
             </Card>
 
-            <Card title="Founder Approval Queue (Leave Requests)" subtitle="Single-step approval routing to founders queue" action={<Link href="/leave" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Manage Queue <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
+            <Card title="Founder Approval Queue (Leave Requests)" subtitle="Single-step approval routing to founders queue" action={<Link href="/company-leave" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Manage Queue <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
               {pendingLeaves.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
                   <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
@@ -423,7 +423,7 @@ export default function DashboardPage() {
                           <p className="font-semibold text-sm text-slate-800">{requester?.first_name} {requester?.last_name}</p>
                           <p className="text-xs text-slate-500 mt-0.5">{req.working_days} working days ({formatDate(req.start_date)} to {formatDate(req.end_date)})</p>
                         </div>
-                        <Link href="/leave">
+                        <Link href="/company-leave">
                           <Button size="sm" variant="primary" className="font-black bg-[#3D87D3]">Review</Button>
                         </Link>
                       </div>

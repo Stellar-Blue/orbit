@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
   // Company Section
   const companyItems = [
     { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-blue-500" />, show: canSeeScreen('people'), adminOnly: false },
-    { label: 'Leave Management', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: isAdmin, adminOnly: true },
+    { label: 'Leave Control Center', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: isAdmin, adminOnly: true },
     { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: isAdmin, adminOnly: true },
     { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-3 text-emerald-400" />, show: isAdmin, adminOnly: true },
     { label: 'Reports', path: '/reports', icon: <BarChart3 className="w-4 h-4 mr-3 text-rose-400" />, show: isAdmin, adminOnly: true },
