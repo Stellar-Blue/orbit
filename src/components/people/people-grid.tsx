@@ -178,16 +178,15 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
       headerClass: 'bg-amber-50/70 text-amber-800 font-bold',
       children: [
         {
-          headerName: 'ΑΦΜ (Tax ID)', field: 'afm', width: 130, sortable: true, ...excelSetFilter(),
-          cellClass: 'font-mono text-xs text-slate-700',
+          headerName: 'ΑΦΜ (Tax ID)', field: 'afm', width: 165, sortable: true, ...excelSetFilter(),
           cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
-            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+            <BlurredReveal value={p.value} placeholder="—" className="text-xs" />
           )
         },
         {
-          headerName: 'ΑΜΚΑ', field: 'amka', width: 140, sortable: true, ...excelSetFilter(),
+          headerName: 'ΑΜΚΑ', field: 'amka', width: 175, sortable: true, ...excelSetFilter(),
           cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
-            p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
+            <BlurredReveal value={p.value} placeholder="—" className="text-xs" />
           )
         },
         {

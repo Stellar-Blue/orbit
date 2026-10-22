@@ -419,7 +419,7 @@ function MyProfileInner() {
                 ].map(([label, value]) => (
                   <div key={label as string} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">{label}</div>
-                    {label === 'IBAN' ? (
+                    {['ΑΦΜ (Tax ID)', 'ΑΜΚΑ (Social Security)', 'IBAN'].includes(label as string) ? (
                       <BlurredReveal value={value as string | null} className="mt-0.5" />
                     ) : (
                       <div className={`text-sm font-bold text-slate-800 mt-0.5 ${label === 'Bank' ? '' : 'font-mono'}`}>
