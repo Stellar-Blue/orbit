@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ShieldCheck, AlertCircle, Loader2, Zap, Lock, Sparkles } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -10,7 +10,6 @@ import { useAuth } from "@/lib/auth-context";
 function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
   const searchParams = useSearchParams();
-  const router = useRouter();
   const { isDevMode, companyProfile } = useAuth();
 
   const errorCode = searchParams ? searchParams.get("error") : null;
@@ -71,7 +70,11 @@ function LoginContent() {
   const handleDevModeEnter = () => {
     setIsLoading(true);
     const nextTarget = searchParams ? searchParams.get("next") : null;
-    router.push(nextTarget || "/");
+    // The middleware gates the workspace on a real session; this cookie is the only way it lets a
+    // local prototype through, and it is only honoured while DEV_AUTH_MODE is on outside production.
+    document.cookie = "orbit_dev_workspace=1; path=/; SameSite=Lax; max-age=28800";
+    // Full reload, so the layout re-mounts and the provider re-reads its slices for this identity.
+    window.location.assign(nextTarget || "/");
   };
 
   return (

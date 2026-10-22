@@ -2,20 +2,28 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
 /**
- * Slack-onboarding gate (§2.1):
- * routes any profile the admin has marked slack_required (and without
- * onboarding_completed_at, or with a revoked Slack token) to /onboarding for
- * every app route, preserving the intended destination.
- * Users the admin has not flagged as required skip the flow entirely.
- * Active admin exemptions (incl. outage grace) also lift the gate.
- * Disabled entirely in DEV_AUTH_MODE so local mock sessions are unaffected.
+ * Cookie set by the login page's local "Enter Workspace" bypass. Only honoured while
+ * DEV_AUTH_MODE is on outside production, so a first visit still lands on /login.
+ */
+export const DEV_WORKSPACE_COOKIE = 'orbit_dev_workspace';
+
+/**
+ * Session gate + Slack-onboarding gate.
+ *
+ * 1. Anyone without a Supabase session is sent to /login (with `next`), so the workspace can no
+ *    longer be opened by an anonymous visitor — it used to render the app shell with a placeholder
+ *    identity. `/oauth/token` and `/.well-known` are machine endpoints and authenticate themselves.
+ * 2. Slack onboarding (§2.1): a profile the admin has marked slack_required (and without
+ *    onboarding_completed_at, or with a revoked Slack token) is routed to /onboarding for every
+ *    app route, preserving the intended destination. Users not flagged as required skip the flow
+ *    entirely, and active admin exemptions (incl. outage grace) lift the gate.
+ *
+ * Local prototyping (`DEV_AUTH_MODE=true`, non-production) skips both gates, but only after the
+ * login page's dev button has set {@link DEV_WORKSPACE_COOKIE} — opening the app in `npm run dev`
+ * still shows the login page first.
  */
 export async function proxy(request: NextRequest) {
-  if (process.env.DEV_AUTH_MODE === 'true') {
-    return NextResponse.next();
-  }
-
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
 
   // getUser() below rotates the Supabase refresh token. Those new cookies must reach
   // BOTH the route handler (via request) and the browser (via the returned response),
@@ -41,8 +49,32 @@ export async function proxy(request: NextRequest) {
     }
   );
 
+  const devMode = process.env.DEV_AUTH_MODE === 'true' && process.env.NODE_ENV !== 'production';
+  const devWorkspace = devMode && request.cookies.get(DEV_WORKSPACE_COOKIE)?.value === '1';
+  /** Machine endpoints authenticate with their own credentials, never a browser session. */
+  const isMachineRoute = pathname.startsWith('/oauth/token') || pathname.startsWith('/.well-known');
+
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+
+  // No session: the workspace is closed. Nobody — first-time visitor or expired session — may see
+  // it with a placeholder identity, so send them to the login page and remember where they wanted
+  // to go.
+  if (!user && !devWorkspace && !isMachineRoute) {
+    const url = new URL('/login', request.url);
+    if (pathname !== '/') url.searchParams.set('next', pathname + search);
+    const redirect = NextResponse.redirect(url);
+    // Carry any refreshed auth cookies onto the redirect, or this hop drops them.
+    response.cookies.getAll().forEach(c => redirect.cookies.set(c));
+    return redirect;
+  }
+
+  // Local prototype mode (or a machine route): nothing else to gate.
+  if (devMode || !user) {
+    return response;
+  }
+
+  // Onboarding is the Slack gate's own destination; running the gate on it would loop.
+  if (pathname.startsWith('/onboarding')) {
     return response;
   }
 
@@ -98,5 +130,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|login|auth|token|onboarding|favicon.ico|.*\\..*).*)'],
+  matcher: ['/((?!api|_next/static|_next/image|login|auth|token|favicon.ico|.*\\..*).*)'],
 };
