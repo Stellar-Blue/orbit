@@ -4,13 +4,12 @@ import { calculateContractValuation, calculatePeriodAmountsForPeriods } from '@/
 /**
  * Monthly revenue schedule used by the contract registry's "Revenue Schedule & MRR" grid.
  *
- * Every contract contributes two rows, mirroring the Excel revenue budget:
- *  - `contract` — the contract's own charges (stored `contract_schedule`, else the pricing lines);
- *  - `projects` — project-based change requests, i.e. each linked project's budget value spread
- *    evenly over the project's planned (or actual) delivery window.
+ * Every contract contributes a row for its own charges, mirroring the Excel revenue budget, plus one
+ * row per linked project (change request), each with that project's budget value spread evenly over
+ * its planned (or actual) delivery window. A contract without projects has no change-request rows.
  */
 
-export type RevenueStreamKind = 'contract' | 'projects';
+export type RevenueStreamKind = 'contract' | 'project';
 
 export interface RevenueScheduleRow {
   id: string;
@@ -21,10 +20,8 @@ export interface RevenueScheduleRow {
   reference: string;
   /** Contract product, used as the second line under the master agreement. */
   product: string;
-  /** Change requests included in the `projects` row. */
-  projectCount: number;
-  /** Change requests that carry a budget value (the ones that produce monthly revenue). */
-  budgetedProjectCount: number;
+  /** Set on change-request rows: the project behind the CR. */
+  project?: Project;
   /** 'YYYY-MM' → amount. Only charged months are present; missing months are zero. */
   months: Record<string, number>;
 }
@@ -166,45 +163,54 @@ export function contractChargeMonths(
   return months;
 }
 
-/**
- * Project-based change requests: each linked project's budget value is spread evenly across the
- * months it is planned (or actually ran) for, clamped to the contract's own effective window.
- * The last month absorbs the rounding remainder so the row total equals the project value.
- */
-export function contractProjectMonths(
-  contract: Contract,
-  projects: Project[]
-): { months: Record<string, number>; projectCount: number; budgetedProjectCount: number } {
-  const months: Record<string, number> = {};
-  const window = contractEffectiveWindow(contract);
-  const linked = projects.filter(p => p.contract_id === contract.id && p.status !== 'archived');
-  let budgetedProjectCount = 0;
-
-  linked.forEach(project => {
-    const value = Number(project.budget_value) || 0;
-    if (value <= 0) return;
-    budgetedProjectCount += 1;
-
-    const projectStart = toMonthKey(project.starts_on) || toMonthKey(project.actual_start_on) || window.startKey;
-    const projectEnd = toMonthKey(project.ends_on) || toMonthKey(project.actual_end_on) || window.endKey;
-    const startKey = projectStart < window.startKey ? window.startKey : projectStart;
-    const endKey = projectEnd > window.endKey ? window.endKey : projectEnd;
-    const projectMonths = monthKeysBetween(startKey, endKey);
-    if (projectMonths.length === 0) return;
-
-    const perMonth = round2(value / projectMonths.length);
-    projectMonths.forEach((key, index) => {
-      const amount = index === projectMonths.length - 1
-        ? round2(value - perMonth * (projectMonths.length - 1))
-        : perMonth;
-      months[key] = round2((months[key] || 0) + amount);
-    });
-  });
-
-  return { months, projectCount: linked.length, budgetedProjectCount };
+export interface ContractProjectSchedule {
+  project: Project;
+  months: Record<string, number>;
 }
 
-/** Builds the Excel-style grid: month columns, two rows per contract and month totals. */
+/**
+ * One entry per change request (project) under the contract. Each project's budget value is spread
+ * evenly across the months it is planned (or actually ran) for, clamped to the contract's own
+ * effective window; the last month absorbs the rounding remainder so the row total equals the
+ * project value. A project without a budget value still gets a row (with empty months) so the CR
+ * is visible, and archived projects are dropped.
+ */
+export function contractProjectSchedules(
+  contract: Contract,
+  projects: Project[]
+): ContractProjectSchedule[] {
+  const window = contractEffectiveWindow(contract);
+  const linked = projects.filter(p => p.contract_id === contract.id && p.status !== 'archived');
+
+  return linked
+    .sort((a, b) => {
+      const startA = toMonthKey(a.starts_on) || toMonthKey(a.actual_start_on) || '';
+      const startB = toMonthKey(b.starts_on) || toMonthKey(b.actual_start_on) || '';
+      return startA.localeCompare(startB) || a.name.localeCompare(b.name);
+    })
+    .map(project => {
+      const months: Record<string, number> = {};
+      const value = Number(project.budget_value) || 0;
+      if (value <= 0) return { project, months };
+
+      const projectStart = toMonthKey(project.starts_on) || toMonthKey(project.actual_start_on) || window.startKey;
+      const projectEnd = toMonthKey(project.ends_on) || toMonthKey(project.actual_end_on) || window.endKey;
+      const startKey = projectStart < window.startKey ? window.startKey : projectStart;
+      const endKey = projectEnd > window.endKey ? window.endKey : projectEnd;
+      const projectMonths = monthKeysBetween(startKey, endKey);
+      if (projectMonths.length === 0) return { project, months };
+
+      const perMonth = round2(value / projectMonths.length);
+      projectMonths.forEach((key, index) => {
+        months[key] = index === projectMonths.length - 1
+          ? round2(value - perMonth * (projectMonths.length - 1))
+          : perMonth;
+      });
+      return { project, months };
+    });
+}
+
+/** Builds the Excel-style grid: month columns, one CR row per project and month totals. */
 export function buildRevenueSchedule(
   contracts: Contract[],
   projects: Project[],
@@ -226,10 +232,9 @@ export function buildRevenueSchedule(
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
     const charges = contractChargeMonths(contract, catalogModules, catalogItems);
-    const projectBilling = contractProjectMonths(contract, projects);
+    const projectSchedules = contractProjectSchedules(contract, projects);
 
     Object.keys(charges).forEach(key => effectiveMonths.add(key));
-    Object.keys(projectBilling.months).forEach(key => effectiveMonths.add(key));
 
     rows.push({
       id: `${contract.id}::contract`,
@@ -239,21 +244,23 @@ export function buildRevenueSchedule(
       counterparty,
       reference: contract.reference,
       product: contract.product || contract.type || '',
-      projectCount: projectBilling.projectCount,
-      budgetedProjectCount: projectBilling.budgetedProjectCount,
       months: charges,
     });
-    rows.push({
-      id: `${contract.id}::projects`,
-      kind: 'projects',
-      contractId: contract.id,
-      contract,
-      counterparty,
-      reference: contract.reference,
-      product: contract.product || contract.type || '',
-      projectCount: projectBilling.projectCount,
-      budgetedProjectCount: projectBilling.budgetedProjectCount,
-      months: projectBilling.months,
+
+    // One line per change request. A contract without projects contributes no CR rows at all.
+    projectSchedules.forEach(({ project, months }) => {
+      Object.keys(months).forEach(key => effectiveMonths.add(key));
+      rows.push({
+        id: `${contract.id}::project::${project.id}`,
+        kind: 'project',
+        contractId: contract.id,
+        contract,
+        counterparty,
+        reference: contract.reference,
+        product: contract.product || contract.type || '',
+        project,
+        months,
+      });
     });
   });
 

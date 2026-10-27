@@ -135,14 +135,39 @@ const projects = [
 ];
 
 const full = buildRevenueSchedule([contract({ lines: [monthlyLine] })], projects);
-assert(full.rows.length === 2, 'Each contract produces exactly two rows', String(full.rows.length));
-assert(full.rows[0].kind === 'contract' && full.rows[1].kind === 'projects', 'Contract charges come before change requests');
+assert(full.rows.length === 2, 'A contract with one change request produces two rows', String(full.rows.length));
+assert(full.rows[0].kind === 'contract' && full.rows[1].kind === 'project', 'Contract charges come before the change request rows');
 
 const projectRow = full.rows[1];
-assert(projectRow.projectCount === 1, 'Archived projects are excluded from the change-request row');
-assert(projectRow.budgetedProjectCount === 1, 'Only projects with a budget value feed the monthly amounts');
+assert(projectRow.project?.id === 'prj-1', 'Archived projects are excluded');
 assert(projectRow.months['2025-03'] === 2000, 'Project value spreads evenly across its window', String(projectRow.months['2025-03']));
 assert(yearTotalOf(projectRow.months, 2025) === 12000, 'Project row totals the project budget value', yearTotalOf(projectRow.months, 2025));
+
+// A contract with no projects must not produce a change-request line at all.
+const noProjects = buildRevenueSchedule([contract({ lines: [monthlyLine] })], []);
+assert(noProjects.rows.length === 1, 'No projects → only the contract charges row', String(noProjects.rows.length));
+assert(noProjects.rows[0].kind === 'contract', 'The lone row is the contract charges row');
+
+// Each project is its own line: six CRs → one contract row plus six project rows.
+const sixProjects = Array.from({ length: 6 }, (_, index) => ({
+  id: `prj-${index + 1}`, contract_id: 'cnt-1', name: `CR ${index + 1}`, status: 'in_progress',
+  default_billable: true, budget_value: 6000, starts_on: '2025-01-01', ends_on: '2025-06-30',
+}));
+const sixRows = buildRevenueSchedule([contract({ lines: [monthlyLine] })], sixProjects);
+assert(sixRows.rows.length === 7, 'Six change requests produce six project lines', String(sixRows.rows.length));
+assert(sixRows.rows.filter(r => r.kind === 'project').length === 6, 'Every project is a separate row');
+assert(new Set(sixRows.rows.filter(r => r.kind === 'project').map(r => r.project?.id)).size === 6,
+  'Each project row carries a distinct project');
+assert(sixRows.rows.filter(r => r.kind === 'project').every(r => yearTotalOf(r.months, 2025) === 6000),
+  'Each change-request row carries only its own budget value');
+
+const unbudgeted = buildRevenueSchedule(
+  [contract({ lines: [monthlyLine] })],
+  [{ id: 'prj-z', contract_id: 'cnt-1', name: 'No budget CR', status: 'planned', default_billable: true, budget_value: null, starts_on: '2025-01-01', ends_on: '2025-12-31' }]
+);
+assert(unbudgeted.rows.length === 2 && unbudgeted.rows[1].kind === 'project',
+  'A project without a budget value still gets a change-request line');
+assert(Object.keys(unbudgeted.rows[1].months).length === 0, 'An unbudgeted project has no monthly amount');
 
 const remainder = buildRevenueSchedule(
   [contract({ lines: [monthlyLine] })],
@@ -167,7 +192,7 @@ assert(
   'Grid extends from the first effective month to the last effective date',
   `${twoContracts.startKey} → ${twoContracts.endKey}`
 );
-assert(twoContracts.rows.length === 4, 'Two contracts produce four rows');
+assert(twoContracts.rows.length === 2, 'Contracts without projects produce one row each');
 
 const grouped = groupMonthsByYear(twoContracts.months);
 assert(grouped.length === 3 && grouped[0].year === 2024 && grouped[2].months.length === 3,
