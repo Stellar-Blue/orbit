@@ -18,7 +18,7 @@ import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
-import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods, type BillingPeriodItem } from '@/lib/billing-periods';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
@@ -613,9 +613,9 @@ export default function ContractsRegistryPage() {
           icon={<DollarSign className="w-5 h-5 text-amber-600" />}
         />
         <StatCard 
-          title="Action Required (Next 90 Days)" 
-          value={`${urgentAlerts} Notice Windows`}
-          subtitle="Critical deadline monitoring active"
+          title={`Action Required (Next ${NOTICE_ALERT_WINDOW_DAYS} Days)`}
+          value={`${urgentAlerts} Notice Window${urgentAlerts === 1 ? '' : 's'}`}
+          subtitle={urgentAlerts > 0 ? 'Notice deadlines open or already missed' : 'Critical deadline monitoring active'}
           icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
         />
       </div>
@@ -1080,16 +1080,42 @@ export default function ContractsRegistryPage() {
                   </div>
                 </div>
 
-                {/* Notice Window Warning Box */}
-                <div className="p-4 rounded-2xl bg-rose-50/90 border border-rose-200/90 space-y-2 shadow-xs">
-                  <div className="flex items-center justify-between text-rose-900 font-extrabold text-xs uppercase tracking-wide">
-                    <span className="flex items-center"><AlertTriangle className="w-4 h-4 mr-2 text-rose-600 shrink-0" /> Notice Window Alarm</span>
-                    <span className="font-mono bg-rose-100 px-2 py-0.5 rounded text-rose-950">{selectedContract.notice_deadline}</span>
-                  </div>
-                  <p className="text-xs text-rose-900/90 leading-relaxed">
-                    This contract requires a <strong className="font-extrabold underline">{selectedContract.notice_period_days}-day advance written notice</strong> prior to {selectedContract.ends_on} to cancel or renegotiate terms.
-                  </p>
-                </div>
+                {/* Notice Window Warning Box — only while the window is open or was missed */}
+                {(() => {
+                  const notice = getContractNoticeStatus(selectedContract);
+                  if (!notice.isUrgent) return null;
+                  const overdue = notice.daysUntilNotice < 0;
+                  const days = Math.abs(notice.daysUntilNotice);
+                  return (
+                    <div className={`p-4 rounded-2xl border space-y-2 shadow-xs ${overdue ? 'bg-rose-50/90 border-rose-200/90' : 'bg-amber-50/90 border-amber-200/90'}`}>
+                      <div className={`flex items-center justify-between font-extrabold text-xs uppercase tracking-wide ${overdue ? 'text-rose-900' : 'text-amber-900'}`}>
+                        <span className="flex items-center">
+                          <AlertTriangle className={`w-4 h-4 mr-2 shrink-0 ${overdue ? 'text-rose-600' : 'text-amber-600'}`} />
+                          {overdue ? 'Notice Window Missed' : 'Notice Window Open'}
+                        </span>
+                        <span className={`font-mono px-2 py-0.5 rounded ${overdue ? 'bg-rose-100 text-rose-950' : 'bg-amber-100 text-amber-950'}`}>
+                          {notice.noticeDeadlineStr}
+                        </span>
+                      </div>
+                      <p className={`text-xs leading-relaxed ${overdue ? 'text-rose-900/90' : 'text-amber-900/90'}`}>
+                        {overdue ? (
+                          <>
+                            The <strong className="font-extrabold underline">{selectedContract.notice_period_days}-day notice deadline</strong> passed{' '}
+                            <strong className="font-extrabold">{days} day{days === 1 ? '' : 's'} ago</strong>. The agreement ends{' '}
+                            <strong className="font-extrabold">{selectedContract.ends_on}</strong>
+                            {selectedContract.auto_renews ? ' and auto-renews unless it is renegotiated now.' : ' — confirm the exit or renewal terms now.'}
+                          </>
+                        ) : (
+                          <>
+                            <strong className="font-extrabold">{days} day{days === 1 ? '' : 's'}</strong> left to serve the{' '}
+                            <strong className="font-extrabold underline">{selectedContract.notice_period_days}-day written notice</strong> before{' '}
+                            <strong className="font-extrabold">{selectedContract.ends_on}</strong> to cancel or renegotiate.
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Signed Document Dossier — any number of signed copies per contract */}
                 <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3.5">

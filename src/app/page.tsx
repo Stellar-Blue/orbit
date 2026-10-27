@@ -19,7 +19,7 @@ import {
   ShieldCheck, Building2, Info, X, RefreshCw
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
-import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
+import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
 import { loadedMonthlyCost, isBaseSalary, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
 
@@ -346,7 +346,7 @@ export default function DashboardPage() {
               {urgentContracts.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
                   <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
-                  No contract notice deadlines closing within the next 60 days. All commercial renewals are secure!
+                  No contract notice deadlines closing within the next {NOTICE_ALERT_WINDOW_DAYS} days. All commercial renewals are secure!
                 </div>
               ) : (
                 <div className="space-y-3 mt-1">

@@ -21,7 +21,8 @@
     "test:bankrefs": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-bank-references.mjs",
     "test:msal": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-msal-redirect.mjs",
     "test:deepseek": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-deepseek-extraction.mjs",
-    "test:schedule": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-revenue-schedule.mjs"
+    "test:schedule": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-revenue-schedule.mjs",
+    "test:notices": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-contract-notices.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

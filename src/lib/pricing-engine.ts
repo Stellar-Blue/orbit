@@ -726,6 +726,16 @@ export function calculateUnbilledProjectCharge(
   };
 }
 
+/**
+ * How close a notice window has to be before it is "action required". The registry's KPI and the
+ * home alert card both read this, so the wording and the count can never drift apart.
+ */
+export const NOTICE_ALERT_WINDOW_DAYS = 90;
+
+/** Local `YYYY-MM-DD` — `toISOString()` would report the previous day east of UTC. */
+const toNoticeYmd = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
 export function getContractNoticeStatus(contract: {
   status?: string;
   ends_on?: string;
@@ -733,14 +743,18 @@ export function getContractNoticeStatus(contract: {
   notice_deadline?: string;
 }) {
   let deadlineDate: Date | null = null;
+  let endsDate: Date | null = null;
   let noticeDeadlineStr = contract.notice_deadline || 'Indefinite';
 
   if (contract.ends_on) {
-    const endsDate = new Date(contract.ends_on + 'T00:00:00');
-    if (!isNaN(endsDate.getTime())) {
-      const days = Number(contract.notice_period_days) || 30;
-      deadlineDate = new Date(endsDate.getTime() - days * 86400000);
-      noticeDeadlineStr = deadlineDate.toISOString().split('T')[0];
+    const parsed = new Date(contract.ends_on + 'T00:00:00');
+    if (!isNaN(parsed.getTime())) {
+      endsDate = parsed;
+      // 0 notice days means "notice falls on the end date", not "use the 30-day default".
+      const days = contract.notice_period_days == null ? 30 : Number(contract.notice_period_days);
+      // Subtract calendar days (not milliseconds) so DST transitions cannot shift the deadline.
+      deadlineDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate() - (Number.isFinite(days) ? days : 30));
+      noticeDeadlineStr = toNoticeYmd(deadlineDate);
     }
   } else if (contract.notice_deadline && contract.notice_deadline !== 'Indefinite') {
     deadlineDate = new Date(contract.notice_deadline + 'T00:00:00');
@@ -750,19 +764,28 @@ export function getContractNoticeStatus(contract: {
   }
 
   if (!deadlineDate || isNaN(deadlineDate.getTime())) {
-    return { isUrgent: false, daysUntilNotice: Infinity, noticeDeadlineStr: 'Indefinite' };
+    return { isUrgent: false, daysUntilNotice: Infinity, daysUntilEnd: Infinity, noticeDeadlineStr: 'Indefinite' };
   }
 
   const today = new Date();
-  const diffTime = deadlineDate.setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0);
-  const daysUntilNotice = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const todayMidnight = today.setHours(0, 0, 0, 0);
+  const deadlineMidnight = deadlineDate.setHours(0, 0, 0, 0);
+  const daysUntilNotice = Math.round((deadlineMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
+  const daysUntilEnd = endsDate
+    ? Math.round((new Date(endsDate).setHours(0, 0, 0, 0) - todayMidnight) / (1000 * 60 * 60 * 24))
+    : Infinity;
 
+  // Action required once the window is inside the alert horizon — and it stays required after the
+  // deadline is missed, for as long as the contract is still running. A contract that has already
+  // ended has nothing left to serve, so it drops out even if its status was never updated.
   const isUrgent = (contract.status === 'active' || contract.status === 'expiring' || contract.status === 'in_negotiation') &&
-                   daysUntilNotice <= 60 && daysUntilNotice >= -30;
+                   daysUntilEnd >= 0 &&
+                   daysUntilNotice <= NOTICE_ALERT_WINDOW_DAYS;
 
   return {
     isUrgent,
     daysUntilNotice,
+    daysUntilEnd,
     noticeDeadlineStr
   };
 }
