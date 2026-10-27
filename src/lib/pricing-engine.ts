@@ -1,4 +1,4 @@
-import { Contract, ContractLine, ContractLineGroup, CatalogModule, CatalogItem, TimeEntry } from '@/lib/types';
+import type { Contract, ContractLine, ContractLineGroup, CatalogModule, CatalogItem, TimeEntry } from '@/lib/types';
 
 export interface ContractTierResult {
   tier: number;
@@ -280,7 +280,6 @@ export function calculatePeriodAmounts(
   catalogItems: CatalogItem[] = [],
   groups: Array<Partial<ContractLineGroup>> = []
 ): ContractPeriodAmount[] {
-  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
   const startObj = new Date(startDate || new Date());
   const startYear = startObj.getFullYear();
@@ -291,6 +290,23 @@ export function calculatePeriodAmounts(
     periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
 
+  return calculatePeriodAmountsForPeriods(lines, discountPct, periods, catalogModules, catalogItems, groups);
+}
+
+/**
+ * The same schedule as `calculatePeriodAmounts`, but for an explicit list of 'YYYY-MM' periods.
+ * Used where the term comes from real contract dates (e.g. service start → effective end) rather
+ * than a whole number of years, so fractional-term rounding can never drop the last month.
+ */
+export function calculatePeriodAmountsForPeriods(
+  lines: Array<Partial<ContractLine>>,
+  discountPct: number,
+  periods: string[],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = [],
+  groups: Array<Partial<ContractLineGroup>> = []
+): ContractPeriodAmount[] {
+  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const groupFloors = buildGroupFloorMap(groups);
   const result: ContractPeriodAmount[] = [];
 

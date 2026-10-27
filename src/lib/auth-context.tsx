@@ -430,9 +430,10 @@ const signInvoiceDocuments = async (
 /**
  * Phone numbers the caller is allowed to see: every row for an admin, own row for an employee.
  * `profiles.phone` is revoked from `authenticated` (migration 20260917120000), so `select('*')` on
- * profiles no longer returns it — the value is merged in from this admin/self-only view instead.
+ * profiles no longer returns it — the value is merged in from the admin/self-only RLS table
+ * `profile_phones` instead (a row-level-secured mirror, migration 20261027104737).
  *
- * Returns `null` when the view itself is unavailable (migration not applied yet, or a transient
+ * Returns `null` when the lookup itself is unavailable (migration not applied yet, or a transient
  * error): callers then keep the phone that came back with the row, which is what the table still
  * provides before the revoke lands. Never return an empty map for "unavailable" — that would wipe
  * every phone number on load.
@@ -443,7 +444,7 @@ const fetchProfilePhones = async (
   try {
     const { data, error } = await supabase.from('profile_phones').select('id, phone');
     if (error) {
-      console.warn('[profiles] phone view unavailable, using row values:', error.message);
+      console.warn('[profiles] phone directory unavailable, using row values:', error.message);
       return null;
     }
     return new Map((data || []).map((r: { id: string; phone: string | null }) => [r.id, r.phone]));

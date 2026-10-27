@@ -31,3 +31,17 @@ body {
 .ag-filter-menu .ag-set-filter-list {
   min-width: min(340px, 92vw);
 }
+
+/* Revenue schedule grid: keep the calendar month you are in visible across the long month run. */
+.orbit-schedule-current-header {
+  background-color: #fff7ed !important;
+  color: #b45309 !important;
+}
+
+.orbit-schedule-current-cell {
+  background-color: #fffbf5;
+}
+
+.ag-row-pinned .orbit-schedule-current-cell {
+  background-color: #fff7ed;
+}

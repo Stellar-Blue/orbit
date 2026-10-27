@@ -22,7 +22,7 @@ import { calculateContractValuation, getContractNoticeStatus } from '@/lib/prici
 import { buildDraftInvoicePayload, getContractBillingPeriods, type BillingPeriodItem } from '@/lib/billing-periods';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
-const RevenueGrid = dynamic(() => import('@/components/contracts/revenue-grid').then(m => m.RevenueGrid), { ssr: false });
+const RevenueScheduleGrid = dynamic(() => import('@/components/contracts/revenue-schedule-grid').then(m => m.RevenueScheduleGrid), { ssr: false });
 
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard, timesheets, addInvoice, refreshInvoices } = useAuth();
@@ -265,6 +265,10 @@ export default function ContractsRegistryPage() {
     return matchesDirection && matchesStatus;
   });
 
+  // The revenue schedule mirrors the Excel revenue budget: every client agreement, across its own
+  // effective dates. The reporting period and the direction filter intentionally do not apply.
+  const revenueContracts = contracts.filter(c => c.direction === 'revenue');
+
   // `contracts.value` holds the deal's total contract value (TCV) as computed by the pricing sheet,
   // so a multi-year deal must be annualised before it can be reported as yearly revenue.
   const annualValue = (c: Contract): number => calculateContractValuation(
@@ -385,7 +389,8 @@ export default function ContractsRegistryPage() {
         </div>
       </div>
 
-      {/* Reporting Period */}
+      {/* Reporting Period — the revenue schedule spans the contracts' own effective dates instead */}
+      {viewMode !== 'revenue' && (
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-white border border-slate-200 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-slate-400">
@@ -423,6 +428,7 @@ export default function ContractsRegistryPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* KPI & Notice Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -607,6 +613,15 @@ export default function ContractsRegistryPage() {
             );
           })}
         </div>
+      ) : viewMode === 'revenue' ? (
+        /* REVENUE SCHEDULE (Excel-style monthly grid) */
+        <RevenueScheduleGrid
+          contracts={revenueContracts}
+          projects={projects}
+          catalogModules={catalogModules}
+          catalogItems={catalogItems}
+          onOpenContract={setSelectedContract}
+        />
       ) : (
         /* TABLE LIST VIEW (AG GRID) */
         <ContractsGrid
