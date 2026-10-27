@@ -19,8 +19,10 @@ import {
   buildInvoiceCoverage,
   invoiceCellKey,
   invoiceCellStyle,
-  invoiceCoverageLabel,
+  invoiceVarianceTone,
+  type InvoiceCellCoverage,
   type InvoiceCoverageMap,
+  type InvoiceVarianceTone,
 } from '@/lib/invoice-coverage';
 import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users, AlertTriangle, X } from 'lucide-react';
 
@@ -46,6 +48,33 @@ const formatAmount = (value: number | null | undefined) => {
 
 const formatTotal = (value: number | null | undefined) =>
   `€${(Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+const formatSignedAmount = (value: number) => `${value < 0 ? '−' : '+'}${formatTotal(Math.abs(value))}`;
+
+/** Badge colours for the invoiced-vs-contract comparison: short, exact, or over-billed. */
+/** Month cells carry a badge above the amount, so they keep a slimmer padding than AG Grid's default. */
+const MONTH_CELL_PADDING = { paddingLeft: 2, paddingRight: 6 };
+
+const VARIANCE_TONES: Record<InvoiceVarianceTone, { background: string; color: string }> = {
+  match: { background: 'rgba(21, 128, 61, 0.16)', color: '#14532d' },
+  under: { background: 'rgba(244, 63, 94, 0.16)', color: '#9f1239' },
+  over: { background: 'rgba(245, 158, 11, 0.22)', color: '#92400e' },
+};
+
+function coverageTooltip(coverage: InvoiceCellCoverage): string {
+  const tone = invoiceVarianceTone(coverage);
+  const comparison = tone === 'match'
+    ? 'matches the contract'
+    : `variance ${formatSignedAmount(coverage.variance)}`;
+  return [
+    `Invoiced ${formatTotal(coverage.invoiceTotal)}`,
+    `contract ${formatTotal(coverage.contractTotal)}`,
+    comparison,
+    coverage.invoices.join(', '),
+    `issued ${coverage.issueDate || '—'}`,
+    coverage.paid ? 'paid' : 'not paid yet',
+  ].join(' · ');
+}
 
 interface YearStore {
   getYear: () => number;
@@ -370,9 +399,10 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       valueFormatter: params => formatAmount(params.value),
       cellStyle: params => {
         const data = params.data;
-        if (!data || data.kind !== 'contract') return undefined;
-        const coverage = invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key));
-        return coverage ? invoiceCellStyle(coverage, key) : undefined;
+        const coverage = data && data.kind === 'contract'
+          ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
+          : undefined;
+        return coverage ? { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key) } : MONTH_CELL_PADDING;
       },
       cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
         const data = params.data;
@@ -381,25 +411,54 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           : undefined;
         const text = formatAmount(Number(params.value) || 0);
         if (!coverage) return <span>{text}</span>;
+
+        const tone = invoiceVarianceTone(coverage);
+        const showBadge = key === coverage.firstMonth;
+        const showMarker = coverage.markerMonth === key;
         const markerAlign = coverage.markerPosition === 'start'
-          ? { left: 2 }
+          ? 'flex-start'
           : coverage.markerPosition === 'end'
-            ? { right: 2 }
-            : { left: '50%', transform: 'translateX(-50%)' };
+            ? 'flex-end'
+            : 'center';
+
         return (
           <span
-            title={invoiceCoverageLabel(coverage)}
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', height: '100%' }}
+            title={coverageTooltip(coverage)}
+            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, height: '100%' }}
           >
-            <span>{text}</span>
-            {coverage.markerMonth === key && (
+            {(showBadge || showMarker) && (
               <span
-                aria-hidden
-                style={{ position: 'absolute', bottom: 0, fontSize: 11, lineHeight: 1, fontWeight: 900, color: coverage.paid ? '#14532d' : '#15803d', ...markerAlign }}
+                style={{
+                  display: 'flex', alignItems: 'center', height: 10, lineHeight: '10px',
+                  justifyContent: showBadge ? (showMarker ? 'space-between' : 'flex-start') : markerAlign,
+                }}
               >
-                *
+                {showBadge && (
+                  <span
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 2, padding: '0 3px', borderRadius: 3,
+                      fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                      pointerEvents: 'none', ...VARIANCE_TONES[tone],
+                    }}
+                  >
+                    <span>{formatTotal(coverage.invoiceTotal)}</span>
+                    {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
+                  </span>
+                )}
+                {showMarker && (
+                  <span
+                    aria-hidden
+                    style={{
+                      fontSize: 10, lineHeight: 1, fontWeight: 900,
+                      color: coverage.paid ? '#14532d' : '#15803d',
+                    }}
+                  >
+                    *
+                  </span>
+                )}
               </span>
             )}
+            <span style={{ display: 'block', textAlign: 'right', lineHeight: '13px' }}>{text}</span>
           </span>
         );
       },
@@ -630,6 +689,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                 <span className="inline-flex items-center gap-1">
                   <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30 ring-1 ring-emerald-700/60" /> Paid
                 </span>
+                <span className="text-slate-400">badge: invoiced € vs contract</span>
               </>
             )}
             {HAS_AG_GRID_LICENSE && <span className="text-slate-400">Shift+click to sum cells</span>}

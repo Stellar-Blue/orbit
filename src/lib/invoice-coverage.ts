@@ -11,6 +11,7 @@ import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenu
 export type InvoiceMarkerPosition = 'start' | 'middle' | 'end';
 
 export interface InvoiceCellCoverage {
+  contractId: string;
   paid: boolean;
   firstMonth: string;
   lastMonth: string;
@@ -21,7 +22,15 @@ export interface InvoiceCellCoverage {
   invoices: string[];
   /** Most recent issue date among the covering invoices. */
   issueDate: string;
+  /** Invoice net (EUR) of every invoice covering the box. */
+  invoiceTotal: number;
+  /** The contract's own charges over the box's months — what should have been billed. */
+  contractTotal: number;
+  /** `invoiceTotal - contractTotal`; 0 when the invoice matches the schedule. */
+  variance: number;
 }
+
+export type InvoiceVarianceTone = 'match' | 'under' | 'over';
 
 export type InvoiceCoverageMap = Map<string, InvoiceCellCoverage>;
 
@@ -29,6 +38,23 @@ export const invoiceCellKey = (contractId: string, month: string) => `${contract
 
 const INACTIVE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>(['draft', 'cancelled']);
 const MAX_INVOICE_LABELS = 3;
+/** Anything under half a euro is rounding noise, not a billing mismatch. */
+const MATCH_TOLERANCE = 0.5;
+
+const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
+/** Invoice net converted to the EUR the contract schedule is expressed in. */
+export function invoiceAmountEur(invoice: Invoice): number {
+  const net = Number(invoice.net) || 0;
+  const rate = Number(invoice.fx_rate) || 1;
+  return round2(invoice.currency && invoice.currency !== 'EUR' ? net * rate : net);
+}
+
+/** Which badge colour the invoice/contract comparison earns. */
+export function invoiceVarianceTone(coverage: InvoiceCellCoverage): InvoiceVarianceTone {
+  if (Math.abs(coverage.variance) < MATCH_TOLERANCE) return 'match';
+  return coverage.variance < 0 ? 'under' : 'over';
+}
 
 /** Inclusive 'YYYY-MM' months the invoice bills, falling back to its issue month. */
 export function invoiceCoveredMonths(invoice: Invoice): string[] {
@@ -125,6 +151,15 @@ export function buildInvoiceCoverage(
     .sort((a, b) => String(a.issue_date || '').localeCompare(String(b.issue_date || '')) || a.id.localeCompare(b.id));
 
   const covered: InvoiceCoverageMap = new Map();
+  const chargesByContract = new Map<string, Record<string, number>>();
+  const chargesFor = (contract: Contract) => {
+    let charges = chargesByContract.get(contract.id);
+    if (!charges) {
+      charges = contractChargeMonths(contract, catalogModules, catalogItems);
+      chargesByContract.set(contract.id, charges);
+    }
+    return charges;
+  };
 
   ordered.forEach(invoice => {
     const months = invoiceCoveredMonths(invoice);
@@ -151,12 +186,14 @@ export function buildInvoiceCoverage(
     const isPaid = invoice.status === 'paid';
     const issueDate = invoice.issue_date || '';
     const label = invoice.invoice_number || invoice.id;
+    const amount = invoiceAmountEur(invoice);
 
     months.forEach(month => {
       const key = invoiceCellKey(contract.id, month);
       const existing = covered.get(key);
       if (!existing) {
         covered.set(key, {
+          contractId: contract.id,
           paid: isPaid,
           firstMonth,
           lastMonth,
@@ -164,6 +201,9 @@ export function buildInvoiceCoverage(
           markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
           invoices: [label],
           issueDate,
+          invoiceTotal: amount,
+          contractTotal: 0,
+          variance: 0,
         });
         return;
       }
@@ -172,6 +212,7 @@ export function buildInvoiceCoverage(
       const mergedLast = lastMonth > existing.lastMonth ? lastMonth : existing.lastMonth;
       const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
       covered.set(key, {
+        contractId: contract.id,
         paid: existing.paid && isPaid,
         firstMonth: mergedFirst,
         lastMonth: mergedLast,
@@ -181,8 +222,22 @@ export function buildInvoiceCoverage(
           ? existing.invoices
           : [...existing.invoices, label].slice(-MAX_INVOICE_LABELS),
         issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
+        invoiceTotal: round2(existing.invoiceTotal + amount),
+        contractTotal: 0,
+        variance: 0,
       });
     });
+  });
+
+  // The comparison only makes sense once a box has absorbed every overlapping invoice, so the
+  // contract side is summed over the final month range in a second pass.
+  covered.forEach(entry => {
+    const contract = contractsById.get(entry.contractId);
+    const charges = contract ? chargesFor(contract) : {};
+    entry.contractTotal = round2(
+      monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (charges[month] || 0), 0)
+    );
+    entry.variance = round2(entry.invoiceTotal - entry.contractTotal);
   });
 
   return covered;
@@ -198,9 +253,4 @@ export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): 
     backgroundColor: coverage.paid ? 'rgba(22, 163, 74, 0.28)' : 'rgba(34, 197, 94, 0.13)',
     boxShadow: shadows.join(', '),
   };
-}
-
-export function invoiceCoverageLabel(coverage: InvoiceCellCoverage): string {
-  const status = coverage.paid ? 'paid' : 'not paid yet';
-  return `Invoiced ${coverage.issueDate || '—'} · ${status} · ${coverage.invoices.join(', ')}`;
 }

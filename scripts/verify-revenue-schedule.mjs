@@ -18,9 +18,11 @@ import {
 } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
+  invoiceAmountEur,
   invoiceCellStyle,
   invoiceCoveredMonths,
   invoiceMarkerPosition,
+  invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
 
 let passed = 0;
@@ -262,6 +264,33 @@ assert(
   JSON.stringify(january)
 );
 
+assert(
+  january?.invoiceTotal === 3000 && january.contractTotal === 3000 &&
+    january.variance === 0 && invoiceVarianceTone(january) === 'match',
+  'The box compares the invoice net against the contract charges for the same months',
+  `invoice ${january?.invoiceTotal} · contract ${january?.contractTotal}`
+);
+
+const shortfall = buildInvoiceCoverage([invoice({ net: 2500 })], [baseContract]).get('cnt-1:2025-01');
+assert(
+  shortfall?.variance === -500 && invoiceVarianceTone(shortfall) === 'under',
+  'An invoice below the schedule reports a negative variance',
+  String(shortfall?.variance)
+);
+
+const overBilled = buildInvoiceCoverage([invoice({ net: 3500 })], [baseContract]).get('cnt-1:2025-01');
+assert(
+  overBilled?.variance === 500 && invoiceVarianceTone(overBilled) === 'over',
+  'An invoice above the schedule reports a positive variance',
+  String(overBilled?.variance)
+);
+
+assert(
+  invoiceAmountEur(invoice({ currency: 'USD', fx_rate: 0.9, net: 1000 })) === 900,
+  'Foreign-currency invoices convert to EUR before the comparison',
+  String(invoiceAmountEur(invoice({ currency: 'USD', fx_rate: 0.9, net: 1000 })))
+);
+
 const paidCoverage = buildInvoiceCoverage([invoice({ status: 'paid' })], [baseContract]);
 const paidStyle = invoiceCellStyle(paidCoverage.get('cnt-1:2025-02'), '2025-02');
 assert(
@@ -328,6 +357,11 @@ assert(
     february.invoices.length === 2,
   'Overlapping invoices merge into one box and an unpaid invoice keeps it light',
   JSON.stringify(february)
+);
+assert(
+  february?.invoiceTotal === 6000 && february.contractTotal === 3000 && february.variance === 3000,
+  'A merged box adds both invoice nets against the merged contract range',
+  `invoice ${february?.invoiceTotal} · contract ${february?.contractTotal}`
 );
 
 const lateInvoice = buildInvoiceCoverage([invoice({ issue_date: '2025-05-10' })], [baseContract]);
