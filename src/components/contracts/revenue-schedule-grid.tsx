@@ -19,6 +19,7 @@ import {
   buildInvoiceCoverage,
   invoiceCellKey,
   invoiceCellStyle,
+  invoiceMarkerColor,
   invoiceVarianceTone,
   type InvoiceCellCoverage,
   type InvoiceCoverageMap,
@@ -679,7 +680,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   aria-hidden
                   style={{
                     fontSize: 10, lineHeight: 1, fontWeight: 900,
-                    color: coverage.draft ? '#475569' : coverage.paid ? '#14532d' : '#15803d',
+                    color: invoiceMarkerColor(coverage),
                   }}
                 >
                   *
@@ -966,7 +967,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             {invoiceCoverage.size > 0 && (
               <>
                 <span className="inline-flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/15 ring-1 ring-emerald-500/40" /> Invoiced
+                  <span className="w-2.5 h-2.5 rounded-sm bg-fuchsia-500/10 ring-1 ring-fuchsia-700/50" /> Invoiced
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30 ring-1 ring-emerald-700/60" /> Paid

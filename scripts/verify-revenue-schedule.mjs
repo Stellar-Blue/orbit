@@ -25,6 +25,7 @@ import {
   invoiceAmountEur,
   invoiceCellStyle,
   invoiceCoveredMonths,
+  invoiceMarkerColor,
   invoiceMarkerPosition,
   invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
@@ -443,6 +444,26 @@ assert(
   'A draft is compared against the contract like any other invoice',
   `invoice ${draftCell?.invoiceTotal}`
 );
+// Unpaid boxes are magenta, paid boxes green — the two states must never look alike.
+const unpaidStyle = invoiceCellStyle(january, '2025-01');
+assert(
+  unpaidStyle.backgroundColor === INVOICE_BOX_COLORS.issued.fill &&
+    unpaidStyle.boxShadow.includes(INVOICE_BOX_COLORS.issued.line),
+  'An invoiced-but-unpaid box uses the issued palette',
+  unpaidStyle.backgroundColor
+);
+assert(
+  INVOICE_BOX_COLORS.issued.fill !== INVOICE_BOX_COLORS.paid.fill &&
+    INVOICE_BOX_COLORS.issued.line !== INVOICE_BOX_COLORS.paid.line,
+  'The unpaid palette is distinct from the paid one'
+);
+assert(
+  invoiceMarkerColor(january) === INVOICE_BOX_COLORS.issued.marker &&
+    invoiceMarkerColor(january) !== invoiceMarkerColor({ ...january, paid: true }) &&
+    invoiceMarkerColor({ ...january, draft: true }) === INVOICE_BOX_COLORS.draft.marker,
+  'The issue-month marker follows the box state'
+);
+
 const draftStyle = invoiceCellStyle(draftCell, '2025-01');
 assert(
   draftStyle.backgroundColor === INVOICE_BOX_COLORS.draft.fill &&
@@ -503,10 +524,10 @@ const paidCoverage = buildInvoiceCoverage([invoice({ status: 'paid' })], [baseCo
 const paidStyle = invoiceCellStyle(paidCoverage.get('cnt-1:2025-02'), '2025-02');
 assert(
   paidCoverage.get('cnt-1:2025-02')?.paid === true &&
-    paidStyle.backgroundColor === 'rgba(22, 163, 74, 0.28)' &&
-    invoiceCellStyle(january, '2025-02').backgroundColor === 'rgba(34, 197, 94, 0.13)',
-  'Paid invoices get the bolder green',
-  paidStyle.backgroundColor
+    paidStyle.backgroundColor === INVOICE_BOX_COLORS.paid.fill &&
+    invoiceCellStyle(january, '2025-02').backgroundColor === INVOICE_BOX_COLORS.issued.fill,
+  'Paid invoices get the bolder green, unpaid ones the magenta wash',
+  `${paidStyle.backgroundColor} vs ${invoiceCellStyle(january, '2025-02').backgroundColor}`
 );
 assert(
   invoiceCellStyle(january, '2025-01').boxShadow.includes('inset 2px 0 0') &&

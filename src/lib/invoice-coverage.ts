@@ -265,12 +265,21 @@ export function buildInvoiceCoverage(
   return covered;
 }
 
-/** Box colours per invoice state: paid (bold green), issued (light green), draft (neutral slate). */
+/** Box colours per invoice state: paid (bold green), issued but unpaid (light magenta), draft (slate). */
 export const INVOICE_BOX_COLORS = {
-  paid: { line: 'rgba(21, 128, 61, 0.85)', fill: 'rgba(22, 163, 74, 0.28)' },
-  issued: { line: 'rgba(22, 163, 74, 0.55)', fill: 'rgba(34, 197, 94, 0.13)' },
-  draft: { line: 'rgba(100, 116, 139, 0.7)', fill: 'rgba(100, 116, 139, 0.12)' },
+  paid: { line: 'rgba(21, 128, 61, 0.85)', fill: 'rgba(22, 163, 74, 0.28)', marker: '#14532d' },
+  issued: { line: 'rgba(162, 28, 175, 0.55)', fill: 'rgba(217, 70, 239, 0.12)', marker: '#a21caf' },
+  draft: { line: 'rgba(100, 116, 139, 0.7)', fill: 'rgba(100, 116, 139, 0.12)', marker: '#475569' },
 } as const;
+
+/** Colour of the issue-month asterisk, so it always agrees with its box. */
+export function invoiceMarkerColor(coverage: InvoiceCellCoverage): string {
+  return coverage.draft
+    ? INVOICE_BOX_COLORS.draft.marker
+    : coverage.paid
+      ? INVOICE_BOX_COLORS.paid.marker
+      : INVOICE_BOX_COLORS.issued.marker;
+}
 
 /** Inline style painting one cell of the invoice box; contiguous cells share the box outline. */
 export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): Record<string, string> {
