@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { type ColDef, type ICellRendererParams, type ValueFormatterParams } from 'ag-grid-community';
+import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { JobRole, Profile, ProfileRoleHistory, SeniorityLevel, Team } from '@/lib/types';
@@ -27,7 +27,6 @@ interface PeopleRow {
   bankName: string;
   bankSwift: string;
   address: string;
-  birthDate: string;
   idNumber: string;
   currentRole: string;
   seniority: string;
@@ -90,7 +89,6 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         bankName: p.sensitive?.bank_name || '',
         bankSwift: (p.sensitive?.bank_swift || '').toUpperCase(),
         address: p.sensitive?.address || '',
-        birthDate: p.sensitive?.birth_date || '',
         idNumber: p.sensitive?.id_number || '',
         currentRole: current?.role || 'Unassigned',
         seniority: current?.seniority || '—',
@@ -212,11 +210,6 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
           cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
             p.value ? <span className="font-mono text-xs">{p.value}</span> : <span className="text-slate-300 text-xs">—</span>
           )
-        },
-        {
-          headerName: 'Birth Date', field: 'birthDate', width: 125, sortable: true, ...excelSetFilter(),
-          valueFormatter: (p: ValueFormatterParams<PeopleRow, string>) => (p.data && p.value ? formatDate(p.value) : ''),
-          cellClass: 'font-mono text-xs text-slate-600'
         },
         {
           headerName: 'ID Number', field: 'idNumber', width: 130, sortable: true, ...excelSetFilter(),
