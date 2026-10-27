@@ -31,6 +31,9 @@ import {
   type InvoiceSuggestion,
 } from '@/lib/invoice-suggestions';
 import type { BillingPeriodItem } from '@/lib/billing-periods';
+import { Modal, Badge } from '@/components/ui/primitives';
+import { formatMoney } from '@/lib/currency';
+import { formatDate } from '@/lib/date';
 import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
@@ -167,6 +170,104 @@ function CounterpartyStreamRenderer(params: ICellRendererParams<RevenueScheduleR
   );
 }
 
+const INVOICE_STATUS_LABELS: Record<string, { label: string; variant: 'success' | 'warning' | 'error' | 'info' | 'neutral' }> = {
+  draft: { label: 'Draft', variant: 'neutral' },
+  registered: { label: 'Registered', variant: 'info' },
+  sent_received: { label: 'Sent', variant: 'info' },
+  partially_paid: { label: 'Partially paid', variant: 'warning' },
+  paid: { label: 'Paid', variant: 'success' },
+  disputed: { label: 'Disputed', variant: 'error' },
+  resolved: { label: 'Resolved', variant: 'success' },
+  cancelled: { label: 'Cancelled', variant: 'neutral' },
+};
+
+/**
+ * Read-only peek at the invoices behind a green box. Opened from the amount badge so the schedule
+ * stays on screen — the register is never navigated away from.
+ */
+function InvoicePeekModal({ invoices, contract, onClose }: {
+  invoices: Invoice[];
+  contract?: Contract;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  if (invoices.length === 0) return null;
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="md"
+      title={invoices.length === 1 ? `Invoice ${invoices[0].invoice_number}` : `${invoices.length} invoices`}
+    >
+      <div className="space-y-3">
+        {invoices.map(invoice => {
+          const status = INVOICE_STATUS_LABELS[invoice.status] || { label: invoice.status, variant: 'neutral' as const };
+          return (
+            <div key={invoice.id} className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-mono text-sm font-black text-slate-900 truncate">{invoice.invoice_number}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {invoice.counterparty?.legal_name || '—'}
+                    {contract ? ` · ${contract.reference}` : ''}
+                  </div>
+                </div>
+                <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+              </div>
+
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                <div>
+                  <dt className="font-bold uppercase tracking-wider text-[9px] text-slate-400">Issued</dt>
+                  <dd className="font-mono text-slate-800">{formatDate(invoice.issue_date)}</dd>
+                </div>
+                <div>
+                  <dt className="font-bold uppercase tracking-wider text-[9px] text-slate-400">Due</dt>
+                  <dd className="font-mono text-slate-800">{formatDate(invoice.due_date)}</dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="font-bold uppercase tracking-wider text-[9px] text-slate-400">Service period</dt>
+                  <dd className="font-mono text-slate-800">
+                    {formatDate(invoice.period_from)} → {formatDate(invoice.period_to)}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 border border-slate-200/70 p-2 text-center">
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Net</div>
+                  <div className="font-mono text-xs font-bold text-slate-800">{formatMoney(invoice.net, invoice.currency)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">VAT {invoice.vat_rate}%</div>
+                  <div className="font-mono text-xs font-bold text-slate-800">{formatMoney(invoice.vat_amount, invoice.currency)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Gross</div>
+                  <div className="font-mono text-xs font-black text-slate-900">{formatMoney(invoice.gross, invoice.currency)}</div>
+                </div>
+              </div>
+
+              {invoice.currency !== 'EUR' && (
+                <div className="text-[10px] text-slate-500 font-mono text-right">
+                  EUR reporting amount {formatMoney(invoice.gross_eur, 'EUR')} @ {invoice.fx_rate}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
 interface CellSelectionStats {
   count: number;
   sum: number;
@@ -252,6 +353,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [groupByCounterparty, setGroupByCounterparty] = useState(HAS_AG_GRID_LICENSE);
   const [pendingSuggestions, setPendingSuggestions] = useState<Record<string, true>>({});
+  const [peek, setPeek] = useState<{ contract: Contract; invoiceIds: string[] } | null>(null);
   const currentYear = new Date().getFullYear();
   const yearStore = useMemo(() => createYearStore(currentYear), [currentYear]);
   const visibleYear = useSyncExternalStore(yearStore.subscribe, yearStore.getYear, yearStore.getYear);
@@ -315,6 +417,23 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     pendingSuggestionsRef.current = pendingSuggestions;
     gridApiRef.current?.redrawRows();
   }, [pendingSuggestions]);
+
+  // Invoice details for the peek modal are resolved from the loaded register, kept in a ref so the
+  // AG Grid cell renderer can open it without the column definitions depending on the invoice list.
+  const invoicesById = useMemo(() => new Map(invoices.map(invoice => [invoice.id, invoice])), [invoices]);
+  const invoicesByIdRef = useRef(invoicesById);
+  useEffect(() => { invoicesByIdRef.current = invoicesById; }, [invoicesById]);
+
+  const openPeekRef = useRef<(contract: Contract, invoiceIds: string[]) => void>(() => {});
+  useEffect(() => {
+    openPeekRef.current = (contract, invoiceIds) => {
+      if (invoiceIds.some(id => invoicesByIdRef.current.has(id))) setPeek({ contract, invoiceIds });
+    };
+  }, []);
+
+  const peekInvoices = peek
+    ? peek.invoiceIds.map(id => invoicesById.get(id)).filter((invoice): invoice is Invoice => Boolean(invoice))
+    : [];
 
   const createInvoiceRef = useRef(onCreateInvoice);
   useEffect(() => { createInvoiceRef.current = onCreateInvoice; }, [onCreateInvoice]);
@@ -516,16 +635,24 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
               }}
             >
               {coverage && showBadge && (
-                <span
+                <button
+                  type="button"
+                  data-invoice-peek
+                  title={`${coverageTooltip(coverage)} · click for invoice details`}
+                  onMouseDown={event => event.stopPropagation()}
+                  onClick={event => {
+                    event.stopPropagation();
+                    if (contractRow) openPeekRef.current(contractRow.contract, coverage.invoiceIds);
+                  }}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 2, padding: '0 3px', borderRadius: 3,
-                    fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                    pointerEvents: 'none', ...VARIANCE_TONES[tone as InvoiceVarianceTone],
+                    border: 0, fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    cursor: 'pointer', ...VARIANCE_TONES[tone as InvoiceVarianceTone],
                   }}
                 >
                   <span>{formatTotal(coverage.invoiceTotal)}</span>
                   {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
-                </span>
+                </button>
               )}
               {coverage && showMarker && (
                 <span
@@ -827,7 +954,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           onBodyScroll={handleBodyScroll}
           onGridSizeChanged={event => syncVisibleYear(event.api)}
           onRowDoubleClicked={event => {
-            if ((event.event?.target as HTMLElement | null)?.closest('[data-invoice-action]')) return;
+            if ((event.event?.target as HTMLElement | null)?.closest('[data-invoice-action], [data-invoice-peek]')) return;
             if (event.node.rowPinned) return;
             if (event.node.group) { event.node.setExpanded(!event.node.expanded); return; }
             if (!event.data || !onOpenContract) return;
@@ -838,6 +965,14 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         />
       </div>
       </div>
+
+      {peek && (
+        <InvoicePeekModal
+          invoices={peekInvoices}
+          contract={peek.contract}
+          onClose={() => setPeek(null)}
+        />
+      )}
     </div>
   );
 };

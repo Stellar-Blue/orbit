@@ -20,6 +20,8 @@ export interface InvoiceCellCoverage {
   markerPosition: InvoiceMarkerPosition;
   /** Invoice numbers covering this cell, oldest first (capped for the tooltip). */
   invoices: string[];
+  /** Ids of the covering invoices, so the grid can open their details. */
+  invoiceIds: string[];
   /** Most recent issue date among the covering invoices. */
   issueDate: string;
   /** Invoice net (EUR) of every invoice covering the box. */
@@ -200,6 +202,7 @@ export function buildInvoiceCoverage(
           markerMonth,
           markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
           invoices: [label],
+          invoiceIds: [invoice.id],
           issueDate,
           invoiceTotal: amount,
           contractTotal: 0,
@@ -221,6 +224,9 @@ export function buildInvoiceCoverage(
         invoices: existing.invoices.includes(label)
           ? existing.invoices
           : [...existing.invoices, label].slice(-MAX_INVOICE_LABELS),
+        invoiceIds: existing.invoiceIds.includes(invoice.id)
+          ? existing.invoiceIds
+          : [...existing.invoiceIds, invoice.id].slice(-MAX_INVOICE_LABELS),
         issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
         invoiceTotal: round2(existing.invoiceTotal + amount),
         contractTotal: 0,
