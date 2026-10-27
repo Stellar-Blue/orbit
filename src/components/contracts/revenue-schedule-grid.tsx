@@ -31,10 +31,11 @@ import {
   type InvoiceSuggestion,
 } from '@/lib/invoice-suggestions';
 import type { BillingPeriodItem } from '@/lib/billing-periods';
+import Link from 'next/link';
 import { Modal, Badge } from '@/components/ui/primitives';
 import { formatMoney } from '@/lib/currency';
 import { formatDate } from '@/lib/date';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus } from 'lucide-react';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -260,6 +261,15 @@ function InvoicePeekModal({ invoices, contract, onClose }: {
                   EUR reporting amount {formatMoney(invoice.gross_eur, 'EUR')} @ {invoice.fx_rate}
                 </div>
               )}
+
+              <div className="flex justify-end">
+                <Link
+                  href={`/invoices/${invoice.id}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-[#3D87D3] hover:text-[#2f6ea9] transition-colors"
+                >
+                  Open invoice <ArrowUpRight className="w-3 h-3" />
+                </Link>
+              </div>
             </div>
           );
         })}
