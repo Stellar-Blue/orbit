@@ -273,6 +273,59 @@ export function getContractBillingPeriods(
       return !!issued && issued >= period.from && issued <= period.to;
     });
 
+  /**
+   * Split cycles invoice each timing side separately, so an existing invoice may only cover the side
+   * it actually bills. Matching purely on window overlap let a one-off invoice raised at the cycle
+   * start hide the recurring fee due at its end.
+   */
+  const assignSplitInvoices = (period: { key: string; label: string; from: string; to: string }) => {
+    const sides = [
+      { side: 'start_of_period' as const, key: `${period.key}@start`, date: period.from, label: `${period.label} · in advance` },
+      { side: 'end_of_period' as const, key: `${period.key}@end`, date: period.to, label: `${period.label} · in arrears` },
+    ];
+    const assigned = new Map<'start_of_period' | 'end_of_period', (typeof invoices)[number]>();
+    const daysApart = (a: string, b: string) => {
+      const left = new Date(a + 'T00:00:00');
+      const right = new Date(b + 'T00:00:00');
+      if (isNaN(left.getTime()) || isNaN(right.getTime())) return Number.POSITIVE_INFINITY;
+      return Math.abs(left.getTime() - right.getTime()) / 86_400_000;
+    };
+
+    invoices.forEach(inv => {
+      if (inv.contract_id !== contract.id) return;
+
+      const reference = (inv.reference_period || '').trim().toLowerCase();
+      if (reference) {
+        const named = sides.find(s => reference === s.key.toLowerCase() || reference === s.label.toLowerCase());
+        if (named) {
+          if (!assigned.has(named.side)) assigned.set(named.side, inv);
+          return;
+        }
+      }
+
+      const invFrom = (inv.period_from || '').trim();
+      const invTo = (inv.period_to || '').trim() || invFrom;
+      const covers = (date: string) => !!invFrom && invFrom <= date && invTo >= date;
+      let candidates = sides.filter(s => covers(s.date));
+
+      if (candidates.length === 0) {
+        const issued = (inv.issue_date || '').trim();
+        const overlapsWindow = !!invFrom && invFrom <= period.to && invTo >= period.from;
+        const raisedInWindow = !!issued && issued >= period.from && issued <= period.to;
+        if (!overlapsWindow && !raisedInWindow) return;
+        candidates = sides;
+      }
+
+      const raisedOn = (inv.issue_date || '').trim() || invFrom;
+      const target = candidates
+        .map(s => ({ s, distance: daysApart(raisedOn, s.date) }))
+        .sort((a, b) => a.distance - b.distance)[0]?.s;
+      if (target && !assigned.has(target.side)) assigned.set(target.side, inv);
+    });
+
+    return assigned;
+  };
+
   const results: BillingPeriodItem[] = [];
   periods.forEach(period => {
     const { advance, arrears } = scheduledHalves(period);
@@ -281,6 +334,7 @@ export function getContractBillingPeriods(
     const advanceAmt = Number(advance.toFixed(2));
     const arrearsAmt = Number((arrears + manHours).toFixed(2));
     const splitRequired = advanceAmt > 0 && arrearsAmt > 0;
+    const splitCoverage = splitRequired ? assignSplitInvoices(period) : null;
 
     const pushRow = (side: 'start_of_period' | 'end_of_period', amount: number) => {
       const key = splitRequired ? `${period.key}@${side === 'start_of_period' ? 'start' : 'end'}` : period.key;
@@ -288,7 +342,7 @@ export function getContractBillingPeriods(
         ? `${period.label} · ${side === 'start_of_period' ? 'in advance' : 'in arrears'}`
         : period.label;
       const lookup = { key, label, from: period.from, to: period.to };
-      const existingInv = findExistingInvoice(lookup);
+      const existingInv = splitCoverage ? splitCoverage.get(side) : findExistingInvoice(lookup);
       const draftId = generatedDraftIds[`${contract.id}::${key}`];
       const status: BillingPeriodItem['status'] = existingInv
         ? (existingInv.status === 'draft' ? 'draft_created' : 'billed')

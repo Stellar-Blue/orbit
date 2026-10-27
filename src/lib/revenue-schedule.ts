@@ -1,5 +1,8 @@
 import type { CatalogItem, CatalogModule, Contract, Project } from '@/lib/types';
-import { calculateContractValuation, calculatePeriodAmountsForPeriods } from '@/lib/pricing-engine';
+import {
+  calculateContractValuation,
+  calculatePeriodAmountsForPeriodsByTiming,
+} from '@/lib/pricing-engine';
 
 /**
  * Monthly revenue schedule used by the contract registry's "Revenue Schedule & MRR" grid.
@@ -98,6 +101,42 @@ export function contractEffectiveWindow(contract: Contract, now: Date = new Date
   return endKey < startKey ? { startKey, endKey: startKey } : { startKey, endKey };
 }
 
+/** A month's money, attributed to the invoicing timing that produced it. */
+export interface TimingSplitAmount {
+  advance: number;
+  arrears: number;
+}
+
+/**
+ * The contract's line-derived charges split by invoicing timing, or null when the contract has no
+ * billable lines (legacy / line-less agreements fall back to the total-only path).
+ */
+export function contractChargeMonthsByTiming(
+  contract: Contract,
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): Record<string, TimingSplitAmount> | null {
+  const billableLines = (contract.lines || []).filter(l => l.line_kind !== 'man_hours');
+  if (billableLines.length === 0) return null;
+
+  const split: Record<string, TimingSplitAmount> = {};
+  const window = contractEffectiveWindow(contract);
+  calculatePeriodAmountsForPeriodsByTiming(
+    billableLines,
+    contract.discount_pct || 0,
+    monthKeysBetween(window.startKey, window.endKey),
+    catalogModules,
+    catalogItems,
+    contract.groups || [],
+    contract.invoice_timing || 'start_of_period'
+  ).forEach(({ period, advance, arrears }) => {
+    const adv = round2(advance);
+    const arr = round2(arrears);
+    if (adv !== 0 || arr !== 0) split[period] = { advance: adv, arrears: arr };
+  });
+  return split;
+}
+
 /** The contract's own monthly charges. */
 export function contractChargeMonths(
   contract: Contract,
@@ -106,25 +145,11 @@ export function contractChargeMonths(
 ): Record<string, number> {
   const months: Record<string, number> = {};
   const lines = contract.lines || [];
-  const billableLines = lines.filter(l => l.line_kind !== 'man_hours');
 
   // The price sheet is the source of truth: a persisted schedule is only a projection of it, so it
   // must never win over the current lines (a removed line or a moved term would keep charging).
-  if (billableLines.length > 0) {
-    const window = contractEffectiveWindow(contract);
-    calculatePeriodAmountsForPeriods(
-      billableLines,
-      contract.discount_pct || 0,
-      monthKeysBetween(window.startKey, window.endKey),
-      catalogModules,
-      catalogItems,
-      contract.groups || []
-    ).forEach(({ period, amount }) => {
-      const value = round2(amount);
-      if (value !== 0) months[period] = value;
-    });
-    return months;
-  }
+  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems);
+  if (split) return totalChargesFromTiming(split);
 
   // Man-hours-only contracts are billed from timesheets (their change requests), never as a fixed value.
   if (lines.length > 0) return months;
@@ -180,8 +205,8 @@ const CADENCE_MONTHS: Record<string, number> = { monthly: 1, quarterly: 3, annua
  * a quarterly agreement shows its quarter total once, on the period start (billed in advance) or the
  * period end (billed in arrears). One-off / milestone agreements keep the single month they land in.
  *
- * The contract's invoicing timing is applied to the whole row — per-line timing splits are an
- * invoicing detail (see getContractBillingPeriods) and are not modelled per cell here.
+ * This is the total-only path: change-request rows and line-less legacy agreements. Contracts with
+ * lines use resampleTimingToBillingMonths, which keeps advance and arrears money apart.
  */
 export function resampleToBillingMonths(
   contract: Contract,
@@ -211,6 +236,66 @@ export function resampleToBillingMonths(
     if (total === 0) continue;
     const billingMonth = billAtEnd ? slice[slice.length - 1] : slice[0];
     billed[billingMonth] = round2((billed[billingMonth] || 0) + total);
+  }
+  return billed;
+}
+
+/** Collapses a timing split back into plain monthly charges (advance + arrears per month). */
+export function totalChargesFromTiming(split: Record<string, TimingSplitAmount>): Record<string, number> {
+  const months: Record<string, number> = {};
+  Object.entries(split).forEach(([period, { advance, arrears }]) => {
+    const value = round2(advance + arrears);
+    if (value !== 0) months[period] = value;
+  });
+  return months;
+}
+
+/**
+ * Cashflow for a contract whose lines bill on different timings. Each side of a cycle lands where it
+ * is actually invoiced: in-advance money on the cycle's first month, arrears money on its last. A
+ * one-off charged at activation therefore stays at the start of the term instead of being folded into
+ * the quarter-end invoice with the recurring fees.
+ */
+export function resampleTimingToBillingMonths(
+  contract: Contract,
+  split: Record<string, TimingSplitAmount> | null
+): Record<string, number> {
+  const billed: Record<string, number> = {};
+  if (!split) return billed;
+
+  const chargeMonths = Object.keys(split)
+    .filter(key => (split[key].advance || 0) !== 0 || (split[key].arrears || 0) !== 0)
+    .sort();
+  if (chargeMonths.length === 0) return billed;
+
+  const cycle = CADENCE_MONTHS[contract.billing_cadence || 'monthly'] ?? 0;
+  if (cycle === 0) {
+    // One-off / milestone: the charge is billed where it lands, whichever timing it carries.
+    chargeMonths.forEach(key => {
+      const total = round2((split[key].advance || 0) + (split[key].arrears || 0));
+      if (total !== 0) billed[key] = round2((billed[key] || 0) + total);
+    });
+    return billed;
+  }
+
+  const window = contractEffectiveWindow(contract);
+  const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
+  const lastMonth = chargeMonths[chargeMonths.length - 1];
+  const horizon = monthKeysBetween(firstMonth, lastMonth);
+
+  // Cycles are anchored on the contract, exactly like getContractBillingPeriods.
+  for (let index = 0; index < horizon.length; index += cycle) {
+    const slice = horizon.slice(index, index + cycle);
+    const advance = round2(slice.reduce((sum, key) => sum + (split[key]?.advance || 0), 0));
+    const arrears = round2(slice.reduce((sum, key) => sum + (split[key]?.arrears || 0), 0));
+    if (advance !== 0) {
+      const at = slice[0];
+      billed[at] = round2((billed[at] || 0) + advance);
+    }
+    if (arrears !== 0) {
+      const at = slice[slice.length - 1];
+      billed[at] = round2((billed[at] || 0) + arrears);
+    }
   }
   return billed;
 }
@@ -285,8 +370,15 @@ export function buildRevenueSchedule(
     const window = contractEffectiveWindow(contract);
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
-    const monthlyCharges = contractChargeMonths(contract, catalogModules, catalogItems);
-    const charges = basis === 'cashflow' ? resampleToBillingMonths(contract, monthlyCharges) : monthlyCharges;
+    const timingSplit = contractChargeMonthsByTiming(contract, catalogModules, catalogItems);
+    const monthlyCharges = timingSplit
+      ? totalChargesFromTiming(timingSplit)
+      : contractChargeMonths(contract, catalogModules, catalogItems);
+    const charges = basis === 'cashflow'
+      ? (timingSplit
+          ? resampleTimingToBillingMonths(contract, timingSplit)
+          : resampleToBillingMonths(contract, monthlyCharges))
+      : monthlyCharges;
     const projectSchedules = contractProjectSchedules(contract, projects);
 
     Object.keys(charges).forEach(key => effectiveMonths.add(key));

@@ -297,6 +297,9 @@ export function calculatePeriodAmounts(
  * The same schedule as `calculatePeriodAmounts`, but for an explicit list of 'YYYY-MM' periods.
  * Used where the term comes from real contract dates (e.g. service start → effective end) rather
  * than a whole number of years, so fractional-term rounding can never drop the last month.
+ *
+ * Delegates to the timing split and adds the halves back, so the total and the advance/arrears view
+ * can never disagree about which months a line charges in.
  */
 export function calculatePeriodAmountsForPeriods(
   lines: Array<Partial<ContractLine>>,
@@ -306,41 +309,14 @@ export function calculatePeriodAmountsForPeriods(
   catalogItems: CatalogItem[] = [],
   groups: Array<Partial<ContractLineGroup>> = []
 ): ContractPeriodAmount[] {
-  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
-  const groupFloors = buildGroupFloorMap(groups);
-  const result: ContractPeriodAmount[] = [];
-
-  periods.forEach((period, pIdx) => {
-    const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
-    let monthTotal = 0;
-
-    lines.forEach(l => {
-      if (!isLineActiveInPeriod(l, period)) return; // line's own start/end window
-      const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
-      let { gross: grossVal } = calculateLineGrossAmount(l, effQty);
-      if (l.group_id && l.frequency !== 'one_time') {
-        const ratio = groupRatios.get(l.group_id);
-        if (ratio) grossVal *= ratio;
-      }
-      const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
-      const netVal = grossVal * lineMult;
-      const anchor = linePeriodAnchor(l, periods);
-
-      if (l.frequency === 'monthly') {
-        monthTotal += netVal;
-      } else if (l.frequency === 'quarterly') {
-        if ((pIdx - anchor) % 3 === 0) monthTotal += netVal;
-      } else if (l.frequency === 'annual') {
-        if ((pIdx - anchor) % 12 === 0) monthTotal += netVal;
-      } else if (l.frequency === 'one_time') {
-        if (pIdx === anchor) monthTotal += netVal;
-      }
-    });
-
-    result.push({ period, amount: Number(monthTotal.toFixed(2)) });
-  });
-
-  return result;
+  return calculatePeriodAmountsForPeriodsByTiming(
+    lines,
+    discountPct,
+    periods,
+    catalogModules,
+    catalogItems,
+    groups
+  ).map(({ period, total }) => ({ period, amount: total }));
 }
 
 /**
@@ -359,7 +335,6 @@ export function calculatePeriodAmountsByTiming(
   groups: Array<Partial<ContractLineGroup>> = [],
   contractTiming: string = 'start_of_period'
 ): ContractPeriodTimingAmount[] {
-  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
   const startObj = new Date(startDate || new Date());
   const periods: string[] = [];
@@ -368,6 +343,32 @@ export function calculatePeriodAmountsByTiming(
     periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
 
+  return calculatePeriodAmountsForPeriodsByTiming(
+    lines,
+    discountPct,
+    periods,
+    catalogModules,
+    catalogItems,
+    groups,
+    contractTiming
+  );
+}
+
+/**
+ * The timing split of `calculatePeriodAmountsForPeriods`: identical inclusion rules (so advance +
+ * arrears equals the monthly total), with each month's money attributed to the invoicing timing of
+ * the lines that produced it. Explicit periods keep fractional terms from dropping the last month.
+ */
+export function calculatePeriodAmountsForPeriodsByTiming(
+  lines: Array<Partial<ContractLine>>,
+  discountPct: number,
+  periods: string[],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = [],
+  groups: Array<Partial<ContractLineGroup>> = [],
+  contractTiming: string = 'start_of_period'
+): ContractPeriodTimingAmount[] {
+  const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const groupFloors = buildGroupFloorMap(groups);
   const result: ContractPeriodTimingAmount[] = [];
 

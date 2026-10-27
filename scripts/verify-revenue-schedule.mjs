@@ -10,9 +10,11 @@ import {
   addMonths,
   buildRevenueSchedule,
   contractChargeMonths,
+  contractChargeMonthsByTiming,
   contractEffectiveWindow,
   groupMonthsByYear,
   monthKeysBetween,
+  resampleTimingToBillingMonths,
   resampleToBillingMonths,
   toMonthKey,
   yearTotalOf,
@@ -326,6 +328,47 @@ assert(
   JSON.stringify(cashGrid.monthTotals)
 );
 
+// --- Cashflow with mixed per-line invoicing timing ---------------------------
+// A one-off invoiced at activation (in advance) plus a monthly fee billed with the
+// contract's quarterly arrears cadence: the two must not merge into one quarter-end value.
+const oneOffLine = {
+  id: 'l-oneoff', contract_id: 'cnt-1', name: 'Onboarding', unit_price: 9000, quantity: 1,
+  unit_label: 'project', frequency: 'one_time', invoice_timing: 'start_of_period',
+};
+const monthlyFeeLine = {
+  id: 'l-fee', contract_id: 'cnt-1', name: 'Platform licence', unit_price: 1000, quantity: 1,
+  unit_label: 'flat', frequency: 'monthly',
+};
+const mixedContract = contract({
+  lines: [oneOffLine, monthlyFeeLine],
+  billing_cadence: 'quarterly',
+  invoice_timing: 'end_of_period',
+});
+const mixedSplit = contractChargeMonthsByTiming(mixedContract);
+assert(
+  mixedSplit && mixedSplit['2025-01'].advance === 9000 && mixedSplit['2025-01'].arrears === 1000,
+  'The charge schedule splits each month by the line own invoicing timing',
+  JSON.stringify(mixedSplit ? { jan: mixedSplit['2025-01'], feb: mixedSplit['2025-02'] } : null)
+);
+const mixedCash = resampleTimingToBillingMonths(mixedContract, mixedSplit);
+assert(
+  JSON.stringify(mixedCash) === JSON.stringify({ '2025-01': 9000, '2025-03': 3000, '2025-06': 3000, '2025-09': 3000, '2025-12': 3000 }),
+  'Cashflow keeps the advance one-off at activation and the quarterly arrears fee at each quarter end',
+  JSON.stringify(mixedCash)
+);
+assert(
+  yearTotalOf(mixedCash, 2025) === yearTotalOf(contractChargeMonths(mixedContract), 2025),
+  'The cashflow view never changes the year total',
+  `${yearTotalOf(mixedCash, 2025)} vs ${yearTotalOf(contractChargeMonths(mixedContract), 2025)}`
+);
+const mixedGrid = buildRevenueSchedule([mixedContract], [], [], [], { basis: 'cashflow' });
+const mixedGridRow = mixedGrid.rows.find(row => row.kind === 'contract');
+assert(
+  mixedGridRow && mixedGridRow.months['2025-01'] === 9000 && mixedGridRow.months['2025-03'] === 3000,
+  'The cashflow grid shows the one-off and the quarterly fee in separate months',
+  mixedGridRow ? JSON.stringify(mixedGridRow.months) : 'missing'
+);
+
 // --- Invoice overlay ---------------------------------------------------------
 const invoice = (overrides = {}) => ({
   id: 'inv-1',
@@ -533,6 +576,62 @@ assert(
   buildInvoiceSuggestions([billable], { today, draftInvoiceIds: { 'cnt-1::2025-02-01': 'draft-1' } })
     .every(s => s.period.key !== '2025-02-01'),
   'An optimistically created draft hides its suggestion immediately'
+);
+
+// --- Split cycles: one invoice must not hide the other half's suggestion ------
+const oneOffInvoice = {
+  id: 'inv-oneoff', direction: 'outgoing', counterparty_id: 'cp-1', contract_id: 'cnt-1', type: 'invoice',
+  invoice_number: 'INV-ONBOARD', issue_date: '2025-01-01', due_date: '2025-01-15',
+  period_from: '2025-01-01', period_to: '2025-01-01', currency: 'EUR', fx_rate: 1, net: 7258.06,
+  vat_amount: 1741.94, vat_rate: '24', gross: 9000, gross_eur: 9000, status: 'paid',
+};
+const splitToday = new Date('2025-03-31T00:00:00');
+const splitSuggestions = buildInvoiceSuggestions([mixedContract], { today: splitToday, invoices: [oneOffInvoice] });
+assert(
+  splitSuggestions.length === 1 && splitSuggestions[0].period.timing === 'end_of_period' &&
+    splitSuggestions[0].amount === 3000,
+  'A paid one-off invoice does not hide the quarterly fee suggestion',
+  splitSuggestions.map(s => `${s.period.key}:${s.amount}`).join(', ') || 'no suggestions'
+);
+
+const quarterInvoice = {
+  ...oneOffInvoice,
+  id: 'inv-q1', invoice_number: 'INV-Q1', issue_date: '2025-03-31', due_date: '2025-04-15',
+  period_from: '2025-01-01', period_to: '2025-03-31', status: 'sent_received',
+  net: 2419.35, vat_amount: 580.65, gross: 3000, gross_eur: 3000,
+};
+const advanceLeft = buildInvoiceSuggestions([mixedContract], { today: splitToday, invoices: [quarterInvoice] });
+assert(
+  advanceLeft.length === 1 && advanceLeft[0].period.timing === 'start_of_period' && advanceLeft[0].amount === 9000,
+  'A quarter-end invoice leaves the advance one-off suggested',
+  advanceLeft.map(s => `${s.period.key}:${s.amount}`).join(', ') || 'no suggestions'
+);
+
+const bothInvoices = buildInvoiceSuggestions([mixedContract], {
+  today: splitToday,
+  invoices: [oneOffInvoice, quarterInvoice],
+});
+assert(
+  bothInvoices.length === 0,
+  'Once both halves are invoiced the cycle stops being suggested',
+  bothInvoices.map(s => s.period.key).join(', ')
+);
+
+// The suggestion queue follows the same split: the one-off opens the term, the fees close each quarter.
+const splitQueue = buildInvoiceSuggestions([mixedContract], { today: new Date('2025-12-31T00:00:00') });
+const advanceRow = splitQueue.find(s => s.period.timing === 'start_of_period');
+const arrearsRows = splitQueue.filter(s => s.period.timing === 'end_of_period');
+assert(
+  advanceRow && advanceRow.amount === 9000 && advanceRow.invoiceDate === '2025-01-01' &&
+    advanceRow.months.join(',') === '2025-01,2025-02,2025-03',
+  'The advance one-off is suggested on the activation date',
+  advanceRow ? `${advanceRow.period.key} ${advanceRow.amount} ${advanceRow.invoiceDate}` : 'missing'
+);
+assert(
+  arrearsRows.length === 4 && arrearsRows.every(s => s.amount === 3000) &&
+    arrearsRows[0].invoiceDate === '2025-03-31' && arrearsRows[3].invoiceDate === '2025-12-31',
+  'Recurring fees are suggested once per quarter, dated on the quarter end',
+  arrearsRows.map(s => `${s.invoiceDate}:${s.amount}`).join(' ')
 );
 
 console.log('\n================================================================');
