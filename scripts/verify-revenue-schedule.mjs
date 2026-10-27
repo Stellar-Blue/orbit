@@ -16,6 +16,12 @@ import {
   toMonthKey,
   yearTotalOf,
 } from '@/lib/revenue-schedule';
+import {
+  buildInvoiceCoverage,
+  invoiceCellStyle,
+  invoiceCoveredMonths,
+  invoiceMarkerPosition,
+} from '@/lib/invoice-coverage';
 
 let passed = 0;
 let failed = 0;
@@ -202,6 +208,134 @@ assert(grouped.length === 3 && grouped[0].year === 2024 && grouped[2].months.len
 const totals = full.monthTotals;
 assert(totals['2025-01'] === 1000, 'Month totals combine both streams', String(totals['2025-01']));
 assert(totals['2025-03'] === 3000, 'Month totals add project revenue to contract charges', String(totals['2025-03']));
+
+
+// --- Invoice overlay ---------------------------------------------------------
+const invoice = (overrides = {}) => ({
+  id: 'inv-1',
+  direction: 'outgoing',
+  counterparty_id: 'cp-1',
+  contract_id: null,
+  type: 'invoice',
+  invoice_number: 'INV-001',
+  issue_date: '2025-02-15',
+  due_date: '2025-03-15',
+  period_from: '2025-01-01',
+  period_to: '2025-03-31',
+  currency: 'EUR',
+  fx_rate: 1,
+  net: 3000,
+  vat_amount: 720,
+  vat_rate: '24',
+  gross: 3720,
+  gross_eur: 3720,
+  status: 'sent_received',
+  ...overrides,
+});
+
+const baseContract = contract({ lines: [monthlyLine] });
+assert(
+  invoiceCoveredMonths(invoice()).join(',') === '2025-01,2025-02,2025-03',
+  'Invoice coverage spans period_from → period_to'
+);
+assert(
+  invoiceCoveredMonths(invoice({ period_from: null, period_to: null, issue_date: '2025-06-04' })).join(',') === '2025-06',
+  'Invoices without a billed period fall back to the issue month'
+);
+assert(
+  invoiceMarkerPosition('2025-01', '2025-01', '2025-03') === 'start' &&
+    invoiceMarkerPosition('2025-02', '2025-01', '2025-03') === 'middle' &&
+    invoiceMarkerPosition('2025-03', '2025-01', '2025-03') === 'end',
+  'Asterisk position follows the issue month inside the box'
+);
+
+const unpaidCoverage = buildInvoiceCoverage([invoice()], [baseContract]);
+const january = unpaidCoverage.get('cnt-1:2025-01');
+assert(
+  unpaidCoverage.size === 3 && january?.firstMonth === '2025-01' && january.lastMonth === '2025-03',
+  'An outgoing invoice overlays every month it bills on the contract charges row',
+  `${unpaidCoverage.size} cells`
+);
+assert(
+  january?.paid === false && january.markerMonth === '2025-02' && january.markerPosition === 'middle',
+  'Unpaid invoices keep the light tint and mark the issue month',
+  JSON.stringify(january)
+);
+
+const paidCoverage = buildInvoiceCoverage([invoice({ status: 'paid' })], [baseContract]);
+const paidStyle = invoiceCellStyle(paidCoverage.get('cnt-1:2025-02'), '2025-02');
+assert(
+  paidCoverage.get('cnt-1:2025-02')?.paid === true &&
+    paidStyle.backgroundColor === 'rgba(22, 163, 74, 0.28)' &&
+    invoiceCellStyle(january, '2025-02').backgroundColor === 'rgba(34, 197, 94, 0.13)',
+  'Paid invoices get the bolder green',
+  paidStyle.backgroundColor
+);
+assert(
+  invoiceCellStyle(january, '2025-01').boxShadow.includes('inset 2px 0 0') &&
+    !invoiceCellStyle(january, '2025-02').boxShadow.includes('inset 2px 0 0') &&
+    invoiceCellStyle(january, '2025-03').boxShadow.includes('inset -2px 0 0'),
+  'Only the box edges draw vertical borders so contiguous cells read as one box'
+);
+
+const otherContract = contract({
+  id: 'cnt-2',
+  reference: 'SB-EMS-2025-07',
+  lines: [{ ...monthlyLine, contract_id: 'cnt-2', unit_price: 5000 }],
+});
+const twoSameCounterparty = [baseContract, otherContract];
+const referenced = buildInvoiceCoverage(
+  [invoice({ notes: 'Billed under SB-EMS-2025-07' })],
+  twoSameCounterparty
+);
+assert(
+  !referenced.has('cnt-1:2025-01') && referenced.has('cnt-2:2025-01'),
+  'An unlinked invoice is matched by the contract reference printed on it'
+);
+
+const closest = buildInvoiceCoverage([invoice({ net: 15000 })], twoSameCounterparty);
+assert(
+  !closest.has('cnt-1:2025-01') && closest.has('cnt-2:2025-01'),
+  'Without a reference, the counterparty contract whose charges match the invoice net wins'
+);
+
+const linked = buildInvoiceCoverage(
+  [invoice({ contract_id: 'cnt-2', net: 3000 })],
+  twoSameCounterparty
+);
+assert(
+  linked.has('cnt-2:2025-01') && !linked.has('cnt-1:2025-01'),
+  'A linked invoice stays on its own contract even when another contract matches the amount'
+);
+
+assert(
+  buildInvoiceCoverage([invoice({ status: 'draft' })], [baseContract]).size === 0 &&
+    buildInvoiceCoverage([invoice({ status: 'cancelled' })], [baseContract]).size === 0 &&
+    buildInvoiceCoverage([invoice({ direction: 'incoming' })], [baseContract]).size === 0,
+  'Draft, cancelled and incoming invoices never overlay the revenue schedule'
+);
+
+const mergedInvoice = buildInvoiceCoverage(
+  [
+    invoice({ id: 'paid', invoice_number: 'INV-PAID', status: 'paid', period_from: '2025-01-01', period_to: '2025-02-28' }),
+    invoice({ id: 'unpaid', invoice_number: 'INV-OPEN', period_from: '2025-02-01', period_to: '2025-03-31' }),
+  ],
+  [baseContract]
+);
+const february = mergedInvoice.get('cnt-1:2025-02');
+assert(
+  february?.paid === false && february.firstMonth === '2025-01' && february.lastMonth === '2025-03' &&
+    february.invoices.length === 2,
+  'Overlapping invoices merge into one box and an unpaid invoice keeps it light',
+  JSON.stringify(february)
+);
+
+const lateInvoice = buildInvoiceCoverage([invoice({ issue_date: '2025-05-10' })], [baseContract]);
+const march = lateInvoice.get('cnt-1:2025-03');
+assert(
+  march?.markerMonth === '2025-03' && march.markerPosition === 'end',
+  'An invoice issued after the billed period marks the end of the box'
+);
 
 console.log('\n================================================================');
 console.log(`${passed} passed · ${failed} failed`);

@@ -12,9 +12,16 @@ import {
   type ICellRendererParams,
 } from 'ag-grid-community';
 import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
-import type { CatalogItem, CatalogModule, Contract, Project } from '@/lib/types';
+import type { CatalogItem, CatalogModule, Contract, Invoice, Project } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import {
+  buildInvoiceCoverage,
+  invoiceCellKey,
+  invoiceCellStyle,
+  invoiceCoverageLabel,
+  type InvoiceCoverageMap,
+} from '@/lib/invoice-coverage';
 import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users, AlertTriangle, X } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
@@ -22,6 +29,7 @@ interface RevenueScheduleGridProps {
   projects: Project[];
   catalogModules: CatalogModule[];
   catalogItems: CatalogItem[];
+  invoices?: Invoice[];
   onOpenContract?: (contract: Contract) => void;
 }
 
@@ -183,6 +191,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   projects,
   catalogModules,
   catalogItems,
+  invoices = [],
   onOpenContract,
 }) => {
   const gridApiRef = useRef<GridApi<RevenueScheduleRow> | null>(null);
@@ -207,6 +216,18 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [gridApi, selectionVersion, visibleYear, schedule.rows]
   );
+  // Invoiced months are read inside AG Grid callbacks, so the map lives in a ref: refreshing the
+  // cells (below) picks up new invoices without rebuilding the column definitions and losing scroll.
+  const invoiceCoverage = useMemo(
+    () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems),
+    [invoices, contracts, catalogModules, catalogItems]
+  );
+  const invoiceCoverageRef = useRef<InvoiceCoverageMap>(new Map());
+  useEffect(() => {
+    invoiceCoverageRef.current = invoiceCoverage;
+    gridApiRef.current?.redrawRows();
+  }, [invoiceCoverage]);
+
   const yearGroups = useMemo(() => groupMonthsByYear(schedule.months), [schedule.months]);
   const years = useMemo(() => yearGroups.map(group => group.year), [yearGroups]);
   const currentMonthKey = useMemo(() => {
@@ -347,6 +368,41 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       aggFunc: 'sum',
       valueGetter: params => (params.data ? Number(params.data.months[key]) || 0 : 0),
       valueFormatter: params => formatAmount(params.value),
+      cellStyle: params => {
+        const data = params.data;
+        if (!data || data.kind !== 'contract') return undefined;
+        const coverage = invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key));
+        return coverage ? invoiceCellStyle(coverage, key) : undefined;
+      },
+      cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
+        const data = params.data;
+        const coverage = data && data.kind === 'contract'
+          ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
+          : undefined;
+        const text = formatAmount(Number(params.value) || 0);
+        if (!coverage) return <span>{text}</span>;
+        const markerAlign = coverage.markerPosition === 'start'
+          ? { left: 2 }
+          : coverage.markerPosition === 'end'
+            ? { right: 2 }
+            : { left: '50%', transform: 'translateX(-50%)' };
+        return (
+          <span
+            title={invoiceCoverageLabel(coverage)}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', height: '100%' }}
+          >
+            <span>{text}</span>
+            {coverage.markerMonth === key && (
+              <span
+                aria-hidden
+                style={{ position: 'absolute', bottom: 0, fontSize: 11, lineHeight: 1, fontWeight: 900, color: coverage.paid ? '#14532d' : '#15803d', ...markerAlign }}
+              >
+                *
+              </span>
+            )}
+          </span>
+        );
+      },
     });
 
     return [
@@ -566,6 +622,16 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#3D87D3]" /> Contract charges</span>
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Change requests</span>
             <span className="inline-flex items-center gap-1"><Layers className="w-3 h-3 text-slate-400" /> {horizonLabel}</span>
+            {invoiceCoverage.size > 0 && (
+              <>
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/15 ring-1 ring-emerald-500/40" /> Invoiced
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30 ring-1 ring-emerald-700/60" /> Paid
+                </span>
+              </>
+            )}
             {HAS_AG_GRID_LICENSE && <span className="text-slate-400">Shift+click to sum cells</span>}
           </div>
         )}

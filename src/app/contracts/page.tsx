@@ -9,8 +9,8 @@ import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase
 import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
-  FileText, Plus, AlertTriangle, Clock, Calendar, DollarSign, X, 
-  ArrowUpRight, ShieldCheck, Download, Upload, Layers, Check, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Copy, Users, Share2, Zap
+  FileText, Plus, AlertTriangle, Calendar, DollarSign, X, 
+  ArrowUpRight, Download, Upload, Layers, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap
 } from 'lucide-react';
 import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
@@ -38,28 +38,13 @@ export default function ContractsRegistryPage() {
   const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'projects' | 'ratecard'>('general');
   const [contractRateCardId, setContractRateCardId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'revenue'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'revenue'>('table');
   /** Optimistic "draft created" marks for the dossier's fast-create rows, keyed `${contractId}::${periodKey}`. */
   const [contractDraftIds, setContractDraftIds] = useState<Record<string, string>>({});
   /** Period currently being drafted — blocks a double click from creating two invoices. */
   const [creatingPeriodKey, setCreatingPeriodKey] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === 'admin';
-
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; contract: Contract } | null>(null);
-
-  const copyToClipboard = (text: string, label: string, id?: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    navigator.clipboard.writeText(text);
-    if (id) setCopiedId(id);
-    setCopyFeedback(label);
-    setTimeout(() => {
-      if (id) setCopiedId(null);
-      setCopyFeedback(null);
-    }, 2500);
-  };
 
   // Fast-create a draft invoice for one of the contract's due billing periods, straight from the dossier.
   // Uses the same payload builder as the Invoices Hub quick-create so both stay identical.
@@ -95,16 +80,6 @@ export default function ContractsRegistryPage() {
       setCreatingPeriodKey(null);
     }
   };
-
-  useEffect(() => {
-    const handleClickOutside = () => setContextMenu(null);
-    window.addEventListener('click', handleClickOutside);
-    window.addEventListener('scroll', handleClickOutside, true);
-    return () => {
-      window.removeEventListener('click', handleClickOutside);
-      window.removeEventListener('scroll', handleClickOutside, true);
-    };
-  }, []);
 
   // Sync initial selection from URL ID
   useEffect(() => {
@@ -346,8 +321,6 @@ export default function ContractsRegistryPage() {
     setIsCreateOpen(false);
   };
 
-  const kanbanColumns: ContractStatus[] = ['draft', 'in_negotiation', 'active', 'expiring', 'expired'];
-
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Header */}
@@ -362,12 +335,6 @@ export default function ContractsRegistryPage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5">
-            <button 
-              onClick={() => setViewMode('kanban')} 
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'kanban' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              Kanban Board
-            </button>
             <button 
               onClick={() => setViewMode('table')} 
               className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'table' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
@@ -491,135 +458,14 @@ export default function ContractsRegistryPage() {
         </div>
       </div>
 
-      {/* KANBAN BOARD VIEW */}
-      {viewMode === 'kanban' ? (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-start pb-4 overflow-x-auto">
-          {kanbanColumns.map(status => {
-            const colContracts = filteredContracts.filter(c => c.status === status);
-            return (
-              <div key={status} className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 min-w-[240px] shadow-xs">
-                <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
-                  <span className="text-xs font-bold uppercase text-slate-600 tracking-wider flex items-center">
-                    {status === 'expiring' && <AlertTriangle className="w-3.5 h-3.5 mr-1 text-rose-600" />}
-                    {status.replace('_', ' ')}
-                  </span>
-                  <span className="w-5 h-5 rounded-full bg-white border border-slate-200 text-[11px] text-slate-700 flex items-center justify-center font-bold shadow-2xs">
-                    {colContracts.length}
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  {colContracts.map(c => {
-                    const isRevenue = c.direction === 'revenue';
-                    const { isUrgent: isUrgentNotice, noticeDeadlineStr: cardDeadlineStr } = getContractNoticeStatus(c);
-                    return (
-                      <div 
-                        key={c.id}
-                        onClick={() => setSelectedContract(c)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({ x: Math.min(e.clientX, window.innerWidth - 320), y: Math.min(e.clientY, window.innerHeight - 380), contract: c });
-                        }}
-                        className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-2xs group flex flex-col justify-between space-y-2 relative"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between text-[10px] mb-1">
-                            <Badge variant={isRevenue ? 'success' : 'warning'}>{c.direction.toUpperCase()}</Badge>
-                            <div className="flex items-center space-x-2">
-                              <span className="font-mono text-slate-400">{c.reference}</span>
-                              {isAdmin && (
-                                <button
-                                  type="button"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    if (confirm(`Are you certain you want to completely delete contract "${c.reference}" (${c.counterparty?.legal_name})?`)) {
-                                      await deleteContract(c.id);
-                                    }
-                                  }}
-                                  className="text-slate-300 hover:text-rose-600 transition-colors p-0.5 cursor-pointer"
-                                  title="Delete Contract"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <h4 className="font-bold text-sm text-slate-800 group-hover:text-[#3D87D3] transition-colors leading-tight">
-                            {c.counterparty?.legal_name || 'Counterparty'}
-                          </h4>
-                          <p className="text-xs text-slate-500 mt-1">{c.product || c.type}</p>
-                          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={(e) => copyToClipboard(c.id, `Contract UUID (${c.id.slice(0, 8)}...)`, c.id, e)}
-                              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer shadow-2xs"
-                              title="Click to copy full Contract UUID · Right-click card for Fast Report"
-                            >
-                              <span>UUID: {c.id.slice(0, 8)}...{c.id.slice(-4)}</span>
-                              {copiedId === c.id ? (
-                                <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                              ) : (
-                                <Copy className="w-3 h-3 text-slate-400 shrink-0" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {(() => {
-                          const val = calculateContractValuation(c.lines || [], c.discount_pct || 0, c.term_years || 1, c.service_start_date || c.starts_on, catalogModules, catalogItems, c.value || 0, c.billing_cadence);
-                          return (
-                            <div className="space-y-2 mt-2">
-                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-500 uppercase">ARR (Recurring)</span>
-                                  <span className="font-mono font-black text-xs text-emerald-700">€{val.netARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</span>
-                                </div>
-                                {val.oneTimeValue > 0 && (
-                                  <div className="flex items-center justify-between text-[11px]">
-                                    <span className="text-slate-500 font-medium">One-off additional:</span>
-                                    <span className="font-mono font-bold text-amber-600">+€{val.oneTimeValue.toLocaleString()}</span>
-                                  </div>
-                                )}
-                                <div className="flex items-center justify-between border-t border-slate-200/80 pt-1 text-[11px]">
-                                  <span className="font-extrabold text-slate-700">Real Deal TCV:</span>
-                                  <span className="font-mono font-extrabold text-slate-900">€{val.totalContractValue.toLocaleString()}</span>
-                                </div>
-                              </div>
-                              <div>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-black inline-block border ${val.tierInfo.badgeClass}`}>
-                                  {val.tierInfo.label}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        <div className={`pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] ${isUrgentNotice ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
-                          <span className="flex items-center">
-                            <Clock className="w-3 h-3 mr-1" /> Notice: {cardDeadlineStr}
-                          </span>
-                          {isUrgentNotice && <span className="text-[10px] bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 text-rose-700">URGENT</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {colContracts.length === 0 && (
-                    <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
-                      No contracts in this pipeline stage.
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : viewMode === 'revenue' ? (
+      {viewMode === 'revenue' ? (
         /* REVENUE SCHEDULE (Excel-style monthly grid) */
         <RevenueScheduleGrid
           contracts={revenueContracts}
           projects={projects}
           catalogModules={catalogModules}
           catalogItems={catalogItems}
+          invoices={invoices}
           onOpenContract={setSelectedContract}
         />
       ) : (
@@ -1450,108 +1296,6 @@ export default function ContractsRegistryPage() {
         />
       )}
 
-      {/* RIGHT-CLICK CUSTOM CONTEXT MENU FOR CONTRACTS */}
-      {contextMenu && (
-        <div 
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed z-50 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 mb-1">
-            <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">⚡ Quick Copy Menu</div>
-            <div className="font-extrabold text-slate-800 truncate text-sm">{contextMenu.contract.reference} &mdash; {contextMenu.contract.counterparty?.legal_name || 'Contract'}</div>
-          </div>
-
-          <div className="py-1 space-y-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                copyToClipboard(contextMenu.contract.id, `Contract UUID (${contextMenu.contract.id.slice(0,8)}...)`, contextMenu.contract.id);
-                setContextMenu(null);
-              }}
-              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <Copy className="w-3.5 h-3.5 text-[#3D87D3]" /> Copy Contract UUID
-              </span>
-              <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.contract.id.slice(0, 6)}...</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                copyToClipboard(contextMenu.contract.counterparty_id || 'N/A', `Counterparty UUID`, undefined);
-                setContextMenu(null);
-              }}
-              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <Users className="w-3.5 h-3.5 text-blue-600" /> Copy Counterparty UUID
-              </span>
-              <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.contract.counterparty_id?.slice(0, 6) || 'None'}...</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                const val = `€${contextMenu.contract.value?.toLocaleString() || '0'} / ${contextMenu.contract.billing_cadence || 'monthly'}`;
-                copyToClipboard(val, `Contract Value (${val})`, undefined);
-                setContextMenu(null);
-              }}
-              className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Copy Value & Cadence
-              </span>
-              <span className="text-[10px] font-bold text-emerald-700">€{contextMenu.contract.value?.toLocaleString() || 0}</span>
-            </button>
-          </div>
-
-          <div className="border-t border-slate-100 my-1 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                const c = contextMenu.contract;
-                // `value` is the deal's total contract value, so annualise it through the pricing engine.
-                const arr = annualValue(c);
-                const report = [
-                  `📋 CONTRACT FAST REPORT: ${c.reference}`,
-                  `=========================================`,
-                  `• Counterparty: ${c.counterparty?.legal_name || 'Unmapped Entity'} (CP UUID: ${c.counterparty_id || 'N/A'})`,
-                  `• Contract UUID: ${c.id}`,
-                  `• Product & Type: ${c.product || c.type || 'Agreement'} (${c.direction.toUpperCase()})`,
-                  `• Status: ${c.status.toUpperCase()}`,
-                  `• Total Contract Value: €${c.value?.toLocaleString() || '0'} (ARR: €${arr.toLocaleString()}/yr)`,
-                  `• Term Period: ${c.starts_on} to ${c.ends_on || 'Indefinite'}`,
-                  `• Notice Terms: ${c.notice_period_days || 30} days window (Deadline: ${c.notice_deadline || 'None'})`,
-                  `• Notes & Conditions: ${c.notes || 'Standard executive financial terms apply.'}`
-                ].join('\n');
-                copyToClipboard(report, `Contract Fast Report (${c.reference})`, undefined);
-                setContextMenu(null);
-              }}
-              className="w-full px-3.5 py-2 text-left text-slate-800 hover:bg-emerald-50 hover:text-emerald-900 font-bold flex items-center justify-between transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2 text-emerald-700">
-                <Share2 className="w-4 h-4 text-emerald-600" /> Copy Fast Report (For Colleague)
-              </span>
-              <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase border border-emerald-200">Text</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* FLOATING TOAST FEEDBACK FOR COPIED VALUES */}
-      {copyFeedback && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200">
-          <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-            <Check className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-slate-100">Copied to Clipboard!</div>
-            <div className="text-[11px] text-slate-400 font-mono truncate max-w-xs">{copyFeedback}</div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
