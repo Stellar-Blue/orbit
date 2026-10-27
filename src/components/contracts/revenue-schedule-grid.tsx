@@ -11,11 +11,11 @@ import {
   type IHeaderParams,
   type ICellRendererParams,
 } from 'ag-grid-community';
-import { orbitGridTheme } from '@/lib/ag-grid-setup';
+import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Project } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type RevenueScheduleRow } from '@/lib/revenue-schedule';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight } from 'lucide-react';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -63,10 +63,10 @@ function createYearStore(initial: number): YearStore {
 }
 
 /**
- * The frozen right-hand total follows the calendar year occupying the left edge of the month
- * area, so scrolling past December switches it to the next year's totals. Keeping the year in a
- * store (rather than in the column definitions) means crossing a year boundary never recreates
- * the columns or resets the horizontal scroll.
+ * The frozen right-hand total follows the calendar year at the centre of the month area, so a
+ * wide (full-screen) viewport that still shows December of the previous year keeps totalling the
+ * year most of it displays. Keeping the year in a store (rather than in the column definitions)
+ * means crossing a year boundary never recreates the columns or resets the horizontal scroll.
  */
 function YearTotalHeader(props: IHeaderParams & { yearStore?: YearStore }) {
   const yearStore = props.yearStore;
@@ -85,6 +85,31 @@ function YearTotalHeader(props: IHeaderParams & { yearStore?: YearStore }) {
   );
 }
 
+/**
+ * First-column renderer. Used directly for flat rows and as the auto group column's inner cell
+ * renderer, where `params.value` carries the counterparty for both group and leaf rows.
+ */
+function CounterpartyStreamRenderer(params: ICellRendererParams<RevenueScheduleRow>) {
+  if (params.node?.rowPinned) {
+    return <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">Portfolio total</span>;
+  }
+  if (params.node?.group) {
+    return <span className="text-[11px] font-extrabold text-slate-800 truncate">{String(params.value ?? '')}</span>;
+  }
+  const isContractRow = params.data?.kind === 'contract';
+  return (
+    <div className="leading-[1.15]">
+      <div className="text-[11px] font-bold text-slate-800 truncate">
+        {String(params.value ?? params.data?.counterparty ?? '')}
+      </div>
+      <div className={`text-[9px] font-semibold flex items-center gap-1 ${isContractRow ? 'text-[#3D87D3]' : 'text-amber-600'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${isContractRow ? 'bg-[#3D87D3]' : 'bg-amber-500'}`} />
+        {isContractRow ? 'Contract charges' : 'Change requests'}
+      </div>
+    </div>
+  );
+}
+
 export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   contracts,
   projects,
@@ -94,6 +119,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 }) => {
   const gridApiRef = useRef<GridApi<RevenueScheduleRow> | null>(null);
   const [quickFilter, setQuickFilter] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [groupByCounterparty, setGroupByCounterparty] = useState(HAS_AG_GRID_LICENSE);
   const currentYear = new Date().getFullYear();
   const yearStore = useMemo(() => createYearStore(currentYear), [currentYear]);
   const visibleYear = useSyncExternalStore(yearStore.subscribe, yearStore.getYear, yearStore.getYear);
@@ -109,6 +136,23 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }, []);
+
+  /** Generated first column when grouping: expand/collapse + the counterparty, then its sublabel. */
+  const autoGroupColumnDef = useMemo<ColDef<RevenueScheduleRow>>(() => ({
+    headerName: 'Counterparty',
+    pinned: 'left',
+    width: 220,
+    minWidth: 180,
+    suppressMovable: true,
+    sortable: false,
+    filter: false,
+    resizable: false,
+    cellClass: 'cursor-pointer',
+    cellRendererParams: {
+      suppressCount: true,
+      innerRenderer: CounterpartyStreamRenderer,
+    },
+  }), []);
 
   const portfolioMRR = useMemo(
     () => contracts.reduce((total, contract) => {
@@ -132,7 +176,21 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     if (year === yearStore.getYear()) return;
     yearStore.setYear(year);
     gridApiRef.current?.refreshCells({ columns: ['year-total'], force: true });
-  }, [yearStore]);
+    // Group rows hold the year total in their aggregated data, so it must be recomputed too.
+    if (groupByCounterparty) gridApiRef.current?.refreshClientSideRowModel('aggregate');
+  }, [yearStore, groupByCounterparty]);
+
+  // Escape leaves the maximised card, unless a dossier modal (z-50) is on top and owns the key.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (document.querySelector('.fixed.inset-0.z-50')) return;
+      setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isFullscreen]);
 
   // Keep the frozen total inside the rendered range even when the data (or the clock) moves on.
   useEffect(() => {
@@ -141,7 +199,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     if (years.includes(current)) return;
     yearStore.setYear(Math.min(Math.max(current, years[0]), years[years.length - 1]));
     gridApiRef.current?.refreshCells({ columns: ['year-total'], force: true });
-  }, [years, yearStore]);
+    if (groupByCounterparty) gridApiRef.current?.refreshClientSideRowModel('aggregate');
+  }, [years, yearStore, groupByCounterparty]);
 
   const scrollToCurrentYear = useCallback((api: GridApi<RevenueScheduleRow>) => {
     if (years.length === 0) return;
@@ -165,14 +224,16 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     }
   }, [scrollToCurrentYear, schedule.months.length]);
 
-  const handleBodyScroll = useCallback((event: BodyScrollEvent<RevenueScheduleRow>) => {
-    const centerColumns = event.api.getDisplayedCenterColumns();
-    const left = Math.max(0, event.left);
+  /** Reads the year under the centre of the visible month area and keeps the frozen total on it. */
+  const syncVisibleYear = useCallback((api: GridApi<RevenueScheduleRow>) => {
+    const centerColumns = api.getDisplayedCenterColumns();
+    const range = api.getHorizontalPixelRange();
+    const midpoint = Math.max(0, (range.left + range.right) / 2);
     let year: number | null = null;
 
     for (const column of centerColumns) {
       const columnLeft = column.getLeft() ?? 0;
-      if (columnLeft + column.getActualWidth() > left + 1) {
+      if (columnLeft + column.getActualWidth() > midpoint) {
         const columnId = column.getColId();
         if (columnId.startsWith('m-')) year = Number(columnId.slice(2, 6));
         break;
@@ -181,6 +242,10 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
     if (year != null && Number.isFinite(year)) reflectYear(year);
   }, [reflectYear]);
+
+  const handleBodyScroll = useCallback((event: BodyScrollEvent<RevenueScheduleRow>) => {
+    syncVisibleYear(event.api);
+  }, [syncVisibleYear]);
 
   const columnDefs = useMemo<(ColDef<RevenueScheduleRow> | ColGroupDef<RevenueScheduleRow>)[]>(() => {
     const monthColumn = (key: string): ColDef<RevenueScheduleRow> => ({
@@ -198,6 +263,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       cellClass: key === currentMonthKey ? 'orbit-schedule-current-cell font-mono' : 'font-mono',
       cellClassRules: { 'font-black': params => params.node?.rowPinned === 'bottom' },
       getQuickFilterText: () => '',
+      aggFunc: 'sum',
       valueGetter: params => (params.data ? Number(params.data.months[key]) || 0 : 0),
       valueFormatter: params => formatAmount(params.value),
     });
@@ -206,6 +272,9 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       {
         headerName: 'Counterparty',
         colId: 'counterparty',
+        field: 'counterparty',
+        rowGroup: groupByCounterparty,
+        hide: groupByCounterparty,
         pinned: 'left',
         width: 200,
         minWidth: 160,
@@ -215,22 +284,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         getQuickFilterText: params => (
           params.data ? `${params.data.counterparty} ${params.data.reference} ${params.data.product}` : ''
         ),
-        cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
-          if (params.node?.rowPinned) {
-            return <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">Portfolio total</span>;
-          }
-          if (!params.data) return null;
-          const isContractRow = params.data.kind === 'contract';
-          return (
-            <div className="leading-tight">
-              <div className="text-[12px] font-bold text-slate-800 truncate">{params.data.counterparty}</div>
-              <div className={`text-[10px] font-semibold flex items-center gap-1 ${isContractRow ? 'text-[#3D87D3]' : 'text-amber-600'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${isContractRow ? 'bg-[#3D87D3]' : 'bg-amber-500'}`} />
-                {isContractRow ? 'Contract charges' : 'Change requests'}
-              </div>
-            </div>
-          );
-        },
+        cellRenderer: CounterpartyStreamRenderer,
       },
       {
         headerName: 'Master Agreement',
@@ -251,9 +305,9 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           if (!params.data) return null;
           const isContractRow = params.data.kind === 'contract';
           return (
-            <div className="leading-tight">
-              <div className="text-[12px] font-extrabold text-slate-900 font-mono">{params.data.reference}</div>
-              <div className="text-[10px] text-slate-500 font-semibold truncate">
+            <div className="leading-[1.15]">
+              <div className="text-[11px] font-extrabold text-slate-900 font-mono truncate">{params.data.reference}</div>
+              <div className="text-[9px] text-slate-500 font-semibold truncate">
                 {isContractRow
                   ? params.data.product || 'Recurring contract'
                   : params.data.projectCount === 0
@@ -295,11 +349,12 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         cellStyle: { backgroundColor: '#eef6ff', fontWeight: 800 },
         cellClassRules: { 'font-black': params => params.node?.rowPinned === 'bottom' },
         getQuickFilterText: () => '',
+        aggFunc: 'sum',
         valueGetter: params => (params.data ? yearTotalOf(params.data.months, yearStore.getYear()) : 0),
         valueFormatter: params => formatTotal(params.value),
       },
     ];
-  }, [yearGroups, currentMonthKey, yearStore]);
+  }, [yearGroups, currentMonthKey, yearStore, groupByCounterparty]);
 
   const pinnedBottomRowData = useMemo(
     () => [{ id: '__portfolio-total__', months: schedule.monthTotals }],
@@ -313,7 +368,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     : '—';
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+    <div className={isFullscreen ? 'fixed inset-0 z-40 flex bg-slate-900/60 p-3 sm:p-5' : ''}>
+      <div className={`bg-white border border-slate-200 overflow-hidden shadow-xs flex flex-col w-full ${isFullscreen ? 'flex-1 rounded-2xl shadow-2xl' : 'rounded-xl'}`}>
       <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -340,6 +396,15 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">{visibleYear} total</span>
             <span className="text-sm font-mono font-black text-[#3D87D3]">{formatTotal(visibleYearTotal)}</span>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(value => !value)}
+            title={isFullscreen ? 'Exit full screen (Esc)' : 'Open the revenue schedule in full screen'}
+            aria-label={isFullscreen ? 'Exit full screen' : 'Open in full screen'}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 cursor-pointer shrink-0"
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 
@@ -363,6 +428,21 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <CalendarClock className="w-3.5 h-3.5 text-[#3D87D3]" /> {currentYear}
             <ArrowRight className="w-3 h-3 text-slate-400" />
           </button>
+          {HAS_AG_GRID_LICENSE && (
+            <button
+              type="button"
+              onClick={() => setGroupByCounterparty(value => !value)}
+              title={groupByCounterparty ? 'Show a flat list instead of counterparty groups' : 'Group the schedule by counterparty'}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                groupByCounterparty
+                  ? 'border-[#3D87D3]/40 bg-[#3D87D3]/10 text-[#3D87D3]'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              {groupByCounterparty ? 'Grouped by counterparty' : 'Group by counterparty'}
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500">
           <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#3D87D3]" /> Contract charges</span>
@@ -371,26 +451,34 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         </div>
       </div>
 
-      <div className="h-[560px]">
+      <div className={isFullscreen ? 'flex-1 min-h-0' : 'h-[560px]'}>
         <AgGridReact<RevenueScheduleRow>
           theme={orbitGridTheme}
           rowData={schedule.rows}
           columnDefs={columnDefs}
+          autoGroupColumnDef={autoGroupColumnDef}
           pinnedBottomRowData={pinnedBottomRowData}
           getRowId={params => params.data.id}
           defaultColDef={{ sortable: false, filter: false, resizable: true, suppressMovable: true, minWidth: 60 }}
           quickFilterText={quickFilter}
-          rowHeight={44}
-          headerHeight={34}
+          getRowHeight={params => (params.node?.group ? 30 : 32)}
+          headerHeight={32}
+          groupDisplayType="singleColumn"
+          groupDefaultExpanded={-1}
+          suppressAggFuncInHeader={true}
           onGridReady={handleGridReady}
           onBodyScroll={handleBodyScroll}
+          onGridSizeChanged={event => syncVisibleYear(event.api)}
           onRowClicked={event => {
-            if (event.node.rowPinned || !event.data || !onOpenContract) return;
+            if (event.node.rowPinned) return;
+            if (event.node.group) { event.node.setExpanded(!event.node.expanded); return; }
+            if (!event.data || !onOpenContract) return;
             onOpenContract(event.data.contract);
           }}
           suppressCellFocus={true}
           animateRows={false}
         />
+      </div>
       </div>
     </div>
   );
