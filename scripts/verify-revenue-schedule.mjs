@@ -13,6 +13,7 @@ import {
   contractEffectiveWindow,
   groupMonthsByYear,
   monthKeysBetween,
+  resampleToBillingMonths,
   toMonthKey,
   yearTotalOf,
 } from '@/lib/revenue-schedule';
@@ -246,6 +247,84 @@ const totals = full.monthTotals;
 assert(totals['2025-01'] === 1000, 'Month totals combine both streams', String(totals['2025-01']));
 assert(totals['2025-03'] === 3000, 'Month totals add project revenue to contract charges', String(totals['2025-03']));
 
+
+
+// --- Cashflow basis ----------------------------------------------------------
+const monthlyCharges = contractChargeMonths(contract({ lines: [monthlyLine] }));
+const quarterlyAdvance = resampleToBillingMonths(
+  contract({ lines: [monthlyLine], billing_cadence: 'quarterly', invoice_timing: 'start_of_period' }),
+  monthlyCharges
+);
+assert(
+  Object.keys(quarterlyAdvance).join(',') === '2025-01,2025-04,2025-07,2025-10' && quarterlyAdvance['2025-01'] === 3000,
+  'A quarterly contract bills one value per quarter, at the period start',
+  JSON.stringify(quarterlyAdvance)
+);
+
+const quarterlyArrears = resampleToBillingMonths(
+  contract({ lines: [monthlyLine], billing_cadence: 'quarterly', invoice_timing: 'end_of_period' }),
+  monthlyCharges
+);
+assert(
+  Object.keys(quarterlyArrears).join(',') === '2025-03,2025-06,2025-09,2025-12' && quarterlyArrears['2025-12'] === 3000,
+  'Billed in arrears, the same quarter lands on the period end',
+  JSON.stringify(quarterlyArrears)
+);
+
+const annualAdvance = resampleToBillingMonths(
+  contract({ lines: [monthlyLine], billing_cadence: 'annual', invoice_timing: 'start_of_period' }),
+  monthlyCharges
+);
+assert(
+  Object.keys(annualAdvance).join(',') === '2025-01' && annualAdvance['2025-01'] === 12000,
+  'An annual contract bills the full year once',
+  JSON.stringify(annualAdvance)
+);
+
+const monthlyBasis = resampleToBillingMonths(contract({ lines: [monthlyLine] }), monthlyCharges);
+assert(
+  Object.keys(monthlyBasis).length === 12 && monthlyBasis['2025-05'] === 1000,
+  'A monthly contract looks identical in both views',
+  Object.keys(monthlyBasis).length
+);
+
+const oneOffBasis = resampleToBillingMonths(
+  contract({ billing_cadence: 'one_off' }),
+  { '2025-03': 5000 }
+);
+assert(
+  oneOffBasis['2025-03'] === 5000 && Object.keys(oneOffBasis).length === 1,
+  'A one-off settlement stays in the month it lands',
+  JSON.stringify(oneOffBasis)
+);
+
+// The whole grid honours the basis, project rows included.
+const cashflowProjects = [{ id: 'p-cash', contract_id: 'cnt-1', name: 'Rollout', code: 'CR-9', status: 'active', starts_on: '2025-01-01', ends_on: '2025-12-31', budget_value: 12000 }];
+const cashGrid = buildRevenueSchedule(
+  [contract({ lines: [monthlyLine], billing_cadence: 'quarterly', invoice_timing: 'start_of_period' })],
+  cashflowProjects,
+  [],
+  [],
+  { basis: 'cashflow' }
+);
+const cashContractRow = cashGrid.rows.find(row => row.kind === 'contract');
+const cashProjectRow = cashGrid.rows.find(row => row.kind === 'project');
+assert(
+  cashContractRow && Object.keys(cashContractRow.months).join(',') === '2025-01,2025-04,2025-07,2025-10',
+  'The cashflow grid bills the contract per quarter',
+  cashContractRow ? Object.keys(cashContractRow.months).join(',') : 'missing'
+);
+assert(
+  cashProjectRow && Object.keys(cashProjectRow.months).join(',') === '2025-01,2025-04,2025-07,2025-10' &&
+    yearTotalOf(cashProjectRow.months, 2025) === 12000,
+  'Change-request rows follow the same billing cycles without changing their total',
+  cashProjectRow ? JSON.stringify(cashProjectRow.months) : 'missing'
+);
+assert(
+  cashGrid.monthTotals['2025-01'] === 6000 && cashGrid.monthTotals['2025-02'] === undefined,
+  'Portfolio totals only count billed months in the cashflow view',
+  JSON.stringify(cashGrid.monthTotals)
+);
 
 // --- Invoice overlay ---------------------------------------------------------
 const invoice = (overrides = {}) => ({

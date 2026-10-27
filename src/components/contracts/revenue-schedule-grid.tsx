@@ -14,7 +14,7 @@ import {
 import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
-import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   invoiceCellKey,
@@ -35,7 +35,7 @@ import Link from 'next/link';
 import { Modal, Badge } from '@/components/ui/primitives';
 import { formatMoney } from '@/lib/currency';
 import { formatDate } from '@/lib/date';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus } from 'lucide-react';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -362,6 +362,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const [quickFilter, setQuickFilter] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [groupByCounterparty, setGroupByCounterparty] = useState(HAS_AG_GRID_LICENSE);
+  /** Recognition = money spread over the service months; cashflow = money on the months it is billed. */
+  const [scheduleBasis, setScheduleBasis] = useState<ScheduleBasis>('recognition');
   const [pendingSuggestions, setPendingSuggestions] = useState<Record<string, true>>({});
   const [peek, setPeek] = useState<{ contract: Contract; invoiceIds: string[] } | null>(null);
   const currentYear = new Date().getFullYear();
@@ -370,8 +372,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const autoScrolledRef = useRef(false);
 
   const schedule = useMemo(
-    () => buildRevenueSchedule(contracts, projects, catalogModules, catalogItems),
-    [contracts, projects, catalogModules, catalogItems]
+    () => buildRevenueSchedule(contracts, projects, catalogModules, catalogItems, { basis: scheduleBasis }),
+    [contracts, projects, catalogModules, catalogItems, scheduleBasis]
   );
   // The grid's cell selection lives outside React: `selectionVersion` (bumped by AG Grid's
   // selection event) and `schedule.rows` are deliberate invalidation keys for this memo.
@@ -825,13 +827,15 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-[#3D87D3]" />
-            <span className="text-sm font-extrabold text-slate-800">Revenue Schedule & MRR</span>
+            <span className="text-sm font-extrabold text-slate-800">{scheduleBasis === 'cashflow' ? 'Cashflow Schedule' : 'Revenue Schedule & MRR'}</span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {contracts.length} contract{contracts.length === 1 ? '' : 's'} · {changeRequestCount} change request{changeRequestCount === 1 ? '' : 's'}
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Month-by-month revenue mirroring the budget workbook — contract charges and project-based change requests per master agreement.
+            {scheduleBasis === 'cashflow'
+              ? 'What actually gets invoiced: each contract’s charges land once per billing cycle (monthly, quarterly or annual, at the period start or end), alongside the invoices issued, paid or suggested.'
+              : 'Month-by-month revenue mirroring the budget workbook — contract charges and project-based change requests per master agreement.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
@@ -879,6 +883,30 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <CalendarClock className="w-3.5 h-3.5 text-[#3D87D3]" /> {currentYear}
             <ArrowRight className="w-3 h-3 text-slate-400" />
           </button>
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shrink-0" role="group" aria-label="Schedule view">
+            <button
+              type="button"
+              onClick={() => setScheduleBasis('recognition')}
+              title="Spread each contract over the months the service is delivered"
+              aria-pressed={scheduleBasis === 'recognition'}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                scheduleBasis === 'recognition' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <BarChart3 className="w-3 h-3" /> Revenue
+            </button>
+            <button
+              type="button"
+              onClick={() => setScheduleBasis('cashflow')}
+              title="Show one value per billing cycle — what will be invoiced"
+              aria-pressed={scheduleBasis === 'cashflow'}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                scheduleBasis === 'cashflow' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Banknote className="w-3 h-3" /> Cashflow
+            </button>
+          </div>
           {HAS_AG_GRID_LICENSE && (
             <button
               type="button"

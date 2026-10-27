@@ -167,6 +167,54 @@ export function contractChargeMonths(
   return months;
 }
 
+/**
+ * Which lens the grid shows: `recognition` spreads each contract over the months the service is
+ * delivered, `cashflow` lands the same money on the months it is actually billed.
+ */
+export type ScheduleBasis = 'recognition' | 'cashflow';
+
+const CADENCE_MONTHS: Record<string, number> = { monthly: 1, quarterly: 3, annual: 12 };
+
+/**
+ * Re-buckets a monthly stream onto the contract's invoicing months. One value per billing cycle:
+ * a quarterly agreement shows its quarter total once, on the period start (billed in advance) or the
+ * period end (billed in arrears). One-off / milestone agreements keep the single month they land in.
+ *
+ * The contract's invoicing timing is applied to the whole row — per-line timing splits are an
+ * invoicing detail (see getContractBillingPeriods) and are not modelled per cell here.
+ */
+export function resampleToBillingMonths(
+  contract: Contract,
+  monthly: Record<string, number>
+): Record<string, number> {
+  const billed: Record<string, number> = {};
+  const chargeMonths = Object.keys(monthly).filter(key => Number(monthly[key]) !== 0).sort();
+  if (chargeMonths.length === 0) return billed;
+
+  const cycle = CADENCE_MONTHS[contract.billing_cadence || 'monthly'] ?? 0;
+  if (cycle === 0) {
+    // One-off / milestone: nothing to spread, the charge is billed where it lands.
+    chargeMonths.forEach(key => { billed[key] = round2((billed[key] || 0) + monthly[key]); });
+    return billed;
+  }
+
+  const billAtEnd = contract.invoice_timing === 'end_of_period';
+  const window = contractEffectiveWindow(contract);
+  const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
+  const lastMonth = chargeMonths[chargeMonths.length - 1];
+  const horizon = monthKeysBetween(firstMonth, lastMonth);
+
+  // Cycles are anchored on the contract (not the calendar), exactly like getContractBillingPeriods.
+  for (let index = 0; index < horizon.length; index += cycle) {
+    const slice = horizon.slice(index, index + cycle);
+    const total = slice.reduce((sum, key) => sum + (monthly[key] || 0), 0);
+    if (total === 0) continue;
+    const billingMonth = billAtEnd ? slice[slice.length - 1] : slice[0];
+    billed[billingMonth] = round2((billed[billingMonth] || 0) + total);
+  }
+  return billed;
+}
+
 export interface ContractProjectSchedule {
   project: Project;
   months: Record<string, number>;
@@ -219,8 +267,10 @@ export function buildRevenueSchedule(
   contracts: Contract[],
   projects: Project[],
   catalogModules: CatalogModule[] = [],
-  catalogItems: CatalogItem[] = []
+  catalogItems: CatalogItem[] = [],
+  options: { basis?: ScheduleBasis } = {}
 ): RevenueSchedule {
+  const basis = options.basis || 'recognition';
   const rows: RevenueScheduleRow[] = [];
   const effectiveMonths = new Set<string>();
 
@@ -235,7 +285,8 @@ export function buildRevenueSchedule(
     const window = contractEffectiveWindow(contract);
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
-    const charges = contractChargeMonths(contract, catalogModules, catalogItems);
+    const monthlyCharges = contractChargeMonths(contract, catalogModules, catalogItems);
+    const charges = basis === 'cashflow' ? resampleToBillingMonths(contract, monthlyCharges) : monthlyCharges;
     const projectSchedules = contractProjectSchedules(contract, projects);
 
     Object.keys(charges).forEach(key => effectiveMonths.add(key));
@@ -252,7 +303,8 @@ export function buildRevenueSchedule(
     });
 
     // One line per change request. A contract without projects contributes no CR rows at all.
-    projectSchedules.forEach(({ project, months }) => {
+    projectSchedules.forEach(({ project, months: projectMonths }) => {
+      const months = basis === 'cashflow' ? resampleToBillingMonths(contract, projectMonths) : projectMonths;
       Object.keys(months).forEach(key => effectiveMonths.add(key));
       rows.push({
         id: `${contract.id}::project::${project.id}`,
