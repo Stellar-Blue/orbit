@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Receipt } from 'lucide-react';
-import { projectBillingBasis, projectBasisLabel, type ProjectBillingInput, type ProjectValueInput } from '@/lib/project-billing';
+import { projectBillingBasis, projectBasisLabel, type ProjectBillingInput, type ProjectBillingInvoice, type ProjectValueInput } from '@/lib/project-billing';
 
 const money = (n: number, min = 2) => `€${n.toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: min })}`;
 
@@ -19,7 +19,7 @@ export function ProjectBillingBar({
 }: {
   project: ProjectValueInput & { name: string };
   entries: ProjectBillingInput[];
-  invoices: Array<{ id: string; status: string; gross_eur?: number | null }>;
+  invoices: ProjectBillingInvoice[];
   contractId: string;
 }) {
   const basis = projectBillingBasis(entries, invoices, project);

@@ -19,6 +19,7 @@ import {
 } from './pricing-engine';
 import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice } from './types';
 import { formatDate } from './date';
+import { netInvoices, type NettableInvoice } from './invoice-netting';
 
 type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>;
 
@@ -53,6 +54,17 @@ export interface BillingPeriodContract {
   starts_on?: string | null;
 }
 
+/** The invoice fields the period walk needs — a full Invoice satisfies this shape. */
+export interface BillingPeriodInvoice extends NettableInvoice {
+  id: string;
+  contract_id?: string | null;
+  status: string;
+  reference_period?: string | null;
+  period_from?: string | null;
+  period_to?: string | null;
+  issue_date?: string | null;
+}
+
 export interface BillingPeriodOptions {
   /** Defaults to today — injectable so the period walk is testable. */
   today?: Date;
@@ -61,11 +73,8 @@ export interface BillingPeriodOptions {
   timesheets?: Array<{ contract_line_id?: string | null; work_date: string; hours: number }>;
   /** Contract line groups — needed so min_monthly_charge floors are priced into the schedule. */
   groups?: Array<Partial<ContractLineGroup>>;
-  /** Linked invoices, used to mark a period as drafted/billed. */
-  invoices?: Array<{
-    id: string; contract_id?: string | null; status: string;
-    reference_period?: string | null; period_from?: string | null; period_to?: string | null; issue_date?: string | null;
-  }>;
+  /** Linked invoices, used to mark a period as drafted/billed. Credit notes never mark a period. */
+  invoices?: BillingPeriodInvoice[];
   /** Optimistic "draft created" marks from the hub, keyed `${contractId}::${periodKey}`. */
   generatedDraftIds?: Record<string, string>;
 }
@@ -139,6 +148,8 @@ export function getContractBillingPeriods(
   const todayStart = new Date(today);
   todayStart.setHours(0, 0, 0, 0);
 
+  // A credit note reverses an invoice instead of paying it: neither may mark a period as billed.
+  const usableInvoices = netInvoices(invoices).active;
   const cadence = contract.billing_cadence || 'monthly';
   const timing = contract.invoice_timing || 'start_of_period';
   const lines = contract.lines || [];
@@ -260,7 +271,7 @@ export function getContractBillingPeriods(
    * contract start instead of the calendar — including invoices raised before that change.
    */
   const findExistingInvoice = (period: { key: string; label: string; from: string; to: string }) =>
-    invoices.find(i => {
+    usableInvoices.find(i => {
       if (i.contract_id !== contract.id) return false;
       if (i.reference_period && i.reference_period.trim() !== '') {
         const ref = i.reference_period.trim().toLowerCase();
@@ -283,7 +294,7 @@ export function getContractBillingPeriods(
       { side: 'start_of_period' as const, key: `${period.key}@start`, date: period.from, label: `${period.label} · in advance` },
       { side: 'end_of_period' as const, key: `${period.key}@end`, date: period.to, label: `${period.label} · in arrears` },
     ];
-    const assigned = new Map<'start_of_period' | 'end_of_period', (typeof invoices)[number]>();
+    const assigned = new Map<'start_of_period' | 'end_of_period', BillingPeriodInvoice>();
     const daysApart = (a: string, b: string) => {
       const left = new Date(a + 'T00:00:00');
       const right = new Date(b + 'T00:00:00');
@@ -291,7 +302,7 @@ export function getContractBillingPeriods(
       return Math.abs(left.getTime() - right.getTime()) / 86_400_000;
     };
 
-    invoices.forEach(inv => {
+    usableInvoices.forEach(inv => {
       if (inv.contract_id !== contract.id) return;
 
       const reference = (inv.reference_period || '').trim().toLowerCase();

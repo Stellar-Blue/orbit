@@ -1,3 +1,5 @@
+import { netInvoices, type NettableInvoice } from '@/lib/invoice-netting';
+
 /**
  * How much is a project worth, how much has been logged, and what should the next draft invoice carry?
  *
@@ -49,9 +51,15 @@ export interface ProjectBillingBasis {
 
 const hours = (minutes: number | null | undefined) => (Number(minutes) || 0) / 60;
 
+export interface ProjectBillingInvoice extends NettableInvoice {
+  id: string;
+  status: string;
+  gross_eur?: number | null;
+}
+
 export function projectBillingBasis(
   entries: ProjectBillingInput[],
-  invoices: Array<{ id: string; status: string; gross_eur?: number | null }>,
+  invoices: Array<ProjectBillingInvoice>,
   project: ProjectValueInput
 ): ProjectBillingBasis {
   const mine = entries.filter(e => e.project_id === project.id);
@@ -65,9 +73,10 @@ export function projectBillingBasis(
   );
 
   const invoiceIds = new Set(mine.filter(e => e.invoice_id).map(e => e.invoice_id as string));
-  const invoicedAmount = invoices
-    .filter(i => invoiceIds.has(i.id) && i.status !== 'cancelled' && i.status !== 'draft')
-    .reduce((s, i) => s + (Number(i.gross_eur) || 0), 0);
+  // A credit note reverses work already invoiced: neither it nor the invoice it cancels is billable.
+  const invoicedAmount = netInvoices(
+    invoices.filter(i => invoiceIds.has(i.id) && i.status !== 'draft')
+  ).active.reduce((s, i) => s + (Number(i.gross_eur) || 0), 0);
 
   const projectValue = project.budget_value != null && Number(project.budget_value) > 0 ? Number(project.budget_value) : null;
   const budgetHours = project.budget_hours != null && Number(project.budget_hours) > 0 ? Number(project.budget_hours) : null;

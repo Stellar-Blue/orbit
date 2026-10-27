@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { accountingInvoices } from '@/lib/invoice-netting';
 import { Card, Badge } from '@/components/ui/primitives';
 
 const formatCurrency = (amount: number) => {
@@ -22,6 +23,8 @@ export function CounterpartyEvaluationView({ statYear, statMonth }: Counterparty
   const targetPeriodPrefix = monthStr ? `${statYear}-${monthStr}` : statYear.toString();
 
   const evaluationStats = useMemo(() => {
+    // Credit notes cancel invoices rather than pay them; the netted set keeps revenue honest.
+    const counted = accountingInvoices(invoices || []);
     const stats = counterparties.map(cp => {
       // 1. Find all active contracts for this counterparty
       const cpContracts = contracts.filter(c => c.counterparty_id === cp.id && c.status === 'active');
@@ -59,9 +62,8 @@ export function CounterpartyEvaluationView({ statYear, statMonth }: Counterparty
       });
 
       // 2. Find invoices issued in the selected period
-      const cpInvoices = invoices.filter(i => {
+      const cpInvoices = counted.filter(i => {
         if (i.counterparty_id !== cp.id) return false;
-        if (i.status === 'cancelled') return false;
         return i.issue_date.startsWith(targetPeriodPrefix);
       });
 

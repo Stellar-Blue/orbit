@@ -1,5 +1,5 @@
 import type { CatalogItem, CatalogModule, Contract } from '@/lib/types';
-import { getContractBillingPeriods, type BillingPeriodItem } from '@/lib/billing-periods';
+import { getContractBillingPeriods, type BillingPeriodInvoice, type BillingPeriodItem } from '@/lib/billing-periods';
 import { monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -27,10 +27,7 @@ export interface InvoiceSuggestionOptions {
   catalogModules?: CatalogModule[];
   catalogItems?: CatalogItem[];
   /** Contracts' linked invoices, so periods already drafted or billed are not suggested again. */
-  invoices?: Array<{
-    id: string; contract_id?: string | null; status: string;
-    reference_period?: string | null; period_from?: string | null; period_to?: string | null; issue_date?: string | null;
-  }>;
+  invoices?: BillingPeriodInvoice[];
   /** Optimistic "draft created" marks, keyed `${contractId}::${periodKey}`. */
   draftInvoiceIds?: Record<string, string>;
   today?: Date;

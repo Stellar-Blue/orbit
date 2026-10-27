@@ -13,6 +13,7 @@ import {
   FileText, Plus, AlertTriangle, DollarSign, X,
   Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap
 } from 'lucide-react';
+import { accountingInvoices } from '@/lib/invoice-netting';
 import { ContractPricingBuilder, type PricingDraft } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
@@ -870,7 +871,7 @@ export default function ContractsRegistryPage() {
             ) : dossierTab === 'invoices' ? (
               <div className="space-y-6 pt-3 animate-fadeIn">
                 {(() => {
-                  const linkedInvoices = (invoices || []).filter(i => i.contract_id === selectedContract.id && i.status !== 'cancelled');
+                  const linkedInvoices = accountingInvoices((invoices || []).filter(i => i.contract_id === selectedContract.id));
                   const totalGross = linkedInvoices.reduce((s, i) => s + i.gross_eur, 0);
                   const totalPaid = linkedInvoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + p.amount, 0), 0);
                   const totalOpen = Math.max(0, totalGross - totalPaid);

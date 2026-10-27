@@ -28,6 +28,7 @@ import {
   invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
+import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
 
 let passed = 0;
 let failed = 0;
@@ -632,6 +633,113 @@ assert(
     arrearsRows[0].invoiceDate === '2025-03-31' && arrearsRows[3].invoiceDate === '2025-12-31',
   'Recurring fees are suggested once per quarter, dated on the quarter end',
   arrearsRows.map(s => `${s.invoiceDate}:${s.amount}`).join(' ')
+);
+
+// --- Credit notes cancel invoices instead of paying them ---------------------
+// myDATA cancels by credit note: the pair must not count as revenue, and an unmatched credit still
+// reduces it.
+const creditInvoice = (overrides = {}) => ({
+  id: 'inv-orig', direction: 'outgoing', counterparty_id: 'cp-1', contract_id: 'cnt-1', type: 'invoice',
+  invoice_number: 'B-15', issue_date: '2026-07-08', due_date: '2026-08-07',
+  period_from: '2025-10-01', period_to: '2026-03-31', net: 11304.3, vat_amount: 0,
+  gross: 11304.3, gross_eur: 11304.3, status: 'paid', ...overrides,
+});
+const creditNote = (overrides = {}) => creditInvoice({
+  id: 'inv-credit', type: 'credit_note', invoice_number: 'D-3', ...overrides,
+});
+const earlierInvoice = creditInvoice({ id: 'inv-kept', invoice_number: 'B-11', issue_date: '2026-05-05', due_date: '2026-06-04' });
+const credited = netInvoices([earlierInvoice, creditInvoice(), creditNote()]);
+assert(
+  credited.active.length === 1 && credited.active[0].id === 'inv-kept' &&
+    credited.reversed.length === 1 && credited.reversed[0].id === 'inv-orig' &&
+    credited.appliedCredits.length === 1 && credited.appliedCredits[0].id === 'inv-credit',
+  'A credit note reverses the invoice it cancels, and neither counts as revenue',
+  `active ${credited.active.map(i => i.invoice_number)} · reversed ${credited.reversed.map(i => i.invoice_number)}`
+);
+assert(
+  credited.reversedOf.get('inv-credit') === 'inv-orig' && credited.openCredits.length === 0,
+  'The credit is paired with the latest matching invoice, not the older one'
+);
+
+const linkedCredit = netInvoices([
+  creditInvoice(),
+  creditNote({ credits_invoice_id: 'inv-orig' }),
+]);
+assert(
+  linkedCredit.active.length === 0 && linkedCredit.reversedOf.get('inv-credit') === 'inv-orig',
+  'An explicit credits_invoice_id link wins over amount matching'
+);
+
+const partialCredit = netInvoices([creditInvoice(), creditNote({ id: 'inv-partial', gross: 1000, gross_eur: 1000, net: 1000 })]);
+assert(
+  partialCredit.active.length === 1 && partialCredit.openCredits.length === 1 &&
+    partialCredit.openCredits[0].id === 'inv-partial',
+  'A credit note that does not match an invoice stays open and reduces revenue',
+  partialCredit.openCredits.map(i => i.invoice_number).join(', ')
+);
+assert(
+  accountingInvoices([creditInvoice(), creditNote({ id: 'inv-partial', gross: 1000, gross_eur: 1000, net: 1000 })])
+    .reduce((sum, invoice) => sum + invoice.gross_eur, 0) === 10304.3,
+  'The accounting set nets an unmatched credit instead of dropping it'
+);
+
+const otherEntityCredit = netInvoices([
+  creditInvoice(),
+  creditNote({ counterparty_id: 'cp-2' }),
+]);
+assert(
+  otherEntityCredit.active.length === 1 && otherEntityCredit.openCredits.length === 1,
+  'A credit note from another counterparty never reverses this invoice'
+);
+
+assert(
+  accountingInvoices([creditInvoice(), creditNote()]).length === 0,
+  'A cancelled pair leaves nothing in the accounting set'
+);
+assert(
+  netInvoices([creditInvoice({ status: 'cancelled' })]).active.length === 0,
+  'Cancelled documents never count'
+);
+
+// The schedule never paints a box for a credited invoice, and the surviving one still does.
+const creditedCoverage = buildInvoiceCoverage(
+  [creditInvoice(), creditNote()],
+  [contract({ lines: [monthlyLine], invoice_timing: 'start_of_period' })]
+);
+assert(
+  creditedCoverage.size === 0,
+  'A credited invoice paints no coverage box',
+  String(creditedCoverage.size)
+);
+const liveInvoice = creditInvoice({ id: 'inv-live', invoice_number: 'B-11', issue_date: '2026-05-05', period_from: '2025-10-01', period_to: '2026-03-31' });
+const liveCoverage = buildInvoiceCoverage([liveInvoice, creditNote({ id: 'inv-credit-2', credits_invoice_id: 'inv-gone' })], [contract({ lines: [monthlyLine], invoice_timing: 'start_of_period' })]);
+assert(
+  liveCoverage.get('cnt-1:2025-10')?.invoices.includes('B-11') === true,
+  'The invoice that was not credited keeps its coverage box',
+  JSON.stringify(liveCoverage.get('cnt-1:2025-10')?.invoices || [])
+);
+
+// A credit note must not mark the period it mentions as already invoiced.
+const creditedSuggestions = buildInvoiceSuggestions([billable], {
+  today,
+  invoices: [
+    { ...linkedInvoice, id: 'inv-cn', type: 'credit_note', invoice_number: 'D-3' },
+  ],
+});
+assert(
+  creditedSuggestions.some(s => s.period.key === '2025-01-01'),
+  'A credit note does not hide the suggestion of the period it refers to'
+);
+const reversedSuggestions = buildInvoiceSuggestions([billable], {
+  today,
+  invoices: [
+    { ...linkedInvoice, id: 'inv-a', invoice_number: 'B-15' },
+    { ...linkedInvoice, id: 'inv-b', type: 'credit_note', invoice_number: 'D-3' },
+  ],
+});
+assert(
+  reversedSuggestions.some(s => s.period.key === '2025-01-01'),
+  'An invoice cancelled by a credit note becomes billable again'
 );
 
 console.log('\n================================================================');

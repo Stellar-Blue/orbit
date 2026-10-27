@@ -1,4 +1,5 @@
 import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus } from '@/lib/types';
+import { netInvoices } from '@/lib/invoice-netting';
 import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -146,11 +147,14 @@ export function buildInvoiceCoverage(
     contractsByCounterparty.set(contract.counterparty_id, list);
   });
 
-  const ordered = invoices
-    .filter(invoice => invoice.direction === 'outgoing')
-    .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
-    .filter(invoice => Boolean(invoice.counterparty_id))
-    .sort((a, b) => String(a.issue_date || '').localeCompare(String(b.issue_date || '')) || a.id.localeCompare(b.id));
+  // Credit notes cancel their invoice rather than paying it, so neither side of the pair may paint
+  // an "invoiced" box — and an unmatched credit never covers anything on its own.
+  const ordered = netInvoices(
+    invoices
+      .filter(invoice => invoice.direction === 'outgoing')
+      .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
+      .filter(invoice => Boolean(invoice.counterparty_id))
+  ).active.sort((a, b) => String(a.issue_date || '').localeCompare(String(b.issue_date || '')) || a.id.localeCompare(b.id));
 
   const covered: InvoiceCoverageMap = new Map();
   const chargesByContract = new Map<string, Record<string, number>>();

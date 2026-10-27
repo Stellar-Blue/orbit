@@ -17,6 +17,7 @@ import {
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { CashflowBarChart } from '@/components/invoices/cashflow-chart';
 import { calculateContractValuation } from '@/lib/pricing-engine';
+import { accountingInvoices } from '@/lib/invoice-netting';
 import { formatDate } from '@/lib/date';
 import * as XLSX from 'xlsx';
 
@@ -76,6 +77,10 @@ export default function ReportsPage() {
   const [cfStartMonth, setCfStartMonth] = useState<number>(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d.getMonth() + 1; });
   const [cfMonths, setCfMonths] = useState<number>(6);
 
+  // AADE cancels an invoice with a credit note, so financial totals must read the netted set: the
+  // reversed invoice and its credit are gone, and an unmatched credit comes through as a negative.
+  const acctInvoices = useMemo(() => accountingInvoices(invoices || []), [invoices]);
+
   // Month M Close Drift Rollups (Current Month)
   const currentMonthPeriod = useMemo(() => new Date().toISOString().slice(0, 7), []);
   const monthDrift = useMemo(() => {
@@ -93,7 +98,7 @@ export default function ReportsPage() {
       if (cnt.direction === 'revenue') {
         const sched = cnt.schedule?.find(s => s.period === currentMonthPeriod);
         if (sched) {
-          const hasAlloc = invoices.some(i => i.contract_id === cnt.id && i.status !== 'cancelled' && (i.reference_period === currentMonthPeriod || i.allocations?.some(a => a.period === currentMonthPeriod) || i.issue_date.startsWith(currentMonthPeriod) || (i.period_from || '').startsWith(currentMonthPeriod)));
+          const hasAlloc = acctInvoices.some(i => i.contract_id === cnt.id && (i.reference_period === currentMonthPeriod || i.allocations?.some(a => a.period === currentMonthPeriod) || i.issue_date.startsWith(currentMonthPeriod) || (i.period_from || '').startsWith(currentMonthPeriod)));
           if (!hasAlloc) {
             uninvoicedArAmount += sched.amount;
           }
@@ -101,8 +106,7 @@ export default function ReportsPage() {
       }
     });
 
-    invoices.forEach(inv => {
-      if (inv.status === 'cancelled') return;
+    acctInvoices.forEach(inv => {
       if (inv.missing_document) missingDocumentsCount++;
 
       const dueDate = new Date(inv.due_date);
@@ -119,7 +123,7 @@ export default function ReportsPage() {
     });
 
     return { uninvoicedArAmount, overdueUnpaidAr, supplierDueIn14Days, missingDocumentsCount };
-  }, [invoices, contracts, currentMonthPeriod]);
+  }, [acctInvoices, contracts, currentMonthPeriod]);
 
   // AR Aging Buckets Calculation
   const agingBuckets = useMemo(() => {
@@ -130,8 +134,8 @@ export default function ReportsPage() {
     let days90Plus = 0;
     const today = new Date().getTime();
 
-    invoices.forEach(inv => {
-      if (inv.direction !== 'outgoing' || inv.status === 'paid' || inv.status === 'cancelled' || inv.type === 'proforma') return;
+    acctInvoices.forEach(inv => {
+      if (inv.direction !== 'outgoing' || inv.status === 'paid' || inv.type === 'proforma') return;
       const paid = (inv.payments || []).reduce((sum, p) => sum + p.amount, 0);
       const openAmount = Math.max(0, inv.gross_eur - paid);
       const dueTime = new Date(inv.due_date).getTime();
@@ -146,7 +150,7 @@ export default function ReportsPage() {
 
     const totalOpenAr = current + days1_30 + days31_60 + days61_90 + days90Plus;
     return { current, days1_30, days31_60, days61_90, days90Plus, totalOpenAr };
-  }, [invoices]);
+  }, [acctInvoices]);
 
   // Cashflow view: realized (actual invoices by issue date) vs projected (contract schedules + open liabilities)
   // over a user-selectable period. Realized is filled for past/current months, projected for all months.
@@ -168,8 +172,7 @@ export default function ReportsPage() {
       // Realized = actual invoices issued in this month (accrual basis, cancelled excluded)
       let realizedAr = 0;
       let realizedAp = 0;
-      invoices.forEach(inv => {
-        if (inv.status === 'cancelled') return;
+      acctInvoices.forEach(inv => {
         if ((inv.issue_date || '').slice(0, 7) !== mStr) return;
         if (inv.direction === 'outgoing') realizedAr += inv.gross_eur;
         else realizedAp += inv.gross_eur;
@@ -189,8 +192,8 @@ export default function ReportsPage() {
           else if (cnt.direction === 'cost') projectedAp += val;
         }
       });
-      invoices.forEach(inv => {
-        if (inv.status === 'paid' || inv.status === 'cancelled') return;
+      acctInvoices.forEach(inv => {
+        if (inv.status === 'paid') return;
         if (!(inv.due_date || '').startsWith(mStr)) return;
         const paid = (inv.payments || []).reduce((sum, p) => sum + p.amount, 0);
         const rem = Math.max(0, inv.gross_eur - paid);
@@ -215,7 +218,7 @@ export default function ReportsPage() {
       });
     }
     return months;
-  }, [invoices, contracts, salaries, cfStartYear, cfStartMonth, cfMonths]);
+  }, [acctInvoices, contracts, salaries, cfStartYear, cfStartMonth, cfMonths]);
 
   const fmtNet = (v: number) => (v >= 0 ? `+€${v.toLocaleString()}` : `-€${Math.abs(v).toLocaleString()}`);
 
@@ -251,7 +254,7 @@ export default function ReportsPage() {
       if (prevMonth < 1) { prevMonth = 12; prevYear = statYear - 1; }
     }
     const sum = (y: number, m: number, dir: InvoiceDirection) =>
-      (invoices || []).filter(i => inPeriod(i, y, m) && i.direction === dir && i.status !== 'cancelled')
+      acctInvoices.filter(i => inPeriod(i, y, m) && i.direction === dir)
         .reduce((s, i) => s + i.gross_eur, 0);
     const ar = sum(statYear, statMonth, 'outgoing');
     const ap = sum(statYear, statMonth, 'incoming');
@@ -259,7 +262,7 @@ export default function ReportsPage() {
     const prevAp = sum(prevYear, prevMonth, 'incoming');
     const pct = (cur: number, prev: number) => prev === 0 ? (cur === 0 ? 0 : 100) : ((cur - prev) / prev) * 100;
     return { ar, ap, prevAr, prevAp, arPct: pct(ar, prevAr), apPct: pct(ap, prevAp) };
-  }, [invoices, statYear, statMonth]);
+  }, [acctInvoices, statYear, statMonth]);
 
   // Handle Document upload helper
   const handleUploadDocument = async (invId: string, file: File) => {
@@ -289,7 +292,7 @@ export default function ReportsPage() {
   // Export Accountant Package CSV
   const exportAccountantPackage = () => {
     const headers = ['Entity Legal Name', 'Direction', 'Type', 'Invoice Number', 'MARK Code', 'Issue Date', 'Due Date', 'Net (EUR)', 'VAT (EUR)', 'Gross (EUR)', 'Status', 'Category/Contract', 'Notes'];
-    const rows = invoices.map((i: Invoice) => [
+    const rows = acctInvoices.map((i: Invoice) => [
       `"${i.counterparty?.legal_name || 'Unknown Entity'}"`,
       i.direction.toUpperCase(),
       i.type.toUpperCase(),
@@ -358,8 +361,8 @@ export default function ReportsPage() {
       [''],
       ['Invoice Number', 'Direction', 'Type', 'Counterparty', 'Issue Date', 'Due Date', 'Reference Period', 'Net (EUR)', 'VAT (EUR)', 'Gross (EUR)', 'Status', 'Missing PDF']
     ];
-    invoices
-      .filter(i => i.status !== 'cancelled' && (i.issue_date || '') >= startStr && (i.issue_date || '') <= endStr)
+    acctInvoices
+      .filter(i => (i.issue_date || '') >= startStr && (i.issue_date || '') <= endStr)
       .sort((a, b) => a.issue_date.localeCompare(b.issue_date))
       .forEach(i => {
         detail.push([
@@ -401,7 +404,7 @@ export default function ReportsPage() {
       ['Total Projected Net', totalProjectedNet],
       ['Monthly Payroll Burn', cashflowView[0]?.payroll || 0],
       [''],
-      ['Notes:', 'Realized = actual invoices by issue date. Projected = contract schedules + open invoice balances. Cancelled invoices excluded.']
+      ['Notes:', 'Realized = actual invoices by issue date. Projected = contract schedules + open invoice balances. Cancelled documents and credit-note reversals excluded.']
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(summary);
     wsSummary['!cols'] = [{ wch: 46 }, { wch: 18 }];
@@ -610,7 +613,7 @@ export default function ReportsPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                       {sched.map(item => {
                         // Find matching invoices for this schedule period
-                        const matchedInv = invoices.find(i => i.contract_id === cnt.id && i.status !== 'cancelled' && (i.allocations?.some(a => a.period === item.period) || i.issue_date.startsWith(item.period)));
+                        const matchedInv = acctInvoices.find(i => i.contract_id === cnt.id && (i.allocations?.some(a => a.period === item.period) || i.issue_date.startsWith(item.period)));
                         const isPast = item.period <= currentMonthPeriod;
                         let tileColor = 'bg-slate-100 border-slate-200 text-slate-700';
                         let statusText = 'Scheduled';
@@ -960,11 +963,11 @@ export default function ReportsPage() {
                   Invoices synced from myDATA (or uploaded manually) that are not yet linked to a specific contract.
                 </p>
               </div>
-              <Badge variant="warning">{invoices.filter(i => !i.contract_id && i.status !== 'cancelled').length} Unlinked</Badge>
+              <Badge variant="warning">{invoices.filter(i => !i.contract_id && i.status !== 'cancelled' && i.type !== 'credit_note').length} Unlinked</Badge>
             </div>
             <div className="w-full">
               <InvoicesGrid
-                invoices={invoices.filter(i => !i.contract_id && i.status !== 'cancelled')}
+                invoices={invoices.filter(i => !i.contract_id && i.status !== 'cancelled' && i.type !== 'credit_note')}
                 hideToolbar={false}
                 onOpenCounterparty={(inv) => {
                   if (inv.counterparty_id) {

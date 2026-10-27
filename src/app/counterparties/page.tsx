@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { Counterparty, AttioLink, CounterpartyContact, Contract, Role } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
+import { accountingInvoices } from '@/lib/invoice-netting';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { TierOverrideForm } from '@/components/counterparties/tier-override-form';
@@ -924,7 +925,7 @@ export default function CounterpartiesRegistryPage() {
             ) : dossierTab === 'invoices' ? (
               <div className="space-y-6 pt-2 animate-fadeIn">
                 {(() => {
-                  const entityInvoices = (invoices || []).filter(i => i.counterparty_id === selectedEntity.id && i.status !== 'cancelled');
+                  const entityInvoices = accountingInvoices((invoices || []).filter(i => i.counterparty_id === selectedEntity.id));
                   const arInvoices = entityInvoices.filter(i => i.direction === 'outgoing');
                   const apInvoices = entityInvoices.filter(i => i.direction === 'incoming');
 
