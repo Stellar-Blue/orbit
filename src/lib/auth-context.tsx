@@ -40,6 +40,28 @@ import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
 
+/**
+ * Every `profiles` column `authenticated` may read. `phone` is column-revoked (migration
+ * 20261027104236) and mirrored in the RLS table `profile_phones`, so `select('*')` fails with
+ * 42501 "permission denied for table profiles" — the whole directory (and with it the signed-in
+ * identity) would come back empty. Reads must name the columns; `fetchProfilePhones` merges the
+ * phone back in.
+ */
+const PROFILE_COLUMNS = [
+  'id', 'auth_user_id', 'first_name', 'last_name', 'name_el', 'work_email', 'title',
+  'team_id', 'manager_id', 'employment_type', 'start_date', 'end_date', 'status', 'photo_url',
+  'work_schedule', 'created_at', 'onboarding_completed_at', 'seniority_level',
+  'contracted_weekly_hours', 'slack_required',
+].join(',');
+
+/** `*` is not selectable on tables with column-level grants; use their explicit column lists. */
+const selectForTable = (table: string, requested?: string): string =>
+  requested || (table === 'profiles'
+    ? PROFILE_COLUMNS
+    : table === 'employee_integrations'
+      ? EMPLOYEE_INTEGRATION_COLUMNS
+      : '*');
+
 /** Payload for create/update of a coverage group (rule + custom member list). */
 export interface CoverageGroupInput {
   id?: string;
@@ -429,14 +451,13 @@ const signInvoiceDocuments = async (
 
 /**
  * Phone numbers the caller is allowed to see: every row for an admin, own row for an employee.
- * `profiles.phone` is revoked from `authenticated` (migration 20260917120000), so `select('*')` on
- * profiles no longer returns it — the value is merged in from the admin/self-only RLS table
- * `profile_phones` instead (a row-level-secured mirror, migration 20261027104737).
+ * `profiles.phone` is column-revoked from `authenticated`, so profile reads use `PROFILE_COLUMNS`
+ * (never `*`) and the value is merged in from the admin/self-only RLS table `profile_phones`
+ * (a row-level-secured mirror, migration 20261027104737).
  *
  * Returns `null` when the lookup itself is unavailable (migration not applied yet, or a transient
- * error): callers then keep the phone that came back with the row, which is what the table still
- * provides before the revoke lands. Never return an empty map for "unavailable" — that would wipe
- * every phone number on load.
+ * error): callers then keep whatever phone came back with the row. Never return an empty map for
+ * "unavailable" — that would wipe every phone number on load.
  */
 const fetchProfilePhones = async (
   supabase: ReturnType<typeof getSupabaseBrowserClient>
@@ -608,7 +629,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const supabase = getSupabaseBrowserClient();
       let query = supabase
         .from(table)
-        .select(opts.select || (table === 'employee_integrations' ? EMPLOYEE_INTEGRATION_COLUMNS : '*'));
+        .select(selectForTable(table, opts.select));
       if ((gate === 'own' && !isAdmin) || gate === 'self') query = query.eq('profile_id', profileId);
       if (opts.order) query = query.order(opts.order[0], { ascending: opts.order[1] ?? true });
       if (opts.limit) query = query.limit(opts.limit);
@@ -1211,8 +1232,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        const initialProfilesRes = await supabase.from('profiles').select('*');
-        const loadedProfiles: Profile[] = initialProfilesRes.data || [];
+        const initialProfilesRes = await supabase.from('profiles').select(PROFILE_COLUMNS);
+        if (initialProfilesRes.error) {
+          console.error('[profiles] directory read failed:', initialProfilesRes.error.message);
+        }
+        // The column list is a runtime string, so PostgREST's generated types cannot infer the row.
+        const loadedProfiles = (initialProfilesRes.data || []) as unknown as Profile[];
         // Only overwrite when the view answered — otherwise keep the value the row already carries.
         const phones = await fetchProfilePhones(supabase);
         if (phones) loadedProfiles.forEach(p => { p.phone = phones.get(p.id) ?? null; });
@@ -5682,8 +5707,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     try {
       const supabase = getSupabaseBrowserClient();
-      // employee_integrations is column-granted without `token_ref` (0063), where `*` would 42501.
-      let query = supabase.from(table).select(table === 'employee_integrations' ? EMPLOYEE_INTEGRATION_COLUMNS : '*');
+      // employee_integrations (no `token_ref`) and profiles (no `phone`) are column-granted, where
+      // `*` would return 42501 and the directory would silently look empty.
+      let query = supabase.from(table).select(selectForTable(table));
       if (gate === 'own' && !admin) query = query.eq('profile_id', myId);
       const { data, error } = await query;
       if (error) {
