@@ -102,18 +102,52 @@ const discounted = contractChargeMonths(contract({ lines: [monthlyLine], discoun
 assert(discounted['2025-06'] === 900, 'Contract discount applies', String(discounted['2025-06']));
 
 // --- Stored schedule wins ----------------------------------------------------
-const stored = contract({
+// A stale projection must never win over the current price sheet: removing a line or moving the
+// term has to be reflected in every month, including ones already in the past.
+const stale = contract({
   lines: [monthlyLine],
   schedule: [
     { id: 's1', contract_id: 'cnt-1', period: '2025-02', amount: 2500 },
-    { id: 's2', contract_id: 'cnt-1', period: '2025-03', amount: 500 },
+    { id: 's2', contract_id: 'cnt-1', period: '2026-06', amount: 2500 },
   ],
 });
-const storedCharges = contractChargeMonths(stored);
+const staleCharges = contractChargeMonths(stale);
 assert(
-  storedCharges['2025-02'] === 2500 && Object.keys(storedCharges).length === 2,
-  'A persisted contract_schedule is used instead of recomputing',
-  JSON.stringify(storedCharges)
+  staleCharges['2025-02'] === 1000 && !('2026-06' in staleCharges) && Object.keys(staleCharges).length === 12,
+  'Current lines win over a stale persisted schedule',
+  JSON.stringify(staleCharges).slice(0, 80)
+);
+
+// Same contract, shorter term: months outside the new window drop out entirely.
+const shortened = contractChargeMonths(contract({ lines: [monthlyLine], ends_on: '2025-06-30' }));
+assert(
+  Object.keys(shortened).length === 6 && shortened['2025-06'] === 1000 && !('2025-07' in shortened),
+  'Moving the end date removes the months beyond it',
+  Object.keys(shortened).join(',')
+);
+
+// Moved start date: the schedule begins where the service begins.
+const movedStart = contractChargeMonths(contract({ lines: [monthlyLine], service_start_date: '2025-04-01' }));
+assert(
+  movedStart['2025-04'] === 1000 && !('2025-03' in movedStart) && Object.keys(movedStart).length === 9,
+  'Moving the start date removes the months before it',
+  Object.keys(movedStart).join(',')
+);
+
+// A price sheet with every line removed bills nothing, even if the old projection had rows.
+const emptied = contractChargeMonths(contract({ lines: [], value: 0, schedule: [] }));
+assert(Object.keys(emptied).length === 0, 'Removing every line clears the charges');
+
+// Line-less legacy agreements keep their saved projection — it is the only record of the deal.
+const legacySchedule = contractChargeMonths(contract({
+  lines: [],
+  value: 0,
+  schedule: [{ id: 's3', contract_id: 'cnt-1', period: '2025-02', amount: 2500 }],
+}));
+assert(
+  legacySchedule['2025-02'] === 2500 && Object.keys(legacySchedule).length === 1,
+  'A line-less contract still reads its persisted schedule',
+  JSON.stringify(legacySchedule)
 );
 
 // --- Legacy fallback ---------------------------------------------------------

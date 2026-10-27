@@ -105,27 +105,17 @@ export function contractChargeMonths(
   catalogItems: CatalogItem[] = []
 ): Record<string, number> {
   const months: Record<string, number> = {};
-  const schedule = contract.schedule || [];
-
-  if (schedule.length > 0) {
-    schedule.forEach(item => {
-      const key = toMonthKey(item.period);
-      const amount = round2(item.amount);
-      if (key && amount !== 0) months[key] = round2((months[key] || 0) + amount);
-    });
-    return months;
-  }
-
-  const window = contractEffectiveWindow(contract);
-  const term = monthKeysBetween(window.startKey, window.endKey);
   const lines = contract.lines || [];
   const billableLines = lines.filter(l => l.line_kind !== 'man_hours');
 
+  // The price sheet is the source of truth: a persisted schedule is only a projection of it, so it
+  // must never win over the current lines (a removed line or a moved term would keep charging).
   if (billableLines.length > 0) {
+    const window = contractEffectiveWindow(contract);
     calculatePeriodAmountsForPeriods(
       billableLines,
       contract.discount_pct || 0,
-      term,
+      monthKeysBetween(window.startKey, window.endKey),
       catalogModules,
       catalogItems,
       contract.groups || []
@@ -138,6 +128,20 @@ export function contractChargeMonths(
 
   // Man-hours-only contracts are billed from timesheets (their change requests), never as a fixed value.
   if (lines.length > 0) return months;
+
+  // Line-less legacy agreements: their saved projection is the only record of what was agreed.
+  const schedule = contract.schedule || [];
+  if (schedule.length > 0) {
+    schedule.forEach(item => {
+      const key = toMonthKey(item.period);
+      const amount = round2(item.amount);
+      if (key && amount !== 0) months[key] = round2((months[key] || 0) + amount);
+    });
+    return months;
+  }
+
+  const window = contractEffectiveWindow(contract);
+  const term = monthKeysBetween(window.startKey, window.endKey);
 
   // Legacy agreements without structured lines: spread the recorded value across the term.
   const valuation = calculateContractValuation(

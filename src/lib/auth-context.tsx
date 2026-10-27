@@ -33,6 +33,7 @@ import {
   type CarryoverPolicy, type CarryoverWarningLevel,
 } from './leave-carryover';
 import { calculateContractValuation } from './pricing-engine';
+import { contractChargeMonths } from './revenue-schedule';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { startRealtimeSync } from './realtime-sync';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -3091,9 +3092,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /**
+   * Rewrites a contract's monthly projection from scratch. `contract_schedule` is a projection of the
+   * current price sheet and term dates, not a ledger — keeping old months when pricing changes is what
+   * made the revenue schedule disagree with the contract. Actuals live in invoices.
+   */
+  const rebuildContractSchedule = async (contract: Contract): Promise<ContractSchedule[]> => {
+    const supabase = getSupabaseBrowserClient();
+    const months = contractChargeMonths({ ...contract, schedule: [] }, catalogModules, catalogItems);
+    const rows: ContractSchedule[] = Object.entries(months)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([period, amount]) => ({ id: generateUUID(), contract_id: contract.id, period, amount }));
+
+    const { error: clearErr } = await supabase.from('contract_schedule').delete().eq('contract_id', contract.id);
+    if (clearErr) console.error('[contract_schedule] clear failed:', clearErr.message);
+    if (rows.length > 0) {
+      const { error } = await supabase.from('contract_schedule').insert(rows);
+      if (error) console.error('[contract_schedule] rebuild failed:', error.message);
+    }
+    setContractSchedules(prev => [...prev.filter(s => s.contract_id !== contract.id), ...rows]);
+    return rows;
+  };
+
   const updateContract = async (updated: Contract) => {
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, lines, groups, schedule, notice_deadline, ...cleanCnt } = updated as any;
+    const { counterparty, owner_profile, lines, groups, schedule: _ignoredSchedule, notice_deadline, ...cleanCnt } = updated as any;
     try {
       const { error, data } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id).select().single();
       if (error) {
@@ -3101,7 +3124,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         alert(`Database Error: ${error.message}`);
         return;
       }
-      const savedCnt = data ? { ...updated, ...data, counterparty: updated.counterparty, owner_profile: updated.owner_profile, lines: lines || [], schedule: schedule || [] } : updated;
+      // Any edit — term dates, cadence, value or the price sheet itself — reflows every month.
+      const rebuilt = await rebuildContractSchedule({
+        ...updated,
+        lines: lines || [],
+        groups: groups || [],
+        schedule: [],
+      });
+      const savedCnt = data
+        ? { ...updated, ...data, counterparty: updated.counterparty, owner_profile: updated.owner_profile, lines: lines || [], groups: groups || [], schedule: rebuilt }
+        : { ...updated, lines: lines || [], groups: groups || [], schedule: rebuilt };
       setContracts(prev => prev.map(c => c.id === updated.id ? savedCnt : c));
     } catch (e: any) {
       console.error('Failed to update contract:', e);
@@ -3210,15 +3242,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const nowPeriod = new Date().toISOString().slice(0, 7);
-      const { data: existingSched } = await supabase.from('contract_schedule').select('*').eq('contract_id', contractId);
-      const historicalSched = (existingSched || []).filter((s: any) => s.period < nowPeriod);
-      const historicalPeriods = new Set(historicalSched.map((s: any) => s.period));
-
-      await supabase.from('contract_schedule').delete().eq('contract_id', contractId).gte('period', nowPeriod);
+      // Rebuild the whole projection: months outside the new term must disappear and every remaining
+      // month must reflect the current lines, even ones already in the past.
+      await supabase.from('contract_schedule').delete().eq('contract_id', contractId);
 
       const schedsToInsert = schedules
-        .filter(s => !historicalPeriods.has(s.period))
+        .filter(s => s.period && Number.isFinite(Number(s.amount)))
         .map(s => ({
           id: generateUUID(),
           contract_id: contractId,
@@ -3232,7 +3261,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const finalLines = linesToInsert;
       const finalGroups = groupsToInsert.map(g => ({ ...g, contract_id: contractId }));
-      const finalSchedule = [...historicalSched, ...schedsToInsert].sort((a, b) => a.period.localeCompare(b.period));
+      const finalSchedule = [...schedsToInsert].sort((a, b) => a.period.localeCompare(b.period));
 
       setContractLines(prev => [...prev.filter(l => l.contract_id !== contractId), ...finalLines]);
       setContractSchedules(prev => [...prev.filter(s => s.contract_id !== contractId), ...finalSchedule]);
