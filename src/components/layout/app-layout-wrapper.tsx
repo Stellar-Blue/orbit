@@ -12,6 +12,16 @@ import { Menu, Search, Eye, EyeOff, Users, ShieldAlert, Sparkles, LogOut } from 
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
+  // Orientation: the header names the screen you are on, not just the workspace.
+  const PAGE_TITLES: Array<[string, string]> = [
+    ['/contracts', 'Contracts'], ['/invoices', 'Invoices'], ['/counterparties', 'Counterparties'],
+    ['/company-leave', 'Leave control'], ['/reports', 'Reports'], ['/people', 'People'],
+    ['/payroll', 'Payroll'], ['/compensation', 'Compensation'], ['/timesheets', 'Timesheets'],
+    ['/leave', 'Leave'], ['/remote', 'Remote work'], ['/reconciliation', 'Reconciliation'],
+    ['/settings', 'Settings'], ['/profile', 'Profile'],
+  ];
+  const currentPage = pathname === '/' ? 'Home'
+    : PAGE_TITLES.find(([prefix]) => pathname?.startsWith(prefix))?.[1] || 'Orbit';
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -61,7 +71,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
           </div>
         )}
         {/* Header / Quick Action & Mobile Toggle Bar */}
-        <header className="h-16 border-b border-slate-200/80 bg-white/85 backdrop-blur-md px-3 sm:px-4 md:px-5 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+        <header className="h-14 border-b border-[var(--line)] bg-white px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center space-x-3 text-sm text-slate-500 overflow-hidden">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -70,11 +80,11 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
             >
               <Menu className="w-5 h-5 text-slate-800" />
             </button>
-            <div className="flex items-center space-x-1 sm:space-x-2 truncate font-sans">
-              <span className="font-extrabold text-[#3D87D3] tracking-tight truncate">{companyProfile?.name || 'StellarBlue'}</span>
-              <span className="text-slate-300">/</span>
-              <span className="text-slate-900 font-extrabold tracking-tight truncate">Orbit Workspace</span>
-            </div>
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 truncate text-[13px]">
+              <span className="text-[var(--ink-4)] font-medium truncate">{companyProfile?.name || 'StellarBlue'}</span>
+              <span className="text-[var(--line-strong)]">/</span>
+              <span className="text-[var(--ink)] font-semibold tracking-[-0.005em] truncate">{currentPage}</span>
+            </nav>
           </div>
           
           <div className="flex items-center space-x-3 shrink-0">
@@ -82,7 +92,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
               <>
                 <button
                   onClick={() => setIsViewAsEmployee(true)}
-                  className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-extrabold text-xs flex items-center transition-all shadow-2xs cursor-pointer shrink-0"
+                  className="h-8 px-2.5 rounded-[var(--radius-control)] bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border border-[var(--line-strong)] font-semibold text-[12px] flex items-center transition-colors cursor-pointer shrink-0"
                   title="Switch view to experience Orbit exactly as an ordinary employee"
                 >
                   <Eye className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
@@ -92,7 +102,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
                 <div className="relative">
                   <button
                     onClick={() => setPreviewMenuOpen(v => !v)}
-                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-extrabold text-xs flex items-center transition-all shadow-2xs cursor-pointer shrink-0"
+                    className="h-8 px-2.5 rounded-[var(--radius-control)] bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border border-[var(--line-strong)] font-semibold text-[12px] flex items-center transition-colors cursor-pointer shrink-0"
                     title="Preview exactly what a specific employee can see"
                   >
                     <Users className="w-3.5 h-3.5 mr-1.5 text-slate-500 shrink-0" />
@@ -127,15 +137,16 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
               </>
             )}
 
-            <div className="hidden sm:flex text-xs text-slate-500 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/90 items-center space-x-2 shadow-2xs">
-              <Search className="w-3.5 h-3.5 text-slate-400" />
-              <span>Press</span>
-              <kbd className="px-1.5 py-0.5 rounded-md bg-white border border-slate-300/80 font-sans font-extrabold text-[11px] text-slate-800 shadow-2xs">⌘K</kbd>
-              <span>to jump anywhere</span>
-            </div>
-            <div className="sm:hidden text-[11px] text-slate-500 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 font-extrabold shadow-2xs">
-              Orbit HRMS
-            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+              className="hidden sm:inline-flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-[var(--radius-control)] bg-white border border-[var(--line-strong)] text-[var(--ink-3)] hover:text-[var(--ink)] hover:border-slate-300 transition-colors cursor-pointer"
+              aria-label="Search the workspace"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="text-[12px] font-medium">Search</span>
+              <kbd className="px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-muted)] font-sans font-semibold text-[10px] text-[var(--ink-3)]">⌘K</kbd>
+            </button>
           </div>
         </header>
 
@@ -185,7 +196,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
         )}
 
         {/* Page Content with Responsive Full-Width Layout */}
-        <main className="px-3 sm:px-4 md:px-5 py-5 w-full max-w-full flex-1 overflow-x-hidden">
+        <main className="px-4 sm:px-6 py-6 w-full max-w-full flex-1 overflow-x-hidden">
           {blockedScreen ? (
             <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
               <ShieldAlert className="w-10 h-10 mx-auto text-slate-400" />

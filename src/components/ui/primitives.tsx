@@ -14,18 +14,18 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export const Button: React.FC<ButtonProps> = ({ children, className, variant = 'primary', size = 'md', ...props }) => {
-  const base = "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs";
+  const base = "inline-flex items-center justify-center gap-1.5 font-semibold rounded-[var(--radius-control)] border transition-colors duration-150 disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap select-none";
   const variants = {
-    primary: "bg-[#3D87D3] hover:bg-[#3272B4] text-white border border-[#3272B4]/20 shadow-sm hover:shadow",
-    secondary: "bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs hover:text-slate-900",
-    outline: "bg-transparent hover:bg-slate-100/70 text-slate-700 border border-slate-200",
-    danger: "bg-rose-600 hover:bg-rose-700 text-white border border-rose-600 shadow-sm",
-    ghost: "bg-transparent hover:bg-slate-100 text-slate-600 hover:text-slate-900 shadow-none"
+    primary: "bg-[var(--accent)] hover:bg-[#3272b4] text-white border-transparent active:bg-[#2b649c]",
+    secondary: "bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border-[var(--line-strong)] hover:text-[var(--ink)]",
+    outline: "bg-transparent hover:bg-white text-[var(--ink-3)] hover:text-[var(--ink)] border-[var(--line-strong)]",
+    danger: "bg-rose-600 hover:bg-rose-700 text-white border-transparent",
+    ghost: "bg-transparent hover:bg-[var(--surface-muted)] text-[var(--ink-3)] hover:text-[var(--ink)] border-transparent"
   };
   const sizes = {
-    sm: "px-3 py-1.5 text-xs",
-    md: "px-4 py-2 text-sm",
-    lg: "px-5 py-2.5 text-base"
+    sm: "h-8 px-3 text-[12px]",
+    md: "h-9 px-3.5 text-[13px]",
+    lg: "h-10 px-4 text-[13px]"
   };
 
   return (
@@ -36,14 +36,14 @@ export const Button: React.FC<ButtonProps> = ({ children, className, variant = '
 };
 
 export const Card: React.FC<{ children: React.ReactNode; className?: string; title?: string; subtitle?: string; action?: React.ReactNode }> = ({ children, className, title, subtitle, action }) => (
-  <div className={cn("bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm transition-all duration-200 hover:shadow-md", className)}>
+  <div className={cn("bg-white border border-[var(--line)] rounded-[var(--radius-card)] p-5 shadow-[var(--shadow-card)]", className)}>
     {(title || action) && (
-      <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-        <div>
-          {title && <h3 className="text-base font-semibold text-slate-800 tracking-tight">{title}</h3>}
-          {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      <div className="flex items-start justify-between gap-3 mb-4 pb-3 border-b border-[var(--line)]">
+        <div className="min-w-0">
+          {title && <h3 className="ui-section-title">{title}</h3>}
+          {subtitle && <p className="ui-meta mt-0.5">{subtitle}</p>}
         </div>
-        {action && <div>{action}</div>}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
     )}
     {children}
@@ -52,14 +52,14 @@ export const Card: React.FC<{ children: React.ReactNode; className?: string; tit
 
 export const Badge: React.FC<{ children: React.ReactNode; variant?: 'success' | 'warning' | 'error' | 'info' | 'neutral'; className?: string; style?: React.CSSProperties }> = ({ children, variant = 'neutral', className, style }) => {
   const styles = {
-    success: "bg-emerald-50 text-emerald-700 border-emerald-200/60",
-    warning: "bg-amber-50 text-amber-700 border-amber-200/60",
-    error: "bg-rose-50 text-rose-700 border-rose-200/60",
-    info: "bg-blue-50 text-[#3D87D3] border-blue-200/60",
-    neutral: "bg-slate-100 text-slate-700 border-slate-200/80"
+    success: "bg-emerald-50/80 text-emerald-700 border-emerald-200/80",
+    warning: "bg-amber-50/80 text-amber-800 border-amber-200/80",
+    error: "bg-rose-50/80 text-rose-700 border-rose-200/80",
+    info: "bg-[var(--accent-soft)] text-[var(--accent-ink)] border-[color-mix(in_srgb,var(--accent)_28%,white)]",
+    neutral: "bg-slate-50 text-slate-600 border-[var(--line-strong)]"
   };
   return (
-    <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border", styles[variant], className)} style={style}>
+    <span className={cn("inline-flex items-center h-5 px-1.5 rounded-md text-[11px] font-semibold border whitespace-nowrap", styles[variant], className)} style={style}>
       {children}
     </span>
   );
@@ -75,14 +75,14 @@ export const StatCard: React.FC<{
   /** Optional action row under the value — e.g. a link into the detailed report behind the number. */
   footer?: React.ReactNode;
 }> = ({ title, value, subtitle, icon, trend, trendUp, footer }) => (
-  <Card className="hover:border-slate-300/80 transition-all relative overflow-hidden bg-white">
-    <div className="flex justify-between items-start">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
-        <h4 className="text-2xl font-bold text-slate-800 mt-2 tracking-tight">{value}</h4>
-        {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+  <Card className="relative overflow-hidden">
+    <div className="flex justify-between items-start gap-3">
+      <div className="min-w-0">
+        <p className="ui-label">{title}</p>
+        <h4 className="ui-num text-[24px] font-semibold text-[var(--ink)] mt-1.5 leading-none">{value}</h4>
+        {subtitle && <p className="ui-meta mt-1.5 leading-snug">{subtitle}</p>}
       </div>
-      {icon && <div className="p-2.5 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/15 text-[#3D87D3]">{icon}</div>}
+      {icon && <div className="shrink-0 p-2 rounded-lg bg-[var(--surface-muted)] border border-[var(--line)]">{icon}</div>}
     </div>
     {trend && (
       <div className="mt-4 flex items-center text-xs">

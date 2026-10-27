@@ -50,9 +50,9 @@ interface BillingActionGridProps {
 }
 
 const timingLabel = (timing: string) => {
-  if (timing === 'end_of_period') return '⏳ Arrears (End of period)';
-  if (timing === 'upon_milestone') return '🎯 Upon Milestone';
-  return '🚀 In Advance (Start of period)';
+  if (timing === 'end_of_period') return 'In arrears';
+  if (timing === 'upon_milestone') return 'On milestone';
+  return 'In advance';
 };
 
 const formatDay = (value?: string) => (value ? formatDate(value) : '—');
@@ -67,7 +67,7 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       cadence: item.cadence,
       timingLabel: timingLabel(item.timing),
       serviceWindow: item.periodFrom && item.periodTo
-        ? `${formatDay(item.periodFrom)} → ${formatDay(item.periodTo)}`
+        ? `${formatDay(item.periodFrom)} to ${formatDay(item.periodTo)}`
         : item.periodLabel,
       billingDate: item.billingDate || item.periodFrom || '',
       billingDateLabel: formatDay(item.billingDate || item.periodFrom),
@@ -78,18 +78,18 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
 
   const columnDefs = useMemo<ColDef<BillingActionRow>[]>(() => [
     {
-      headerName: 'Contract / Counterparty', field: 'counterparty', minWidth: 220, sortable: true, ...excelSetFilter(), pinned: 'left',
+      headerName: 'Counterparty', field: 'counterparty', minWidth: 230, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
-        <div>
-          <Link href={`/contracts/${p.data?.item.contractId}`} onClick={(e) => e.stopPropagation()} className="font-bold text-slate-900 hover:text-blue-600 transition-colors block">
+        <div className="leading-tight">
+          <Link href={`/contracts/${p.data?.item.contractId}`} onClick={(e) => e.stopPropagation()} className="font-medium text-[var(--ink)] hover:text-[var(--accent-ink)] hover:underline block truncate">
             {p.value}
           </Link>
-          <span className="text-xs text-slate-500 font-mono">Ref: {p.data?.reference}</span>
+          <span className="ui-num text-[11px] text-[var(--ink-4)]">{p.data?.reference}</span>
         </div>
       )
     },
     {
-      headerName: 'Direction', field: 'direction', width: 110, sortable: true, ...excelSetFilter(['revenue', 'cost']),
+      headerName: 'Direction', field: 'direction', width: 132, sortable: true, ...excelSetFilter(['revenue', 'cost']),
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
         <Badge variant={p.value === 'revenue' ? 'success' : 'warning'}>
           {p.value === 'revenue' ? 'Revenue' : 'Spend'}
@@ -97,32 +97,33 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       )
     },
     {
-      headerName: 'Cadence', field: 'cadence', width: 110, sortable: true, ...excelSetFilter(),
-      cellClass: 'font-bold text-slate-800 capitalize'
+      headerName: 'Cadence', field: 'cadence', width: 126, sortable: true, ...excelSetFilter(),
+      cellClass: 'capitalize'
     },
     {
-      headerName: 'Invoicing Timing', field: 'timingLabel', minWidth: 230, flex: 1, sortable: true, ...excelSetFilter(),
+      headerName: 'Timing and service window', field: 'timingLabel', minWidth: 220, flex: 1, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
-        <div>
-          <span className="text-xs text-slate-600 font-semibold">{p.value}</span>
-          <span className="block font-mono text-[11px] text-slate-500">{p.data?.serviceWindow}</span>
+        <div className="leading-tight">
+          <span className="text-[var(--ink-2)]">{p.value}</span>
+          <span className="ui-num block text-[11px] text-[var(--ink-4)]">{p.data?.serviceWindow}</span>
         </div>
       )
     },
     {
-      headerName: 'Billing Horizon', field: 'billingDate', minWidth: 175, sortable: true, ...excelSetFilter(),
+      headerName: 'Billing date', field: 'billingDate', minWidth: 150, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
-        <div className="flex flex-col items-start gap-0.5">
-          <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold font-mono">{p.data?.billingDateLabel}</span>
-          <span className="text-[10px] text-slate-400">
-            {p.data?.item.timing === 'end_of_period' ? 'raised at period end' : 'raised at period start'}
+        <div className="leading-tight">
+          <span className="ui-num text-[var(--ink)]">{p.data?.billingDateLabel}</span>
+          <span className="ui-meta block text-[11px]">
+            {p.data?.item.timing === 'end_of_period' ? 'at period end' : 'at period start'}
           </span>
         </div>
       )
     },
     {
-      headerName: 'Expected Rate (€)', field: 'expectedAmount', minWidth: 165, sortable: true, filter: 'agNumberColumnFilter', type: 'rightAligned',
-      cellClass: 'font-mono font-black text-slate-900',
+      headerName: 'Expected', field: 'expectedAmount', width: 150, sortable: true, filter: 'agNumberColumnFilter',
+      cellStyle: { textAlign: 'right' },
+      cellClass: 'ui-num font-medium text-[var(--ink)]',
       valueFormatter: (p) => `€${Number(p.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     },
     {
@@ -130,46 +131,46 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => {
         if (p.value === 'unbilled') {
           return (
-            <span className="inline-flex items-center text-xs font-extrabold text-rose-700 bg-rose-100 px-2.5 py-1 rounded-full border border-rose-300">
-              <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-600" /> Unbilled
+            <span className="inline-flex items-center text-[11px] font-medium text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+              <AlertCircle className="w-3 h-3 mr-1" /> Unbilled
             </span>
           );
         }
         if (p.value === 'draft_created') {
           return (
-            <span className="inline-flex items-center text-xs font-extrabold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-300">
-              <Clock className="w-3.5 h-3.5 mr-1 text-amber-600" /> Draft Created
+            <span className="inline-flex items-center text-[11px] font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+              <Clock className="w-3 h-3 mr-1" /> Draft created
             </span>
           );
         }
         return (
-          <span className="inline-flex items-center text-xs font-extrabold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300">
-            <CheckCircle className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Invoiced
+          <span className="inline-flex items-center text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+            <CheckCircle className="w-3 h-3 mr-1" /> Invoiced
           </span>
         );
       }
     },
     {
-      headerName: 'Action', field: 'status', width: 250, sortable: false, filter: false, pinned: 'right',
+      headerName: 'Action', field: 'status', width: 236, sortable: false, filter: false, pinned: 'right',
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
         <div className="flex items-center justify-end gap-1.5">
           {p.value === 'unbilled' ? (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); if (p.data) onQuickCreate(p.data.item); }}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm hover:shadow transition-all cursor-pointer"
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--accent)] bg-white text-[var(--accent-ink)] hover:bg-[var(--accent-soft)] text-[12px] font-medium transition-colors cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-              <span>Create Draft</span>
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+              <span>Create draft</span>
             </button>
           ) : (
             <Link
               href="/invoices"
               onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line)] bg-white text-[var(--ink-2)] hover:border-[var(--line-strong)] text-[12px] font-medium transition-colors"
             >
-              <FileCheck className="w-3.5 h-3.5 text-blue-600" />
-              <span>View in Ledger →</span>
+              <FileCheck className="w-3.5 h-3.5" />
+              <span>Open in ledger</span>
             </Link>
           )}
           {onDismiss && (
@@ -177,7 +178,7 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
               type="button"
               onClick={(e) => { e.stopPropagation(); if (p.data) onDismiss(p.data.item); }}
               title="Discard this suggestion (it stays unbilled, the reminder just stops)"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-700 text-xs font-bold transition-all cursor-pointer"
+              className="inline-flex items-center gap-1 h-7 px-2 rounded-[var(--radius-control)] text-[12px] font-medium text-[var(--ink-4)] hover:text-[var(--ink-2)] hover:bg-[var(--surface-muted)] transition-colors cursor-pointer"
             >
               <EyeOff className="w-3.5 h-3.5" />
               <span>Discard</span>
@@ -198,9 +199,9 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
         theme={orbitGridTheme}
         rowData={rowData}
         columnDefs={columnDefs}
-        defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
-        rowHeight={48}
-        headerHeight={36}
+        defaultColDef={{ sortable: true, filter: true, floatingFilter: false, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+        rowHeight={40}
+        headerHeight={32}
         {...GROUPING_OPTIONS}
         sideBar={false}
         rowGroupPanelShow="never"

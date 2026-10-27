@@ -12,14 +12,14 @@ import {
 import { Card, StatCard, Badge, Button } from '@/components/ui/primitives';
 import { CarryoverWarning } from '@/components/leave/carryover-warning';
 import { ProfileAvatar } from '@/components/ui/profile-avatar';
-import { 
-  Users, FileText, Calendar as CalendarIcon, DollarSign, AlertTriangle, 
-  CheckCircle, ArrowUpRight, Clock, MapPin, Sparkles, Plus,
+import {
+  Users, Calendar as CalendarIcon, DollarSign, AlertTriangle,
+  Clock, MapPin, Sparkles, Plus,
   CalendarDays, ChevronLeft, ChevronRight, Search, Globe,
   ShieldCheck, Building2, Info, X, RefreshCw
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
-import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
+import { getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
 import { loadedMonthlyCost, isBaseSalary, loadedExtraCost } from '@/lib/compensation';
 import { formatDate, formatDateTime } from '@/lib/date';
 
@@ -244,38 +244,36 @@ export default function DashboardPage() {
       )}
 
       {/* 2. Welcome & Context Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white px-5 py-4 rounded-[var(--radius-card)] border border-[var(--line)]">
         <div>
-          <div className="flex items-center space-x-2.5">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              Welcome back, {currentUser.first_name}!
-            </h1>
-            <Badge variant={isAdmin ? 'info' : 'neutral'}>{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</Badge>
+          <div className="flex items-center gap-2.5">
+            <h1 className="ui-title">{currentUser.first_name ? `Welcome back, ${currentUser.first_name}` : 'Welcome back'}</h1>
+            <Badge variant="neutral">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</Badge>
           </div>
-          <p className="text-slate-500 text-xs sm:text-sm mt-1">
-            {isAdmin 
-              ? "StellarBlue Executive Hub & Unified Calendar — Monitoring attendance, roster schedules, and contract operations."
-              : "StellarBlue Unified Home — Inspect organization schedules, review attendance rosters, and manage time off."}
+          <p className="text-[13px] text-[var(--ink-3)] mt-1">
+            {isAdmin
+              ? 'Attendance, rosters, leave and contract operations at a glance.'
+              : 'Your schedules, attendance and time off in one place.'}
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
           {!isContractor && (
             <>
               <Link href="/remote">
-                <Button variant="outline" className="cursor-pointer font-extrabold text-xs shadow-2xs">
-                  <Globe className="w-4 h-4 mr-2 text-cyan-600" /> Log Remote Work
+                <Button variant="secondary" className="cursor-pointer">
+                  <Globe className="w-3.5 h-3.5 mr-1.5" /> Log remote work
                 </Button>
               </Link>
               <Link href="/leave?request=leave">
-                <Button variant="primary" className="cursor-pointer font-extrabold text-xs bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-sm">
-                  <Plus className="w-4 h-4 mr-1.5" /> Request Leave
+                <Button variant="primary" className="cursor-pointer">
+                  <Plus className="w-3.5 h-3.5 mr-1.5" /> Request leave
                 </Button>
               </Link>
             </>
           )}
           <Link href="/people">
-            <Button variant="secondary" className="cursor-pointer font-extrabold text-xs">
-              <Users className="w-4 h-4 mr-2 text-indigo-600" /> Team Directory
+            <Button variant="secondary" className="cursor-pointer">
+              <Users className="w-3.5 h-3.5 mr-1.5" /> Team directory
             </Button>
           </Link>
         </div>
@@ -286,28 +284,30 @@ export default function DashboardPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <StatCard 
-              title="Fully Loaded Monthly Burn" 
+              title="Fully loaded monthly burn"
               value={`€${Math.round(monthlyCost).toLocaleString()}`}
-              subtitle="Includes employer EFKA & retainer fees"
+              subtitle="Employer EFKA and retainer fees"
               icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
               trend="4.2%" trendUp={true}
             />
             <StatCard 
-              title="Active Headcount" 
-              value={totalHeadcount} 
-              subtitle={`${fullTimeCount} Full-time · ${contractorCount} Contractors`}
+              title="Active headcount"
+              value={totalHeadcount}
+              subtitle={`${fullTimeCount} full-time, ${contractorCount} contractors`}
               icon={<Users className="w-5 h-5 text-blue-600" />}
             />
             <StatCard 
-              title="Pending Approval Queue" 
+              title="Pending approvals"
               value={pendingLeaves.length}
-              subtitle={pendingLeaves.length > 0 ? "Requires Founder decision" : "Queue fully cleared!"}
+              subtitle={pendingLeaves.length > 0 ? 'Waiting on a founder' : 'Nothing waiting'}
               icon={<CalendarIcon className="w-5 h-5 text-amber-500" />}
             />
             <StatCard 
-              title="Contract Notice Alerts" 
-              value={urgentContracts.length > 0 ? `${urgentContracts.length} Urgent` : "0 Urgent"}
-              subtitle={urgentContracts.length > 0 ? "Notice closing within 60 days" : "All renewals secure!"}
+              title="Contract notice alerts"
+              value={urgentContracts.length}
+              subtitle={urgentContracts.length > 0
+                ? `Deadline within ${NOTICE_ALERT_WINDOW_DAYS} days or already missed`
+                : 'No renewal needs attention'}
               icon={<AlertTriangle className={`w-5 h-5 ${urgentContracts.length > 0 ? 'text-rose-500' : 'text-slate-400'}`} />}
             />
           </div>
@@ -317,57 +317,57 @@ export default function DashboardPage() {
             const totalExceptions = integrationExceptions.exceptions.length + integrationExceptions.revoked.length;
             const healthy = totalExceptions === 0;
             return (
-              <Link href="/settings" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border bg-gradient-to-r from-indigo-50/70 to-slate-50/70 border-indigo-200/60 hover:border-indigo-300 hover:shadow-xs transition-all no-underline group">
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${healthy ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-200' : 'bg-amber-500/10 text-amber-600 border border-amber-200'}`}>
-                    <RefreshCw className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      Integrations
-                      {healthy
-                        ? <Badge variant="success" className="text-[9px] px-1.5 py-0">All mirrors healthy</Badge>
-                        : <Badge variant="warning" className="text-[9px] px-1.5 py-0">{totalExceptions} exceptions</Badge>}
-                    </div>
-                    <div className="text-[11px] text-slate-500 font-medium">
-                      Last reconciled: {integrationLastReconciledAt ? formatDateTime(integrationLastReconciledAt) : 'not yet'} · {integrationExceptions.notConnectedCount} employee(s) not connected to Slack
-                    </div>
+              <Link href="/settings" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-2.5 rounded-[var(--radius-card)] border border-[var(--line)] bg-white hover:border-[var(--line-strong)] transition-colors no-underline group">
+                <div className="flex items-center gap-2.5">
+                  <RefreshCw className="w-4 h-4 text-[var(--ink-4)]" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-medium text-[var(--ink)]">Integrations</span>
+                    {healthy
+                      ? <Badge variant="success">All mirrors healthy</Badge>
+                      : <Badge variant="warning">{totalExceptions} exceptions</Badge>}
+                    <span className="ui-meta">
+                      Reconciled {integrationLastReconciledAt ? formatDateTime(integrationLastReconciledAt) : 'never'}, {integrationExceptions.notConnectedCount} not connected to Slack
+                    </span>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-[#3D87D3] group-hover:underline flex items-center gap-1 shrink-0">
-                  Manage <ArrowUpRight className="w-3.5 h-3.5" />
+                <span className="text-[12px] font-medium text-[var(--accent-ink)] group-hover:underline shrink-0">
+                  Manage
                 </span>
               </Link>
             );
           })()}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card title="Contract Notice Windows & Renewal Alerts" subtitle="Alert engine protecting against auto-renewing notice lapses" action={<Link href="/contracts/notices" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Open report <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
+            <Card title="Contract notice windows" subtitle="Renewal deadlines that need a decision" action={<Link href="/contracts/notices" className="text-[12px] font-medium text-[var(--accent-ink)] hover:underline">Open report</Link>}>
               {urgentContracts.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
-                  <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
-                  No contract notice deadlines closing within the next {NOTICE_ALERT_WINDOW_DAYS} days. All commercial renewals are secure!
+                <div className="orbit-empty">
+                  <p className="font-medium text-[var(--ink-2)]">No notice deadlines in the next {NOTICE_ALERT_WINDOW_DAYS} days</p>
+                  <p>Every renewal is still inside its window.</p>
                 </div>
               ) : (
-                <div className="space-y-3 mt-1">
+                <div className="divide-y divide-[var(--line)] -mx-1">
                   {urgentContracts.map(c => {
                     const isSupplier = c.direction === 'cost';
                     const { noticeDeadlineStr, daysUntilNotice } = getContractNoticeStatus(c);
                     return (
-                      <Link key={c.id} href={`/contracts/${c.id}`} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 transition-all hover:bg-slate-100/80 hover:shadow-2xs flex items-center justify-between group block">
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-semibold text-sm text-slate-800 group-hover:text-blue-600 transition-colors">{c.counterparty?.legal_name}</span>
-                            <Badge variant={isSupplier ? 'warning' : 'success'}>{c.direction.toUpperCase()}</Badge>
+                      <Link key={c.id} href={`/contracts/${c.id}`} className="px-1 py-2.5 flex items-center justify-between gap-3 group">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-[13px] text-[var(--ink)] group-hover:text-[var(--accent-ink)] transition-colors truncate">{c.counterparty?.legal_name}</span>
+                            <Badge variant={isSupplier ? 'warning' : 'success'}>{isSupplier ? 'Cost' : 'Revenue'}</Badge>
                           </div>
-                          <p className="text-xs text-slate-500 mt-1">{c.product || c.type} &bull; Ref: <span className="font-mono text-slate-600">{c.reference}</span></p>
+                          <p className="ui-meta mt-0.5 truncate">
+                            {c.product || c.type} · <span className="ui-num">{c.reference}</span>
+                          </p>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs font-bold text-rose-600 flex items-center justify-end">
-                            <Clock className="w-3.5 h-3.5 mr-1 text-rose-600" />
-                            Notice: {noticeDeadlineStr}
+                        <div className="text-right shrink-0">
+                          <div className="ui-num text-[12px] text-[var(--ink-2)] flex items-center justify-end gap-1">
+                            <Clock className="w-3 h-3 text-[var(--ink-4)]" />
+                            {noticeDeadlineStr}
                           </div>
-                          <p className="text-[11px] text-rose-500 font-medium mt-0.5">{daysUntilNotice <= 0 ? 'Deadline passed!' : `In ${daysUntilNotice} days (${c.notice_period_days}-day window)`}</p>
+                          <p className={`text-[11px] mt-0.5 ${daysUntilNotice <= 0 ? 'text-rose-600 font-medium' : 'text-[var(--ink-3)]'}`}>
+                            {daysUntilNotice <= 0 ? 'Deadline passed' : `In ${daysUntilNotice} days, ${c.notice_period_days}-day window`}
+                          </p>
                         </div>
                       </Link>
                     );
@@ -376,24 +376,24 @@ export default function DashboardPage() {
               )}
             </Card>
 
-            <Card title="Founder Approval Queue (Leave Requests)" subtitle="Single-step approval routing to founders queue" action={<Link href="/company-leave" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Manage Queue <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
+            <Card title="Leave approvals" subtitle="Requests waiting on a founder" action={<Link href="/company-leave" className="text-[12px] font-medium text-[var(--accent-ink)] hover:underline">Manage queue</Link>}>
               {pendingLeaves.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
-                  <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
-                  All leave requests have been processed. Excellent operational flow!
+                <div className="orbit-empty">
+                  <p className="font-medium text-[var(--ink-2)]">No leave requests waiting</p>
+                  <p>Everything routed here has been decided.</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-[var(--line)] -mx-1">
                   {pendingLeaves.map(req => {
                     const requester = profiles.find(p => p.id === req.profile_id);
                     return (
-                      <div key={req.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                      <div key={req.id} className="px-1 py-2.5 flex items-center justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-sm text-slate-800">{requester?.first_name} {requester?.last_name}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{req.working_days} working days ({formatDate(req.start_date)} to {formatDate(req.end_date)})</p>
+                          <p className="font-medium text-[13px] text-[var(--ink)]">{requester?.first_name} {requester?.last_name}</p>
+                          <p className="ui-meta mt-0.5">{req.working_days} working days, {formatDate(req.start_date)} to {formatDate(req.end_date)}</p>
                         </div>
                         <Link href="/company-leave">
-                          <Button size="sm" variant="primary" className="font-black bg-[#3D87D3]">Review</Button>
+                          <Button size="sm" variant="secondary">Review</Button>
                         </Link>
                       </div>
                     );
@@ -410,85 +410,77 @@ export default function DashboardPage() {
 
       {/* 4. EMPLOYEE PERSONAL SUMMARY (LEAVE QUOTA) */}
       {!isContractor ? (
-        <Card title={`My ${leaveYear} Annual Leave Quota`} subtitle="Managed per employee per year" className="border-slate-200/90 shadow-2xs">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6 p-2">
-              <div className="flex items-center space-x-5">
-                <div className="px-6 py-4 rounded-2xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex flex-col justify-center shrink-0">
-                  <span className="text-3xl font-black text-[#3D87D3] leading-none">
+        <Card title={`Annual leave, ${leaveYear}`} subtitle="Your balance for this leave year">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-5">
+              <div className="flex items-center gap-5">
+                <div className="shrink-0">
+                  <span className="ui-num text-[34px] font-semibold text-[var(--accent-ink)] leading-none block">
                     {myBalance.available}
                   </span>
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mt-1">Days Remaining</span>
+                  <span className="ui-label mt-1 block">Days left</span>
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">Your Available Time Off</h3>
-                  <p className="text-xs text-slate-500 max-w-sm mt-0.5">
-                    Plan your breaks and time away. Submit requests directly via the leave management workspace.
+                  <h3 className="text-[14px] font-semibold text-[var(--ink)]">Available time off</h3>
+                  <p className="ui-meta max-w-sm mt-0.5">
+                    Plan time away and request it from the leave workspace.
                   </p>
                   {usesDefaultEntitlement && (
                     <p className="text-[11px] text-amber-700 mt-1">
-                      Running on the company default of {myBalance.entitlement} days — no personal quota set for {leaveYear}.
+                      On the company default of {myBalance.entitlement} days; no personal quota set for {leaveYear}.
                     </p>
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 text-xs font-semibold bg-slate-50 p-4 rounded-xl border border-slate-200/80 shrink-0">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-5 rounded-[var(--radius-control)] border border-[var(--line)] px-4 py-2.5 shrink-0">
                 <div>
-                  <span className="text-slate-400 text-[11px] block">Entitlement</span>
-                  <span className="font-bold text-slate-800 text-sm">{myBalance.entitlement} d</span>
+                  <span className="ui-label block">Entitlement</span>
+                  <span className="ui-num text-[13px] font-medium text-[var(--ink)]">{myBalance.entitlement} d</span>
                 </div>
-                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
                 <div>
-                  <span className="text-slate-400 text-[11px] block">Carried Over</span>
-                  <span className="font-extrabold text-emerald-600 text-sm">+{myBalance.carryOver} d</span>
+                  <span className="ui-label block">Carried over</span>
+                  <span className="ui-num text-[13px] font-medium text-emerald-700">{myBalance.carryOver > 0 ? '+' : ''}{myBalance.carryOver} d</span>
                 </div>
-                <div className="w-px h-8 bg-slate-200 hidden sm:block" />
                 <div>
-                  <span className="text-slate-400 text-[11px] block">Taken / Approved</span>
-                  <span className="font-extrabold text-rose-600 text-sm">-{myBalance.taken} d</span>
+                  <span className="ui-label block">Taken</span>
+                  <span className="ui-num text-[13px] font-medium text-[var(--ink-2)]">-{myBalance.taken} d</span>
                 </div>
                 {myBalance.reserved > 0 && (
-                  <>
-                    <div className="w-px h-8 bg-slate-200 hidden sm:block" />
-                    <div>
-                      <span className="text-slate-400 text-[11px] block">Pending</span>
-                      <span className="font-extrabold text-purple-600 text-sm">-{myBalance.reserved} d</span>
-                    </div>
-                  </>
+                  <div>
+                    <span className="ui-label block">Pending</span>
+                    <span className="ui-num text-[13px] font-medium text-[var(--ink-2)]">-{myBalance.reserved} d</span>
+                  </div>
                 )}
                 {myBalance.mandatory > 0 && (
-                  <>
-                    <div className="w-px h-8 bg-slate-200 sm:block hidden" />
-                    <div>
-                      <span className="text-slate-400 text-[11px] block">Mandatory</span>
-                      <span className="font-extrabold text-indigo-600 text-sm">-{myBalance.mandatory} d</span>
-                    </div>
-                  </>
+                  <div>
+                    <span className="ui-label block">Mandatory</span>
+                    <span className="ui-num text-[13px] font-medium text-[var(--ink-2)]">-{myBalance.mandatory} d</span>
+                  </div>
                 )}
               </div>
           </div>
         </Card>
       ) : (
-        <Card title="Contractor Retainer Summary & Invoicing" subtitle="StellarBlue contractor partner workspace" className="border-slate-200/90 shadow-2xs">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+        <Card title="Retainer summary" subtitle="Your contractor agreement">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-slate-800 font-bold">Active Contractor Agreement</p>
-              <p className="text-xs text-slate-500 mt-0.5">Invoicing via monthly fixed-fee retainer or day-rate block.</p>
+              <p className="text-[13px] font-medium text-[var(--ink)]">Active contractor agreement</p>
+              <p className="ui-meta mt-0.5">Invoiced as a monthly retainer or day-rate block.</p>
             </div>
-            <Badge variant="info" className="font-bold">External Partner</Badge>
+            <Badge variant="neutral">External partner</Badge>
           </div>
         </Card>
       )}
 
       {/* 5. UNIFIED COMPANY & TEAM CALENDAR */}
-      <div className="space-y-4 pt-6 border-t border-slate-200/80">
+      <div className="space-y-4 pt-6 border-t border-[var(--line)]">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center">
-                <CalendarDays className="w-6 h-6 mr-2.5 text-[#3D87D3]" /> Company&apos;s Calendar
+              <h2 className="ui-title flex items-center gap-2">
+                <CalendarDays className="w-4.5 h-4.5 text-[var(--ink-3)]" /> Company calendar
               </h2>
-              <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                Comprehensive organizational schedule combining daily remote logs, approved leave requests, and celebrations.
+              <p className="text-[13px] text-[var(--ink-3)] mt-0.5">
+                Remote logs, approved leave and company dates in one view.
               </p>
             </div>
           </div>

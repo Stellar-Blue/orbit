@@ -532,98 +532,33 @@ export default function InvoicesRegistryPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 py-6 space-y-6">
+    <div className="w-full space-y-5 animate-in fade-in duration-150">
 
-      {/* Tabs */}
-      <div className="flex space-x-6 border-b border-slate-200 pb-3 text-sm">
-        <button
-          onClick={() => setActiveTab('ledger')}
-          className={`pb-2 font-semibold transition-all cursor-pointer ${activeTab === 'ledger' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          <span className="inline-flex items-center"><FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" /> Invoice Ledger ({filteredInvoices.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('billing_actions')}
-          className={`pb-2 font-semibold transition-all flex items-center cursor-pointer ${activeTab === 'billing_actions' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          <Zap className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Contract Invoicing &amp; Revenue Action Center
-          {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length > 0 && (
-            <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-              {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {activeTab === 'ledger' && (
-        <>
-          {/* Filter Bar */}
-          <Card className="p-4 bg-white border-slate-200 shadow-sm rounded-2xl flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="relative w-64">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search invoice #, MARK, entity..."
-                  className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 font-medium transition-all"
-                />
-              </div>
-
-              <select
-                value={directionFilter}
-                onChange={(e: any) => setDirectionFilter(e.target.value)}
-                className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="all">Direction: All Invoices</option>
-                <option value="outgoing">Client AR (Outgoing)</option>
-                <option value="incoming">Supplier AP (Incoming)</option>
-              </select>
-
-              <select
-                value={statusFilter}
-                onChange={(e: any) => setStatusFilter(e.target.value)}
-                className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none"
-              >
-                <option value="all">Status: All Statuses</option>
-                <option value="draft">Draft</option>
-                <option value="registered">Registered</option>
-                <option value="sent_received">Sent / Received</option>
-                <option value="partially_paid">Partially Paid</option>
-                <option value="paid">Paid</option>
-                <option value="disputed">Disputed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-
-              <select
-                value={selectedCpId}
-                onChange={(e: any) => setSelectedCpId(e.target.value)}
-                className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-700 focus:outline-none max-w-[200px]"
-              >
-                <option value="all">Entity: All Counterparties</option>
-                {counterparties.map(cp => (
-                  <option key={cp.id} value={cp.id}>{cp.legal_name} {cp.trade_name ? `(${cp.trade_name})` : ''}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="flex items-center justify-end gap-3 flex-wrap">
+      {/* Header */}
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 border-b border-[var(--line)] pb-4">
+        <div className="min-w-0">
+          <h1 className="ui-title">Invoices</h1>
+          <p className="text-[13px] text-[var(--ink-3)] mt-1 max-w-xl">
+            Issued and received invoices, allocations, payments and myDATA archives.
+          </p>
+        </div>
+        {activeTab === 'ledger' && (
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
               <Button 
                 onClick={() => {
                   setSyncVatNumber('');
                   setIsSyncModalOpen(true);
                 }} 
-                variant="outline"
-                className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
+                variant="secondary"
+                size="sm"
               >
                 <CloudDownload className="w-4 h-4" />
                 Sync myDATA
               </Button>
               <Button 
                 onClick={() => refreshInvoices()} 
-                variant="outline"
-                className="text-slate-700 font-bold px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs flex items-center gap-2"
+                variant="secondary"
+                size="sm"
               >
                 <RefreshCw className="w-4 h-4" />
                 Reload
@@ -655,13 +590,94 @@ export default function InvoicesRegistryPage() {
                   setDuplicateWarning('');
                   setIsRegisterModalOpen(true);
                 }} 
-                className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-500/20 text-xs flex items-center gap-2 transition-all transform hover:scale-[1.02]"
+                variant="primary"
+                size="sm"
               >
                 <Plus className="w-4 h-4 stroke-[3]" />
-                Register New Invoice
+                Register invoice
               </Button>
             </div>
-          </Card>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)]">
+        <button
+          onClick={() => setActiveTab('ledger')}
+          className={`inline-flex items-center gap-2 h-9 px-3 -mb-px border-b-2 text-[13px] font-semibold transition-colors cursor-pointer ${
+            activeTab === 'ledger'
+              ? 'border-[var(--accent)] text-[var(--accent-ink)]'
+              : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5" /> Invoice ledger
+          <span className="ui-num text-[11px] font-semibold text-[var(--ink-4)]">{filteredInvoices.length}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('billing_actions')}
+          className={`inline-flex items-center gap-2 h-9 px-3 -mb-px border-b-2 text-[13px] font-semibold transition-colors cursor-pointer ${
+            activeTab === 'billing_actions'
+              ? 'border-[var(--accent)] text-[var(--accent-ink)]'
+              : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5" /> Invoicing queue
+          {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length > 0 && (
+            <Badge variant="warning">
+              {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length}
+            </Badge>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'ledger' && (
+        <>
+          {/* Filters */}
+          <div className="ui-card p-3 flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="w-3.5 h-3.5 text-[var(--ink-4)] absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search invoice number, MARK or counterparty"
+                className="w-full h-8 pl-8 pr-3 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+            <select
+              value={directionFilter}
+              onChange={(e: any) => setDirectionFilter(e.target.value)}
+              className="h-8 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+            >
+              <option value="all">All directions</option>
+              <option value="outgoing">Client (AR)</option>
+              <option value="incoming">Supplier (AP)</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e: any) => setStatusFilter(e.target.value)}
+              className="h-8 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+            >
+              <option value="all">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="registered">Registered</option>
+              <option value="sent_received">Sent or received</option>
+              <option value="partially_paid">Partially paid</option>
+              <option value="paid">Paid</option>
+              <option value="disputed">Disputed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select
+              value={selectedCpId}
+              onChange={(e: any) => setSelectedCpId(e.target.value)}
+              className="h-8 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer max-w-[220px]"
+            >
+              <option value="all">All counterparties</option>
+              {counterparties.map(cp => (
+                <option key={cp.id} value={cp.id}>{cp.legal_name} {cp.trade_name ? `(${cp.trade_name})` : ''}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Table View (AG Grid) */}
           <InvoicesGrid
@@ -734,20 +750,20 @@ export default function InvoicesRegistryPage() {
 
       {activeTab === 'billing_actions' && (
         <Card
-          title="Contract Invoicing & Revenue Action Center"
-          subtitle="Automated ledger monitoring across active commercial contracts to ensure timely billing in advance or arrears"
+          title="Invoicing queue"
+          subtitle="Periods the contracts already owe. Create the draft here, or open the register pre-filled."
           action={
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3">
               {activeQueue.filter(i => i.status === 'unbilled').length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                  {activeQueue.filter(i => i.status === 'unbilled').length} Action(s) Needed
-                </span>
+                <Badge variant="warning">
+                  {activeQueue.filter(i => i.status === 'unbilled').length} unbilled
+                </Badge>
               )}
               {dismissedCount > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowDismissed(v => !v)}
-                  className="text-[11px] font-bold text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 cursor-pointer"
+                  className="text-[12px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)] inline-flex items-center gap-1 cursor-pointer"
                   title="Show or hide the suggestions you dismissed"
                 >
                   <EyeOff className="w-3.5 h-3.5" />
@@ -756,35 +772,34 @@ export default function InvoicesRegistryPage() {
               )}
             </div>
           }
-          className="border-slate-200/90 shadow-2xs"
         >
-          <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
             <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
               <input
                 type="text"
-                placeholder="Search counterparty, ref, or period..."
+                placeholder="Search counterparty, reference or period"
                 value={actionSearchQuery}
                 onChange={(e) => setActionSearchQuery(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 flex-1 min-w-[160px]"
+                className="h-8 px-2.5 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-4)] focus:outline-none focus:border-[var(--accent)] flex-1 min-w-[180px]"
               />
               <select
                 value={actionFilterStatus}
                 onChange={(e) => setActionFilterStatus(e.target.value)}
-                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                className="h-8 px-2 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[12px] text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
               >
-                <option value="all">All Statuses</option>
-                <option value="unbilled">Unbilled Only</option>
-                <option value="draft_created">Draft Created</option>
+                <option value="all">All statuses</option>
+                <option value="unbilled">Unbilled only</option>
+                <option value="draft_created">Draft created</option>
                 <option value="billed">Invoiced</option>
               </select>
               <select
                 value={actionFilterDirection}
                 onChange={(e) => setActionFilterDirection(e.target.value)}
-                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                className="h-8 px-2 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[12px] text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
               >
-                <option value="all">All Directions</option>
-                <option value="revenue">Revenue Only</option>
-                <option value="cost">Spend Only</option>
+                <option value="all">All directions</option>
+                <option value="revenue">Revenue only</option>
+                <option value="cost">Spend only</option>
               </select>
               <ClearFiltersControl
                 active={actionSearchQuery.trim().length > 0 || actionFilterStatus !== 'all' || actionFilterDirection !== 'all'}
@@ -796,17 +811,17 @@ export default function InvoicesRegistryPage() {
               <select
                 value={actionSortBy}
                 onChange={(e) => setActionSortBy(e.target.value as 'period' | 'amount_desc' | 'amount_asc' | 'counterparty')}
-                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                className="h-8 px-2 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[12px] text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
               >
-                <option value="period">Urgency & Period</option>
-                <option value="amount_desc">Amount (High to Low)</option>
-                <option value="amount_asc">Amount (Low to High)</option>
-                <option value="counterparty">Counterparty Name</option>
+                <option value="period">Urgency and period</option>
+                <option value="amount_desc">Amount, high to low</option>
+                <option value="amount_asc">Amount, low to high</option>
+                <option value="counterparty">Counterparty name</option>
               </select>
             </div>
           </div>
 
-          <div className="h-[calc(100vh-400px)] min-h-[440px] border border-slate-200/80 rounded-xl shadow-inner overflow-hidden">
+          <div className="h-[calc(100vh-400px)] min-h-[440px] border border-[var(--line)] rounded-[var(--radius-control)] overflow-hidden">
             <BillingActionGrid
               items={filteredActionQueue}
               onQuickCreate={(item) => handleQuickCreateInvoice(item as unknown as (typeof pendingInvoicesQueue)[number])}

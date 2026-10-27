@@ -140,7 +140,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); if (p.data) onOpenCounterparty(p.data.contract); }}
-            className="font-bold text-slate-900 block truncate hover:text-[#3D87D3] hover:underline text-left cursor-pointer"
+            className="font-medium text-[var(--ink)] block truncate hover:text-[var(--accent-ink)] hover:underline text-left cursor-pointer"
             title={`Open counterparty: ${p.value || ''}`}
           >
             {p.value}
@@ -151,16 +151,16 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Contract Title', field: 'reference', minWidth: 170, sortable: true,
         ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <span className="font-mono font-black text-[#3D87D3]">{p.value}</span>
+          <span className="ui-num font-medium text-[var(--accent-ink)]">{p.value}</span>
         )
       },
       {
-        headerName: 'Contract UUID', field: 'uuid', width: 130, sortable: true, ...excelSetFilter(),
+        headerName: 'Contract ID', field: 'uuid', width: 150, hide: true, sortable: true, ...excelSetFilter(),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <button
             type="button"
             onClick={(e) => copyUuid(p.value || '', e)}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] leading-none transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white hover:bg-[var(--accent-soft)] text-[var(--ink-3)] hover:text-[var(--accent-ink)] border border-[var(--line)] rounded ui-num text-[10px] leading-none transition-colors cursor-pointer"
             title="Click to copy Contract UUID"
           >
             <span>{(p.value || '').slice(0, 8)}...{(p.value || '').slice(-4)}</span>
@@ -169,10 +169,10 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         )
       },
       {
-        headerName: 'Direction', field: 'direction', width: 105, sortable: true,
+        headerName: 'Direction', field: 'direction', width: 124, sortable: true,
         ...excelSetFilter(['revenue', 'cost']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <Badge variant={p.value === 'revenue' ? 'success' : 'warning'} className="text-[10px] leading-none px-1.5 py-0.5">{String(p.value).toUpperCase()}</Badge>
+          <Badge variant={p.value === 'revenue' ? 'success' : 'warning'}>{p.value === 'revenue' ? 'Revenue' : 'Cost'}</Badge>
         )
       },
       { headerName: 'Product', field: 'product', width: 170, sortable: true, ...excelSetFilter() },
@@ -180,13 +180,13 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         headerName: 'Status', field: 'status', width: 120, sortable: true,
         ...excelSetFilter(['draft', 'in_negotiation', 'active', 'expiring', 'expired', 'terminated']),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <Badge variant={STATUS_VARIANT[p.value || ''] || 'neutral'} className="text-[10px] leading-none px-1.5 py-0.5">{String(p.value || '').toUpperCase().replace('_', ' ')}</Badge>
+          <Badge variant={STATUS_VARIANT[p.value || ''] || 'neutral'}>{String(p.value || '').replace('_', ' ')}</Badge>
         )
       },
       {
-        headerName: 'Counterparty Tier', field: 'cpTierLabel', width: 140, sortable: true, ...excelSetFilter(),
+        headerName: 'Tier', field: 'cpTierLabel', width: 116, sortable: true, ...excelSetFilter(),
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
-          <span className="inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold border leading-none h-4"
+          <span className="inline-flex items-center px-1.5 rounded text-[11px] font-medium border leading-none h-5"
             style={{ color: p.data?.cpTierColor || '#94a3b8', borderColor: `${p.data?.cpTierColor || '#94a3b8'}55`, backgroundColor: `${p.data?.cpTierColor || '#94a3b8'}14` }}>
             {p.value}
           </span>
@@ -298,11 +298,11 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
-          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          defaultColDef={{ sortable: true, filter: true, floatingFilter: false, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
           {...gridFilters.gridProps}
           quickFilterText={quickFilter}
-          rowHeight={40}
-          headerHeight={36}
+          rowHeight={36}
+          headerHeight={32}
           {...GROUPING_OPTIONS}
           onRowDoubleClicked={e => { if (e.data) onSelect(e.data.contract); }}
           rowClassRules={{
@@ -312,14 +312,15 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
           paginationPageSize={25}
           paginationPageSizeSelector={[10, 25, 50, 100]}
           animateRows={true}
+          overlayNoRowsTemplate={'<span class="orbit-empty"><strong>No contracts match these filters</strong>Clear the filters, or register a new agreement.</span>'}
         />
       </div>
       <style jsx global>{`
         .contract-row-urgent {
-          background-color: #fff1f2 !important;
+          background-color: #fff7f8 !important;
         }
         .contract-row-urgent:hover {
-          background-color: #ffe4e6 !important;
+          background-color: #ffeff1 !important;
         }
       `}</style>
     </div>

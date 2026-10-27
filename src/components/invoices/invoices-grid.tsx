@@ -197,7 +197,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Invoice UUID', field: 'inv.id', width: 135, sortable: true, ...excelSetFilter(),
+      headerName: 'Invoice ID', field: 'inv.id', width: 150, hide: true, sortable: true, ...excelSetFilter(),
       valueGetter: (p) => p.data?.inv.id,
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <button
@@ -237,7 +237,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       }
     },
     {
-      headerName: 'Impact', field: 'impact', width: 90, sortable: true, ...excelSetFilter(),
+      headerName: 'Impact', field: 'impact', width: 108, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         <span className={`text-[10px] leading-none font-extrabold px-1.5 py-0.5 rounded border inline-block ${
           p.data?.impact === 'Debit' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
@@ -261,7 +261,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
       )
     },
     {
-      headerName: 'Year · Qtr', field: 'yearQuarter', width: 120, sortable: true, ...excelSetFilter(),
+      headerName: 'Quarter', field: 'yearQuarter', width: 120, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<InvoiceRow, string>) => (
         p.value && p.value !== '—' ? (
           <span className="inline-flex items-center px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded font-bold text-[10px] leading-none font-mono">{p.value}</span>
@@ -502,38 +502,38 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
   return (
     <div className="flex flex-col w-full bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
       {!hideToolbar && (
-        <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/60">
-          <div className="flex items-center gap-2 w-full max-w-xl">
+        <div className="px-4 py-2 border-b border-[var(--line)] flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 w-full max-w-2xl">
             <div className="relative w-full max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-[var(--ink-4)] absolute left-2.5 top-2.5" />
               <input
                 type="text"
-                placeholder="Search invoices across all columns..."
+                placeholder="Search invoices"
                 value={quickFilter}
                 onChange={e => setQuickFilter(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+                className="w-full h-8 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] pl-8 pr-2.5 text-[12px] text-[var(--ink)] focus:outline-none focus:border-[var(--accent)] placeholder:text-[var(--ink-4)]"
               />
             </div>
             <ClearFiltersButton controls={gridFilters} />
             {HAS_AG_GRID_LICENSE && (
-              <div className="flex items-center gap-2 pl-1">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => gridApi?.expandAll()}
-                  className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+                  className="h-8 px-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-white text-[12px] font-medium text-[var(--ink-2)] hover:border-[var(--line-strong)] transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  Expand All
+                  Expand all
                 </button>
                 <button
                   onClick={() => gridApi?.collapseAll()}
-                  className="text-[11px] font-bold text-slate-600 hover:text-[#3D87D3] bg-white border border-slate-200 hover:border-[#3D87D3] px-2.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+                  className="h-8 px-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-white text-[12px] font-medium text-[var(--ink-2)] hover:border-[var(--line-strong)] transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  Collapse All
+                  Collapse all
                 </button>
               </div>
             )}
           </div>
-          <span className="text-[11px] text-slate-400 font-medium shrink-0 hidden sm:block">
-            {invoices.length} invoices · double-click a row to open · use column filters for Excel-style options
+          <span className="ui-meta shrink-0 hidden sm:block">
+            {invoices.length} invoices. Double-click a row to open it.
           </span>
         </div>
       )}
@@ -544,10 +544,11 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
           theme={orbitGridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
-          defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
+          defaultColDef={{ sortable: true, filter: true, floatingFilter: false, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
           quickFilterText={quickFilter}
-          rowHeight={40}
-          headerHeight={36}
+          rowHeight={36}
+          headerHeight={32}
+          overlayNoRowsTemplate={'<span class="orbit-empty"><strong>No invoices match these filters</strong>Clear the filters, or register an invoice.</span>'}
           {...GROUPING_OPTIONS}
           groupDisplayType="groupRows"
           rowSelection={{ mode: 'multiRow' }}

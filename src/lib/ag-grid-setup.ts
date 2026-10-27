@@ -42,13 +42,24 @@ export const orbitGridTheme = themeQuartz.withParams({
  */
 export const excelSetFilter = (values?: Array<string | number>): Pick<ColDef, 'filter' | 'filterParams' | 'floatingFilter'> =>
   HAS_AG_GRID_LICENSE
-    ? { filter: 'agSetColumnFilter', filterParams: { values, excelMode: 'windows' }, floatingFilter: true }
-    : { filter: OptionsFilter, filterParams: values ? { values } : undefined, floatingFilter: false };
+    ? { filter: 'agSetColumnFilter', filterParams: { values, excelMode: 'windows' } }
+    : { filter: OptionsFilter, filterParams: values ? { values } : undefined };
 
 /**
  * Enterprise row-grouping capabilities (drag column headers into the group panel).
  * Only active when the license key is present; safely ignored in community mode.
  */
 export const GROUPING_OPTIONS: Partial<GridOptions> = HAS_AG_GRID_LICENSE
-  ? { rowGroupPanelShow: 'always', groupDefaultExpanded: 1, sideBar: true }
+  ? {
+      // The grouping strip and the columns panel both steal horizontal room from a dense ledger,
+      // so they stay collapsed until someone actually groups or opens a tool panel.
+      rowGroupPanelShow: 'onlyWhenGrouping',
+      groupDefaultExpanded: 1,
+      sideBar: {
+        toolPanels: [
+          { id: 'columns', labelDefault: 'Columns', labelKey: 'columns', iconKey: 'columns', toolPanel: 'agColumnsToolPanel' },
+          { id: 'filters', labelDefault: 'Filters', labelKey: 'filters', iconKey: 'filter', toolPanel: 'agFiltersToolPanel' },
+        ],
+      },
+    }
   : {};

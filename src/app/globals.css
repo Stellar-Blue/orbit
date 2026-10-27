@@ -1,23 +1,148 @@
 @import "tailwindcss";
 
+/*
+  Orbit design tokens.
+
+  The platform is an operations console for a contract/finance team: dense tables, money that must
+  line up in columns, and states that have to read at a glance. The system is deliberately quiet —
+  one accent (Stellar blue) reserved for action and selection, hairline rules instead of shadows,
+  tabular figures for every amount, and sentence-case labels instead of shouting.
+*/
 :root {
-  --background: #f8fafc;
-  --foreground: #1e293b;
+  --canvas: #f6f8fb;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #64748b;
+  --ink-4: #94a3b8;
+
+  --line: #e4e9f0;
+  --line-strong: #cbd5e1;
+
+  --accent: #3d87d3;
+  --accent-ink: #24557f;
+  --accent-soft: #eef4fb;
+
+  --positive: #047857;
+  --positive-soft: #ecfdf5;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #be123c;
+  --danger-soft: #fff1f2;
+
+  --radius-card: 14px;
+  --radius-control: 8px;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-pop: 0 18px 40px -20px rgba(15, 23, 42, 0.35);
+
+  --background: var(--canvas);
+  --foreground: var(--ink-2);
+
+  /* next/font exposes --font-outfit on <html>; @theme inline does not emit --font-sans,
+     so the body rule needs the real stack to keep Outfit everywhere. */
+  --font-body: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-stellar: #3D87D3;
-  --color-stellar-hover: #3272B4;
-  --color-stellar-light: #EBF3FA;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-line: var(--line);
+  --color-stellar: var(--accent);
+  --color-stellar-hover: #3272b4;
+  --color-stellar-ink: var(--accent-ink);
+  --color-stellar-light: var(--accent-soft);
   --font-sans: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+  background: var(--canvas);
+  color: var(--ink-2);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  font-feature-settings: "cv05" 1;
+}
+
+/* Field and column labels: sentence case, quiet, never shouted. */
+.ui-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  letter-spacing: 0.005em;
+}
+
+/* Secondary metadata under a name or number. */
+.ui-meta {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-4);
+}
+
+.ui-title {
+  font-size: clamp(20px, 1.5vw, 24px);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.ui-section-title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* Every amount in the platform lines up column to column. */
+.ui-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+.ui-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.ui-divide {
+  border-top: 1px solid var(--line);
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, white);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Empty and loading states: an invitation to act, not a blank void. */
+.orbit-empty {
+  display: block;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.orbit-empty strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 /* AG Grid filter popups (the community OptionsFilter is a React popup; these rules cover the
@@ -44,4 +169,12 @@ body {
 
 .ag-row-pinned .orbit-schedule-current-cell {
   background-color: #fff7ed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

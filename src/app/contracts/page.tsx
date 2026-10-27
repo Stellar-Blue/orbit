@@ -8,10 +8,10 @@ import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus, ContractDocument } from '@/lib/types';
-import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
+import { Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
-  FileText, Plus, AlertTriangle, Calendar, DollarSign, X, 
-  ArrowUpRight, Download, Upload, Layers, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap
+  FileText, Plus, AlertTriangle, DollarSign, X,
+  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap
 } from 'lucide-react';
 import { ContractPricingBuilder, type PricingDraft } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
@@ -524,149 +524,163 @@ export default function ContractsRegistryPage() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
+    <div className="space-y-5 animate-in fade-in duration-150">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-            <FileText className="w-6 h-6 mr-3 text-[#3D87D3]" /> Client & Supplier Contract Registry
-          </h1>
-          <p className="text-slate-500 text-xs mt-1">
-            Bi-directional management covering both revenue SaaS (Atlas ETRM/EMS) and committed supplier spend with automated notice-window alerting.
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-[var(--line)] pb-4">
+        <div className="min-w-0">
+          <h1 className="ui-title">Contracts</h1>
+          <p className="text-[13px] text-[var(--ink-3)] mt-1 max-w-2xl">
+            Client revenue and supplier spend in one registry, with renewal notice windows and invoicing per agreement.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5">
-            <button 
-              onClick={() => setViewMode('table')} 
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'table' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="inline-flex rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white p-0.5" role="group" aria-label="View">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              aria-pressed={viewMode === 'table'}
+              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
+                viewMode === 'table' ? 'bg-[var(--accent)] text-white' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
+              }`}
             >
-              Timeline List
+              List
             </button>
-            <button 
-              onClick={() => setViewMode('revenue')} 
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${viewMode === 'revenue' ? 'bg-[#3D87D3] text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+            <button
+              type="button"
+              onClick={() => setViewMode('revenue')}
+              aria-pressed={viewMode === 'revenue'}
+              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
+                viewMode === 'revenue' ? 'bg-[var(--accent)] text-white' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
+              }`}
             >
-              <BarChart3 className="w-3.5 h-3.5" /> Revenue Schedule & MRR
+              <BarChart3 className="w-3.5 h-3.5" /> Revenue schedule
             </button>
           </div>
           {isAdmin && (
-            <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} className="shadow-xs cursor-pointer">
-              <Plus className="w-4 h-4 mr-1.5" /> New Contract
+            <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> New contract
             </Button>
           )}
         </div>
       </div>
 
-      {/* Reporting Period — the revenue schedule spans the contracts' own effective dates instead */}
-      {viewMode !== 'revenue' && (
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-white border border-slate-200 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-slate-400">
-            <Calendar className="w-4 h-4" /> Reporting Period
-          </span>
-          <input
-            type="date"
-            value={periodFrom}
-            max={periodTo || undefined}
-            onChange={e => setPeriodFrom(e.target.value)}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
-          />
-          <span className="text-slate-400 text-xs">→</span>
-          <input
-            type="date"
-            value={periodTo}
-            min={periodFrom || undefined}
-            onChange={e => setPeriodTo(e.target.value)}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
-          />
-          {hasPeriod && (
-            <button
-              onClick={() => { setPeriodFrom(''); setPeriodTo(''); }}
-              className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" /> Clear
-            </button>
-          )}
-        </div>
-        <div className="text-xs font-mono text-slate-500">
-          {hasPeriod ? (
-            <>Totals cover <span className="font-bold text-[#3D87D3]">{periodFrom || 'start'} → {periodTo || 'present'}</span>, annualised and prorated to the period</>
-          ) : (
-            <>Showing <span className="font-bold">annualised (ARR)</span> contracted totals</>
-          )}
-        </div>
-      </div>
-      )}
-
       {/* KPI & Notice Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard 
-          title="Contracted Client Revenue (Active, Annual)" 
+          title="Client revenue, annualised" 
           value={`€${revenueTotal.toLocaleString()}/yr`} 
           subtitle={hasPeriod ? `Annualised revenue committed in ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Annualised recurring revenue (ARR) · excludes one-time fees"}
           icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
         />
         <StatCard 
-          title="Committed Supplier Spend (Active, Annual)" 
+          title="Supplier spend, annualised" 
           value={`€${costTotal.toLocaleString()}/yr`} 
           subtitle={hasPeriod ? `Annualised spend committed in ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Annualised recurring spend · excludes one-time fees"}
           icon={<DollarSign className="w-5 h-5 text-amber-600" />}
         />
         <StatCard
-          title={`Action Required (Next ${NOTICE_ALERT_WINDOW_DAYS} Days)`}
-          value={`${urgentAlerts} Notice Window${urgentAlerts === 1 ? '' : 's'}`}
-          subtitle={urgentAlerts > 0 ? 'Notice deadlines open or already missed' : 'Critical deadline monitoring active'}
+          title={`Action required, next ${NOTICE_ALERT_WINDOW_DAYS} days`}
+          value={urgentAlerts}
+          subtitle={urgentAlerts > 0
+            ? `${urgentAlerts === 1 ? 'Notice deadline is' : 'Notice deadlines are'} open or already missed`
+            : 'No notice deadline needs action'}
           icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
           footer={
             <Link
               href="/contracts/notices"
-              className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#3D87D3] hover:text-[#2f6ea9] hover:underline"
+              className="text-[11px] font-medium text-[var(--accent-ink)] hover:underline"
             >
               {urgentAlerts > 0 ? 'See what action is required' : 'Open the notice-window report'}
-              <ArrowUpRight className="w-3 h-3" />
             </Link>
           }
         />
       </div>
 
-      {/* Direction Toggle & Filter Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-white border border-slate-200 shadow-2xs">
-        <div className="flex items-center space-x-2">
-          <span className="text-xs font-bold uppercase text-slate-400 mr-2">Direction:</span>
-          <button
-            onClick={() => setDirectionFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${directionFilter === 'all' ? 'bg-slate-800 text-white font-bold border border-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            All Contracts
-          </button>
-          <button
-            onClick={() => setDirectionFilter('revenue')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center cursor-pointer ${directionFilter === 'revenue' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            Client Revenue (<span className="text-emerald-700 font-mono ml-1">€{revenueTotal.toLocaleString()}/yr</span>)
-          </button>
-          <button
-            onClick={() => setDirectionFilter('cost')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center cursor-pointer ${directionFilter === 'cost' ? 'bg-amber-50 text-amber-800 border border-amber-200 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            Supplier Spend (<span className="text-amber-700 font-mono ml-1">€{costTotal.toLocaleString()}/yr</span>)
-          </button>
+      {/* Filters — direction, status and the reporting window in one strip */}
+      <div className="ui-card p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex flex-wrap items-center gap-0.5 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-muted)] p-0.5" role="group" aria-label="Direction">
+            <button
+              type="button"
+              onClick={() => setDirectionFilter('all')}
+              aria-pressed={directionFilter === 'all'}
+              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
+                directionFilter === 'all' ? 'bg-white text-[var(--ink)] shadow-[var(--shadow-card)]' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
+              }`}
+            >
+              All contracts
+            </button>
+            <button
+              type="button"
+              onClick={() => setDirectionFilter('revenue')}
+              aria-pressed={directionFilter === 'revenue'}
+              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
+                directionFilter === 'revenue' ? 'bg-white text-emerald-700 shadow-[var(--shadow-card)]' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
+              }`}
+            >
+              Client revenue <span className="ui-num font-medium text-[var(--ink-4)]">€{revenueTotal.toLocaleString()}/yr</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDirectionFilter('cost')}
+              aria-pressed={directionFilter === 'cost'}
+              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
+                directionFilter === 'cost' ? 'bg-white text-amber-700 shadow-[var(--shadow-card)]' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
+              }`}
+            >
+              Supplier spend <span className="ui-num font-medium text-[var(--ink-4)]">€{costTotal.toLocaleString()}/yr</span>
+            </button>
+          </div>
+
+          <label className="flex items-center gap-2">
+            <span className="ui-label">Status</span>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as ContractStatus | 'all')}
+              className="h-8 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active only</option>
+              <option value="expiring">Expiring (notice urgent)</option>
+              <option value="in_negotiation">In negotiation</option>
+            </select>
+          </label>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <span className="text-xs font-bold uppercase text-slate-400">Status:</span>
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as ContractStatus | 'all')}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
-          >
-            <option value="all">All Statuses</option>
-            <option value="active">Active Only</option>
-            <option value="expiring">Expiring (Notice Urgent)</option>
-            <option value="in_negotiation">In Negotiation</option>
-          </select>
-        </div>
+        {viewMode !== 'revenue' && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] mt-3 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="ui-label">Reporting period</span>
+              <input
+                type="date"
+                value={periodFrom}
+                max={periodTo || undefined}
+                onChange={e => setPeriodFrom(e.target.value)}
+                className="h-8 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)]"
+              />
+              <span className="text-[var(--ink-4)] text-xs">to</span>
+              <input
+                type="date"
+                value={periodTo}
+                min={periodFrom || undefined}
+                onChange={e => setPeriodTo(e.target.value)}
+                className="h-8 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)]"
+              />
+              {hasPeriod && (
+                <button
+                  type="button"
+                  onClick={() => { setPeriodFrom(''); setPeriodTo(''); }}
+                  className="h-8 px-2 rounded-[var(--radius-control)] text-[12px] font-semibold text-[var(--ink-3)] hover:text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" /> Clear
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-[var(--ink-3)]">
+              {hasPeriod ? 'Totals annualised and prorated to the selected window.' : 'Showing annualised (ARR) contracted totals.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {viewMode === 'revenue' ? (
@@ -708,7 +722,7 @@ export default function ContractsRegistryPage() {
       <Modal 
         isOpen={!!selectedContract} 
         onClose={() => setSelectedContract(null)} 
-        title={selectedContract ? `Contract Dossier & Edit Hub: ${selectedContract.reference}` : 'Contract'}
+        title={selectedContract ? selectedContract.reference : 'Contract'}
         size="full"
       >
         {selectedContract && (
@@ -716,30 +730,30 @@ export default function ContractsRegistryPage() {
             {(() => {
               const dossierVal = calculateContractValuation(selectedContract.lines || [], selectedContract.discount_pct || 0, selectedContract.term_years || 1, selectedContract.service_start_date || selectedContract.starts_on, catalogModules, catalogItems, selectedContract.value || 0, selectedContract.billing_cadence);
               return (
-                <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between p-3.5 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 gap-4 shadow-md">
+                <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between px-4 py-2.5 bg-white rounded-[var(--radius-card)] border border-[var(--line)] gap-4 shadow-[var(--shadow-card)]">
                   <div className="flex items-center gap-3">
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-wide border shadow-sm ${dossierVal.tierInfo.badgeClass}`}>
+                    <span className={`px-2 h-6 inline-flex items-center rounded-md text-[11px] font-semibold border ${dossierVal.tierInfo.badgeClass}`}>
                       {dossierVal.tierInfo.label}
                     </span>
-                    <span className="text-xs text-slate-400">
-                      Weighted ARR: <strong className="text-slate-200 font-mono font-bold">€{dossierVal.weightedARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>
+                    <span className="ui-meta">
+                      Weighted ARR <strong className="ui-num font-semibold text-[var(--ink-2)]">€{dossierVal.weightedARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-6 font-mono text-xs">
+                    <div className="flex items-center gap-5 text-[12px]">
                       <div>
-                        <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Net ARR (Recurring):</span>
-                        <strong className="text-emerald-400 font-bold">€{dossierVal.netARR.toLocaleString()}/yr</strong>
+                        <span className="ui-label mr-1.5">Net ARR</span>
+                        <strong className="ui-num font-semibold text-emerald-700">€{dossierVal.netARR.toLocaleString()}/yr</strong>
                       </div>
                       {dossierVal.oneTimeValue > 0 && (
                         <div>
-                          <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">One-Off Additions:</span>
-                          <strong className="text-amber-400 font-bold">+€{dossierVal.oneTimeValue.toLocaleString()}</strong>
+                          <span className="ui-label mr-1.5">One-off</span>
+                          <strong className="ui-num font-semibold text-amber-700">+€{dossierVal.oneTimeValue.toLocaleString()}</strong>
                         </div>
                       )}
                       <div>
-                        <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Real Deal TCV:</span>
-                        <strong className="text-blue-400 font-black">€{dossierVal.totalContractValue.toLocaleString()}</strong>
+                        <span className="ui-label mr-1.5">TCV</span>
+                        <strong className="ui-num font-semibold text-[var(--ink)]">€{dossierVal.totalContractValue.toLocaleString()}</strong>
                       </div>
                     </div>
                     {/* The dossier's single save action — visible on every tab. */}
@@ -751,7 +765,7 @@ export default function ContractsRegistryPage() {
                       title={pricingWindowErrors > 0
                         ? `Fix ${pricingWindowErrors} invalid line window${pricingWindowErrors === 1 ? '' : 's'} in the revenue schedule before saving`
                         : 'Save the contract terms, pricing and revenue schedule together'}
-                      className="bg-[#3D87D3] hover:bg-[#3476B8] text-white font-extrabold shadow-md cursor-pointer disabled:opacity-50"
+                      className="font-semibold"
                     >
                       <Save className="w-4 h-4 mr-1.5" /> {isSavingContract ? 'Saving…' : 'Save contract'}
                     </Button>
@@ -761,60 +775,60 @@ export default function ContractsRegistryPage() {
             })()}
 
             {/* Modal Internal Navigation */}
-            <div className="flex items-center border-b border-slate-200 pb-2 space-x-6">
+            <div className="flex flex-wrap items-center gap-5 border-b border-[var(--line)] pb-2">
               <button
                 type="button"
                 onClick={() => setDossierTab('general')}
-                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'general' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
+                  dossierTab === 'general' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
                 }`}
               >
-                <Edit3 className="w-4 h-4 mr-2" /> General Terms & Metadata Editor
+                <Edit3 className="w-3.5 h-3.5" /> Terms &amp; metadata
               </button>
               <button
                 type="button"
                 onClick={() => setDossierTab('pricing')}
-                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'pricing' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
+                  dossierTab === 'pricing' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
                 }`}
               >
-                <Layers className="w-4 h-4 mr-2 text-purple-600" /> Modular Rate Sheet & Revenue Schedule
+                <Layers className="w-3.5 h-3.5" /> Rate sheet &amp; schedule
                 {selectedContract.lines && selectedContract.lines.length > 0 && (
-                  <Badge variant="success" className="ml-2 text-[11px] px-2 py-0.5">{selectedContract.lines.length}</Badge>
+                  <Badge variant="neutral">{selectedContract.lines.length}</Badge>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => setDossierTab('invoices')}
-                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'invoices' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
+                  dossierTab === 'invoices' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
                 }`}
               >
-                <Receipt className="w-4 h-4 mr-2 text-emerald-600" /> Linked Invoices & Payments
+                <Receipt className="w-3.5 h-3.5" /> Invoices
                 {invoices?.filter(i => i.contract_id === selectedContract.id).length > 0 && (
-                  <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{invoices?.filter(i => i.contract_id === selectedContract.id).length}</Badge>
+                  <Badge variant="neutral">{invoices?.filter(i => i.contract_id === selectedContract.id).length}</Badge>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => setDossierTab('projects')}
-                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'projects' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
+                  dossierTab === 'projects' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
                 }`}
               >
-                <Layers className="w-4 h-4 mr-2 text-sky-600" /> Projects
+                <Layers className="w-3.5 h-3.5" /> Projects
                 {projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length > 0 && (
-                  <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length}</Badge>
+                  <Badge variant="neutral">{projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length}</Badge>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => setDossierTab('ratecard')}
-                className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
-                  dossierTab === 'ratecard' ? 'border-[#3D87D3] text-[#3D87D3]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
+                  dossierTab === 'ratecard' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
                 }`}
               >
-                <DollarSign className="w-4 h-4 mr-2 text-sky-600" /> Rate Card
+                <DollarSign className="w-3.5 h-3.5" /> Rate card
               </button>
             </div>
 
@@ -866,136 +880,125 @@ export default function ContractsRegistryPage() {
 
                   return (
                     <div className="space-y-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <Card className="p-4 bg-emerald-50/60 border-emerald-200 rounded-2xl">
-                          <span className="text-xs font-bold text-emerald-800 block">Total Billed Gross</span>
-                          <span className="text-2xl font-black text-emerald-900 mt-1 block font-mono">€{totalGross.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          <span className="text-[11px] text-emerald-700 font-medium">Across {linkedInvoices.length} archived invoices</span>
-                        </Card>
-
-                        <Card className="p-4 bg-blue-50/60 border-blue-200 rounded-2xl">
-                          <span className="text-xs font-bold text-blue-800 block">Total Settled / Paid</span>
-                          <span className="text-2xl font-black text-blue-900 mt-1 block font-mono">€{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          <span className="text-[11px] text-blue-700 font-medium">Collected via banking wire/SEPA</span>
-                        </Card>
-
-                        <Card className="p-4 bg-amber-50/60 border-amber-200 rounded-2xl">
-                          <span className="text-xs font-bold text-amber-800 block">Open Receivable / Debt</span>
-                          <span className="text-2xl font-black text-amber-900 mt-1 block font-mono">€{totalOpen.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          <span className="text-[11px] text-amber-700 font-medium">{totalOpen === 0 ? 'Fully settled obligation' : 'Pending collection or maturity'}</span>
-                        </Card>
+                      <div className="rounded-[var(--radius-card)] border border-[var(--line)] bg-white grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--line)]">
+                        <div className="p-4">
+                          <span className="ui-label block">Billed gross</span>
+                          <span className="ui-num text-[20px] font-semibold text-[var(--ink)] mt-1 block tracking-[-0.01em]">€{totalGross.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="ui-meta">Across {linkedInvoices.length} {linkedInvoices.length === 1 ? 'invoice' : 'invoices'}</span>
+                        </div>
+                        <div className="p-4">
+                          <span className="ui-label block">Settled</span>
+                          <span className="ui-num text-[20px] font-semibold text-[var(--ink)] mt-1 block tracking-[-0.01em]">€{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="ui-meta">Collected by bank transfer</span>
+                        </div>
+                        <div className="p-4">
+                          <span className="ui-label block">Open receivable</span>
+                          <span className={`ui-num text-[20px] font-semibold mt-1 block tracking-[-0.01em] ${totalOpen === 0 ? 'text-[var(--ink)]' : 'text-amber-700'}`}>€{totalOpen.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="ui-meta">{totalOpen === 0 ? 'Fully settled' : 'Awaiting collection'}</span>
+                        </div>
                       </div>
 
                       {/* Fast create: the periods this contract already owes, ready to bill in one click */}
-                      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                              <Zap className="w-4 h-4 text-emerald-600" />
-                              Billing Periods Due
-                              {duePeriods.length > 0 && (
-                                <Badge variant="warning" className="text-[11px] px-2 py-0.5">{duePeriods.length} unbilled</Badge>
-                              )}
-                            </h4>
-                            <p className="text-xs text-slate-500">
-                              {selectedContract.billing_cadence || 'monthly'} cadence anchored on {formatDate(selectedContract.service_start_date || selectedContract.starts_on)} ·
-                              {' '}{selectedContract.invoice_timing === 'end_of_period' ? 'in arrears' : 'in advance'} ·
-                              {' '}expected total <strong className="text-slate-700 font-mono">€{dueTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
-                            </p>
+                      <div className="bg-white border border-[var(--line)] rounded-[var(--radius-card)] overflow-hidden">
+                        <div className="px-4 py-3 border-b border-[var(--line)] flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <h4 className="text-[14px] font-semibold text-[var(--ink)]">Billing periods due</h4>
+                            {duePeriods.length > 0 && (
+                              <Badge variant="warning">{duePeriods.length} unbilled</Badge>
+                            )}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             {nextDuePeriod && (
-                              <button
-                                type="button"
+                              <Button
+                                variant="primary"
+                                size="sm"
                                 onClick={() => createDraftForPeriod(selectedContract, nextDuePeriod)}
                                 disabled={creatingPeriodKey !== null}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                                 title={`Create a draft invoice for ${nextDuePeriod.label} (€${nextDuePeriod.expectedAmount.toLocaleString()})`}
                               >
-                                <Zap className="w-3.5 h-3.5 text-amber-300" /> Create next draft · {formatDate(nextDuePeriod.billingDate)}
-                              </button>
+                                <Zap className="w-3.5 h-3.5 mr-1.5" /> Create draft for {formatDate(nextDuePeriod.billingDate)}
+                              </Button>
                             )}
-                            <button
-                              type="button"
+                            <Button
+                              variant="secondary"
+                              size="sm"
                               onClick={() => router.push(`/invoices?new=1&contract=${selectedContract.id}`)}
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
                               title="Open the invoice register pre-filled for this contract"
                             >
-                              <Receipt className="w-3.5 h-3.5 text-[#3D87D3]" /> Register Invoice
-                            </button>
+                              <Receipt className="w-3.5 h-3.5 mr-1.5" /> Register invoice
+                            </Button>
                           </div>
                         </div>
+                        <p className="ui-meta px-4 pt-3">
+                          {`Billed ${selectedContract.invoice_timing === 'end_of_period' ? 'in arrears' : 'in advance'} from ${formatDate(selectedContract.service_start_date || selectedContract.starts_on)}, ${selectedContract.billing_cadence === 'one_off' ? 'once' : `${(selectedContract.billing_cadence || 'monthly').replace('_', ' ')} cadence`}.`}
+                          Expected total <strong className="ui-num font-semibold text-[var(--ink-2)]">€{dueTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                        </p>
 
                         {duePeriods.length === 0 ? (
-                          <div className="p-5 text-center text-xs text-slate-400 font-semibold italic">
-                            No billing period is due yet — as soon as one reaches its {selectedContract.invoice_timing === 'end_of_period' ? 'period end' : 'period start'} it appears here ready to invoice.
-                          </div>
+                          <p className="px-4 py-6 text-[12px] text-[var(--ink-3)] text-center">
+                            Nothing due yet. A period appears here as soon as it reaches its {selectedContract.invoice_timing === 'end_of_period' ? 'end' : 'start'} date.
+                          </p>
                         ) : (
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100 border-b border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
-                              <tr>
-                                <th className="p-3">Billing Cycle</th>
-                                <th className="p-3">Service Window</th>
-                                <th className="p-3">Billing Date</th>
-                                <th className="p-3 text-right">Expected Gross</th>
-                                <th className="p-3 text-center">Status</th>
-                                <th className="p-3 text-right">Fast Create</th>
+                          <table className="w-full text-left text-[12px] mt-3">
+                            <thead className="border-y border-[var(--line)] bg-[var(--surface-muted)]">
+                              <tr className="ui-label">
+                                <th className="px-4 py-2 font-medium">Billing cycle</th>
+                                <th className="px-4 py-2 font-medium">Service window</th>
+                                <th className="px-4 py-2 font-medium">Billing date</th>
+                                <th className="px-4 py-2 font-medium text-right">Expected gross</th>
+                                <th className="px-4 py-2 font-medium text-center">Status</th>
+                                <th className="px-4 py-2 font-medium text-right">Actions</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-200/60 font-medium">
+                            <tbody className="divide-y divide-[var(--line)]">
                               {duePeriods.map(period => (
-                                <tr key={period.key} className="hover:bg-slate-50/70 transition-colors">
-                                  <td className="p-3">
-                                    <span className="font-bold text-slate-900 block capitalize">
-                                      {(selectedContract.billing_cadence || 'monthly').replace('_', ' ')} cycle · from {formatDate(period.from)}
+                                <tr key={period.key} className="hover:bg-[var(--surface-muted)] transition-colors">
+                                  <td className="px-4 py-2.5">
+                                    <span className="font-medium text-[var(--ink)]">
+                                      {period.label.includes('Milestone') || period.label.includes('One-off')
+                                        ? period.label
+                                        : `${(selectedContract.billing_cadence || 'monthly').replace('_', ' ').replace(/^./, c => c.toUpperCase())} period ${period.from.slice(0, 4)}`}
                                     </span>
-                                    <span className={`text-[10px] font-bold block mt-0.5 ${period.timing === 'end_of_period' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                                      {period.timing === 'end_of_period' ? '⏳ billed in arrears (period end)' : '🚀 billed in advance (period start)'}
-                                    </span>
+                                    <span className="ui-meta block text-[11px]">billed {period.timing === 'end_of_period' ? 'at period end' : 'at period start'}</span>
                                   </td>
-                                  <td className="p-3 text-slate-600 font-mono">{formatDate(period.from)} → {formatDate(period.to)}</td>
-                                  <td className="p-3">
-                                    <span className={`font-mono font-bold px-2 py-0.5 rounded-lg border ${period.status === 'unbilled' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                      {formatDate(period.billingDate)}
-                                    </span>
-                                    <span className="block text-[10px] text-slate-400 mt-0.5">
-                                      {period.timing === 'end_of_period' ? 'period end' : 'period start'}
-                                    </span>
+                                  <td className="px-4 py-2.5 ui-meta whitespace-nowrap">{formatDate(period.from)} – {formatDate(period.to)}</td>
+                                  <td className="px-4 py-2.5">
+                                    <span className="ui-num text-[var(--ink-2)]">{formatDate(period.billingDate)}</span>
                                   </td>
-                                  <td className="p-3 text-right font-black text-slate-900 font-mono">€{period.expectedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                  <td className="p-3 text-center">
+                                  <td className="px-4 py-2.5 text-right ui-num font-medium text-[var(--ink)]">€{period.expectedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                  <td className="px-4 py-2.5 text-center">
                                     {period.status === 'unbilled'
                                       ? <Badge variant="warning">Unbilled</Badge>
-                                      : <Badge variant="info">Draft created</Badge>}
+                                      : <Badge variant="neutral">Draft created</Badge>}
                                   </td>
-                                  <td className="p-3">
+                                  <td className="px-4 py-2.5">
                                     <div className="flex items-center justify-end gap-1.5">
-                                      <button
-                                        type="button"
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
                                         onClick={() => router.push(`/invoices?new=1&contract=${selectedContract.id}&period=${encodeURIComponent(period.key)}&from=${period.from}&to=${period.to}&net=${period.expectedAmount}`)}
-                                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-[11px] font-bold transition-all cursor-pointer"
                                         title="Open the register pre-filled with this period and amount"
                                       >
                                         Review
-                                      </button>
+                                      </Button>
                                       {period.status === 'unbilled' ? (
-                                        <button
-                                          type="button"
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
                                           onClick={() => createDraftForPeriod(selectedContract, period)}
                                           disabled={creatingPeriodKey !== null}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                                           title="Create a draft invoice for this period right now"
                                         >
-                                          <Zap className="w-3 h-3 text-amber-300" /> {creatingPeriodKey === period.key ? 'Creating…' : 'Create draft'}
-                                        </button>
+                                          <Zap className="w-3 h-3 mr-1" /> {creatingPeriodKey === period.key ? 'Creating…' : 'Create draft'}
+                                        </Button>
                                       ) : (
-                                        <button
-                                          type="button"
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
                                           onClick={() => router.push(`/invoices?contract=${selectedContract.id}`)}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-[11px] font-bold transition-all cursor-pointer"
                                         >
-                                          Open in hub <ArrowUpRight className="w-3 h-3" />
-                                        </button>
+                                          Open invoice
+                                        </Button>
                                       )}
                                     </div>
                                   </td>
@@ -1006,62 +1009,59 @@ export default function ContractsRegistryPage() {
                         )}
                       </div>
 
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                        <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
-                          <div>
-                            <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                              <Receipt className="w-4 h-4 text-emerald-600" />
-                              Contract Invoice Ledger ({linkedInvoices.length} documents)
-                            </h4>
-                            <p className="text-xs text-slate-500">Commercial terms: Net {selectedContract.payment_terms_days ?? 30} Days</p>
+                      <div className="bg-white border border-[var(--line)] rounded-[var(--radius-card)] overflow-hidden">
+                        <div className="px-4 py-3 border-b border-[var(--line)] flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <h4 className="text-[14px] font-semibold text-[var(--ink)]">Invoice ledger</h4>
+                            <Badge variant="neutral">{linkedInvoices.length}</Badge>
+                            <span className="ui-meta">Payment terms net {selectedContract.payment_terms_days ?? 30}</span>
                           </div>
-                          <a href="/invoices" className="text-xs font-bold text-[#3D87D3] hover:underline flex items-center gap-1">
-                            <span>Manage in Global Invoices Hub</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </a>
+                          <Link href="/invoices" className="text-[12px] font-medium text-[var(--accent-ink)] hover:underline">
+                            Open invoices
+                          </Link>
                         </div>
 
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 border-b border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
-                            <tr>
-                              <th className="p-3.5">Invoice # & MARK</th>
-                              <th className="p-3.5">Issue Date</th>
-                              <th className="p-3.5">Due Date</th>
-                              <th className="p-3.5 text-right">Gross Amount</th>
-                              <th className="p-3.5 text-right">Paid Amount</th>
-                              <th className="p-3.5 text-center">Status</th>
+                        <table className="w-full text-left text-[12px]">
+                          <thead className="border-b border-[var(--line)] bg-[var(--surface-muted)]">
+                            <tr className="ui-label">
+                              <th className="px-4 py-2 font-medium">Invoice</th>
+                              <th className="px-4 py-2 font-medium">Issued</th>
+                              <th className="px-4 py-2 font-medium">Due</th>
+                              <th className="px-4 py-2 font-medium text-right">Gross</th>
+                              <th className="px-4 py-2 font-medium text-right">Paid</th>
+                              <th className="px-4 py-2 font-medium text-center">Status</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-200/60 bg-white font-medium">
+                          <tbody className="divide-y divide-[var(--line)]">
                             {linkedInvoices.map(inv => {
                               const pAmt = (inv.payments || []).reduce((s, p) => s + p.amount, 0);
                               return (
-                                <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
-                                  <td className="p-3.5">
-                                    <span className="font-bold text-slate-900 font-mono block">{inv.invoice_number}</span>
-                                    {inv.reference_period && (
-                                      <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-mono font-bold block w-fit my-0.5">
-                                        Ref: {inv.reference_period}
-                                      </span>
-                                    )}
-                                    {inv.mark ? <span className="text-[10px] text-emerald-600 font-mono block">MARK: {inv.mark}</span> : <span className="text-[10px] text-amber-600 italic block">No MARK code</span>}
+                                <tr key={inv.id} className="hover:bg-[var(--surface-muted)] transition-colors">
+                                  <td className="px-4 py-2.5">
+                                    <Link href={`/invoices/${inv.id}`} className="ui-num font-medium text-[var(--accent-ink)] hover:underline block">
+                                      {inv.invoice_number}
+                                    </Link>
+                                    <span className="ui-meta text-[11px] block">
+                                      {inv.reference_period ? inv.reference_period : 'No reference period'}
+                                      {inv.mark ? ` · MARK ${inv.mark}` : ''}
+                                    </span>
                                   </td>
-                                  <td className="p-3.5 text-slate-700">{formatDate(inv.issue_date)}</td>
-                                  <td className="p-3.5 text-slate-700">{formatDate(inv.due_date)}</td>
-                                  <td className="p-3.5 text-right font-black text-slate-900">€{inv.gross_eur.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                  <td className="p-3.5 text-right font-bold text-emerald-700">€{pAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                  <td className="p-3.5 text-center">
+                                  <td className="px-4 py-2.5 ui-num text-[var(--ink-2)]">{formatDate(inv.issue_date)}</td>
+                                  <td className="px-4 py-2.5 ui-num text-[var(--ink-2)]">{formatDate(inv.due_date)}</td>
+                                  <td className="px-4 py-2.5 text-right ui-num font-medium text-[var(--ink)]">€{inv.gross_eur.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                  <td className="px-4 py-2.5 text-right ui-num text-emerald-700">€{pAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                  <td className="px-4 py-2.5 text-center">
                                     {inv.status === 'paid' && <Badge variant="success">Paid</Badge>}
                                     {inv.status === 'partially_paid' && <Badge variant="warning">Partial</Badge>}
-                                    {inv.status !== 'paid' && inv.status !== 'partially_paid' && <Badge variant="info">{inv.status.replace('_', ' ')}</Badge>}
+                                    {inv.status !== 'paid' && inv.status !== 'partially_paid' && <Badge variant="neutral">{inv.status.replace('_', ' ')}</Badge>}
                                   </td>
                                 </tr>
                               );
                             })}
                             {linkedInvoices.length === 0 && (
                               <tr>
-                                <td colSpan={6} className="p-8 text-center text-slate-400 font-semibold italic">
-                                  No tax invoices linked directly to this contract agreement yet. Head over to the Invoices Register to record billing milestones!
+                                <td colSpan={6} className="px-4 py-8 text-center text-[12px] text-[var(--ink-3)]">
+                                  No invoices on this contract yet. Create a draft from a billing period above, or register one manually.
                                 </td>
                               </tr>
                             )}
@@ -1076,17 +1076,17 @@ export default function ContractsRegistryPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
               {/* Left Column: Entity Specs & Attachments (5 cols) */}
               <div className="lg:col-span-5 space-y-5">
-                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 shadow-xs space-y-3">
+                <div className="p-4 rounded-[var(--radius-card)] bg-white border border-[var(--line)] space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold uppercase text-slate-400 tracking-wider">Counterparty Entity</span>
-                    <Badge variant={selectedContract.direction === 'revenue' ? 'success' : 'warning'} className="text-xs py-1 px-2.5 font-bold">
-                      {selectedContract.direction === 'revenue' ? 'Client Revenue' : 'Supplier Spend'}
+                    <span className="ui-label">Counterparty</span>
+                    <Badge variant={selectedContract.direction === 'revenue' ? 'success' : 'warning'}>
+                      {selectedContract.direction === 'revenue' ? 'Client revenue' : 'Supplier spend'}
                     </Badge>
                   </div>
-                  <div className="text-xl font-black text-slate-900">{selectedContract.counterparty?.legal_name || 'Designated Entity'}</div>
-                  <div className="pt-2 border-t border-slate-200/80 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                    <div>ΑΦΜ: <strong className="text-slate-800 font-mono">{selectedContract.counterparty?.afm || 'Unspecified'}</strong></div>
-                    <div>Country: <strong className="text-slate-800">{selectedContract.counterparty?.country || 'Greece'}</strong></div>
+                  <div className="text-[17px] font-semibold text-[var(--ink)] leading-snug">{selectedContract.counterparty?.legal_name || 'Designated entity'}</div>
+                  <div className="pt-2.5 border-t border-[var(--line)] flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
+                    <div><span className="ui-label mr-1.5">VAT</span><strong className="ui-num font-medium text-[var(--ink-2)]">{selectedContract.counterparty?.afm || 'Not set'}</strong></div>
+                    <div><span className="ui-label mr-1.5">Country</span><strong className="font-medium text-[var(--ink-2)]">{selectedContract.counterparty?.country || 'Greece'}</strong></div>
                   </div>
                 </div>
 
@@ -1097,13 +1097,13 @@ export default function ContractsRegistryPage() {
                   const overdue = notice.daysUntilNotice < 0;
                   const days = Math.abs(notice.daysUntilNotice);
                   return (
-                    <div className={`p-4 rounded-2xl border space-y-2 shadow-xs ${overdue ? 'bg-rose-50/90 border-rose-200/90' : 'bg-amber-50/90 border-amber-200/90'}`}>
-                      <div className={`flex items-center justify-between font-extrabold text-xs uppercase tracking-wide ${overdue ? 'text-rose-900' : 'text-amber-900'}`}>
-                        <span className="flex items-center">
-                          <AlertTriangle className={`w-4 h-4 mr-2 shrink-0 ${overdue ? 'text-rose-600' : 'text-amber-600'}`} />
-                          {overdue ? 'Notice Window Missed' : 'Notice Window Open'}
+                    <div className={`p-4 rounded-[var(--radius-card)] border space-y-2 ${overdue ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className={`flex items-center justify-between text-[12px] font-semibold ${overdue ? 'text-rose-900' : 'text-amber-900'}`}>
+                        <span className="flex items-center gap-2">
+                          <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${overdue ? 'text-rose-600' : 'text-amber-600'}`} />
+                          {overdue ? 'Notice window missed' : 'Notice window open'}
                         </span>
-                        <span className={`font-mono px-2 py-0.5 rounded ${overdue ? 'bg-rose-100 text-rose-950' : 'bg-amber-100 text-amber-950'}`}>
+                        <span className={`ui-num px-1.5 py-0.5 rounded text-[11px] ${overdue ? 'bg-rose-100 text-rose-900' : 'bg-amber-100 text-amber-900'}`}>
                           {notice.noticeDeadlineStr}
                         </span>
                       </div>
@@ -1128,12 +1128,12 @@ export default function ContractsRegistryPage() {
                 })()}
 
                 {/* Signed Document Dossier — any number of signed copies per contract */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3.5">
+                <div className="p-4 rounded-[var(--radius-card)] bg-white border border-[var(--line)] space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs uppercase font-extrabold text-slate-700 tracking-wide flex items-center">
-                      Signed Document Dossier
+                    <span className="flex items-center gap-2">
+                      <span className="ui-label">Documents</span>
                       {dossierDocs.length > 0 && (
-                        <Badge variant="info" className="ml-2 text-[10px] px-1.5 py-0">{dossierDocs.length}</Badge>
+                        <Badge variant="neutral">{dossierDocs.length}</Badge>
                       )}
                     </span>
                     <div>
@@ -1147,10 +1147,10 @@ export default function ContractsRegistryPage() {
                       />
                       <label
                         htmlFor="doc-upload-selected"
-                        className={`px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs inline-flex items-center cursor-pointer shadow-2xs transition-all ${isUploadingDoc ? 'opacity-60 pointer-events-none' : ''}`}
+                        className={`h-8 px-2.5 rounded-[var(--radius-control)] border border-[var(--line)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-medium text-[var(--ink-2)] inline-flex items-center cursor-pointer transition-colors ${isUploadingDoc ? 'opacity-60 pointer-events-none' : ''}`}
                       >
-                        <Upload className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> 
-                        {isUploadingDoc ? 'Uploading...' : 'Attach documents'}
+                        <Upload className="w-3.5 h-3.5 mr-1.5" />
+                        {isUploadingDoc ? 'Uploading…' : 'Attach'}
                       </label>
                     </div>
                   </div>
@@ -1160,17 +1160,15 @@ export default function ContractsRegistryPage() {
                       {dossierDocs.map(doc => (
                         <li
                           key={doc.id}
-                          className="p-3 rounded-xl bg-slate-50/70 border border-slate-200 flex items-center justify-between gap-2 text-xs"
+                          className="px-2.5 py-2 rounded-lg border border-[var(--line)] flex items-center justify-between gap-2 text-[12px]"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="p-2 bg-emerald-600 rounded-lg text-white shrink-0 shadow-2xs">
-                              <FileText className="w-4 h-4" />
-                            </div>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileText className="w-4 h-4 shrink-0 text-[var(--ink-4)]" />
                             <div className="min-w-0">
-                              <p className="font-extrabold text-slate-900 truncate" title={doc.file_name || doc.storage_path}>
+                              <p className="font-medium text-[var(--ink)] truncate" title={doc.file_name || doc.storage_path}>
                                 {doc.file_name || 'Contract document'}
                               </p>
-                              <p className="text-[10px] text-slate-500 font-semibold mt-0.5 truncate">
+                              <p className="ui-meta text-[11px] mt-0.5 truncate">
                                 {doc.uploaded_at ? formatDate(doc.uploaded_at.split('T')[0]) : 'Date unknown'}
                                 {formatFileSizeSuffix(doc.file_size)}
                                 {doc.id === 'legacy' ? ' · legacy attachment' : ''}
@@ -1183,18 +1181,17 @@ export default function ContractsRegistryPage() {
                               variant="secondary"
                               onClick={() => void previewContractDocument(doc)}
                               title="Preview this document"
-                              className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-2.5"
                             >
-                              <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Preview
+                              <Eye className="w-3.5 h-3.5 mr-1.5" /> Preview
                             </Button>
                             <Button
                               size="sm"
                               variant="secondary"
                               onClick={() => void downloadContractDocument(doc)}
                               title="Download this document"
-                              className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-2.5"
+                              aria-label="Download this document"
                             >
-                              <Download className="w-3.5 h-3.5 text-blue-600" />
+                              <Download className="w-3.5 h-3.5" />
                             </Button>
                             <button
                               type="button"
@@ -1210,29 +1207,26 @@ export default function ContractsRegistryPage() {
                       ))}
                     </ul>
                   ) : (
-                    <div className="p-6 rounded-xl bg-slate-50/70 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
-                      <FileText className="w-8 h-8 mx-auto text-slate-400" />
-                      <p className="font-extrabold text-slate-700 text-sm">No signed documents attached</p>
-                      <p className="text-[11px]">Attach the signed contract, amendments or annexes — add as many as you need.</p>
+                    <div className="p-5 rounded-lg border border-dashed border-[var(--line-strong)] text-center space-y-1">
+                      <FileText className="w-5 h-5 mx-auto text-[var(--ink-4)]" />
+                      <p className="text-[12px] font-medium text-[var(--ink-2)]">No signed documents yet</p>
+                      <p className="ui-meta">Attach the signed contract, amendments or annexes.</p>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Right Column: Interactive Contract Terms Editor (7 cols) */}
-              <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="lg:col-span-7 bg-white p-5 rounded-[var(--radius-card)] border border-[var(--line)] space-y-4">
+                <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
                   <div>
-                    <h4 className="text-base font-black text-slate-900 flex items-center">
-                      <Edit3 className="w-4 h-4 mr-2 text-[#3D87D3]" /> Contract Terms & Metadata Editor
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Modify agreement parameters, dates, and legal notes directly below</p>
+                    <h4 className="text-[14px] font-semibold text-[var(--ink)]">Terms &amp; metadata</h4>
+                    <p className="ui-meta mt-0.5">Agreement parameters, dates and notes.</p>
                   </div>
                   <div className="flex items-center space-x-2">
                     {isAdmin && (
-                      <Button 
-                        variant="danger" 
-                        size="sm"
+                      <button
+                        type="button"
                         onClick={async () => {
                           if (confirm(`Are you certain you want to completely delete agreement "${selectedContract.reference}" (${selectedContract.counterparty?.legal_name})? This action cannot be undone.`)) {
                             const ok = await deleteContract(selectedContract.id);
@@ -1242,55 +1236,55 @@ export default function ContractsRegistryPage() {
                             }
                           }
                         }}
-                        className="shadow-sm font-bold cursor-pointer bg-rose-600 hover:bg-rose-700 text-white"
+                        className="h-8 px-2 rounded-[var(--radius-control)] text-[12px] font-medium text-[var(--ink-3)] hover:text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                       >
-                        <Trash2 className="w-4 h-4 mr-1.5" /> Delete Contract
-                      </Button>
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
                     )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Contract Title / Reference</label>
+                    <label className="ui-label block mb-1.5">Contract Title / Reference</label>
                     <input
                       type="text"
                       value={selectedContract.reference}
                       onChange={e => setSelectedContract({ ...selectedContract, reference: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Agreement Direction</label>
+                    <label className="ui-label block mb-1.5">Agreement Direction</label>
                     <select
                       value={selectedContract.direction}
                       onChange={e => setSelectedContract({ ...selectedContract, direction: e.target.value as ContractDirection })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     >
                       <option value="revenue">Client Revenue (Inbound)</option>
                       <option value="cost">Supplier Spend (Outbound)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective Start Date</label>
+                    <label className="ui-label block mb-1.5">Effective Start Date</label>
                     <input
                       type="date"
                       value={selectedContract.service_start_date || selectedContract.starts_on}
                       onChange={e => setSelectedContract({ ...selectedContract, starts_on: e.target.value, service_start_date: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] ui-num text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Contract Expiration Date</label>
+                    <label className="ui-label block mb-1.5">Contract Expiration Date</label>
                     <input
                       type="date"
                       value={selectedContract.ends_on}
                       onChange={e => setSelectedContract({ ...selectedContract, ends_on: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] ui-num text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Notice Period (Days Prior to End)</label>
+                    <label className="ui-label block mb-1.5">Notice Period (Days Prior to End)</label>
                     <input
                       type="number"
                       value={selectedContract.notice_period_days}
@@ -1298,24 +1292,24 @@ export default function ContractsRegistryPage() {
                         const days = parseInt(e.target.value) || 0;
                         setSelectedContract({ ...selectedContract, notice_period_days: days });
                       }}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Notice Window Deadline</label>
+                    <label className="ui-label block mb-1.5">Notice Window Deadline</label>
                     <input
                       type="date"
                       value={selectedContract.notice_deadline}
                       onChange={e => setSelectedContract({ ...selectedContract, notice_deadline: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] ui-num text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Invoicing Cadence / Frequency</label>
+                    <label className="ui-label block mb-1.5">Invoicing Cadence / Frequency</label>
                     <select
                       value={selectedContract.billing_cadence || 'monthly'}
                       onChange={e => setSelectedContract({ ...selectedContract, billing_cadence: e.target.value as any })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     >
                       <option value="monthly">Monthly</option>
                       <option value="quarterly">Quarterly</option>
@@ -1325,11 +1319,11 @@ export default function ContractsRegistryPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Invoicing Timing (Within Period)</label>
+                    <label className="ui-label block mb-1.5">Invoicing Timing (Within Period)</label>
                     <select
                       value={selectedContract.invoice_timing || 'start_of_period'}
                       onChange={e => setSelectedContract({ ...selectedContract, invoice_timing: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                     >
                       <option value="start_of_period">Start of Period (In Advance / e.g. Start of Month/Quarter)</option>
                       <option value="end_of_period">End of Period (In Arrears / e.g. End of Month/Quarter)</option>
@@ -1338,35 +1332,27 @@ export default function ContractsRegistryPage() {
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200/80 flex items-center space-x-3 text-xs text-blue-900 shadow-2xs">
-                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-extrabold flex items-center justify-center shrink-0 shadow-sm">
-                    ⚡
-                  </div>
-                  <div>
-                    <span className="font-bold block text-sm">
-                      Billing Rule: {selectedContract.billing_cadence ? selectedContract.billing_cadence.charAt(0).toUpperCase() + selectedContract.billing_cadence.slice(1) : 'Monthly'} — {
-                        selectedContract.invoice_timing === 'end_of_period' ? 'End of Period (Arrears / Post-service)' :
-                        selectedContract.invoice_timing === 'upon_milestone' ? 'Upon Milestone Completion' :
-                        'Start of Period (Invoiced in Advance)'
-                      }
-                    </span>
-                    <span className="text-[11px] text-blue-700 font-medium mt-0.5 block">
-                      Orbit utilizes this timing rule on the Home Dashboard to alert operations when draft invoices need to be issued.
-                    </span>
-                  </div>
-                </div>
+                <p className="flex items-start gap-2 text-[12px] text-[var(--ink-2)]">
+                  <Zap className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--accent)]" />
+                  <span>
+                    Billed {selectedContract.billing_cadence ? selectedContract.billing_cadence.replace('_', ' ') : 'monthly'} at the{' '}
+                    {selectedContract.invoice_timing === 'end_of_period' ? 'end of each period, in arrears' :
+                     selectedContract.invoice_timing === 'upon_milestone' ? 'milestone date' :
+                     'start of each period, in advance'}. Invoice suggestions on the revenue schedule follow this rule.
+                  </span>
+                </p>
 
                 <div>
-                  <label className="block text-xs font-extrabold text-slate-800 mb-1.5 flex items-center justify-between">
-                    <span>Key Legal Clauses & Terms Documentation</span>
-                    <span className="text-[10px] text-slate-400 font-normal">Internal compliance notes</span>
+                  <label className="flex items-center justify-between mb-1.5">
+                    <span className="ui-label">Legal clauses &amp; notes</span>
+                    <span className="ui-meta">Internal only</span>
                   </label>
                   <textarea
-                    rows={6}
+                    rows={4}
                     value={selectedContract.notes || ''}
-                    placeholder="Document specific liability caps, SLA penalties, payment terms, or negotiated exemptions here..."
+                    placeholder="Liability caps, SLA penalties, payment terms, negotiated exemptions…"
                     onChange={e => setSelectedContract({ ...selectedContract, notes: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 font-mono focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all leading-relaxed"
+                    className="w-full p-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] leading-relaxed text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
                   />
                 </div>
               </div>
