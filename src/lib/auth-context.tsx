@@ -231,7 +231,7 @@ interface AppState {
   addSalaryRecord: (record: Omit<SalaryRecord, 'id'>) => Promise<void>;
   updateSalaryRecord: (id: string, updates: Partial<SalaryRecord>) => Promise<void>;
   deleteSalaryRecord: (id: string) => Promise<boolean>;
-  addContract: (cnt: Omit<Contract, 'id'>) => void;
+  addContract: (cnt: Omit<Contract, 'id'>) => Promise<Contract | null>;
   updateContract: (cnt: Contract) => void;
   deleteContract: (id: string) => Promise<boolean>;
   addCounterparty: (cp: Partial<Counterparty>, attioRecordId?: string) => Promise<Counterparty | null>;
@@ -3084,8 +3084,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const savedCnt = data ? { ...newCnt, ...data, counterparty: newCnt.counterparty, owner_profile: newCnt.owner_profile, lines: lines || [], schedule: schedule || [] } : newCnt;
       setContracts(prev => [savedCnt, ...prev]);
+      return savedCnt;
     } catch (e: any) {
       console.error('Failed to insert contract:', e);
+      return null;
     }
   };
 

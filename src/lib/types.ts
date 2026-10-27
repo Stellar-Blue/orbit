@@ -538,6 +538,7 @@ export interface Contract {
   product?: string;
   parent_contract_id?: string;
   notes?: string;
+  /** Legacy single attachment (pre multi-document dossier); `contract_documents` is the source of truth. */
   document_name?: string;
   document_url?: string;
   document_uploaded_at?: string;
@@ -804,6 +805,23 @@ export interface ContractSchedule {
   contract_id: string;
   period: string; // Format YYYY-MM
   amount: number;
+}
+
+/** One attachment in a contract's signed-document dossier (multiple per contract). */
+export interface ContractDocument {
+  id: string;
+  contract_id: string;
+  /** Original file name; null on rows written before names were captured. */
+  file_name?: string | null;
+  /** Supabase Storage object path, or a legacy data:/public URL from the single-document era. */
+  storage_path: string;
+  version?: number;
+  doc_type?: string;
+  signed?: boolean;
+  file_size?: number | null;
+  mime_type?: string | null;
+  uploaded_by?: string | null;
+  uploaded_at?: string;
 }
 
 export type InvoiceDirection = 'outgoing' | 'incoming';

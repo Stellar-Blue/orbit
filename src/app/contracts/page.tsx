@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
-import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus } from '@/lib/types';
+import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDirection, ContractStatus, ContractDocument } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, Calendar, DollarSign, X, 
@@ -24,6 +24,14 @@ import { buildDraftInvoicePayload, getContractBillingPeriods, type BillingPeriod
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
 const RevenueScheduleGrid = dynamic(() => import('@/components/contracts/revenue-schedule-grid').then(m => m.RevenueScheduleGrid), { ssr: false });
 
+/** ` · 1.2 MB` / ` · 240 KB` suffix for the document list, empty when the size is unknown. */
+const formatFileSizeSuffix = (bytes?: number | null): string => {
+  const size = Number(bytes) || 0;
+  if (size <= 0) return '';
+  if (size < 1024 * 1024) return ` · ${Math.max(1, Math.round(size / 1024))} KB`;
+  return ` · ${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export default function ContractsRegistryPage() {
   const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard, timesheets, addInvoice, refreshInvoices } = useAuth();
   const params = useParams();
@@ -35,6 +43,8 @@ export default function ContractsRegistryPage() {
   const [periodFrom, setPeriodFrom] = useState('');
   const [periodTo, setPeriodTo] = useState('');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  /** Signed-document dossier for the open contract, tagged with its contract so a switch never flashes stale rows. */
+  const [contractDocs, setContractDocs] = useState<{ contractId: string; docs: ContractDocument[] }>({ contractId: '', docs: [] });
   const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'projects' | 'ratecard'>('general');
   const [contractRateCardId, setContractRateCardId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -141,6 +151,28 @@ export default function ContractsRegistryPage() {
     }
   }, [urlId, contracts]);
 
+  // Pull the signed-document dossier for whichever contract is open.
+  useEffect(() => {
+    const contractId = selectedContract?.id;
+    if (!contractId) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from('contract_documents')
+        .select('*')
+        .eq('contract_id', contractId)
+        .order('uploaded_at', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        console.error('[contract_documents] read failed:', error.message);
+        return;
+      }
+      setContractDocs({ contractId, docs: (data || []) as ContractDocument[] });
+    })();
+    return () => { cancelled = true; };
+  }, [selectedContract?.id]);
+
   // Lazily create the contract's own man-hours rate card (seeded from the global default)
   useEffect(() => {
     if (!selectedContract) { setContractRateCardId(null); return; }
@@ -179,6 +211,8 @@ export default function ContractsRegistryPage() {
   const [newType, setNewType] = useState('saas_subscription');
   const [isPreviewingDoc, setIsPreviewingDoc] = useState(false);
   const [previewDocUrl, setPreviewDocUrl] = useState<string>('');
+  const [previewDocName, setPreviewDocName] = useState<string>('');
+  const [previewDocUploadedAt, setPreviewDocUploadedAt] = useState<string>('');
   const [newNotice, setNewNotice] = useState(60);
   const [newStarts, setNewStarts] = useState(todayKey);
   const [newEnds, setNewEnds] = useState('');
@@ -251,25 +285,115 @@ export default function ContractsRegistryPage() {
     }
   };
 
-  const handleUploadDocForSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0 || !selectedContract) return;
-    const file = e.target.files[0];
-    setIsUploadingDoc(true);
-    const url = await uploadToSupabaseStorage(file, selectedContract.reference);
-    setIsUploadingDoc(false);
-    if (url) {
-      const updated: Contract = {
-        ...selectedContract,
-        document_name: file.name,
-        document_url: url,
-        document_uploaded_at: new Date().toISOString()
-      };
-      updateContract(updated);
-      setSelectedContract(updated);
-      notifySuccess(`Document "${file.name}" attached to the contract.`);
-    } else {
-      alert("Error processing document attachment.");
+  const loadContractDocuments = async (contractId: string) => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from('contract_documents')
+      .select('*')
+      .eq('contract_id', contractId)
+      .order('uploaded_at', { ascending: false });
+    if (error) {
+      console.error('[contract_documents] read failed:', error.message);
+      return;
     }
+    setContractDocs({ contractId, docs: (data || []) as ContractDocument[] });
+  };
+
+  // The dossier can hold any number of signed copies — every save uploads and appends, never replaces.
+  const handleUploadContractDocs = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0 || !selectedContract) return;
+    const contract = selectedContract;
+    setIsUploadingDoc(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const rows: Array<Record<string, unknown>> = [];
+      for (const file of files) {
+        const path = await uploadToSupabaseStorage(file, contract.reference);
+        if (!path) continue;
+        rows.push({
+          contract_id: contract.id,
+          storage_path: path,
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type || null,
+          doc_type: 'contract',
+          signed: true,
+          uploaded_by: currentUser.id,
+        });
+      }
+      if (rows.length === 0) {
+        alert('Could not upload the selected document(s).');
+        return;
+      }
+      const { error } = await supabase.from('contract_documents').insert(rows);
+      if (error) {
+        alert(`Could not attach the document(s): ${error.message}`);
+        return;
+      }
+      notifySuccess(
+        `${rows.length} document${rows.length === 1 ? '' : 's'} attached to ${contract.reference}.`,
+        'Signed document dossier'
+      );
+      await loadContractDocuments(contract.id);
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
+  const deleteContractDocument = async (doc: ContractDocument) => {
+    if (!selectedContract) return;
+    const label = doc.file_name || 'this document';
+    if (!confirm(`Remove "${label}" from the contract's signed document dossier?`)) return;
+
+    if (doc.id === 'legacy' && selectedContract.document_name) {
+      const cleared: Contract = { ...selectedContract, document_name: undefined, document_url: undefined, document_uploaded_at: undefined };
+      await updateContract(cleared);
+      setSelectedContract(cleared);
+      notifySuccess(`Document "${label}" removed.`);
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.from('contract_documents').delete().eq('id', doc.id);
+    if (error) {
+      alert(`Could not remove the document: ${error.message}`);
+      return;
+    }
+    if (!doc.storage_path.startsWith('data:') && !/^https?:/i.test(doc.storage_path)) {
+      await supabase.storage.from('contract-documents').remove([doc.storage_path]);
+    }
+    notifySuccess(`Document "${label}" removed.`);
+    await loadContractDocuments(selectedContract.id);
+  };
+
+  const previewContractDocument = async (doc: ContractDocument) => {
+    const url = await resolveContractDocumentUrl(doc.storage_path);
+    if (!url) {
+      alert('That document could not be opened — the stored file is missing.');
+      return;
+    }
+    setPreviewDocName(doc.file_name || 'Contract document');
+    setPreviewDocUploadedAt((doc.uploaded_at || '').split('T')[0]);
+    setPreviewDocUrl(url);
+    setIsPreviewingDoc(true);
+  };
+
+  const downloadContractDocument = async (doc: ContractDocument) => {
+    const href = doc.storage_path.startsWith('data:')
+      ? doc.storage_path
+      : await resolveContractDocumentUrl(doc.storage_path);
+    if (!href) {
+      alert('That document could not be downloaded — the stored file is missing.');
+      return;
+    }
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = doc.file_name || 'contract_document';
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+    anchor.click();
   };
 
   if (!isAdmin) {
@@ -283,6 +407,22 @@ export default function ContractsRegistryPage() {
       </div>
     );
   }
+
+  // Documents for the open contract. Contracts attached before the dossier held a list still expose
+  // their single legacy file, so nothing disappears if the backfill has not run yet.
+  const dossierDocs: ContractDocument[] = (() => {
+    if (!selectedContract) return [];
+    const loaded = contractDocs.contractId === selectedContract.id ? contractDocs.docs : [];
+    if (loaded.length > 0) return loaded;
+    if (!selectedContract.document_name || !selectedContract.document_url) return [];
+    return [{
+      id: 'legacy',
+      contract_id: selectedContract.id,
+      file_name: selectedContract.document_name,
+      storage_path: selectedContract.document_url,
+      uploaded_at: selectedContract.document_uploaded_at,
+    }];
+  })();
 
   const filteredContracts = contracts.filter(c => {
     const matchesDirection = directionFilter === 'all' || c.direction === directionFilter;
@@ -332,7 +472,7 @@ export default function ContractsRegistryPage() {
   const urgentAlerts = contracts.filter(c => getContractNoticeStatus(c).isUrgent).length;
   const hasPeriod = !!(periodFrom || periodTo);
 
-  const handleCreateContract = (e: React.FormEvent) => {
+  const handleCreateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCounterpartyId) {
       setCpError("Please select or create a Counterparty before registering the contract.");
@@ -340,7 +480,7 @@ export default function ContractsRegistryPage() {
     }
     setCpError("");
     const selectedCp = counterparties.find(c => c.id === newCounterpartyId);
-    addContract({
+    const created = await addContract({
       counterparty_id: newCounterpartyId,
       counterparty: selectedCp,
       direction: newDirection,
@@ -362,6 +502,17 @@ export default function ContractsRegistryPage() {
       document_url: newDocUrl || undefined,
       document_uploaded_at: newDocName ? new Date().toISOString() : undefined
     });
+    if (created && newDocName && newDocUrl) {
+      const { error } = await getSupabaseBrowserClient().from('contract_documents').insert({
+        contract_id: created.id,
+        storage_path: newDocUrl,
+        file_name: newDocName,
+        doc_type: 'contract',
+        signed: true,
+        uploaded_by: currentUser.id,
+      });
+      if (error) console.error('[contract_documents] attach failed:', error.message);
+    }
     setNewDocName('');
     setNewDocUrl('');
     setNewCounterpartyId('');
@@ -939,80 +1090,93 @@ export default function ContractsRegistryPage() {
                   </p>
                 </div>
 
-                {/* Supabase Document Attachments */}
+                {/* Signed Document Dossier — any number of signed copies per contract */}
                 <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs uppercase font-extrabold text-slate-700 tracking-wide">Signed Document Dossier</span>
+                    <span className="text-xs uppercase font-extrabold text-slate-700 tracking-wide flex items-center">
+                      Signed Document Dossier
+                      {dossierDocs.length > 0 && (
+                        <Badge variant="info" className="ml-2 text-[10px] px-1.5 py-0">{dossierDocs.length}</Badge>
+                      )}
+                    </span>
                     <div>
                       <input
                         type="file"
                         id="doc-upload-selected"
                         className="hidden"
-                        onChange={handleUploadDocForSelected}
-                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                        multiple
+                        onChange={handleUploadContractDocs}
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.xls,.xlsx,.csv,.txt"
                       />
                       <label
                         htmlFor="doc-upload-selected"
                         className={`px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs inline-flex items-center cursor-pointer shadow-2xs transition-all ${isUploadingDoc ? 'opacity-60 pointer-events-none' : ''}`}
                       >
                         <Upload className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> 
-                        {isUploadingDoc ? 'Uploading...' : selectedContract.document_name ? 'Replace Doc' : 'Attach PDF / Doc'}
+                        {isUploadingDoc ? 'Uploading...' : 'Attach documents'}
                       </label>
                     </div>
                   </div>
 
-                  {selectedContract.document_name ? (
-                    <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 flex items-center justify-between text-xs">
-                      <div className="flex items-center space-x-3 truncate mr-2">
-                        <div className="p-2.5 bg-emerald-600 rounded-xl text-white shrink-0 shadow-2xs">
-                          <FileText className="w-5 h-5" />
-                        </div>
-                        <div className="truncate">
-                          <p className="font-extrabold text-slate-900 truncate">{selectedContract.document_name}</p>
-                          <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">
-                            Active execution copy · Hosted in Supabase
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2 shrink-0">
-                        <Button 
-                          size="sm" 
-                          variant="secondary" 
-                          onClick={async () => {
-                            if (!selectedContract.document_url) {
-                              return;
-                            }
-                            setPreviewDocUrl(await resolveContractDocumentUrl(selectedContract.document_url));
-                            setIsPreviewingDoc(true);
-                          }}
-                          className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-3"
+                  {dossierDocs.length > 0 ? (
+                    <ul className="space-y-2">
+                      {dossierDocs.map(doc => (
+                        <li
+                          key={doc.id}
+                          className="p-3 rounded-xl bg-slate-50/70 border border-slate-200 flex items-center justify-between gap-2 text-xs"
                         >
-                          <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Preview
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="secondary" 
-                          onClick={() => {
-                            if (selectedContract.document_url?.startsWith('data:')) {
-                              const a = document.createElement('a');
-                              a.href = selectedContract.document_url;
-                              a.download = selectedContract.document_name || 'contract_document.pdf';
-                              a.click();
-                            } else {
-                              alert(`Downloading ${selectedContract.document_name}...`);
-                            }
-                          }}
-                          className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs shrink-0 text-xs py-1 px-3"
-                        >
-                          <Download className="w-3.5 h-3.5 mr-1 text-blue-600" /> Download
-                        </Button>
-                      </div>
-                    </div>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 bg-emerald-600 rounded-lg text-white shrink-0 shadow-2xs">
+                              <FileText className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-slate-900 truncate" title={doc.file_name || doc.storage_path}>
+                                {doc.file_name || 'Contract document'}
+                              </p>
+                              <p className="text-[10px] text-slate-500 font-semibold mt-0.5 truncate">
+                                {doc.uploaded_at ? formatDate(doc.uploaded_at.split('T')[0]) : 'Date unknown'}
+                                {formatFileSizeSuffix(doc.file_size)}
+                                {doc.id === 'legacy' ? ' · legacy attachment' : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void previewContractDocument(doc)}
+                              title="Preview this document"
+                              className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-2.5"
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Preview
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void downloadContractDocument(doc)}
+                              title="Download this document"
+                              className="bg-white border-slate-300 font-extrabold cursor-pointer hover:bg-slate-100 shadow-2xs text-xs py-1 px-2.5"
+                            >
+                              <Download className="w-3.5 h-3.5 text-blue-600" />
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteContractDocument(doc)}
+                              title="Remove this document"
+                              aria-label="Remove this document"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   ) : (
                     <div className="p-6 rounded-xl bg-slate-50/70 border-2 border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
                       <FileText className="w-8 h-8 mx-auto text-slate-400" />
-                      <p className="font-extrabold text-slate-700 text-sm">No signed PDF attached</p>
-                      <p className="text-[11px]">Click &ldquo;Attach PDF / Doc&rdquo; above to preserve the execution version.</p>
+                      <p className="font-extrabold text-slate-700 text-sm">No signed documents attached</p>
+                      <p className="text-[11px]">Attach the signed contract, amendments or annexes — add as many as you need.</p>
                     </div>
                   )}
                 </div>
@@ -1304,24 +1468,18 @@ export default function ContractsRegistryPage() {
         </form>
       </Modal>
 
-      {selectedContract && selectedContract.document_name && (
+      {selectedContract && isPreviewingDoc && (
         <DocumentPreviewModal
           isOpen={isPreviewingDoc}
           onClose={() => setIsPreviewingDoc(false)}
-          documentName={selectedContract.document_name}
+          documentName={previewDocName || 'Contract document'}
           documentUrl={previewDocUrl}
-          storagePath={`contracts/${selectedContract.reference}/${selectedContract.document_name}`}
-          uploadedAt={selectedContract.document_uploaded_at?.split('T')[0] || selectedContract.starts_on}
+          storagePath={previewDocName || null}
+          uploadedAt={previewDocUploadedAt || selectedContract.starts_on}
           subtitle={`Signed Agreement · ${selectedContract.counterparty?.legal_name || 'Client Entity'}`}
           onDownload={() => {
-            if (selectedContract.document_url?.startsWith('data:')) {
-              const a = document.createElement('a');
-              a.href = selectedContract.document_url;
-              a.download = selectedContract.document_name || 'contract_document.pdf';
-              a.click();
-            } else {
-              alert(`Downloading ${selectedContract.document_name}...`);
-            }
+            const doc = dossierDocs.find(d => (d.file_name || 'Contract document') === (previewDocName || 'Contract document'));
+            if (doc) void downloadContractDocument(doc);
           }}
         />
       )}
