@@ -6,7 +6,7 @@ import { ContractLine, ContractLineGroup, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, isVariableQuantityPricingScheme, calculateLineGrossAmount, calculatePeriodAmounts, calculateGroupFloorRatio } from '@/lib/pricing-engine';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
-  Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
+  Plus, Trash2, Tag, DollarSign, Calendar, 
   Sparkles, CheckCircle2, AlertCircle, AlertTriangle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X, FolderPlus, Folder, ShieldCheck
 } from 'lucide-react';
 
@@ -33,6 +33,8 @@ interface ContractPricingBuilderProps {
   initialDiscountPct?: number;
   initialTermYears?: number;
   initialStartDate?: string;
+  /** The contract's end date — the term length is derived from it instead of being typed in. */
+  contractEndsOn?: string | null;
   /** The contract's own invoice timing — shown as the inherited default for lines without their own. */
   contractInvoiceTiming?: string | null;
   onSave?: (
@@ -107,6 +109,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   initialDiscountPct = 0,
   initialTermYears = 1,
   initialStartDate = new Date().toISOString().split('T')[0],
+  contractEndsOn = null,
   contractInvoiceTiming = 'start_of_period',
   onSave,
   onCancel,
@@ -125,8 +128,18 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   );
 
   const [discountPct, setDiscountPct] = useState<number>(initialDiscountPct);
-  const [termYears, setTermYears] = useState<number>(initialTermYears);
-  const [startDate, setStartDate] = useState<string>(initialStartDate || new Date().toISOString().split('T')[0]);
+  // Term and service start come from the contract itself (the metadata editor owns them), so the
+  // pricing sheet only ever needs the discount.
+  const startDate = initialStartDate || new Date().toISOString().split('T')[0];
+  const termYears = useMemo(() => {
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = contractEndsOn ? new Date(`${contractEndsOn}T00:00:00`) : null;
+    if (end && !isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
+      const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+      return Math.min(25, Math.max(1, Math.ceil(months / 12)));
+    }
+    return Math.max(1, initialTermYears || 1);
+  }, [startDate, contractEndsOn, initialTermYears]);
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('');
   const [showSchedulePreview, setShowSchedulePreview] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -317,11 +330,6 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
     return calculateGroupFloorRatio(floor, equiv);
   };
 
-  const applyTermSuggestion = (years: number, disc: number) => {
-    setTermYears(years);
-    setDiscountPct(disc);
-  };
-
   // Calculations incorporating dynamic monthly quantity carry-forward schedules and Tier 1-10 weighting.
   // Lines with an invalid active window are excluded (they fall back to the contract's full term) so a
   // half-typed date can never distort the price sheet.
@@ -394,98 +402,31 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Terms Configuration */}
-      <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1e3a5f] text-white shadow-xl relative overflow-hidden border border-slate-700/50">
+      {/* Rate sheet banner — the contract sets the term and start date, so only the discount is edited here */}
+      <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1e3a5f] text-white shadow-xl relative overflow-hidden border border-slate-700/50">
         <div className="absolute right-0 top-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-wrap">
               <Sparkles className="w-5 h-5 text-amber-400" />
               <span className="text-xs font-mono text-amber-300/90 uppercase tracking-widest font-extrabold">Modular Pricing & Variable Revenue Projections</span>
               <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-wide border shadow-sm ml-1 ${totals.tierInfo.badgeClass}`}>
                 {totals.tierInfo.label}
               </span>
             </div>
-            <h3 className="text-xl font-extrabold tracking-tight text-white mt-1">Contract Term & Discount Calibration</h3>
+            <h3 className="text-xl font-extrabold tracking-tight text-white mt-1">Contract Rate Sheet</h3>
             <p className="text-xs text-slate-300 max-w-2xl mt-0.5">
-              Configure term lengths and recurring discount brackets. One-time payments are kept strictly separate from ARR to reveal true valuation. Tier rating reflects weighted contributions (Flat Modules: 1.5x, Optimization/Man-Days: 1.2x).
+              Term and service start follow the contract terms. The discount applies to every recurring line; one-time payments stay separate from ARR.
             </p>
           </div>
 
-          {!readOnly && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-slate-400">Presets:</span>
-              <button
-                type="button"
-                onClick={() => applyTermSuggestion(1, 5)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  termYears === 1 && discountPct === 5 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
-                    : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-600/50'
-                }`}
-              >
-                1 Year · 5% Off
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTermSuggestion(3, 10)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  termYears === 3 && discountPct === 10 
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30' 
-                    : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-600/50'
-                }`}
-              >
-                3 Years · 10% Off
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTermSuggestion(5, 20)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  termYears === 5 && discountPct === 20 
-                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/30' 
-                    : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-600/50'
-                }`}
-              >
-                5 Years · 20% Off
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Inputs for Term, Discount, Start Date */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-700/60 text-slate-100">
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center">
-              <Calendar className="w-3.5 h-3.5 mr-1 text-blue-400" /> Service Start Date
-            </label>
-            <input
-              type="date"
-              disabled={readOnly}
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-600/80 rounded-lg px-3 py-2 text-sm font-semibold text-white focus:outline-none focus:border-blue-400 disabled:opacity-60"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center">
-              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Term Length (Years)
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="25"
-              disabled={readOnly}
-              value={termYears}
-              onChange={e => setTermYears(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-full bg-slate-950/80 border border-slate-600/80 rounded-lg px-3 py-2 text-sm font-semibold text-white focus:outline-none focus:border-emerald-400 disabled:opacity-60"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center">
-              <Tag className="w-3.5 h-3.5 mr-1 text-amber-400" /> Recurring Discount %
+          <div className="flex items-center gap-2 shrink-0">
+            <label htmlFor="contract-discount" className="text-xs font-bold text-slate-300 flex items-center">
+              <Tag className="w-3.5 h-3.5 mr-1 text-amber-400" /> Discount
             </label>
             <div className="relative">
               <input
+                id="contract-discount"
                 type="number"
                 step="0.5"
                 min="0"
@@ -493,9 +434,9 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                 disabled={readOnly}
                 value={discountPct}
                 onChange={e => setDiscountPct(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-                className="w-full bg-slate-950/80 border border-slate-600/80 rounded-lg pl-3 pr-8 py-2 text-sm font-semibold text-white focus:outline-none focus:border-amber-400 disabled:opacity-60"
+                className="w-24 bg-slate-950/80 border border-slate-600/80 rounded-lg pl-3 pr-7 py-1.5 text-sm font-bold text-white text-right focus:outline-none focus:border-amber-400 disabled:opacity-60"
               />
-              <span className="absolute right-3 top-2 text-slate-400 font-bold">%</span>
+              <span className="absolute right-2.5 top-1.5 text-xs font-bold text-slate-400">%</span>
             </div>
           </div>
         </div>

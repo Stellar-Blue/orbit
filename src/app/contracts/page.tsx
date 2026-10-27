@@ -817,6 +817,7 @@ export default function ContractsRegistryPage() {
                 initialDiscountPct={selectedContract.discount_pct || 0}
                 initialTermYears={selectedContract.term_years || 1}
                 initialStartDate={selectedContract.service_start_date || selectedContract.starts_on}
+                contractEndsOn={selectedContract.ends_on}
                 contractInvoiceTiming={selectedContract.invoice_timing}
                 key={selectedContract.id}
                 hideActions
