@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { type Project, type ProjectDocument, type ProjectLink, type ProjectStatus } from '@/lib/types';
 import { Button } from '@/components/ui/primitives';
@@ -13,7 +13,7 @@ import {
   GitBranch, ListChecks, Clock, Euro
 } from 'lucide-react';
 
-const BUCKET = 'project-documents';
+const BUCKET = 'project-documents-private';
 const LINK_KINDS: Array<{ id: string; label: string }> = [
   { id: 'linear', label: 'Linear issue' },
   { id: 'docs', label: 'Document / spec' },
@@ -173,12 +173,12 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
       const path = `projects/${project.id}/${Date.now()}_${safe}`;
       const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
       if (upErr) { notifyValidation({ type: 'error', title: 'Upload failed', message: upErr.message }); return; }
-      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60 * 24 * 7);
+      // The bucket is private, so links are signed on read (see openDocument) instead of stored here.
       const { error: insErr } = await supabase.from('project_documents').insert({
         project_id: project.id,
         file_name: file.name,
         storage_path: path,
-        url: signed?.signedUrl || null,
+        url: null,
         file_size: file.size,
         mime_type: file.type || null,
         uploaded_by: currentUser.id || null,
@@ -200,9 +200,9 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
   };
 
   const openDocument = async (doc: ProjectDocument) => {
-    if (doc.url) { window.open(doc.url, '_blank', 'noopener'); return; }
-    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, SIGNED_URL_TTL_SECONDS);
+    const url = data?.signedUrl || doc.url;
+    if (url) window.open(url, '_blank', 'noopener');
   };
 
   const field = 'w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-[#3D87D3]';

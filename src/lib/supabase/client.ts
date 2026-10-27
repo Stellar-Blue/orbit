@@ -1,9 +1,9 @@
 import { createBrowserClient } from '@supabase/ssr';
 
 /**
- * The invoices and contract-documents buckets are private (migration 0063), so their
- * links have to be signed on read. One hour outlives a page visit without leaving a
- * long-lived URL in circulation.
+ * The invoices, contract-documents and project-documents-private buckets are private
+ * (migrations 0063 and 20261027103144), so their links have to be signed on read.
+ * One hour outlives a page visit without leaving a long-lived URL in circulation.
  */
 export const SIGNED_URL_TTL_SECONDS = 3600;
 
