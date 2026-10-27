@@ -265,9 +265,17 @@ export default function ContractsRegistryPage() {
     return matchesDirection && matchesStatus;
   });
 
-  // Reporting-period attribution: fraction of a contract's term overlapping the selected
-  // date range. Without a range every active contract counts in full; with one, the
-  // committed value is prorated to the portion of the term that falls inside the window.
+  // `contracts.value` holds the deal's total contract value (TCV) as computed by the pricing sheet,
+  // so a multi-year deal must be annualised before it can be reported as yearly revenue.
+  const annualValue = (c: Contract): number => calculateContractValuation(
+    c.lines || [], c.discount_pct || 0, c.term_years || 1,
+    c.service_start_date || c.starts_on, catalogModules, catalogItems,
+    c.value || 0, c.billing_cadence
+  ).netARR;
+
+  // Reporting-period attribution: annualised value prorated to the fraction of a year that the
+  // contract's term overlaps the selected date range. Without a range every active contract
+  // counts at its full annual value.
   const parseDay = (s: string): Date | null => {
     if (!s) return null;
     const [y, m, d] = s.split('-').map(Number);
@@ -275,8 +283,8 @@ export default function ContractsRegistryPage() {
   };
   const DAY_MS = 86400000;
   const valueInPeriod = (c: Contract): number => {
-    const full = c.value || 0;
-    if (!periodFrom && !periodTo) return full;
+    const annual = annualValue(c);
+    if (!periodFrom && !periodTo) return annual;
     const start = parseDay(c.starts_on);
     if (!start) return 0;
     const end = c.ends_on ? parseDay(c.ends_on) : null;
@@ -285,10 +293,9 @@ export default function ContractsRegistryPage() {
     const ovStart = start > lo ? start : lo;
     const ovEnd = end && end < hi ? end : hi;
     if (ovEnd < ovStart) return 0; // term does not overlap the reporting period
-    if (!end) return full; // auto-renewing / indefinite term — fully committed
-    const termDays = Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1;
+    if (!end) return annual; // auto-renewing / indefinite term — report the annual commitment
     const overlapDays = Math.round((ovEnd.getTime() - ovStart.getTime()) / DAY_MS) + 1;
-    return Math.round(full * (overlapDays / termDays));
+    return Math.round(annual * (overlapDays / 365));
   };
 
   const revenueTotal = contracts.filter(c => c.direction === 'revenue' && c.status === 'active').reduce((acc, c) => acc + valueInPeriod(c), 0);
@@ -410,9 +417,9 @@ export default function ContractsRegistryPage() {
         </div>
         <div className="text-xs font-mono text-slate-500">
           {hasPeriod ? (
-            <>Totals cover <span className="font-bold text-[#3D87D3]">{periodFrom || 'start'} → {periodTo || 'present'}</span>, prorated to the period</>
+            <>Totals cover <span className="font-bold text-[#3D87D3]">{periodFrom || 'start'} → {periodTo || 'present'}</span>, annualised and prorated to the period</>
           ) : (
-            <>Showing <span className="font-bold">all-time</span> contracted totals</>
+            <>Showing <span className="font-bold">annualised (ARR)</span> contracted totals</>
           )}
         </div>
       </div>
@@ -420,15 +427,15 @@ export default function ContractsRegistryPage() {
       {/* KPI & Notice Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard 
-          title="Contracted Client Revenue (Active)" 
-          value={`€${revenueTotal.toLocaleString()}`} 
-          subtitle={hasPeriod ? `Committed for ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Atlas ETRM, EMS & Consulting subscriptions"}
+          title="Contracted Client Revenue (Active, Annual)" 
+          value={`€${revenueTotal.toLocaleString()}/yr`} 
+          subtitle={hasPeriod ? `Annualised revenue committed in ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Annualised recurring revenue (ARR) · excludes one-time fees"}
           icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
         />
         <StatCard 
-          title="Committed Supplier Spend (Active)" 
-          value={`€${costTotal.toLocaleString()}`} 
-          subtitle={hasPeriod ? `Committed for ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Cloud infrastructure & algorithm partner feeds"}
+          title="Committed Supplier Spend (Active, Annual)" 
+          value={`€${costTotal.toLocaleString()}/yr`} 
+          subtitle={hasPeriod ? `Annualised spend committed in ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Annualised recurring spend · excludes one-time fees"}
           icon={<DollarSign className="w-5 h-5 text-amber-600" />}
         />
         <StatCard 
@@ -453,13 +460,13 @@ export default function ContractsRegistryPage() {
             onClick={() => setDirectionFilter('revenue')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center cursor-pointer ${directionFilter === 'revenue' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            Client Revenue (<span className="text-emerald-700 font-mono ml-1">€{revenueTotal.toLocaleString()}</span>)
+            Client Revenue (<span className="text-emerald-700 font-mono ml-1">€{revenueTotal.toLocaleString()}/yr</span>)
           </button>
           <button
             onClick={() => setDirectionFilter('cost')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center cursor-pointer ${directionFilter === 'cost' ? 'bg-amber-50 text-amber-800 border border-amber-200 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            Supplier Spend (<span className="text-amber-700 font-mono ml-1">€{costTotal.toLocaleString()}</span>)
+            Supplier Spend (<span className="text-amber-700 font-mono ml-1">€{costTotal.toLocaleString()}/yr</span>)
           </button>
         </div>
 
@@ -1480,7 +1487,8 @@ export default function ContractsRegistryPage() {
               type="button"
               onClick={() => {
                 const c = contextMenu.contract;
-                const arr = c.billing_cadence === 'annual' ? (c.value || 0) : c.billing_cadence === 'quarterly' ? (c.value || 0) * 4 : (c.value || 0) * 12;
+                // `value` is the deal's total contract value, so annualise it through the pricing engine.
+                const arr = annualValue(c);
                 const report = [
                   `📋 CONTRACT FAST REPORT: ${c.reference}`,
                   `=========================================`,
@@ -1488,7 +1496,7 @@ export default function ContractsRegistryPage() {
                   `• Contract UUID: ${c.id}`,
                   `• Product & Type: ${c.product || c.type || 'Agreement'} (${c.direction.toUpperCase()})`,
                   `• Status: ${c.status.toUpperCase()}`,
-                  `• Commercial Value: €${c.value?.toLocaleString() || '0'} / ${c.billing_cadence || 'month'} (Est. ARR: €${arr.toLocaleString()})`,
+                  `• Total Contract Value: €${c.value?.toLocaleString() || '0'} (ARR: €${arr.toLocaleString()}/yr)`,
                   `• Term Period: ${c.starts_on} to ${c.ends_on || 'Indefinite'}`,
                   `• Notice Terms: ${c.notice_period_days || 30} days window (Deadline: ${c.notice_deadline || 'None'})`,
                   `• Notes & Conditions: ${c.notes || 'Standard executive financial terms apply.'}`
