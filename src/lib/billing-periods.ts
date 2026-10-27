@@ -3,10 +3,13 @@
  * expect for each one?".
  *
  * Expected amounts come from the month-by-month schedule (calculatePeriodAmountsByTiming — the engine
- * behind the "Monthly Cash Landing & Revenue Recognition" panel), summed over the billing window and
+ * behind the "Monthly Cash Landing & Revenue Recognition" panel), summed over the cycle's months and
  * split by invoicing timing, so a line billed in advance and a line billed in arrears yield their own
  * suggestion rows. calculateInvoiceAmountForPeriod is only a fallback for windows the schedule does not
  * cover.
+ *
+ * Cycles are anchored on the contract's start date, never on the calendar: a quarterly agreement
+ * starting 15 Jan bills 15 Jan – 14 Apr, then 15 Apr – 14 Jul, …
  */
 import {
   calculateContractValuation,
@@ -15,19 +18,23 @@ import {
   calculatePeriodAmountsByTiming,
 } from './pricing-engine';
 import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice } from './types';
+import { formatDate } from './date';
 
 type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>;
 
 export interface BillingPeriodItem {
-  /** Machine-comparable period key: "2026-01" (monthly), "2026-Q1" (quarterly), "2026" (annual).
+  /** Machine-comparable key: the cycle's start date, e.g. "2026-01-15".
    *  When a period is billed both in advance and in arrears the keys get an `@start` / `@end` suffix. */
   key: string;
+  /** Human label — the service window, e.g. "15/01/2026 - 14/04/2026". */
   label: string;
   from: string;
   to: string;
   expectedAmount: number;
   /** When this part of the period is charged — the line's own timing, else the contract's. */
   timing: 'start_of_period' | 'end_of_period';
+  /** The date the invoice for this period is raised: the service-window start in advance, its end in arrears. */
+  billingDate: string;
   status: 'unbilled' | 'draft_created' | 'billed';
   invoiceId?: string;
 }
@@ -57,7 +64,7 @@ export interface BillingPeriodOptions {
   /** Linked invoices, used to mark a period as drafted/billed. */
   invoices?: Array<{
     id: string; contract_id?: string | null; status: string;
-    reference_period?: string | null; period_from?: string | null; issue_date?: string | null;
+    reference_period?: string | null; period_from?: string | null; period_to?: string | null; issue_date?: string | null;
   }>;
   /** Optimistic "draft created" marks from the hub, keyed `${contractId}::${periodKey}`. */
   generatedDraftIds?: Record<string, string>;
@@ -65,6 +72,33 @@ export interface BillingPeriodOptions {
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+/** Months in one billing cycle for the fixed cadences; 0 for one-off / milestone settlements. */
+const CYCLE_MONTHS: Record<string, number> = { monthly: 1, quarterly: 3, annual: 12 };
+
+/** Shifts a date by whole months, clamping the day to the target month (31 Jan + 1 month → 28/29 Feb). */
+function addMonths(date: Date, months: number): Date {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(date.getDate(), lastDay));
+  return target;
+}
+
+/**
+ * The calendar months a billing cycle's schedule lands in. Cycles are anchored on the contract start
+ * date, not the calendar: a quarterly cycle starting 15 Jan bills Jan–Mar, the next one Apr–Jun.
+ */
+function cycleMonths(from: string, monthCount: number): string[] {
+  const months: string[] = [];
+  const cursor = new Date(from + 'T00:00:00');
+  if (isNaN(cursor.getTime())) return months;
+  cursor.setDate(1);
+  for (let i = 0; i < monthCount; i++) {
+    months.push(ym(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
+}
 
 /** Every calendar month a billing window touches, e.g. Q1 → ['2026-01','2026-02','2026-03']. */
 function monthsInWindow(from: string, to: string, cap = 240): string[] {
@@ -136,46 +170,32 @@ export function getContractBillingPeriods(
     timing
   ).forEach(entry => scheduleByMonth.set(entry.period, { advance: Number(entry.advance) || 0, arrears: Number(entry.arrears) || 0 }));
 
-  const getPeriodInfo = (cursor: Date): { key: string; label: string; from: string; to: string } => {
-    if (cadence === 'monthly') {
-      const key = ym(cursor);
-      const from = ymd(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
-      const to = ymd(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0));
-      return { key, label: `Monthly (${key})`, from, to };
+  /**
+   * The service window of one cycle: it starts on the contract anchor (start + n cycles) and ends the
+   * day before the next cycle starts, so 15 Jan quarterly → 15 Jan – 14 Apr, 15 Apr – 14 Jul, …
+   */
+  const getPeriodInfo = (cycleStart: Date, nextCycleStart: Date | null): { key: string; label: string; from: string; to: string } => {
+    const monthsPerCycle = CYCLE_MONTHS[cadence] || 0;
+    if (monthsPerCycle === 0) {
+      const key = ymd(startDate);
+      return { key, label: cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement', from: startDateStr, to: ymd(todayStart) };
     }
-    if (cadence === 'quarterly') {
-      const q = Math.floor(cursor.getMonth() / 3);
-      const year = cursor.getFullYear();
-      const key = `${year}-Q${q + 1}`;
-      const from = ymd(new Date(year, q * 3, 1));
-      const to = ymd(new Date(year, q * 3 + 3, 0));
-      return { key, label: `Q${q + 1} ${year}`, from, to };
-    }
-    if (cadence === 'annual') {
-      const year = cursor.getFullYear();
-      return { key: `${year}`, label: `${year} Annual Term`, from: ymd(new Date(year, 0, 1)), to: ymd(new Date(year, 11, 31)) };
-    }
-    const key = ymd(startDate);
-    return { key, label: cadence === 'one_off' ? 'One-off Delivery' : 'Milestone Settlement', from: startDateStr, to: ymd(todayStart) };
-  };
-
-  const advanceCursor = (cursor: Date): Date => {
-    const next = new Date(cursor);
-    if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
-    else if (cadence === 'quarterly') next.setMonth(next.getMonth() + 3);
-    else if (cadence === 'annual') next.setFullYear(next.getFullYear() + 1);
-    else return new Date(todayStart.getTime() + 1);
-    return next;
+    const from = ymd(cycleStart);
+    const next = nextCycleStart || addMonths(cycleStart, monthsPerCycle);
+    const to = ymd(new Date(next.getFullYear(), next.getMonth(), next.getDate() - 1));
+    return { key: from, label: `${formatDate(from)} - ${formatDate(to)}`, from, to };
   };
 
   const periods: Array<ReturnType<typeof getPeriodInfo>> = [];
   const seenKeys = new Set<string>();
-  let cursor = new Date(startDate);
+  const monthsPerCycle = CYCLE_MONTHS[cadence] || 0;
 
   // Advance halves are due at the period start and arrears halves at the period end, so walk every
   // period that has STARTED and let the per-side check below decide which halves are billable yet.
-  while (true) {
-    const info = getPeriodInfo(cursor);
+  for (let cycle = 0; ; cycle++) {
+    const cycleStart = monthsPerCycle > 0 ? addMonths(startDate, cycle * monthsPerCycle) : new Date(startDate);
+    const nextCycleStart = monthsPerCycle > 0 ? addMonths(startDate, (cycle + 1) * monthsPerCycle) : null;
+    const info = getPeriodInfo(cycleStart, nextCycleStart);
     if (seenKeys.has(info.key)) break;
     seenKeys.add(info.key);
 
@@ -183,18 +203,21 @@ export function getContractBillingPeriods(
 
     periods.push(info);
 
-    if (cadence === 'one_off' || cadence === 'milestone') break;
-    cursor = advanceCursor(cursor);
-    if (cursor > todayStart && cursor.getTime() - todayStart.getTime() > 366 * 86400000) break;
+    if (monthsPerCycle === 0) break; // one-off / milestone settle once
   }
 
   if (periods.length === 0) return [];
 
-  /** Sum of the scheduled advance/arrears halves across the months a billing window touches. */
+  /**
+   * Sum of the scheduled advance/arrears halves across the cycle's months. The schedule is bucketed by
+   * month, and a cycle anchored mid-month still owns the whole opening month, so the month list is
+   * derived from the cycle start rather than from the window's end date.
+   */
   const scheduledHalves = (period: { from: string; to: string }): { advance: number; arrears: number } => {
     let advance = 0;
     let arrears = 0;
-    monthsInWindow(period.from, period.to).forEach(month => {
+    const months = monthsPerCycle > 0 ? cycleMonths(period.from, monthsPerCycle) : monthsInWindow(period.from, period.to);
+    months.forEach(month => {
       const entry = scheduleByMonth.get(month);
       if (!entry) return;
       advance += entry.advance;
@@ -231,26 +254,23 @@ export function getContractBillingPeriods(
     return valuation.totalContractValue || (contract.value || 0);
   };
 
+  /**
+   * An invoice covers a cycle when its own service window overlaps the cycle's window. Date-range
+   * overlap (rather than a period key) keeps this working now that cycles are anchored on the
+   * contract start instead of the calendar — including invoices raised before that change.
+   */
   const findExistingInvoice = (period: { key: string; label: string; from: string; to: string }) =>
     invoices.find(i => {
       if (i.contract_id !== contract.id) return false;
       if (i.reference_period && i.reference_period.trim() !== '') {
         const ref = i.reference_period.trim().toLowerCase();
-        return ref === period.key.toLowerCase() || ref === period.label.toLowerCase();
+        if (ref === period.key.toLowerCase() || ref === period.label.toLowerCase()) return true;
       }
-      if (cadence === 'monthly') {
-        if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key);
-        return (i.issue_date || '').startsWith(period.key);
-      }
-      if (cadence === 'quarterly') {
-        if (i.period_from && i.period_from.trim() !== '') return i.period_from >= period.from && i.period_from <= period.to;
-        return (i.issue_date || '') >= period.from && (i.issue_date || '') <= period.to;
-      }
-      if (cadence === 'annual') {
-        if (i.period_from && i.period_from.trim() !== '') return i.period_from.startsWith(period.key.slice(0, 4));
-        return (i.issue_date || '').startsWith(period.key.slice(0, 4));
-      }
-      return true;
+      const invFrom = (i.period_from || '').trim();
+      const invTo = (i.period_to || '').trim() || invFrom;
+      if (invFrom) return invFrom <= period.to && invTo >= period.from;
+      const issued = (i.issue_date || '').trim();
+      return !!issued && issued >= period.from && issued <= period.to;
     });
 
   const results: BillingPeriodItem[] = [];
@@ -281,6 +301,7 @@ export function getContractBillingPeriods(
         to: period.to,
         expectedAmount: Number(amount.toFixed(2)),
         timing: side,
+        billingDate: side === 'end_of_period' ? period.to : period.from,
         status,
         invoiceId: existingInv?.id || draftId,
       });

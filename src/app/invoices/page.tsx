@@ -392,12 +392,13 @@ export default function InvoicesRegistryPage() {
       cadence: string;
       timing: string;
       periodLabel: string;
-      periodKey: string; // machine-comparable key e.g. "2026-01" or "2026-Q1"
+      periodKey: string; // machine-comparable, cycle start date e.g. "2026-01-15"
       periodFrom: string;
       periodTo: string;
       expectedAmount: number;
       currency: string;
-      dueDate: string;
+      /** The date this period's invoice should be raised — period start in advance, period end in arrears. */
+      billingDate: string;
       status: 'unbilled' | 'draft_created' | 'billed';
       invoiceId?: string;
     }> = [];
@@ -429,7 +430,7 @@ export default function InvoicesRegistryPage() {
           periodTo: period.to,
           expectedAmount: period.expectedAmount,
           currency: cnt.currency || 'EUR',
-          dueDate: period.from,
+          billingDate: period.billingDate,
           status: period.status,
           invoiceId: period.invoiceId
         });

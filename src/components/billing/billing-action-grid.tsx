@@ -6,6 +6,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Badge } from '@/components/ui/primitives';
+import { formatDate } from '@/lib/date';
 import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, EyeOff } from 'lucide-react';
 
 export interface BillingActionItem {
@@ -17,6 +18,11 @@ export interface BillingActionItem {
   cadence: string;
   timing: string;
   periodLabel: string;
+  /** Service window the invoice covers. */
+  periodFrom?: string;
+  periodTo?: string;
+  /** Date the invoice is raised: service start in advance, service end in arrears. */
+  billingDate?: string;
   expectedAmount: number;
   status: 'unbilled' | 'draft_created' | 'invoiced' | 'billed';
   [key: string]: unknown;
@@ -29,7 +35,9 @@ interface BillingActionRow {
   direction: string;
   cadence: string;
   timingLabel: string;
-  periodLabel: string;
+  serviceWindow: string;
+  billingDate: string;
+  billingDateLabel: string;
   expectedAmount: number;
   status: string;
 }
@@ -47,6 +55,8 @@ const timingLabel = (timing: string) => {
   return '🚀 In Advance (Start of period)';
 };
 
+const formatDay = (value?: string) => (value ? formatDate(value) : '—');
+
 export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQuickCreate, onDismiss }) => {
   const rowData = useMemo<BillingActionRow[]>(() => {
     return items.map(item => ({
@@ -56,7 +66,11 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       direction: item.direction,
       cadence: item.cadence,
       timingLabel: timingLabel(item.timing),
-      periodLabel: item.periodLabel,
+      serviceWindow: item.periodFrom && item.periodTo
+        ? `${formatDay(item.periodFrom)} → ${formatDay(item.periodTo)}`
+        : item.periodLabel,
+      billingDate: item.billingDate || item.periodFrom || '',
+      billingDateLabel: formatDay(item.billingDate || item.periodFrom),
       expectedAmount: item.expectedAmount,
       status: item.status
     }));
@@ -87,13 +101,23 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
       cellClass: 'font-bold text-slate-800 capitalize'
     },
     {
-      headerName: 'Invoicing Timing', field: 'timingLabel', minWidth: 190, flex: 1, sortable: true, ...excelSetFilter(),
-      cellClass: 'text-xs text-slate-500'
+      headerName: 'Invoicing Timing', field: 'timingLabel', minWidth: 230, flex: 1, sortable: true, ...excelSetFilter(),
+      cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
+        <div>
+          <span className="text-xs text-slate-600 font-semibold">{p.value}</span>
+          <span className="block font-mono text-[11px] text-slate-500">{p.data?.serviceWindow}</span>
+        </div>
+      )
     },
     {
-      headerName: 'Billing Horizon', field: 'periodLabel', width: 150, sortable: true, ...excelSetFilter(),
+      headerName: 'Billing Horizon', field: 'billingDate', minWidth: 175, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<BillingActionRow, string>) => (
-        <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold">{p.value}</span>
+        <div className="flex flex-col items-start gap-0.5">
+          <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold font-mono">{p.data?.billingDateLabel}</span>
+          <span className="text-[10px] text-slate-400">
+            {p.data?.item.timing === 'end_of_period' ? 'raised at period end' : 'raised at period start'}
+          </span>
+        </div>
       )
     },
     {
