@@ -342,7 +342,7 @@ export default function DashboardPage() {
           })()}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card title="Contract Notice Windows & Renewal Alerts" subtitle="Alert engine protecting against auto-renewing notice lapses" action={<Link href="/contracts" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">View All <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
+            <Card title="Contract Notice Windows & Renewal Alerts" subtitle="Alert engine protecting against auto-renewing notice lapses" action={<Link href="/contracts/notices" className="text-xs text-[#3D87D3] hover:underline flex items-center font-bold">Open report <ArrowUpRight className="w-3.5 h-3.5 ml-1" /></Link>} className="border-slate-200/90 shadow-2xs">
               {urgentContracts.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm font-medium">
                   <CheckCircle className="w-8 h-8 mx-auto text-emerald-600 mb-2" />

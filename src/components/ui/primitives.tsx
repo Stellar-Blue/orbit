@@ -65,7 +65,16 @@ export const Badge: React.FC<{ children: React.ReactNode; variant?: 'success' | 
   );
 };
 
-export const StatCard: React.FC<{ title: string; value: string | number; subtitle?: string; icon?: React.ReactNode; trend?: string; trendUp?: boolean }> = ({ title, value, subtitle, icon, trend, trendUp }) => (
+export const StatCard: React.FC<{
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  trend?: string;
+  trendUp?: boolean;
+  /** Optional action row under the value — e.g. a link into the detailed report behind the number. */
+  footer?: React.ReactNode;
+}> = ({ title, value, subtitle, icon, trend, trendUp, footer }) => (
   <Card className="hover:border-slate-300/80 transition-all relative overflow-hidden bg-white">
     <div className="flex justify-between items-start">
       <div>
@@ -83,6 +92,7 @@ export const StatCard: React.FC<{ title: string; value: string | number; subtitl
         <span className="text-slate-500">vs last period</span>
       </div>
     )}
+    {footer && <div className="mt-3">{footer}</div>}
   </Card>
 );
 

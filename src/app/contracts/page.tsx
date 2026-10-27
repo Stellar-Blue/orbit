@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
@@ -612,11 +613,20 @@ export default function ContractsRegistryPage() {
           subtitle={hasPeriod ? `Annualised spend committed in ${periodFrom || 'start'} → ${periodTo || 'present'}` : "Annualised recurring spend · excludes one-time fees"}
           icon={<DollarSign className="w-5 h-5 text-amber-600" />}
         />
-        <StatCard 
+        <StatCard
           title={`Action Required (Next ${NOTICE_ALERT_WINDOW_DAYS} Days)`}
           value={`${urgentAlerts} Notice Window${urgentAlerts === 1 ? '' : 's'}`}
           subtitle={urgentAlerts > 0 ? 'Notice deadlines open or already missed' : 'Critical deadline monitoring active'}
           icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
+          footer={
+            <Link
+              href="/contracts/notices"
+              className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#3D87D3] hover:text-[#2f6ea9] hover:underline"
+            >
+              {urgentAlerts > 0 ? 'See what action is required' : 'Open the notice-window report'}
+              <ArrowUpRight className="w-3 h-3" />
+            </Link>
+          }
         />
       </div>
 
