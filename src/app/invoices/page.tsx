@@ -941,12 +941,15 @@ export default function InvoicesRegistryPage() {
                   value={newContractId}
                   onChange={handleContractChange}
                   emptyLabel="No Contract (One-off / General expense)"
-                  placeholder="Search contract by product / reference…"
+                  placeholder="Search contract by reference, product or id…"
                   options={contracts.filter(c => !newCpId || c.counterparty_id === newCpId).map(cnt => ({
                     value: cnt.id,
-                    label: cnt.product || 'Contract',
+                    // Reference is the contract's title; the id sits underneath it so two agreements
+                    // for the same product can still be told apart.
+                    label: cnt.reference || cnt.product || 'Contract',
+                    description: cnt.id,
                     hint: `€${(cnt.value || 0).toLocaleString()}`,
-                    keywords: `${cnt.reference || ''} ${cnt.direction || ''}`,
+                    keywords: `${cnt.reference || ''} ${cnt.product || ''} ${cnt.direction || ''} ${cnt.id}`,
                   }))}
                 />
               </div>

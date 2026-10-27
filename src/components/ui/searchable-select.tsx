@@ -7,6 +7,8 @@ export interface SearchableSelectOption {
   value: string;
   /** Main line, also the primary match target. */
   label: string;
+  /** Optional second line under the label (record id, subtitle, code…). */
+  description?: string;
   /** Optional right-aligned detail (VAT number, contract value, code…). */
   hint?: string;
   /** Extra text to match on besides the label (ΑΦΜ, domain, category description…). */
@@ -63,6 +65,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     if (!q) return options;
     return options.filter(o =>
       o.label.toLowerCase().includes(q) ||
+      (o.description || '').toLowerCase().includes(q) ||
       (o.hint || '').toLowerCase().includes(q) ||
       (o.keywords || '').toLowerCase().includes(q)
     );
@@ -198,7 +201,12 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   onMouseEnter={() => setActiveIndex(idx)}
                   className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-3 ${idx === activeIndex ? 'bg-[#3D87D3]/10' : 'hover:bg-slate-50'} ${option.value === value ? 'font-extrabold text-[#3D87D3]' : 'text-slate-700'}`}
                 >
-                  <span className="truncate font-bold">{option.label}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-bold">{option.label}</span>
+                    {option.description && (
+                      <span className="block truncate font-mono text-[10px] font-normal text-slate-400">{option.description}</span>
+                    )}
+                  </span>
                   <span className="flex items-center gap-2 shrink-0">
                     {option.hint && <span className="text-[10px] font-mono text-slate-400 truncate max-w-[140px]">{option.hint}</span>}
                     {option.value === value && <Check className="w-3.5 h-3.5" />}
