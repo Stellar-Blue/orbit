@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -12,7 +12,7 @@ import {
   FileText, Plus, AlertTriangle, Calendar, DollarSign, X, 
   ArrowUpRight, Download, Upload, Layers, TrendingUp, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap
 } from 'lucide-react';
-import { ContractPricingBuilder } from '@/components/contracts/contract-pricing-builder';
+import { ContractPricingBuilder, type PricingDraft } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
@@ -78,6 +78,56 @@ export default function ContractsRegistryPage() {
       }
     } finally {
       setCreatingPeriodKey(null);
+    }
+  };
+
+  // One Save for the whole dossier: the general form edits `selectedContract` in place while the
+  // pricing builder reports its live draft into this ref, so both halves persist together.
+  const [isSavingContract, setIsSavingContract] = useState(false);
+  const [pricingWindowErrors, setPricingWindowErrors] = useState(0);
+  const pricingDraftRef = useRef<PricingDraft | null>(null);
+
+  const saveContractDossier = async () => {
+    if (!selectedContract || isSavingContract || pricingWindowErrors > 0) return;
+    const contract = selectedContract;
+    setIsSavingContract(true);
+    let pricingSaved = false;
+    try {
+      await updateContract(contract);
+
+      // The ref can still hold the previous dossier's draft for a frame after switching contracts.
+      const draft = pricingDraftRef.current;
+      if (draft && draft.isDirty && (!draft.contractId || draft.contractId === contract.id)) {
+        pricingSaved = await saveContractPricing(
+          contract.id,
+          draft.lines,
+          draft.schedule,
+          draft.discountPct,
+          draft.termYears,
+          draft.startDate,
+          draft.totalContractValue,
+          draft.groups
+        );
+        if (pricingSaved) {
+          setSelectedContract({
+            ...contract,
+            lines: draft.lines as unknown as ContractLine[],
+            groups: draft.groups as unknown as ContractLineGroup[],
+            schedule: draft.schedule as unknown as ContractSchedule[],
+            discount_pct: draft.discountPct,
+            term_years: draft.termYears,
+            service_start_date: draft.startDate,
+            value: draft.totalContractValue,
+          });
+        }
+      }
+
+      notifySuccess(
+        pricingSaved ? 'Contract details and pricing saved.' : 'Contract details saved.',
+        'Contract saved'
+      );
+    } finally {
+      setIsSavingContract(false);
     }
   };
 
@@ -505,7 +555,7 @@ export default function ContractsRegistryPage() {
             {(() => {
               const dossierVal = calculateContractValuation(selectedContract.lines || [], selectedContract.discount_pct || 0, selectedContract.term_years || 1, selectedContract.service_start_date || selectedContract.starts_on, catalogModules, catalogItems, selectedContract.value || 0, selectedContract.billing_cadence);
               return (
-                <div className="flex flex-wrap items-center justify-between p-3.5 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 gap-4 shadow-md">
+                <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between p-3.5 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 gap-4 shadow-md">
                   <div className="flex items-center gap-3">
                     <span className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-wide border shadow-sm ${dossierVal.tierInfo.badgeClass}`}>
                       {dossierVal.tierInfo.label}
@@ -514,21 +564,36 @@ export default function ContractsRegistryPage() {
                       Weighted ARR: <strong className="text-slate-200 font-mono font-bold">€{dossierVal.weightedARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>
                     </span>
                   </div>
-                  <div className="flex items-center gap-6 font-mono text-xs">
-                    <div>
-                      <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Net ARR (Recurring):</span>
-                      <strong className="text-emerald-400 font-bold">€{dossierVal.netARR.toLocaleString()}/yr</strong>
-                    </div>
-                    {dossierVal.oneTimeValue > 0 && (
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-6 font-mono text-xs">
                       <div>
-                        <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">One-Off Additions:</span>
-                        <strong className="text-amber-400 font-bold">+€{dossierVal.oneTimeValue.toLocaleString()}</strong>
+                        <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Net ARR (Recurring):</span>
+                        <strong className="text-emerald-400 font-bold">€{dossierVal.netARR.toLocaleString()}/yr</strong>
                       </div>
-                    )}
-                    <div>
-                      <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Real Deal TCV:</span>
-                      <strong className="text-blue-400 font-black">€{dossierVal.totalContractValue.toLocaleString()}</strong>
+                      {dossierVal.oneTimeValue > 0 && (
+                        <div>
+                          <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">One-Off Additions:</span>
+                          <strong className="text-amber-400 font-bold">+€{dossierVal.oneTimeValue.toLocaleString()}</strong>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-slate-400 font-sans font-medium text-[11px] mr-1">Real Deal TCV:</span>
+                        <strong className="text-blue-400 font-black">€{dossierVal.totalContractValue.toLocaleString()}</strong>
+                      </div>
                     </div>
+                    {/* The dossier's single save action — visible on every tab. */}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={saveContractDossier}
+                      disabled={isSavingContract || pricingWindowErrors > 0}
+                      title={pricingWindowErrors > 0
+                        ? `Fix ${pricingWindowErrors} invalid line window${pricingWindowErrors === 1 ? '' : 's'} in the revenue schedule before saving`
+                        : 'Save the contract terms, pricing and revenue schedule together'}
+                      className="bg-[#3D87D3] hover:bg-[#3476B8] text-white font-extrabold shadow-md cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-4 h-4 mr-1.5" /> {isSavingContract ? 'Saving…' : 'Save contract'}
+                    </Button>
                   </div>
                 </div>
               );
@@ -590,6 +655,25 @@ export default function ContractsRegistryPage() {
               >
                 <DollarSign className="w-4 h-4 mr-2 text-sky-600" /> Rate Card
               </button>
+            </div>
+
+            {/* Kept mounted on every tab: the dossier's single Save persists whatever was edited here. */}
+            <div className={dossierTab === 'pricing' ? 'pt-2 min-h-[500px]' : 'hidden'}>
+              <ContractPricingBuilder
+                contractId={selectedContract.id}
+                initialLines={selectedContract.lines || []}
+                initialGroups={selectedContract.groups || []}
+                initialDiscountPct={selectedContract.discount_pct || 0}
+                initialTermYears={selectedContract.term_years || 1}
+                initialStartDate={selectedContract.service_start_date || selectedContract.starts_on}
+                contractInvoiceTiming={selectedContract.invoice_timing}
+                key={selectedContract.id}
+                hideActions
+                onDraftChange={draft => {
+                  pricingDraftRef.current = draft;
+                  setPricingWindowErrors(draft.windowErrorCount);
+                }}
+              />
             </div>
 
             {dossierTab === 'ratecard' ? (
@@ -826,52 +910,7 @@ export default function ContractsRegistryPage() {
                   );
                 })()}
               </div>
-            ) : dossierTab === 'pricing' ? (
-              <div className="pt-2 min-h-[500px]">
-                <ContractPricingBuilder
-                  contractId={selectedContract.id}
-                  initialLines={selectedContract.lines || []}
-                  initialGroups={selectedContract.groups || []}
-                  initialDiscountPct={selectedContract.discount_pct || 0}
-                  initialTermYears={selectedContract.term_years || 1}
-                  initialStartDate={selectedContract.service_start_date || selectedContract.starts_on}
-                  contractInvoiceTiming={selectedContract.invoice_timing}
-                  onSave={async (lines, schedule, discountPct, termYears, startDate, tcv, groups) => {
-                    await saveContractPricing(
-                      selectedContract.id,
-                      lines,
-                      schedule,
-                      discountPct,
-                      termYears,
-                      startDate,
-                      tcv,
-                      groups
-                    );
-                    setSelectedContract({
-                      ...selectedContract,
-                      lines: lines as unknown as ContractLine[],
-                      groups: groups as unknown as ContractLineGroup[],
-                      schedule: schedule as unknown as ContractSchedule[],
-                      discount_pct: discountPct,
-                      term_years: termYears,
-                      service_start_date: startDate,
-                      value: tcv
-                    });
-                    // Report what actually persisted so a silently-dropped field is immediately visible.
-                    const windowCount = lines.filter(l => l.starts_on || l.ends_on).length;
-                    const timingCount = lines.filter(l => l.invoice_timing).length;
-                    notifySuccess(
-                      `Pricing snapshot and revenue schedule locked to the deal.` +
-                      (windowCount || timingCount
-                        ? ` Saved per line: ${windowCount} active window${windowCount === 1 ? '' : 's'}, ${timingCount} custom invoicing timing${timingCount === 1 ? '' : 's'}.`
-                        : ''),
-                      'Pricing saved'
-                    );
-                  }}
-                  onCancel={() => setSelectedContract(null)}
-                />
-              </div>
-            ) : (
+            ) : dossierTab === 'pricing' ? null : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
               {/* Left Column: Entity Specs & Attachments (5 cols) */}
               <div className="lg:col-span-5 space-y-5">
@@ -1007,17 +1046,6 @@ export default function ContractsRegistryPage() {
                         <Trash2 className="w-4 h-4 mr-1.5" /> Delete Contract
                       </Button>
                     )}
-                    <Button 
-                      variant="primary" 
-                      size="sm"
-                      onClick={() => {
-                        updateContract(selectedContract);
-                        notifySuccess('Contract updated.');
-                      }}
-                      className="shadow-sm font-bold bg-[#3D87D3] hover:bg-[#3476B8] cursor-pointer"
-                    >
-                      <Save className="w-4 h-4 mr-1.5" /> Save Changes
-                    </Button>
                   </div>
                 </div>
 

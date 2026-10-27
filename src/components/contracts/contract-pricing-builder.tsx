@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ContractLine, ContractLineGroup, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, isVariableQuantityPricingScheme, calculateLineGrossAmount, calculatePeriodAmounts, calculateGroupFloorRatio } from '@/lib/pricing-engine';
@@ -9,6 +9,22 @@ import {
   Plus, Trash2, Tag, DollarSign, Calendar, Clock, 
   Sparkles, CheckCircle2, AlertCircle, AlertTriangle, Layers, ArrowRight, ChevronDown, ChevronUp, BarChart3, RefreshCw, X, FolderPlus, Folder, ShieldCheck
 } from 'lucide-react';
+
+/** The pricing half of a contract, reported to the dossier so one Save can persist the whole thing. */
+export interface PricingDraft {
+  contractId?: string;
+  lines: Omit<ContractLine, 'id' | 'contract_id'>[];
+  schedule: { period: string; amount: number }[];
+  discountPct: number;
+  termYears: number;
+  startDate: string;
+  totalContractValue: number;
+  groups: Omit<ContractLineGroup, 'contract_id'>[];
+  /** Invalid per-line active windows block persistence — the dossier's Save honours this too. */
+  windowErrorCount: number;
+  /** False while the pricing sheet still matches what was last persisted. */
+  isDirty: boolean;
+}
 
 interface ContractPricingBuilderProps {
   contractId?: string;
@@ -30,7 +46,40 @@ interface ContractPricingBuilderProps {
   ) => Promise<void> | void;
   onCancel?: () => void;
   readOnly?: boolean;
+  /** Reports the live pricing draft; lets the dossier host a single Save for every tab. */
+  onDraftChange?: (draft: PricingDraft) => void;
+  /** Hides the builder's own Cancel / "Save & Lock" row when the dossier owns the save action. */
+  hideActions?: boolean;
 }
+
+const toDraftLine = (l: ContractLine | Omit<ContractLine, 'id' | 'contract_id'>): Omit<ContractLine, 'id' | 'contract_id'> => ({
+  catalog_item_id: l.catalog_item_id,
+  group_id: l.group_id || null,
+  name: l.name,
+  unit_price: Number(l.unit_price) || 0,
+  quantity: Number(l.quantity) || 1,
+  unit_label: l.unit_label || 'unit',
+  frequency: l.frequency || 'monthly',
+  note: l.note || '',
+  monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {},
+  apply_discount: l.apply_discount !== false,
+  min_monthly_charge: null,
+  invoice_timing: l.invoice_timing || null,
+  // These two must be carried over or a saved window renders empty and the next save overwrites
+  // it with NULL — which made the dates look like they never saved.
+  starts_on: l.starts_on || null,
+  ends_on: l.ends_on || null,
+  line_kind: l.line_kind || 'unit',
+  role: l.role || null,
+  seniority: l.seniority || null,
+});
+
+const toDraftGroup = (g: Partial<ContractLineGroup>, index: number): Omit<ContractLineGroup, 'contract_id'> => ({
+  id: g.id as string,
+  name: g.name || '',
+  min_monthly_charge: g.min_monthly_charge ? Number(g.min_monthly_charge) : null,
+  sort_order: g.sort_order ?? index,
+});
 
 const generateGroupId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -61,42 +110,18 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
   contractInvoiceTiming = 'start_of_period',
   onSave,
   onCancel,
-  readOnly = false
+  readOnly = false,
+  onDraftChange,
+  hideActions = false
 }) => {
   const { catalogModules, catalogItems } = useAuth();
 
   const [groups, setGroups] = useState<ContractLineGroup[]>(
-    initialGroups.map((g, i) => ({
-      id: g.id,
-      contract_id: g.contract_id,
-      name: g.name,
-      min_monthly_charge: g.min_monthly_charge ? Number(g.min_monthly_charge) : null,
-      sort_order: g.sort_order ?? i
-    }))
+    initialGroups.map((g, i) => ({ ...toDraftGroup(g, i), contract_id: g.contract_id }) as ContractLineGroup)
   );
 
   const [lines, setLines] = useState<Omit<ContractLine, 'id' | 'contract_id'>[]>(
-    initialLines.map(l => ({
-      catalog_item_id: l.catalog_item_id,
-      group_id: l.group_id || null,
-      name: l.name,
-      unit_price: Number(l.unit_price) || 0,
-      quantity: Number(l.quantity) || 1,
-      unit_label: l.unit_label || 'unit',
-      frequency: l.frequency || 'monthly',
-      note: l.note || '',
-      monthly_quantities: l.monthly_quantities ? { ...l.monthly_quantities } : {},
-      apply_discount: l.apply_discount !== false,
-      min_monthly_charge: null,
-      invoice_timing: l.invoice_timing || null,
-      // These two must be carried over or a saved window renders empty and the next save overwrites
-      // it with NULL — which made the dates look like they never saved.
-      starts_on: l.starts_on || null,
-      ends_on: l.ends_on || null,
-      line_kind: l.line_kind || 'unit',
-      role: l.role || null,
-      seniority: l.seniority || null
-    }))
+    initialLines.map(toDraftLine)
   );
 
   const [discountPct, setDiscountPct] = useState<number>(initialDiscountPct);
@@ -328,6 +353,44 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
       setIsSaving(false);
     }
   };
+
+  // The dossier owns the single Save, so the live draft (and whether it diverges from what was last
+  // persisted) is reported upwards. Comparing fingerprints keeps the check independent of object identity.
+  const draftFingerprint = useMemo(
+    () => JSON.stringify([sanitizedLines, groups, discountPct, termYears, startDate]),
+    [sanitizedLines, groups, discountPct, termYears, startDate]
+  );
+  const persistedFingerprint = useMemo(
+    () => JSON.stringify([
+      initialLines.map(toDraftLine),
+      initialGroups.map(toDraftGroup),
+      initialDiscountPct,
+      initialTermYears,
+      initialStartDate,
+    ]),
+    [initialLines, initialGroups, initialDiscountPct, initialTermYears, initialStartDate]
+  );
+
+  const draftChangeRef = useRef(onDraftChange);
+  useEffect(() => { draftChangeRef.current = onDraftChange; }, [onDraftChange]);
+
+  useEffect(() => {
+    draftChangeRef.current?.({
+      contractId,
+      lines: sanitizedLines,
+      schedule,
+      discountPct,
+      termYears,
+      startDate,
+      totalContractValue: totals.totalContractValue,
+      groups,
+      windowErrorCount: windowErrors.size,
+      isDirty: draftFingerprint !== persistedFingerprint,
+    });
+    // `schedule` / `sanitizedLines` are memoised on the fields in `draftFingerprint`, so the
+    // fingerprints are the real trigger — they just carry the freshly computed payload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftFingerprint, persistedFingerprint, totals.totalContractValue, windowErrors.size]);
 
   return (
     <div className="space-y-6">
@@ -1144,7 +1207,8 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
             {showSchedulePreview ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
           </button>
 
-          <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+          {!hideActions && (
+            <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
             {onCancel && (
               <Button type="button" variant="outline" size="sm" onClick={onCancel} className="bg-transparent border-slate-600 text-slate-300 hover:bg-slate-800">
                 Cancel
@@ -1164,6 +1228,7 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
               </Button>
             )}
           </div>
+          )}
         </div>
 
         {/* Invalid per-line active windows block the save — billing would silently skip those months */}
