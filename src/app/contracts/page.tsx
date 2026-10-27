@@ -46,11 +46,11 @@ export default function ContractsRegistryPage() {
 
   const isAdmin = currentUser.role === 'admin';
 
-  // Fast-create a draft invoice for one of the contract's due billing periods, straight from the dossier.
-  // Uses the same payload builder as the Invoices Hub quick-create so both stay identical.
-  const createDraftForPeriod = async (period: BillingPeriodItem) => {
-    if (!addInvoice || !selectedContract || creatingPeriodKey) return;
-    const contract = selectedContract;
+  // Fast-create a draft invoice for one of the contract's due billing periods, from the dossier or
+  // straight from a suggestion in the revenue schedule. Uses the same payload builder as the Invoices
+  // Hub quick-create so every path stays identical.
+  const createDraftForPeriod = async (contract: Contract, period: BillingPeriodItem) => {
+    if (!addInvoice || creatingPeriodKey) return;
     setCreatingPeriodKey(period.key);
     try {
       const todayStr = new Date().toISOString().split('T')[0];
@@ -466,6 +466,8 @@ export default function ContractsRegistryPage() {
           catalogModules={catalogModules}
           catalogItems={catalogItems}
           invoices={invoices}
+          draftInvoiceIds={contractDraftIds}
+          onCreateInvoice={createDraftForPeriod}
           onOpenContract={setSelectedContract}
         />
       ) : (
@@ -659,7 +661,7 @@ export default function ContractsRegistryPage() {
                             {nextDuePeriod && (
                               <button
                                 type="button"
-                                onClick={() => createDraftForPeriod(nextDuePeriod)}
+                                onClick={() => createDraftForPeriod(selectedContract, nextDuePeriod)}
                                 disabled={creatingPeriodKey !== null}
                                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                                 title={`Create a draft invoice for ${nextDuePeriod.label} (€${nextDuePeriod.expectedAmount.toLocaleString()})`}
@@ -733,7 +735,7 @@ export default function ContractsRegistryPage() {
                                       {period.status === 'unbilled' ? (
                                         <button
                                           type="button"
-                                          onClick={() => createDraftForPeriod(period)}
+                                          onClick={() => createDraftForPeriod(selectedContract, period)}
                                           disabled={creatingPeriodKey !== null}
                                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                                           title="Create a draft invoice for this period right now"

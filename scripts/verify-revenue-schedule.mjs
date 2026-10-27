@@ -24,6 +24,7 @@ import {
   invoiceMarkerPosition,
   invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
+import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
 
 let passed = 0;
 let failed = 0;
@@ -369,6 +370,56 @@ const march = lateInvoice.get('cnt-1:2025-03');
 assert(
   march?.markerMonth === '2025-03' && march.markerPosition === 'end',
   'An invoice issued after the billed period marks the end of the box'
+);
+
+
+// --- Invoice suggestions -----------------------------------------------------
+const today = new Date('2025-03-15T00:00:00');
+const billable = contract({ lines: [monthlyLine], invoice_timing: 'start_of_period', billing_cadence: 'monthly' });
+const advanceSuggestions = buildInvoiceSuggestions([billable], { today });
+assert(
+  advanceSuggestions.length === 3 && advanceSuggestions.every(s => s.months.length === 1),
+  'A monthly contract billed in advance suggests every started period',
+  advanceSuggestions.map(s => s.period.key).join(', ')
+);
+assert(
+  advanceSuggestions[0]?.months[0] === '2025-01' && advanceSuggestions[0].invoiceDate === '2025-01-01' &&
+    advanceSuggestions[0].amount > 0 && advanceSuggestions[0].actionMonth === '2025-01',
+  'A suggestion carries its months, invoice date and expected amount',
+  JSON.stringify({ months: advanceSuggestions[0]?.months, date: advanceSuggestions[0]?.invoiceDate, amount: advanceSuggestions[0]?.amount })
+);
+
+const arrears = buildInvoiceSuggestions([contract({ lines: [monthlyLine], invoice_timing: 'end_of_period' })], { today });
+assert(
+  arrears.length === 2 && arrears.every(s => s.timing === 'end_of_period') && arrears[0].invoiceDate === '2025-01-31',
+  'Arrears billing waits for the period end before suggesting the invoice',
+  arrears.map(s => `${s.period.key}@${s.invoiceDate}`).join(' ')
+);
+
+const quarterly = buildInvoiceSuggestions(
+  [contract({ lines: [{ ...monthlyLine, unit_price: 3000 }], billing_cadence: 'quarterly', invoice_timing: 'end_of_period' })],
+  { today: new Date('2025-06-30T00:00:00') }
+);
+assert(
+  quarterly.length === 2 && suggestionMonths(quarterly[0].period).join(',') === '2025-01,2025-02,2025-03',
+  'A quarterly cycle covers three months in one suggestion box',
+  suggestionMonths(quarterly[0]?.period).join(',')
+);
+
+const linkedInvoice = {
+  id: 'inv-jan', direction: 'outgoing', counterparty_id: 'cp-1', contract_id: 'cnt-1', type: 'invoice',
+  invoice_number: 'INV-JAN', issue_date: '2025-01-01', due_date: '2025-01-15',
+  period_from: '2025-01-01', period_to: '2025-01-31', currency: 'EUR', fx_rate: 1, net: 806.45,
+  vat_amount: 193.55, vat_rate: '24', gross: 1000, gross_eur: 1000, status: 'sent_received',
+};
+assert(
+  buildInvoiceSuggestions([billable], { today, invoices: [linkedInvoice] }).every(s => s.period.key !== '2025-01-01'),
+  'A period whose invoice already exists is no longer suggested'
+);
+assert(
+  buildInvoiceSuggestions([billable], { today, draftInvoiceIds: { 'cnt-1::2025-02-01': 'draft-1' } })
+    .every(s => s.period.key !== '2025-02-01'),
+  'An optimistically created draft hides its suggestion immediately'
 );
 
 console.log('\n================================================================');

@@ -24,7 +24,14 @@ import {
   type InvoiceCoverageMap,
   type InvoiceVarianceTone,
 } from '@/lib/invoice-coverage';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users, AlertTriangle, X } from 'lucide-react';
+import {
+  buildInvoiceSuggestions,
+  suggestionCellKey,
+  suggestionCellStyle,
+  type InvoiceSuggestion,
+} from '@/lib/invoice-suggestions';
+import type { BillingPeriodItem } from '@/lib/billing-periods';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -32,6 +39,10 @@ interface RevenueScheduleGridProps {
   catalogModules: CatalogModule[];
   catalogItems: CatalogItem[];
   invoices?: Invoice[];
+  /** Optimistic "draft created" marks keyed `${contractId}::${periodKey}` — hides the suggestion at once. */
+  draftInvoiceIds?: Record<string, string>;
+  /** Creates the draft invoice for a suggested billing period (same path as the contract dossier). */
+  onCreateInvoice?: (contract: Contract, period: BillingPeriodItem) => void | Promise<void>;
   onOpenContract?: (contract: Contract) => void;
 }
 
@@ -60,6 +71,15 @@ const VARIANCE_TONES: Record<InvoiceVarianceTone, { background: string; color: s
   under: { background: 'rgba(244, 63, 94, 0.16)', color: '#9f1239' },
   over: { background: 'rgba(245, 158, 11, 0.22)', color: '#92400e' },
 };
+
+function suggestionTooltip(suggestion: InvoiceSuggestion): string {
+  return [
+    `Suggested invoice ${formatTotal(suggestion.amount)}`,
+    suggestion.period.label,
+    suggestion.timing === 'end_of_period' ? 'billed in arrears (period end)' : 'billed in advance (period start)',
+    `invoice date ${suggestion.invoiceDate}`,
+  ].join(' · ');
+}
 
 function coverageTooltip(coverage: InvoiceCellCoverage): string {
   const tone = invoiceVarianceTone(coverage);
@@ -221,6 +241,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   catalogModules,
   catalogItems,
   invoices = [],
+  draftInvoiceIds,
+  onCreateInvoice,
   onOpenContract,
 }) => {
   const gridApiRef = useRef<GridApi<RevenueScheduleRow> | null>(null);
@@ -229,6 +251,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const [quickFilter, setQuickFilter] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [groupByCounterparty, setGroupByCounterparty] = useState(HAS_AG_GRID_LICENSE);
+  const [pendingSuggestions, setPendingSuggestions] = useState<Record<string, true>>({});
   const currentYear = new Date().getFullYear();
   const yearStore = useMemo(() => createYearStore(currentYear), [currentYear]);
   const visibleYear = useSyncExternalStore(yearStore.subscribe, yearStore.getYear, yearStore.getYear);
@@ -256,6 +279,62 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     invoiceCoverageRef.current = invoiceCoverage;
     gridApiRef.current?.redrawRows();
   }, [invoiceCoverage]);
+
+  // Suggested invoices: billing periods already due under the contract's cadence and invoicing
+  // timing that still have no invoice. Months already invoiced drop out of the suggestion box.
+  const invoiceSuggestions = useMemo(() => {
+    const byCell = new Map<string, InvoiceSuggestion>();
+    const list: InvoiceSuggestion[] = [];
+
+    buildInvoiceSuggestions(contracts, {
+      catalogModules,
+      catalogItems,
+      invoices,
+      draftInvoiceIds,
+    }).forEach(suggestion => {
+      const months = suggestion.months.filter(
+        month => !invoiceCoverage.has(invoiceCellKey(suggestion.contractId, month))
+      );
+      if (months.length === 0) return;
+      const pending = { ...suggestion, months, actionMonth: months[0] };
+      list.push(pending);
+      months.forEach(month => byCell.set(suggestionCellKey(suggestion.contractId, month), pending));
+    });
+
+    return { list, byCell };
+  }, [contracts, catalogModules, catalogItems, invoices, draftInvoiceIds, invoiceCoverage]);
+
+  const suggestionRef = useRef<Map<string, InvoiceSuggestion>>(new Map());
+  useEffect(() => {
+    suggestionRef.current = invoiceSuggestions.byCell;
+    gridApiRef.current?.redrawRows();
+  }, [invoiceSuggestions]);
+
+  const pendingSuggestionsRef = useRef<Record<string, true>>({});
+  useEffect(() => {
+    pendingSuggestionsRef.current = pendingSuggestions;
+    gridApiRef.current?.redrawRows();
+  }, [pendingSuggestions]);
+
+  const createInvoiceRef = useRef(onCreateInvoice);
+  useEffect(() => { createInvoiceRef.current = onCreateInvoice; }, [onCreateInvoice]);
+
+  const createDraft = useCallback(async (suggestion: InvoiceSuggestion) => {
+    if (!createInvoiceRef.current || pendingSuggestionsRef.current[suggestion.id]) return;
+    setPendingSuggestions(previous => ({ ...previous, [suggestion.id]: true }));
+    try {
+      await createInvoiceRef.current(suggestion.contract, suggestion.period);
+    } finally {
+      setPendingSuggestions(previous => {
+        const next = { ...previous };
+        delete next[suggestion.id];
+        return next;
+      });
+    }
+  }, []);
+
+  const createDraftRef = useRef(createDraft);
+  useEffect(() => { createDraftRef.current = createDraft; }, [createDraft]);
 
   const yearGroups = useMemo(() => groupMonthsByYear(schedule.months), [schedule.months]);
   const years = useMemo(() => yearGroups.map(group => group.year), [yearGroups]);
@@ -399,65 +478,89 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       valueFormatter: params => formatAmount(params.value),
       cellStyle: params => {
         const data = params.data;
-        const coverage = data && data.kind === 'contract'
-          ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
-          : undefined;
-        return coverage ? { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key) } : MONTH_CELL_PADDING;
+        if (!data || data.kind !== 'contract') return MONTH_CELL_PADDING;
+        const coverage = invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key));
+        if (coverage) return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key) };
+        const suggestion = suggestionRef.current.get(suggestionCellKey(data.contractId, key));
+        return suggestion ? { ...MONTH_CELL_PADDING, ...suggestionCellStyle(suggestion, key) } : MONTH_CELL_PADDING;
       },
       cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
         const data = params.data;
-        const coverage = data && data.kind === 'contract'
-          ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
-          : undefined;
+        const contractRow = data && data.kind === 'contract' ? data : undefined;
+        const coverage = contractRow ? invoiceCoverageRef.current.get(invoiceCellKey(contractRow.contractId, key)) : undefined;
+        const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.contractId, key)) : undefined;
         const text = formatAmount(Number(params.value) || 0);
-        if (!coverage) return <span>{text}</span>;
 
-        const tone = invoiceVarianceTone(coverage);
-        const showBadge = key === coverage.firstMonth;
-        const showMarker = coverage.markerMonth === key;
-        const markerAlign = coverage.markerPosition === 'start'
+        const tone = coverage ? invoiceVarianceTone(coverage) : null;
+        const showBadge = Boolean(coverage && key === coverage.firstMonth);
+        const showMarker = Boolean(coverage && coverage.markerMonth === key);
+        const markerAlign = coverage?.markerPosition === 'start'
           ? 'flex-start'
-          : coverage.markerPosition === 'end'
+          : coverage?.markerPosition === 'end'
             ? 'flex-end'
             : 'center';
+        const showAction = Boolean(suggestion && suggestion.actionMonth === key);
+        const creating = Boolean(suggestion && pendingSuggestionsRef.current[suggestion.id]);
 
+        // Every month cell reserves the same slim top strip, so amounts stay on one baseline whether
+        // the cell carries an invoice badge, an issue-date marker, a suggestion action, or nothing.
         return (
           <span
-            title={coverageTooltip(coverage)}
+            title={coverage ? coverageTooltip(coverage) : suggestion ? suggestionTooltip(suggestion) : undefined}
             style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, height: '100%' }}
           >
-            {(showBadge || showMarker) && (
-              <span
-                style={{
-                  display: 'flex', alignItems: 'center', height: 10, lineHeight: '10px',
-                  justifyContent: showBadge ? (showMarker ? 'space-between' : 'flex-start') : markerAlign,
-                }}
-              >
-                {showBadge && (
-                  <span
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 2, padding: '0 3px', borderRadius: 3,
-                      fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                      pointerEvents: 'none', ...VARIANCE_TONES[tone],
-                    }}
-                  >
-                    <span>{formatTotal(coverage.invoiceTotal)}</span>
-                    {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
-                  </span>
-                )}
-                {showMarker && (
-                  <span
-                    aria-hidden
-                    style={{
-                      fontSize: 10, lineHeight: 1, fontWeight: 900,
-                      color: coverage.paid ? '#14532d' : '#15803d',
-                    }}
-                  >
-                    *
-                  </span>
-                )}
-              </span>
-            )}
+            <span
+              style={{
+                display: 'flex', alignItems: 'center', height: 10, lineHeight: '10px',
+                justifyContent: showBadge ? (showMarker ? 'space-between' : 'flex-start') : showAction ? 'flex-start' : markerAlign,
+              }}
+            >
+              {coverage && showBadge && (
+                <span
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 2, padding: '0 3px', borderRadius: 3,
+                    fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    pointerEvents: 'none', ...VARIANCE_TONES[tone as InvoiceVarianceTone],
+                  }}
+                >
+                  <span>{formatTotal(coverage.invoiceTotal)}</span>
+                  {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
+                </span>
+              )}
+              {coverage && showMarker && (
+                <span
+                  aria-hidden
+                  style={{
+                    fontSize: 10, lineHeight: 1, fontWeight: 900,
+                    color: coverage.paid ? '#14532d' : '#15803d',
+                  }}
+                >
+                  *
+                </span>
+              )}
+              {!coverage && showAction && suggestion && (
+                <button
+                  type="button"
+                  data-invoice-action
+                  disabled={creating}
+                  title={`Create a draft invoice for ${suggestion.period.label} · ${formatTotal(suggestion.amount)}`}
+                  onMouseDown={event => event.stopPropagation()}
+                  onClick={event => {
+                    event.stopPropagation();
+                    void createDraftRef.current(suggestion);
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 2, width: '100%', height: 10, padding: '0 3px',
+                    border: 0, borderRadius: 3, background: 'rgba(61, 135, 211, 0.18)', color: '#1d4e79',
+                    fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    overflow: 'hidden', cursor: creating ? 'wait' : 'pointer',
+                  }}
+                >
+                  <Plus className="w-2 h-2 shrink-0" />
+                  <span className="truncate">{creating ? 'Creating…' : formatTotal(suggestion.amount)}</span>
+                </button>
+              )}
+            </span>
             <span style={{ display: 'block', textAlign: 'right', lineHeight: '13px' }}>{text}</span>
           </span>
         );
@@ -681,6 +784,12 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#3D87D3]" /> Contract charges</span>
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Change requests</span>
             <span className="inline-flex items-center gap-1"><Layers className="w-3 h-3 text-slate-400" /> {horizonLabel}</span>
+            {invoiceSuggestions.list.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#3D87D3]/10 ring-1 ring-[#3D87D3]/40" />
+                {invoiceSuggestions.list.length} suggested invoice{invoiceSuggestions.list.length === 1 ? '' : 's'} · click ＋ to draft
+              </span>
+            )}
             {invoiceCoverage.size > 0 && (
               <>
                 <span className="inline-flex items-center gap-1">
@@ -718,6 +827,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           onBodyScroll={handleBodyScroll}
           onGridSizeChanged={event => syncVisibleYear(event.api)}
           onRowDoubleClicked={event => {
+            if ((event.event?.target as HTMLElement | null)?.closest('[data-invoice-action]')) return;
             if (event.node.rowPinned) return;
             if (event.node.group) { event.node.setExpanded(!event.node.expanded); return; }
             if (!event.data || !onOpenContract) return;
