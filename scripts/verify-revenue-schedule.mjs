@@ -21,6 +21,7 @@ import {
 } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
+  INVOICE_BOX_COLORS,
   invoiceAmountEur,
   invoiceCellStyle,
   invoiceCoveredMonths,
@@ -429,6 +430,55 @@ assert(
   `invoice ${january?.invoiceTotal} · contract ${january?.contractTotal}`
 );
 
+// --- Draft invoices in the schedule -----------------------------------------
+const draftOnly = buildInvoiceCoverage([invoice({ status: 'draft', invoice_number: 'DRAFT-1' })], [baseContract]);
+const draftCell = draftOnly.get('cnt-1:2025-01');
+assert(
+  draftOnly.size === 3 && draftCell?.draft === true && draftCell.paid === false,
+  'A draft invoice already reserves its months on the schedule',
+  `${draftOnly.size} cells · draft ${draftCell?.draft}`
+);
+assert(
+  draftCell?.invoiceTotal === 3000 && invoiceVarianceTone(draftCell) === 'match',
+  'A draft is compared against the contract like any other invoice',
+  `invoice ${draftCell?.invoiceTotal}`
+);
+const draftStyle = invoiceCellStyle(draftCell, '2025-01');
+assert(
+  draftStyle.backgroundColor === INVOICE_BOX_COLORS.draft.fill &&
+    draftStyle.boxShadow.includes(INVOICE_BOX_COLORS.draft.line) &&
+    draftStyle.boxShadow !== invoiceCellStyle(january, '2025-01').boxShadow,
+  'The draft box is painted in its own tone, not the issued or paid green',
+  draftStyle.backgroundColor
+);
+
+const mixedDraft = buildInvoiceCoverage(
+  [invoice({ status: 'draft', id: 'inv-draft' }), invoice({ id: 'inv-issued' })],
+  [baseContract]
+).get('cnt-1:2025-01');
+assert(
+  mixedDraft?.draft === false && mixedDraft.paid === false,
+  'Once a real invoice exists the box is no longer a draft',
+  JSON.stringify({ draft: mixedDraft?.draft, paid: mixedDraft?.paid })
+);
+const paidPlusDraft = buildInvoiceCoverage(
+  [invoice({ status: 'draft', id: 'inv-draft' }), invoice({ id: 'inv-paid', status: 'paid' })],
+  [baseContract]
+).get('cnt-1:2025-01');
+assert(
+  paidPlusDraft?.draft === false && paidPlusDraft.paid === false,
+  'A paid invoice next to a draft is not shown as fully paid'
+);
+
+assert(
+  buildInvoiceCoverage([invoice({ status: 'cancelled' })], [baseContract]).size === 0,
+  'Cancelled drafts and invoices still paint nothing'
+);
+assert(
+  buildInvoiceCoverage([invoice({ status: 'draft', type: 'credit_note' })], [baseContract]).size === 0,
+  'A draft credit note never paints a box'
+);
+
 const shortfall = buildInvoiceCoverage([invoice({ net: 2500 })], [baseContract]).get('cnt-1:2025-01');
 assert(
   shortfall?.variance === -500 && invoiceVarianceTone(shortfall) === 'under',
@@ -496,10 +546,9 @@ assert(
 );
 
 assert(
-  buildInvoiceCoverage([invoice({ status: 'draft' })], [baseContract]).size === 0 &&
-    buildInvoiceCoverage([invoice({ status: 'cancelled' })], [baseContract]).size === 0 &&
+  buildInvoiceCoverage([invoice({ status: 'cancelled' })], [baseContract]).size === 0 &&
     buildInvoiceCoverage([invoice({ direction: 'incoming' })], [baseContract]).size === 0,
-  'Draft, cancelled and incoming invoices never overlay the revenue schedule'
+  'Cancelled and incoming invoices never overlay the revenue schedule'
 );
 
 const mergedInvoice = buildInvoiceCoverage(
@@ -577,6 +626,15 @@ assert(
   buildInvoiceSuggestions([billable], { today, draftInvoiceIds: { 'cnt-1::2025-02-01': 'draft-1' } })
     .every(s => s.period.key !== '2025-02-01'),
   'An optimistically created draft hides its suggestion immediately'
+);
+
+const draftSuggestion = buildInvoiceSuggestions([billable], {
+  today,
+  invoices: [invoice({ status: 'draft', contract_id: 'cnt-1' })],
+});
+assert(
+  draftSuggestion.every(s => s.period.key !== '2025-01-01'),
+  'A drafted period is not suggested again while the draft exists'
 );
 
 // --- Split cycles: one invoice must not hide the other half's suggestion ------

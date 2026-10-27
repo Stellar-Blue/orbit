@@ -76,6 +76,9 @@ const VARIANCE_TONES: Record<InvoiceVarianceTone, { background: string; color: s
   over: { background: 'rgba(245, 158, 11, 0.22)', color: '#92400e' },
 };
 
+/** A draft is not a billing mismatch yet, so it gets one neutral tone whatever the variance. */
+const DRAFT_TONE = { background: 'rgba(100, 116, 139, 0.18)', color: '#334155' };
+
 function suggestionTooltip(suggestion: InvoiceSuggestion): string {
   return [
     `Suggested invoice ${formatTotal(suggestion.amount)}`,
@@ -96,7 +99,7 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
     comparison,
     coverage.invoices.join(', '),
     `issued ${coverage.issueDate || '—'}`,
-    coverage.paid ? 'paid' : 'not paid yet',
+    coverage.draft ? 'draft, not issued yet' : coverage.paid ? 'paid' : 'not paid yet',
   ].join(' · ');
 }
 
@@ -388,6 +391,10 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems),
     [invoices, contracts, catalogModules, catalogItems]
   );
+  const draftCoverageCount = useMemo(
+    () => Array.from(invoiceCoverage.values()).filter(entry => entry.draft).length,
+    [invoiceCoverage]
+  );
   const invoiceCoverageRef = useRef<InvoiceCoverageMap>(new Map());
   useEffect(() => {
     invoiceCoverageRef.current = invoiceCoverage;
@@ -657,11 +664,12 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                     if (contractRow) openPeekRef.current(contractRow.contract, coverage.invoiceIds);
                   }}
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 2, padding: '0 3px', borderRadius: 3,
+                    display: 'inline-flex', alignItems: 'center', gap: coverage.draft ? 4 : 2, padding: '0 3px', borderRadius: 3,
                     border: 0, fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                    cursor: 'pointer', ...VARIANCE_TONES[tone as InvoiceVarianceTone],
+                    cursor: 'pointer', ...(coverage.draft ? DRAFT_TONE : VARIANCE_TONES[tone as InvoiceVarianceTone]),
                   }}
                 >
+                  {coverage.draft && <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Draft</span>}
                   <span>{formatTotal(coverage.invoiceTotal)}</span>
                   {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
                 </button>
@@ -671,7 +679,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   aria-hidden
                   style={{
                     fontSize: 10, lineHeight: 1, fontWeight: 900,
-                    color: coverage.paid ? '#14532d' : '#15803d',
+                    color: coverage.draft ? '#475569' : coverage.paid ? '#14532d' : '#15803d',
                   }}
                 >
                   *
@@ -963,7 +971,12 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                 <span className="inline-flex items-center gap-1">
                   <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30 ring-1 ring-emerald-700/60" /> Paid
                 </span>
-                <span className="text-slate-400">badge: invoiced € vs contract</span>
+                {draftCoverageCount > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-slate-500/10 ring-1 ring-slate-500/50" /> Draft
+                  </span>
+                )}
+                <span className="text-slate-400">badge: invoice € vs contract</span>
               </>
             )}
             {HAS_AG_GRID_LICENSE && <span className="text-slate-400">Shift+click to sum cells</span>}

@@ -14,6 +14,8 @@ export type InvoiceMarkerPosition = 'start' | 'middle' | 'end';
 export interface InvoiceCellCoverage {
   contractId: string;
   paid: boolean;
+  /** True while every covering invoice is still a draft — the money is reserved, not yet issued. */
+  draft: boolean;
   firstMonth: string;
   lastMonth: string;
   /** Month the invoice was issued; the asterisk is drawn on this cell. */
@@ -39,7 +41,7 @@ export type InvoiceCoverageMap = Map<string, InvoiceCellCoverage>;
 
 export const invoiceCellKey = (contractId: string, month: string) => `${contractId}:${month}`;
 
-const INACTIVE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>(['draft', 'cancelled']);
+const INACTIVE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>(['cancelled']);
 const MAX_INVOICE_LABELS = 3;
 /** Anything under half a euro is rounding noise, not a billing mismatch. */
 const MATCH_TOLERANCE = 0.5;
@@ -128,10 +130,11 @@ function pickContract(
 }
 
 /**
- * Builds `${contractId}:${month}` → coverage for every month an active outgoing invoice bills.
- * Overlapping invoices merge into one box: an unpaid invoice keeps the lighter tint
- * (`paid` is only true when every covering invoice is paid) and the latest issue date drives the
- * asterisk.
+ * Builds `${contractId}:${month}` → coverage for every month an active outgoing invoice bills,
+ * drafts included — a draft is money already reserved for those months, so the schedule shows it
+ * separately from an issued bill. Overlapping invoices merge into one box: `paid` is only true when
+ * every covering invoice is paid, `draft` only while every one of them is still a draft, and the
+ * latest issue date drives the asterisk.
  */
 export function buildInvoiceCoverage(
   invoices: Invoice[],
@@ -147,14 +150,20 @@ export function buildInvoiceCoverage(
     contractsByCounterparty.set(contract.counterparty_id, list);
   });
 
+  const outgoing = invoices
+    .filter(invoice => invoice.direction === 'outgoing')
+    .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
+    .filter(invoice => Boolean(invoice.counterparty_id));
+
   // Credit notes cancel their invoice rather than paying it, so neither side of the pair may paint
-  // an "invoiced" box — and an unmatched credit never covers anything on its own.
-  const ordered = netInvoices(
-    invoices
-      .filter(invoice => invoice.direction === 'outgoing')
-      .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
-      .filter(invoice => Boolean(invoice.counterparty_id))
-  ).active.sort((a, b) => String(a.issue_date || '').localeCompare(String(b.issue_date || '')) || a.id.localeCompare(b.id));
+  // an "invoiced" box — and an unmatched credit never covers anything on its own. Drafts are kept
+  // out of that pairing (an unissued credit cancels nothing) and added back once the issued set is
+  // netted; a draft credit note has no box of its own.
+  const drafts = outgoing.filter(invoice => invoice.status === 'draft' && invoice.type !== 'credit_note');
+  const issued = outgoing.filter(invoice => invoice.status !== 'draft');
+  const ordered = [...netInvoices(issued).active, ...drafts].sort(
+    (a, b) => String(a.issue_date || '').localeCompare(String(b.issue_date || '')) || a.id.localeCompare(b.id)
+  );
 
   const covered: InvoiceCoverageMap = new Map();
   const chargesByContract = new Map<string, Record<string, number>>();
@@ -190,6 +199,7 @@ export function buildInvoiceCoverage(
         ? lastMonth
         : issuedMonth;
     const isPaid = invoice.status === 'paid';
+    const isDraft = invoice.status === 'draft';
     const issueDate = invoice.issue_date || '';
     const label = invoice.invoice_number || invoice.id;
     const amount = invoiceAmountEur(invoice);
@@ -201,6 +211,7 @@ export function buildInvoiceCoverage(
         covered.set(key, {
           contractId: contract.id,
           paid: isPaid,
+          draft: isDraft,
           firstMonth,
           lastMonth,
           markerMonth,
@@ -221,6 +232,7 @@ export function buildInvoiceCoverage(
       covered.set(key, {
         contractId: contract.id,
         paid: existing.paid && isPaid,
+        draft: existing.draft && isDraft,
         firstMonth: mergedFirst,
         lastMonth: mergedLast,
         markerMonth: latestMarker,
@@ -253,14 +265,26 @@ export function buildInvoiceCoverage(
   return covered;
 }
 
+/** Box colours per invoice state: paid (bold green), issued (light green), draft (neutral slate). */
+export const INVOICE_BOX_COLORS = {
+  paid: { line: 'rgba(21, 128, 61, 0.85)', fill: 'rgba(22, 163, 74, 0.28)' },
+  issued: { line: 'rgba(22, 163, 74, 0.55)', fill: 'rgba(34, 197, 94, 0.13)' },
+  draft: { line: 'rgba(100, 116, 139, 0.7)', fill: 'rgba(100, 116, 139, 0.12)' },
+} as const;
+
 /** Inline style painting one cell of the invoice box; contiguous cells share the box outline. */
 export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): Record<string, string> {
-  const line = coverage.paid ? 'rgba(21, 128, 61, 0.85)' : 'rgba(22, 163, 74, 0.55)';
+  const palette = coverage.draft
+    ? INVOICE_BOX_COLORS.draft
+    : coverage.paid
+      ? INVOICE_BOX_COLORS.paid
+      : INVOICE_BOX_COLORS.issued;
+  const line = palette.line;
   const shadows = [`inset 0 2px 0 0 ${line}`, `inset 0 -2px 0 0 ${line}`];
   if (month === coverage.firstMonth) shadows.push(`inset 2px 0 0 0 ${line}`);
   if (month === coverage.lastMonth) shadows.push(`inset -2px 0 0 0 ${line}`);
   return {
-    backgroundColor: coverage.paid ? 'rgba(22, 163, 74, 0.28)' : 'rgba(34, 197, 94, 0.13)',
+    backgroundColor: palette.fill,
     boxShadow: shadows.join(', '),
   };
 }
