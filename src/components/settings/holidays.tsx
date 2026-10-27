@@ -7,6 +7,7 @@ import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { formatDate } from '@/lib/date';
 import { Calendar, Plus, Edit2, Trash2, Save, X, Info, AlertTriangle } from 'lucide-react';
 import type { PublicHoliday } from '@/lib/types';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const WEEKDAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -199,12 +200,7 @@ export function HolidaysCard() {
         <form onSubmit={handleAdd} className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
           <label className="sm:col-span-1 block">
             <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Date</span>
-            <input
-              type="date"
-              value={newDate}
-              onChange={e => setNewDate(e.target.value)}
-              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[#3D87D3] outline-none"
-            />
+            <DatePicker value={newDate} onChange={next => setNewDate(next)} className="w-full px-2" />
           </label>
           <label className="sm:col-span-1 block">
             <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Name (EN)</span>
@@ -267,12 +263,7 @@ export function HolidaysCard() {
                   return (
                     <tr key={h.id} className="bg-blue-50/60 border-t border-slate-200">
                       <td className="px-2 py-2">
-                        <input
-                          type="date"
-                          value={editDate}
-                          onChange={e => setEditDate(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-[#3D87D3] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none"
-                        />
+                        <DatePicker value={editDate} onChange={next => setEditDate(next)} className="w-full px-2" />
                       </td>
                       <td className="px-3 py-2 text-slate-400 font-bold">{weekdayOf(editDate)}</td>
                       <td className="px-2 py-2">

@@ -23,6 +23,7 @@ import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods } from '@/lib/billing-periods';
 import { INVOICE_CURRENCIES, DEFAULT_CURRENCY, formatMoney } from '@/lib/currency';
+import { DatePicker } from '@/components/ui/date-picker';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
@@ -1076,22 +1077,12 @@ export default function InvoicesRegistryPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Issue Date</label>
-                <input
-                  type="date"
-                  value={newIssueDate}
-                  onChange={(e) => setNewIssueDate(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                />
+                <DatePicker value={newIssueDate} onChange={next => setNewIssueDate(next)} className="w-full" />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Due Date</label>
-                <input
-                  type="date"
-                  value={newDueDate}
-                  onChange={(e) => setNewDueDate(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                />
+                <DatePicker value={newDueDate} onChange={next => setNewDueDate(next)} className="w-full" />
               </div>
             </div>
 
@@ -1109,21 +1100,11 @@ export default function InvoicesRegistryPage() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Period From</label>
-                <input
-                  type="date"
-                  value={newPeriodFrom}
-                  onChange={(e) => setNewPeriodFrom(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                />
+                <DatePicker value={newPeriodFrom} onChange={next => setNewPeriodFrom(next)} className="w-full" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Period To</label>
-                <input
-                  type="date"
-                  value={newPeriodTo}
-                  onChange={(e) => setNewPeriodTo(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                />
+                <DatePicker value={newPeriodTo} onChange={next => setNewPeriodTo(next)} className="w-full" />
               </div>
             </div>
 
@@ -1433,12 +1414,7 @@ export default function InvoicesRegistryPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Payment Date *</label>
-                <input
-                  type="date"
-                  value={payDate}
-                  onChange={(e) => setPayDate(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
-                />
+                <DatePicker value={payDate} onChange={next => setPayDate(next)} className="w-full" />
               </div>
             </div>
 

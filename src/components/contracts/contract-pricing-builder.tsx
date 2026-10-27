@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ContractLine, ContractLineGroup } from '@/lib/types';
 import { calculateContractValuation, isVariableQuantityPricingScheme, calculateLineGrossAmount, calculatePeriodAmounts, calculateGroupFloorRatio } from '@/lib/pricing-engine';
 import { Button, Badge } from '@/components/ui/primitives';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Plus, Trash2, Tag, Calendar,
   AlertCircle, AlertTriangle, Layers, ChevronDown, ChevronUp, BarChart3, RefreshCw, X, FolderPlus, ShieldCheck
@@ -814,23 +815,11 @@ export const ContractPricingBuilder: React.FC<ContractPricingBuilderProps> = ({
                             <div className="space-y-1">
                               <div className="flex items-center gap-1">
                                 <span className="ui-label w-6 shrink-0">From</span>
-                                <input
-                                  type="date"
-                                  value={line.starts_on || ''}
-                                  onChange={e => updateLine(idx, 'starts_on', e.target.value || null)}
-                                  title="First chargeable month for this line (inclusive) — leave empty to start with the contract"
-                                  className={`w-full h-7 bg-white border rounded-md px-1.5 text-[11px] ui-num focus:outline-none ${windowErrors.get(idx) ? 'border-rose-400 focus:border-rose-500' : 'border-[var(--line-strong)] focus:border-[var(--accent)]'}`}
-                                />
+                                <DatePicker value={line.starts_on || ''} onChange={next => updateLine(idx, 'starts_on', next || null)} title="First chargeable month for this line (inclusive) — leave empty to start with the contract" className="h-7 px-1.5 text-[11px]" />
                               </div>
                               <div className="flex items-center gap-1">
                                 <span className="ui-label w-6 shrink-0">To</span>
-                                <input
-                                  type="date"
-                                  value={line.ends_on || ''}
-                                  onChange={e => updateLine(idx, 'ends_on', e.target.value || null)}
-                                  title="Last chargeable month for this line (inclusive) — leave empty to run to the contract end"
-                                  className={`w-full h-7 bg-white border rounded-md px-1.5 text-[11px] ui-num focus:outline-none ${windowErrors.get(idx) ? 'border-rose-400 focus:border-rose-500' : 'border-[var(--line-strong)] focus:border-[var(--accent)]'}`}
-                                />
+                                <DatePicker value={line.ends_on || ''} onChange={next => updateLine(idx, 'ends_on', next || null)} title="Last chargeable month for this line (inclusive) — leave empty to run to the contract end" className="h-7 px-1.5 text-[11px]" />
                               </div>
                               {windowErrors.get(idx) && (
                                 <div className="text-[10px] font-medium text-rose-700">{windowErrors.get(idx)}</div>

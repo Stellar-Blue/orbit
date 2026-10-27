@@ -22,6 +22,7 @@ import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods, type BillingPeriodItem } from '@/lib/billing-periods';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
 const RevenueScheduleGrid = dynamic(() => import('@/components/contracts/revenue-schedule-grid').then(m => m.RevenueScheduleGrid), { ssr: false });
@@ -652,21 +653,9 @@ export default function ContractsRegistryPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] mt-3 pt-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="ui-label">Reporting period</span>
-              <input
-                type="date"
-                value={periodFrom}
-                max={periodTo || undefined}
-                onChange={e => setPeriodFrom(e.target.value)}
-                className="h-8 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)]"
-              />
+              <DatePicker value={periodFrom} max={periodTo || undefined} onChange={next => setPeriodFrom(next)} className="h-8 px-2 text-[12px]" />
               <span className="text-[var(--ink-4)] text-xs">to</span>
-              <input
-                type="date"
-                value={periodTo}
-                min={periodFrom || undefined}
-                onChange={e => setPeriodTo(e.target.value)}
-                className="h-8 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)]"
-              />
+              <DatePicker value={periodTo} min={periodFrom || undefined} onChange={next => setPeriodTo(next)} className="h-8 px-2 text-[12px]" />
               {hasPeriod && (
                 <button
                   type="button"
@@ -1268,21 +1257,11 @@ export default function ContractsRegistryPage() {
                   </div>
                   <div>
                     <label className="ui-label block mb-1.5">Effective Start Date</label>
-                    <input
-                      type="date"
-                      value={selectedContract.service_start_date || selectedContract.starts_on}
-                      onChange={e => setSelectedContract({ ...selectedContract, starts_on: e.target.value, service_start_date: e.target.value })}
-                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] ui-num text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
-                    />
+                    <DatePicker value={selectedContract.service_start_date || selectedContract.starts_on} onChange={next => setSelectedContract({ ...selectedContract, starts_on: next, service_start_date: next })} className="w-full h-9 px-3 text-[13px]" />
                   </div>
                   <div>
                     <label className="ui-label block mb-1.5">Contract Expiration Date</label>
-                    <input
-                      type="date"
-                      value={selectedContract.ends_on}
-                      onChange={e => setSelectedContract({ ...selectedContract, ends_on: e.target.value })}
-                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] ui-num text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
-                    />
+                    <DatePicker value={selectedContract.ends_on} onChange={next => setSelectedContract({ ...selectedContract, ends_on: next })} className="w-full h-9 px-3 text-[13px]" />
                   </div>
                   <div>
                     <label className="ui-label block mb-1.5">Notice Period (Days Prior to End)</label>
@@ -1298,12 +1277,7 @@ export default function ContractsRegistryPage() {
                   </div>
                   <div>
                     <label className="ui-label block mb-1.5">Notice Window Deadline</label>
-                    <input
-                      type="date"
-                      value={selectedContract.notice_deadline}
-                      onChange={e => setSelectedContract({ ...selectedContract, notice_deadline: e.target.value })}
-                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] ui-num text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
-                    />
+                    <DatePicker value={selectedContract.notice_deadline} onChange={next => setSelectedContract({ ...selectedContract, notice_deadline: next })} className="w-full h-9 px-3 text-[13px]" />
                   </div>
                   <div>
                     <label className="ui-label block mb-1.5">Invoicing Cadence / Frequency</label>
@@ -1413,22 +1387,11 @@ export default function ContractsRegistryPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Starts On</label>
-              <input 
-                type="date" 
-                value={newStarts} 
-                onChange={e => setNewStarts(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
-              />
+              <DatePicker value={newStarts} onChange={next => setNewStarts(next)} className="w-full" />
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Expiration Date <span className="text-slate-400 normal-case font-normal">(optional)</span></label>
-              <input 
-                type="date" 
-                value={newEnds} 
-                onChange={e => setNewEnds(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
-                placeholder="Leave empty for auto-renewing"
-              />
+              <DatePicker value={newEnds} onChange={next => setNewEnds(next)} className="w-full" placeholder="Leave empty for auto-renewing" />
             </div>
           </div>
 

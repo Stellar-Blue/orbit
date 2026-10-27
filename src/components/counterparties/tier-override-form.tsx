@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Pin, X } from 'lucide-react';
 import type { CounterpartyTierState } from '@/lib/types';
+import { DatePicker } from '@/components/ui/date-picker';
 
 interface TierOverrideFormProps {
   counterpartyId: string;
@@ -67,13 +68,7 @@ export const TierOverrideForm: React.FC<TierOverrideFormProps> = ({ counterparty
             placeholder="Override reason (mandatory)..."
             className="w-44 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-[11px] focus:outline-none focus:border-indigo-500"
           />
-          <input
-            type="date"
-            value={expiresOn}
-            onChange={e => setExpiresOn(e.target.value)}
-            title="Optional expiry date"
-            className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-[11px] focus:outline-none focus:border-indigo-500"
-          />
+          <DatePicker value={expiresOn} onChange={next => setExpiresOn(next)} title="Optional expiry date" className="h-7 w-[9.5rem] px-2 text-[11px]" />
           <button
             type="button"
             onClick={handlePin}

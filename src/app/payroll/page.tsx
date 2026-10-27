@@ -22,6 +22,7 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { MonthRangePicker } from '@/components/ui/month-range-picker';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { AmountInput } from '@/components/ui/amount-input';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const PayrollGrid = dynamic(() => import('@/components/payroll/payroll-grid').then(m => m.PayrollGrid), { ssr: false });
 const SalaryLedgerGrid = dynamic(() => import('@/components/payroll/salary-ledger-grid').then(m => m.SalaryLedgerGrid), { ssr: false });
@@ -1293,11 +1294,11 @@ export default function PayrollPage() {
             </div>
             <div>
               <label className="text-slate-500 font-semibold block mb-1">Valid From</label>
-              <input type="date" value={salForm.valid_from} onChange={e => setSalForm({ ...salForm, valid_from: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+              <DatePicker value={salForm.valid_from} onChange={next => setSalForm({ ...salForm, valid_from: next })} className="w-full" />
             </div>
             <div>
               <label className="text-slate-500 font-semibold block mb-1">Valid To (empty = still running)</label>
-              <input type="date" value={salForm.valid_to} onChange={e => setSalForm({ ...salForm, valid_to: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+              <DatePicker value={salForm.valid_to} onChange={next => setSalForm({ ...salForm, valid_to: next })} className="w-full" />
             </div>
             {!isExtraEntry && (
               <div>
@@ -1421,7 +1422,7 @@ export default function PayrollPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Effective From Date</label>
-              <input type="date" value={rsValidFrom} onChange={e => setRsValidFrom(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800 font-bold" />
+              <DatePicker value={rsValidFrom} onChange={next => setRsValidFrom(next)} className="w-full" />
             </div>
           </div>
 
@@ -1555,7 +1556,7 @@ export default function PayrollPage() {
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Payment Period</label>
-              <input type="month" value={upPeriod} onChange={e => setUpPeriod(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono shadow-2xs font-bold" />
+              <DatePicker mode="month" value={upPeriod} onChange={next => setUpPeriod(next)} className="w-full" />
             </div>
           </div>
 
@@ -1574,7 +1575,7 @@ export default function PayrollPage() {
             </div>
             <div>
               <label className="block font-semibold uppercase text-slate-500 mb-1">Payment Date</label>
-              <input type="date" value={upDate} onChange={e => setUpDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono shadow-2xs" />
+              <DatePicker value={upDate} onChange={next => setUpDate(next)} className="w-full" />
             </div>
           </div>
 
@@ -1754,11 +1755,7 @@ export default function PayrollPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Payment Date</label>
-                  <input
-                    type="date" value={(selectedPaymentForDocs.payment_date || '').slice(0, 10)}
-                    onChange={e => patchOpenPayment({ payment_date: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded p-2 font-mono text-slate-800"
-                  />
+                  <DatePicker value={(selectedPaymentForDocs.payment_date || '').slice(0, 10)} onChange={next => patchOpenPayment({ payment_date: next })} className="w-full" />
                 </div>
                 <div>
                   <label className="block font-semibold uppercase text-slate-500 mb-1">Status</label>

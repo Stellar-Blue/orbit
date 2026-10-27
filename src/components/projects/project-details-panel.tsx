@@ -9,6 +9,7 @@ import { type Project, type ProjectDocument, type ProjectLink, type ProjectStatu
 import { Button } from '@/components/ui/primitives';
 import { formatDate } from '@/lib/date';
 import { netInvoices, type NettableInvoice } from '@/lib/invoice-netting';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Calendar, FileText, Link2, Paperclip, Plus, Save, Trash2, Upload, ExternalLink,
   GitBranch, ListChecks, Clock, Euro
@@ -276,19 +277,19 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
 
           <div>
             <label className={label}>Planned start</label>
-            <input type="date" value={form.starts_on} onChange={e => update({ starts_on: e.target.value })} className={`${field} font-mono`} />
+            <DatePicker value={form.starts_on} onChange={next => update({ starts_on: next })} className="w-full" />
           </div>
           <div>
             <label className={label}>Planned end</label>
-            <input type="date" value={form.ends_on} onChange={e => update({ ends_on: e.target.value })} className={`${field} font-mono`} />
+            <DatePicker value={form.ends_on} onChange={next => update({ ends_on: next })} className="w-full" />
           </div>
           <div>
             <label className={label}>Actual start</label>
-            <input type="date" value={form.actual_start_on} onChange={e => update({ actual_start_on: e.target.value })} className={`${field} font-mono`} />
+            <DatePicker value={form.actual_start_on} onChange={next => update({ actual_start_on: next })} className="w-full" />
           </div>
           <div>
             <label className={label}>Actual end</label>
-            <input type="date" value={form.actual_end_on} onChange={e => update({ actual_end_on: e.target.value })} className={`${field} font-mono`} />
+            <DatePicker value={form.actual_end_on} onChange={next => update({ actual_end_on: next })} className="w-full" />
           </div>
 
           <div>

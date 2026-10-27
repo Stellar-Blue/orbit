@@ -22,6 +22,7 @@ import {
 } from '@/lib/leave-export';
 import { countWorkingDays, holidayDates, resolveWorkSchedule } from '@/lib/leave-days';
 import { findCoverageViolations, describeViolation, expandDateRange } from '@/lib/coverage-rules';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const CompanyLeaveGrid = dynamic(() => import('@/components/leave/company-leave-grid').then(m => m.CompanyLeaveGrid), { ssr: false });
 
@@ -932,11 +933,11 @@ export default function CompanyLeaveManagementPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">New Start Date</label>
-                <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" />
+                <DatePicker value={editStartDate} onChange={next => setEditStartDate(next)} className="w-full" />
               </div>
               <div>
                 <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">New End Date / Early Return Date</label>
-                <input type="date" value={editEndDate} onChange={e => setEditEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" />
+                <DatePicker value={editEndDate} onChange={next => setEditEndDate(next)} className="w-full" />
               </div>
             </div>
             <div>
@@ -986,11 +987,11 @@ export default function CompanyLeaveManagementPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">Start Date</label>
-                  <input type="date" value={mStart} onChange={e => setMStart(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" />
+                  <DatePicker value={mStart} onChange={next => setMStart(next)} className="w-full" />
                 </div>
                 <div>
                   <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">End Date</label>
-                  <input type="date" value={mEnd} onChange={e => setMEnd(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-mono font-bold" />
+                  <DatePicker value={mEnd} onChange={next => setMEnd(next)} className="w-full" />
                 </div>
               </div>
               <div>

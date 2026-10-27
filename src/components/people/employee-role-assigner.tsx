@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Button, Badge } from '@/components/ui/primitives';
 import { Save, Trash2, Check, X, Pencil } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 /**
  * Assigns an employee a job role + seniority (effective-dated) via profile_role_history.
@@ -144,7 +145,7 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
           <option value="">Seniority…</option>
           {seniorityLevels.filter(s => s.active).sort((a, b) => a.rank - b.rank).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <input type="date" value={validFrom} onChange={e => setDraft(d => ({ ...d, validFrom: e.target.value }))} className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs" title="Effective date" />
+        <DatePicker value={validFrom} onChange={next => setDraft(d => ({ ...d, validFrom: next }))} className="h-7 w-[9rem] px-2 text-[11px]" title="Effective date" />
         <Button type="button" variant="primary" size="sm" disabled={busy} onClick={save} className={`cursor-pointer disabled:opacity-50 ${compact ? '' : 'sm:col-span-3'}`}>
           {busy ? (<><Save className="w-3 h-3 mr-1 animate-pulse" /> Saving…</>) : (<><Save className="w-3 h-3 mr-1" /> Assign</>)}
         </Button>
@@ -186,10 +187,10 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
                       </div>
                     </td>
                     <td className="py-1 px-2">
-                      <input type="date" value={edit.validFrom} onChange={e => setEdit(x => ({ ...x, validFrom: e.target.value }))} className="w-full bg-white border border-slate-300 rounded px-1 py-1 text-[11px] font-mono" title="Valid from" />
+                      <DatePicker value={edit.validFrom} onChange={next => setEdit(x => ({ ...x, validFrom: next }))} className="w-full px-1 text-[11px]" title="Valid from" />
                     </td>
                     <td className="py-1 px-2">
-                      <input type="date" value={edit.validTo} onChange={e => setEdit(x => ({ ...x, validTo: e.target.value }))} className="w-full bg-white border border-slate-300 rounded px-1 py-1 text-[11px] font-mono" placeholder="present" title="Empty = still active (present)" />
+                      <DatePicker value={edit.validTo} onChange={next => setEdit(x => ({ ...x, validTo: next }))} className="w-full px-1 text-[11px]" placeholder="present" title="Empty = still active (present)" />
                     </td>
                     <td className="py-1 pl-2 text-right whitespace-nowrap">
                       <button type="button" onClick={saveEdit} className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 px-1.5 py-1 cursor-pointer" title="Save"><Check className="w-3.5 h-3.5" /> Save</button>

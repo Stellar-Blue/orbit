@@ -9,6 +9,7 @@ import { Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronUp, Calendar } from
 import { ProjectForecastEditor } from '@/components/timesheets/project-forecast-editor';
 import { ProjectDetailsPanel, projectBillingStatus } from '@/components/projects/project-details-panel';
 import { formatDate } from '@/lib/date';
+import { DatePicker } from '@/components/ui/date-picker';
 
 /** Projects linked to one contract: see / create / edit / delete + role-seniority forecast. */
 export function ContractProjectsTab({ contract }: { contract: Contract }) {
@@ -80,11 +81,11 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
           </select>
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Planned start</label>
-            <input type="date" value={plannedStart} onChange={e => setPlannedStart(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
+            <DatePicker value={plannedStart} onChange={next => setPlannedStart(next)} className="w-full px-3" />
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Planned end</label>
-            <input type="date" value={plannedEnd} onChange={e => setPlannedEnd(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
+            <DatePicker value={plannedEnd} onChange={next => setPlannedEnd(next)} className="w-full px-3" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>

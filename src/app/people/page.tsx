@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(m => m.PeopleGrid), { ssr: false });
 
@@ -584,11 +585,11 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                       </div>
                       <div>
                         <label className="text-slate-500 font-semibold block mb-1">Start Date</label>
-                        <input type="date" value={contractForm.start_date} onChange={e => setContractForm({ ...contractForm, start_date: e.target.value })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        <DatePicker value={contractForm.start_date} onChange={next => setContractForm({ ...contractForm, start_date: next })} className="w-full" />
                       </div>
                       <div>
                         <label className="text-slate-500 font-semibold block mb-1">End Date (fixed term)</label>
-                        <input type="date" value={contractForm.end_date || ''} onChange={e => setContractForm({ ...contractForm, end_date: e.target.value || null })} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                        <DatePicker value={contractForm.end_date || ''} onChange={next => setContractForm({ ...contractForm, end_date: next || null })} className="w-full" />
                       </div>
                       <div className="flex items-center gap-4">
                         <label className="flex items-center gap-1.5 cursor-pointer">
@@ -714,7 +715,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                   </div>
                   <div>
                     <label className="text-slate-600 font-semibold block mb-1">Start Date</label>
-                    <input type="date" value={editData.start_date || ''} onChange={e => setEditData({...editData, start_date: e.target.value})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" required />
+                    <DatePicker value={editData.start_date || ''} onChange={next => setEditData({...editData, start_date: next})} className="w-full" required />
                   </div>
                   <div>
                     <label className="text-slate-600 font-semibold block mb-1">Employment Status</label>
@@ -726,7 +727,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                   {editData.status === 'departed' && (
                     <div className="col-span-2">
                       <label className="text-slate-600 font-semibold block mb-1">End Date (last working day)</label>
-                      <input type="date" value={editData.end_date || ''} onChange={e => setEditData({...editData, end_date: e.target.value || undefined})} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                      <DatePicker value={editData.end_date || ''} onChange={next => setEditData({...editData, end_date: next || undefined})} className="w-full" />
                     </div>
                   )}
                   <div className="col-span-2 pt-2 border-t border-slate-200">
@@ -850,7 +851,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
             </div>
             <div>
               <label className="text-slate-600 font-semibold block mb-1">Start Date *</label>
-              <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" required />
+              <DatePicker value={newStartDate} onChange={next => setNewStartDate(next)} className="w-full" required />
               <p className="text-[10px] text-slate-400 mt-1">Backdate to register existing / past employees.</p>
             </div>
             <div>
@@ -863,7 +864,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
             {newStatus === 'departed' && (
               <div className="col-span-2">
                 <label className="text-slate-600 font-semibold block mb-1">End Date (last working day)</label>
-                <input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full p-2 border rounded-md bg-white text-slate-800 font-mono" />
+                <DatePicker value={newEndDate} onChange={next => setNewEndDate(next)} className="w-full" />
               </div>
             )}
             <div className="col-span-2 pt-2 border-t border-slate-200">
