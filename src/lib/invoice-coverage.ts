@@ -1,6 +1,6 @@
 import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project, Receipt } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
-import { invoiceLinkedContractIds, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
+import { invoiceContractIds, invoiceContractTargets, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
 import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -362,11 +362,15 @@ export function buildInvoiceCoverage(
     const months = invoiceCoveredMonths(invoice);
     if (months.length === 0) return;
 
-    const linkedContracts = invoiceLinkedContractIds(invoice, projects)
+    // A change-request invoice paints its project rows and never the parent agreement as well: the
+    // link picker stores both, and painting both shows the same money twice in the schedule.
+    const billedThroughProjects = invoiceProjectIds(invoice).length > 0;
+    const linkedContracts = invoiceContractTargets(invoice, projects)
       .map(contractId => contractsById.get(contractId))
       .filter((contract): contract is Contract => Boolean(contract));
-    // Nothing linked: fall back to the counterparty contract the invoice actually mentions / matches.
-    const inferred = linkedContracts.length > 0 ? undefined : pickContract(
+    // Nothing linked at all: fall back to the counterparty contract the invoice actually mentions
+    // or whose charged total matches. An invoice that bills projects is already placed.
+    const inferred = linkedContracts.length > 0 || billedThroughProjects ? undefined : pickContract(
       invoice,
       months,
       contractsByCounterparty.get(invoice.counterparty_id) ?? [],
@@ -391,11 +395,19 @@ export function buildInvoiceCoverage(
       const months = receiptCoveredMonths(receipt);
       if (months.length === 0) return;
       const linkedInvoice = receipt.invoice_id ? invoicesById.get(receipt.invoice_id) : undefined;
+      const billedProjectIds = normalizeLinkIds([
+        ...(receipt.project_ids ?? []),
+        ...(linkedInvoice ? invoiceProjectIds(linkedInvoice) : []),
+      ]);
+      // Same rule as invoices: money that covers a change request belongs to that row, not to the
+      // agreement the change request sits under.
+      const projectParents = new Set(
+        billedProjectIds.map(projectId => contractIdOfProject.get(projectId)).filter(Boolean)
+      );
       const contractIds = normalizeLinkIds([
         ...(receipt.contract_ids ?? []),
-        ...(receipt.project_ids ?? []).map(projectId => contractIdOfProject.get(projectId)),
-        ...(linkedInvoice ? invoiceLinkedContractIds(linkedInvoice, projects) : []),
-      ]);
+        ...(linkedInvoice ? invoiceContractIds(linkedInvoice) : []),
+      ]).filter(contractId => !projectParents.has(contractId));
       contractIds
         .map(contractId => contractsById.get(contractId))
         .filter((contract): contract is Contract => Boolean(contract))

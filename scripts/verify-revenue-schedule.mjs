@@ -807,9 +807,30 @@ const projectOnlyInvoice = invoice({
 });
 const projectCoverage = buildInvoiceCoverage([projectOnlyInvoice], twoSameCounterparty, [], [], [crAlpha, crBeta]);
 assert(
-  projectCoverage.has('cnt-1:2025-01') && !projectCoverage.has('cnt-2:2025-01'),
-  'A project-linked invoice covers its parent agreement only',
+  projectCoverage.size === 0,
+  'A project-linked invoice paints no agreement row — the change-request row owns it',
   [...projectCoverage.keys()].join(' ')
+);
+
+// The link picker saves the parent agreement alongside a project; the schedule must not show the
+// same invoice on both rows.
+const contractAndProjectInvoice = invoice({
+  id: 'inv-both', invoice_number: 'Α-22', status: 'paid',
+  contract_id: 'cnt-1', contract_ids: ['cnt-1'], project_ids: ['prj-alpha'], net: 4500,
+});
+const bothCoverage = buildInvoiceCoverage([contractAndProjectInvoice], twoSameCounterparty, [], [], [crAlpha, crBeta]);
+const bothProjectCoverage = buildProjectInvoiceCoverage([contractAndProjectInvoice], [crAlpha, crBeta]);
+assert(
+  bothCoverage.size === 0 &&
+    bothProjectCoverage.get(projectInvoiceCellKey('prj-alpha', '2025-01'))?.invoices.join(',') === 'Α-22',
+  'An invoice linked to an agreement and its project is counted once, on the change-request row',
+  `contract cells ${bothCoverage.size} · project cells ${bothProjectCoverage.size}`
+);
+assert(
+  buildInvoiceCoverage([invoice({ id: 'inv-elsewhere', contract_ids: ['cnt-2'], project_ids: ['prj-alpha'] })], twoSameCounterparty, [], [], [crAlpha, crBeta])
+    .has('cnt-2:2025-01'),
+  'A contract linked next to another agreement’s project still paints that agreement',
+  'cnt-2 keeps its box'
 );
 
 // Change-request rows show the invoices their projects are billed by.
@@ -888,10 +909,13 @@ assert(
   receiptStyle.backgroundColor
 );
 
-const receiptOnProject = buildInvoiceCoverage([], [baseContract], [], [], [crAlpha], [receipt({ contract_ids: [], project_ids: ['prj-alpha'] })]);
+const receiptOnProject = buildInvoiceCoverage(
+  [], [baseContract], [], [], [crAlpha],
+  [receipt({ contract_ids: ['cnt-1'], project_ids: ['prj-alpha'] })]
+);
 assert(
-  receiptOnProject.has('cnt-1:2025-01'),
-  'A receipt linked to a change request covers that project’s agreement',
+  receiptOnProject.size === 0,
+  'A receipt linked to a change request does not also paint its agreement row',
   [...receiptOnProject.keys()].join(' ')
 );
 assert(
