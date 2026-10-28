@@ -37,7 +37,7 @@ const formatFileSizeSuffix = (bytes?: number | null): string => {
 };
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, catalogModules, catalogItems, ensureContractRateCard, timesheets, addInvoice, refreshInvoices } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, receipts, catalogModules, catalogItems, ensureContractRateCard, timesheets, addInvoice, refreshInvoices } = useAuth();
   const params = useParams();
   const router = useRouter();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -649,6 +649,7 @@ export default function ContractsRegistryPage() {
           catalogModules={catalogModules}
           catalogItems={catalogItems}
           invoices={invoices}
+          receipts={receipts}
           draftInvoiceIds={contractDraftIds}
           onCreateInvoice={createDraftForPeriod}
           onOpenContract={setSelectedContract}

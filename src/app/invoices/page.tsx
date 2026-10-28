@@ -13,7 +13,7 @@ import {
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
   Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload,
-  Zap, EyeOff, RotateCcw
+  Zap, EyeOff, RotateCcw, Banknote
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -24,6 +24,7 @@ import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateM
 import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment } from '@/lib/billing-periods';
 import { buildInvoiceLinks, invoiceContractIds, invoiceLinkedContractIds, invoiceProjectIds } from '@/lib/invoice-links';
 import { InvoiceLinkPicker, type InvoiceLinkSelection } from '@/components/invoices/invoice-link-picker';
+import { ReceiptsPanel } from '@/components/invoices/receipts-panel';
 import { INVOICE_CURRENCIES, DEFAULT_CURRENCY, formatMoney } from '@/lib/currency';
 import { DatePicker } from '@/components/ui/date-picker';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
@@ -47,7 +48,7 @@ export default function InvoicesRegistryPage() {
   const { 
     currentUser, invoices, invoiceCategories, counterparties, contracts, 
     addInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus, recordInvoicePayment, addInvoiceDocument, saveInvoiceAllocation, salaries, refreshInvoices,
-    timesheets, catalogModules, catalogItems, projects, timeEntries
+    timesheets, catalogModules, catalogItems, projects, timeEntries, receipts
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -372,7 +373,7 @@ export default function InvoicesRegistryPage() {
   // ==========================================================================
   // CONTRACT INVOICING & REVENUE ACTION CENTER  (moved here from the Home page)
   // ==========================================================================
-  const [activeTab, setActiveTab] = useState<'ledger' | 'billing_actions'>('ledger');
+  const [activeTab, setActiveTab] = useState<'ledger' | 'billing_actions' | 'receipts'>('ledger');
   const [generatedDraftIds, setGeneratedDraftIds] = useState<Record<string, string>>({});
 
   /**
@@ -650,6 +651,10 @@ export default function InvoicesRegistryPage() {
             </span>
           )}
         </button>
+        <button type="button" onClick={() => setActiveTab('receipts')} aria-pressed={activeTab === 'receipts'}>
+          <Banknote className="w-3.5 h-3.5" /> Receipts
+          <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{receipts.length}</span>
+        </button>
       </div>
 
       {activeTab === 'ledger' && (
@@ -881,6 +886,7 @@ export default function InvoicesRegistryPage() {
         </Card>
       )}
 
+      {activeTab === 'receipts' && <ReceiptsPanel />}
 
       {/* REGISTRATION / EDIT MODAL */}
       {isRegisterModalOpen && (

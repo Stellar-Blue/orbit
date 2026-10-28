@@ -857,6 +857,32 @@ export interface InvoicePayment {
   created_at?: string;
 }
 
+/** Money received/paid without a tax document (intercompany transfers, deposits). */
+export interface Receipt {
+  id: string;
+  counterparty_id: string;
+  direction: "incoming" | "outgoing";
+  amount: number;
+  currency: string;
+  fx_rate: number;
+  amount_eur: number;
+  received_on: string;
+  /** Period the money covers — drives the revenue schedule coverage box. */
+  period_from?: string | null;
+  period_to?: string | null;
+  method?: string | null;
+  bank_reference?: string | null;
+  note?: string | null;
+  contract_ids: string[];
+  project_ids: string[];
+  /** Invoice the money settles, when one was eventually issued. */
+  invoice_id?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  counterparty?: Counterparty;
+  invoice?: Invoice;
+}
+
 export interface InvoiceAllocation {
   id: string;
   invoice_id: string;

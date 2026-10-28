@@ -9,7 +9,7 @@ import {
   PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, RemoteMode, RemotePolicy, RemoteAmendmentRequest, RemoteQuotaRequest,
   CounterpartyTierRow, CounterpartyTierHistoryRow, CounterpartyTierOverride, TierModelVersion,
   CatalogModule, CatalogItem, ContractLine, ContractLineGroup, ContractTimesheet, ContractSchedule, AttioLink, AttioEvent, CounterpartyContact,
-  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType,
+  Invoice, InvoiceCategory, InvoiceDocument, InvoicePayment, InvoiceAllocation, PaymentDocumentType, Receipt,
   Budget, BudgetCategory, BudgetLine, RecurringCommitment,
   EmployeeContract,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
@@ -175,6 +175,11 @@ interface AppState {
   invoiceDocuments: InvoiceDocument[];
   invoicePayments: InvoicePayment[];
   invoiceAllocations: InvoiceAllocation[];
+  /** Money settled without a tax document (intercompany transfers, deposits). */
+  receipts: Receipt[];
+  addReceipt: (receipt: Omit<Receipt, 'id' | 'created_at' | 'counterparty' | 'invoice'>) => Promise<Receipt | null>;
+  updateReceipt: (id: string, updates: Partial<Receipt>) => Promise<boolean>;
+  deleteReceipt: (id: string) => Promise<boolean>;
   budgets: Budget[];
   budgetCategories: BudgetCategory[];
   budgetLines: BudgetLine[];
@@ -564,6 +569,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoiceDocuments, setInvoiceDocuments] = useState<InvoiceDocument[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -1037,13 +1043,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   async function loadInvoicesSlice() {
     const { isAdmin } = identityRef.current;
     const supabase = getSupabaseBrowserClient();
-    const [invoiceRows, categoryRows, documentRows, paymentRows, allocationRows, budgetCategoryRows] = await Promise.all([
+    const [invoiceRows, categoryRows, documentRows, paymentRows, allocationRows, budgetCategoryRows, receiptRows] = await Promise.all([
       isAdmin ? fetchRows('invoices', 'all', { select: '*, links:invoice_links(*)', order: ['issue_date', false] }) : Promise.resolve([]),
       fetchRows('invoice_categories', 'all', { order: ['name'] }),
       fetchRows('invoice_documents', 'admin'),
       fetchRows('invoice_payments', 'admin'),
       fetchRows('invoice_allocations', 'admin'),
       fetchRows('budget_categories', 'admin', { order: ['sort_order'] }),
+      isAdmin ? fetchRows('receipts', 'all', { order: ['received_on', false] }) : Promise.resolve([]),
     ]);
 
     const loadedCats: InvoiceCategory[] = categoryRows as InvoiceCategory[];
@@ -1079,6 +1086,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       allocations: loadedAlloc.filter(a => a.invoice_id === inv.id),
       qr_url: inv.qr_url || null,
       budget_category: loadedBudgetCategories.find(c => c.id === inv.category_id),
+    })));
+
+    setReceipts((receiptRows as Receipt[]).map(r => ({
+      ...r,
+      contract_ids: r.contract_ids ?? [],
+      project_ids: r.project_ids ?? [],
+      counterparty: rawRef.current.counterparties.find(c => c.id === r.counterparty_id),
+      invoice: (invoiceRows as Invoice[]).find(i => i.id === r.invoice_id),
     })));
   }
 
@@ -5170,6 +5185,103 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const addReceipt = async (input: Omit<Receipt, 'id' | 'created_at' | 'counterparty' | 'invoice'>): Promise<Receipt | null> => {
+    const id = generateUUID();
+    const newReceipt: Receipt = {
+      ...input,
+      id,
+      contract_ids: input.contract_ids ?? [],
+      project_ids: input.project_ids ?? [],
+      created_at: new Date().toISOString(),
+      counterparty: counterparties.find(c => c.id === input.counterparty_id),
+      invoice: input.invoice_id ? invoices.find(i => i.id === input.invoice_id) : undefined,
+    };
+    setReceipts(prev => [newReceipt, ...prev]);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('receipts').insert([{
+        id,
+        counterparty_id: input.counterparty_id,
+        direction: input.direction,
+        amount: input.amount,
+        currency: input.currency,
+        fx_rate: input.fx_rate,
+        amount_eur: input.amount_eur,
+        received_on: input.received_on,
+        period_from: input.period_from || null,
+        period_to: input.period_to || null,
+        method: input.method || null,
+        bank_reference: input.bank_reference || null,
+        note: input.note || null,
+        contract_ids: input.contract_ids ?? [],
+        project_ids: input.project_ids ?? [],
+        invoice_id: input.invoice_id || null,
+        created_by: currentUser?.id || null,
+      }]);
+      if (error) {
+        console.error("Supabase insert receipt error:", error.message);
+        alert(`Database Error saving receipt: ${error.message}`);
+        setReceipts(prev => prev.filter(r => r.id !== id));
+        return null;
+      }
+    } catch (e) {
+      console.error("addReceipt exception:", e);
+      setReceipts(prev => prev.filter(r => r.id !== id));
+      return null;
+    }
+    return newReceipt;
+  };
+
+  const updateReceipt = async (id: string, updates: Partial<Receipt>): Promise<boolean> => {
+    const previous = receipts;
+    setReceipts(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updated = { ...r, ...updates };
+      if (updates.counterparty_id) updated.counterparty = counterparties.find(c => c.id === updates.counterparty_id);
+      if (updates.invoice_id !== undefined) updated.invoice = invoices.find(i => i.id === updates.invoice_id);
+      return updated;
+    }));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const payload: Record<string, unknown> = { ...updates };
+      delete payload.id;
+      delete payload.created_at;
+      delete payload.counterparty;
+      delete payload.invoice;
+      const { error } = await supabase.from('receipts').update(payload).eq('id', id);
+      if (error) {
+        console.error("Supabase update receipt error:", error.message);
+        alert(`Database Error updating receipt: ${error.message}`);
+        setReceipts(previous);
+        return false;
+      }
+    } catch (e) {
+      console.error("updateReceipt exception:", e);
+      setReceipts(previous);
+      return false;
+    }
+    return true;
+  };
+
+  const deleteReceipt = async (id: string): Promise<boolean> => {
+    const previous = receipts;
+    setReceipts(prev => prev.filter(r => r.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('receipts').delete().eq('id', id);
+      if (error) {
+        console.error("Supabase delete receipt error:", error.message);
+        setReceipts(previous);
+        return false;
+      }
+    } catch (e) {
+      console.error("deleteReceipt exception:", e);
+      setReceipts(previous);
+      return false;
+    }
+    return true;
+  };
+
   const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
     const previousInvoices = invoices;
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
@@ -5660,11 +5772,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentUser?.role !== 'admin') return;
     try {
       const supabase = getSupabaseBrowserClient();
-      const [invRes, docRes, payRes, allocRes] = await Promise.all([
+      const [invRes, docRes, payRes, allocRes, receiptRes] = await Promise.all([
         supabase.from('invoices').select('*, links:invoice_links(*)').order('issue_date', { ascending: false }),
         supabase.from('invoice_documents').select('*'),
         supabase.from('invoice_payments').select('*'),
         supabase.from('invoice_allocations').select('*'),
+        supabase.from('receipts').select('*').order('received_on', { ascending: false }),
       ]);
       
       const loadedDocs: InvoiceDocument[] = await signInvoiceDocuments(supabase, docRes.data || []);
@@ -5684,6 +5797,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { ...inv, counterparty: cp, contract: cnt, documents: docs, payments: pays, allocations: allocs };
       });
       setInvoices(enrichedInvoices);
+
+      const loadedReceipts = (receiptRes.data || []) as Receipt[];
+      setReceipts(loadedReceipts.map(receipt => ({
+        ...receipt,
+        contract_ids: receipt.contract_ids ?? [],
+        project_ids: receipt.project_ids ?? [],
+        counterparty: counterparties.find(c => c.id === receipt.counterparty_id),
+        invoice: enrichedInvoices.find(inv => inv.id === receipt.invoice_id),
+      })));
     } catch (e) {
       console.error('refreshInvoices error:', e);
     }
@@ -5957,7 +6079,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       'counterparty_tier_overrides', 'tier_model_versions', 'attio_links', 'contracts',
       'contract_lines', 'contract_line_groups', 'contract_schedule', 'counterparty_roles',
     ].forEach(table => on(table, reloadLiveCommercial));
-    ['invoices', 'invoice_documents', 'invoice_payments', 'invoice_allocations', 'invoice_links']
+    ['invoices', 'invoice_documents', 'invoice_payments', 'invoice_allocations', 'invoice_links', 'receipts']
       .forEach(table => on(table, () => refreshInvoicesRef.current()));
     ['budgets', 'budget_lines', 'budget_categories', 'recurring_commitments']
       .forEach(table => on(table, reloadLiveBudget));
@@ -6284,6 +6406,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addInvoice,
       updateInvoice,
       deleteInvoice,
+      receipts,
+      addReceipt,
+      updateReceipt,
+      deleteReceipt,
       updateInvoiceStatus,
       linkInvoiceToContract,
       recordInvoicePayment,

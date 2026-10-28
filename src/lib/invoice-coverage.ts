@@ -1,14 +1,15 @@
-import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project } from '@/lib/types';
+import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project, Receipt } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
-import { invoiceLinkedContractIds, invoiceProjectIds } from '@/lib/invoice-links';
+import { invoiceLinkedContractIds, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
 import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
- * Maps outgoing invoices onto the revenue schedule's cells so the grid can overlay the months an
- * invoice already covers. An invoice paints every agreement it is linked to (and the agreements of
- * the projects it bills). An invoice with no link at all is attributed to the counterparty's revenue
- * contract whose reference appears on the invoice, or — failing that — whose charged total is
- * closest to the invoice net.
+ * Maps outgoing invoices — and receipts, the money that arrived without a tax document — onto the
+ * revenue schedule's cells so the grid can overlay the months they cover. An invoice paints every
+ * agreement it is linked to (and the agreements of the projects it bills). An invoice with no link
+ * at all is attributed to the counterparty's revenue contract whose reference appears on the
+ * invoice, or — failing that — whose charged total is closest to the invoice net. A receipt paints
+ * only where it is explicitly linked, and always as paid.
  */
 
 export type InvoiceMarkerPosition = 'start' | 'middle' | 'end';
@@ -31,9 +32,13 @@ export interface InvoiceCellCoverage {
   issueDate: string;
   /** Invoice net (EUR) of every invoice covering the box. */
   invoiceTotal: number;
+  /** Receipt money (EUR) — paid without a tax document — covering the box. */
+  receiptTotal: number;
+  /** Labels of the receipts covering the box, oldest first. */
+  receipts: string[];
   /** The contract's own charges over the box's months — what should have been billed. */
   contractTotal: number;
-  /** `invoiceTotal - contractTotal`; 0 when the invoice matches the schedule. */
+  /** `invoiceTotal + receiptTotal - contractTotal`; 0 when the coverage matches the schedule. */
   variance: number;
 }
 
@@ -58,6 +63,11 @@ export function invoiceAmountEur(invoice: Invoice): number {
   const net = Number(invoice.net) || 0;
   const rate = Number(invoice.fx_rate) || 1;
   return round2(invoice.currency && invoice.currency !== 'EUR' ? net * rate : net);
+}
+
+/** Every euro that covers the box: invoices plus receipts paid without a tax document. */
+export function coverageTotal(coverage: InvoiceCellCoverage): number {
+  return round2(coverage.invoiceTotal + coverage.receiptTotal);
 }
 
 /** Which badge colour the invoice/contract comparison earns. */
@@ -88,6 +98,25 @@ export function invoiceMarkerPosition(
   if (markerMonth <= firstMonth) return 'start';
   if (markerMonth >= lastMonth) return 'end';
   return 'middle';
+}
+
+/** Inclusive 'YYYY-MM' months a receipt covers — its stated period, else the month the money landed. */
+export function receiptCoveredMonths(receipt: Pick<Receipt, 'period_from' | 'period_to' | 'received_on'>): string[] {
+  const from = toMonthKey(receipt.period_from);
+  const to = toMonthKey(receipt.period_to);
+  if (from && to) {
+    const months = monthKeysBetween(from, to);
+    return months.length > 0 ? months : [from];
+  }
+  if (from || to) return [from ?? (to as string)];
+  const received = toMonthKey(receipt.received_on);
+  return received ? [received] : [];
+}
+
+/** Short label the schedule shows for a receipt: its bank reference, else the value date. */
+export function receiptLabel(receipt: Pick<Receipt, 'bank_reference' | 'received_on'>): string {
+  const reference = String(receipt.bank_reference ?? '').trim();
+  return reference || `Receipt ${receipt.received_on}`;
 }
 
 function contractChargedTotal(
@@ -178,6 +207,8 @@ function paintInvoiceBox(
         invoiceIds: [invoice.id],
         issueDate,
         invoiceTotal: amount,
+        receiptTotal: 0,
+        receipts: [],
         contractTotal: 0,
         variance: 0,
       });
@@ -203,8 +234,77 @@ function paintInvoiceBox(
         : [...existing.invoiceIds, invoice.id].slice(-MAX_INVOICE_LABELS),
       issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
       invoiceTotal: round2(existing.invoiceTotal + amount),
+      receiptTotal: existing.receiptTotal,
+      receipts: existing.receipts,
       contractTotal: 0,
       variance: 0,
+    });
+  });
+}
+
+/**
+ * Paints a receipt — money that arrived without a tax document — into the same box model. Receipts
+ * always mean cash in hand, so they force the box to `paid` even over a draft invoice, and their
+ * amount is tracked separately so the badge can show invoiced vs. un-invoiced money.
+ */
+function paintReceiptBox(
+  covered: InvoiceCoverageMap,
+  receipt: Receipt,
+  months: string[],
+  ownerId: string,
+  keyFor: (month: string) => string
+): void {
+  if (months.length === 0) return;
+  const firstMonth = months[0];
+  const lastMonth = months[months.length - 1];
+  const receivedMonth = toMonthKey(receipt.received_on);
+  const markerMonth = !receivedMonth || receivedMonth < firstMonth
+    ? firstMonth
+    : receivedMonth > lastMonth
+      ? lastMonth
+      : receivedMonth;
+  const label = receiptLabel(receipt);
+  const amount = round2(Number(receipt.amount_eur) || 0);
+
+  months.forEach(month => {
+    const key = keyFor(month);
+    const existing = covered.get(key);
+    if (!existing) {
+      covered.set(key, {
+        contractId: ownerId,
+        paid: true,
+        draft: false,
+        firstMonth,
+        lastMonth,
+        markerMonth,
+        markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
+        invoices: [],
+        invoiceIds: [],
+        issueDate: '',
+        invoiceTotal: 0,
+        receiptTotal: amount,
+        receipts: [label],
+        contractTotal: 0,
+        variance: 0,
+      });
+      return;
+    }
+
+    const mergedFirst = firstMonth < existing.firstMonth ? firstMonth : existing.firstMonth;
+    const mergedLast = lastMonth > existing.lastMonth ? lastMonth : existing.lastMonth;
+    const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
+    covered.set(key, {
+      ...existing,
+      paid: true,
+      draft: false,
+      firstMonth: mergedFirst,
+      lastMonth: mergedLast,
+      markerMonth: latestMarker,
+      markerPosition: invoiceMarkerPosition(latestMarker, mergedFirst, mergedLast),
+      receipts: existing.receipts.includes(label)
+        ? existing.receipts
+        : [...existing.receipts, label].slice(-MAX_INVOICE_LABELS),
+      receiptTotal: round2(existing.receiptTotal + amount),
     });
   });
 }
@@ -221,7 +321,8 @@ export function buildInvoiceCoverage(
   contracts: Contract[],
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
-  projects: Array<Pick<Project, 'id' | 'contract_id'>> = []
+  projects: Array<Pick<Project, 'id' | 'contract_id'>> = [],
+  receipts: Receipt[] = []
 ): InvoiceCoverageMap {
   const contractsById = new Map(contracts.map(contract => [contract.id, contract]));
   const contractsByCounterparty = new Map<string, Contract[]>();
@@ -280,6 +381,29 @@ export function buildInvoiceCoverage(
     });
   });
 
+  // Receipts (intercompany transfers, deposits) are paid money with no tax document; they paint the
+  // same boxes so the schedule shows them as settled even though nothing was invoiced.
+  const invoicesById = new Map(invoices.map(invoice => [invoice.id, invoice]));
+  const contractIdOfProject = new Map(projects.map(project => [project.id, String(project.contract_id || '')]));
+  receipts
+    .filter(receipt => receipt.direction !== 'outgoing')
+    .forEach(receipt => {
+      const months = receiptCoveredMonths(receipt);
+      if (months.length === 0) return;
+      const linkedInvoice = receipt.invoice_id ? invoicesById.get(receipt.invoice_id) : undefined;
+      const contractIds = normalizeLinkIds([
+        ...(receipt.contract_ids ?? []),
+        ...(receipt.project_ids ?? []).map(projectId => contractIdOfProject.get(projectId)),
+        ...(linkedInvoice ? invoiceLinkedContractIds(linkedInvoice, projects) : []),
+      ]);
+      contractIds
+        .map(contractId => contractsById.get(contractId))
+        .filter((contract): contract is Contract => Boolean(contract))
+        .forEach(contract => {
+          paintReceiptBox(covered, receipt, months, contract.id, month => invoiceCellKey(contract.id, month));
+        });
+    });
+
   // The comparison only makes sense once a box has absorbed every overlapping invoice, so the
   // contract side is summed over the final month range in a second pass.
   covered.forEach(entry => {
@@ -288,7 +412,7 @@ export function buildInvoiceCoverage(
     entry.contractTotal = round2(
       monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (charges[month] || 0), 0)
     );
-    entry.variance = round2(entry.invoiceTotal - entry.contractTotal);
+    entry.variance = round2(coverageTotal(entry) - entry.contractTotal);
   });
 
   return covered;
@@ -334,7 +458,8 @@ export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): 
  */
 export function buildProjectInvoiceCoverage(
   invoices: Invoice[],
-  projects: Array<Pick<Project, 'id' | 'contract_id'>>
+  projects: Array<Pick<Project, 'id' | 'contract_id'>>,
+  receipts: Receipt[] = []
 ): InvoiceCoverageMap {
   const parentByProject = new Map(projects.map(project => [project.id, String(project.contract_id || '')]));
   const outgoing = invoices
@@ -356,5 +481,23 @@ export function buildProjectInvoiceCoverage(
       paintInvoiceBox(covered, invoice, months, parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month));
     });
   });
+
+  const invoicesById = new Map(invoices.map(invoice => [invoice.id, invoice]));
+  receipts
+    .filter(receipt => receipt.direction !== 'outgoing')
+    .forEach(receipt => {
+      const months = receiptCoveredMonths(receipt);
+      if (months.length === 0) return;
+      const linkedInvoice = receipt.invoice_id ? invoicesById.get(receipt.invoice_id) : undefined;
+      const projectIds = normalizeLinkIds([
+        ...(receipt.project_ids ?? []),
+        ...(linkedInvoice ? invoiceProjectIds(linkedInvoice) : []),
+      ]);
+      projectIds
+        .filter(projectId => parentByProject.has(projectId))
+        .forEach(projectId => {
+          paintReceiptBox(covered, receipt, months, parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month));
+        });
+    });
   return covered;
 }

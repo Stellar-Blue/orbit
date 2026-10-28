@@ -1,4 +1,4 @@
-import type { Invoice, Project } from '@/lib/types';
+import type { Project } from '@/lib/types';
 
 /**
  * Invoice → what it bills.
@@ -10,7 +10,14 @@ import type { Invoice, Project } from '@/lib/types';
 
 type ProjectContractLookup = ReadonlyArray<Pick<Project, 'id' | 'contract_id'>>;
 
-type InvoiceLinks = Pick<Invoice, 'contract_id' | 'contract_ids' | 'project_ids'>;
+/** Anything that carries a contract/project link set — invoices and receipts share the shape. */
+export type InvoiceLinkSource = {
+  contract_id?: string | null;
+  contract_ids?: string[] | null;
+  project_ids?: string[] | null;
+};
+
+type InvoiceLinks = InvoiceLinkSource;
 
 /** Trimmed, de-duplicated ids — the shape the register stores. Order is preserved. */
 export function normalizeLinkIds(ids?: Array<string | null | undefined> | null): string[] {

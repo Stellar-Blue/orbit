@@ -12,12 +12,13 @@ import {
   type ICellRendererParams,
 } from 'ag-grid-community';
 import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
-import type { CatalogItem, CatalogModule, Contract, Invoice, Project } from '@/lib/types';
+import type { CatalogItem, CatalogModule, Contract, Invoice, Project, Receipt } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { buildRevenueSchedule, groupMonthsByYear, scheduleExportTable, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
+  coverageTotal,
   invoiceCellKey,
   invoiceCellStyle,
   invoiceMarkerColor,
@@ -47,6 +48,8 @@ interface RevenueScheduleGridProps {
   catalogModules: CatalogModule[];
   catalogItems: CatalogItem[];
   invoices?: Invoice[];
+  /** Receipts (money paid without a tax document) also paint the months they cover. */
+  receipts?: Receipt[];
   /** Optimistic "draft created" marks keyed `${contractId}::${periodKey}` — hides the suggestion at once. */
   draftInvoiceIds?: Record<string, string>;
   /** Creates the draft invoice for a suggested billing period (same path as the contract dossier). */
@@ -98,13 +101,19 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
     ? 'matches the contract'
     : `variance ${formatSignedAmount(coverage.variance)}`;
   return [
-    `Invoiced ${formatTotal(coverage.invoiceTotal)}`,
+    coverage.invoices.length > 0 ? `Invoiced ${formatTotal(coverage.invoiceTotal)}` : undefined,
+    coverage.receipts.length > 0
+      ? `Received ${formatTotal(coverage.receiptTotal)} (${coverage.receipts.join(', ')})${
+          coverage.invoiceTotal > 0 ? '' : ' without a tax invoice'
+        }`
+      : undefined,
+    `covered ${formatTotal(coverageTotal(coverage))}`,
     `contract ${formatTotal(coverage.contractTotal)}`,
     comparison,
     coverage.invoices.join(', '),
-    `issued ${coverage.issueDate || '—'}`,
+    coverage.issueDate ? `issued ${coverage.issueDate}` : undefined,
     coverage.draft ? 'draft, not issued yet' : coverage.paid ? 'paid' : 'not paid yet',
-  ].join(' · ');
+  ].filter(Boolean).join(' · ');
 }
 
 /** Stored VAT rates appear as '24%' (register) or '24' (older auto-drafts) — print one form. */
@@ -136,13 +145,15 @@ function projectCellCoverage(
     invoiceIds: entries.flatMap(entry => entry.invoiceIds).slice(-3),
     issueDate: entries.map(entry => entry.issueDate).sort().slice(-1)[0],
     invoiceTotal: Math.round(entries.reduce((sum, entry) => sum + entry.invoiceTotal, 0) * 100) / 100,
+    receiptTotal: Math.round(entries.reduce((sum, entry) => sum + entry.receiptTotal, 0) * 100) / 100,
+    receipts: entries.flatMap(entry => entry.receipts).slice(-3),
     contractTotal: 0,
     variance: 0,
   };
   merged.markerPosition = invoiceMarkerPosition(merged.markerMonth, merged.firstMonth, merged.lastMonth);
   // A change-request invoice is usually raised after the delivery months, so comparing it with the
   // row's charges inside the invoice window would flag a variance that is not a billing error.
-  merged.contractTotal = merged.invoiceTotal;
+  merged.contractTotal = coverageTotal(merged);
   merged.variance = 0;
   return merged;
 }
@@ -422,6 +433,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   catalogModules,
   catalogItems,
   invoices = [],
+  receipts = [],
   draftInvoiceIds,
   onCreateInvoice,
   onOpenContract,
@@ -456,11 +468,15 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   // Invoiced months are read inside AG Grid callbacks, so the map lives in a ref: refreshing the
   // cells (below) picks up new invoices without rebuilding the column definitions and losing scroll.
   const invoiceCoverage = useMemo(
-    () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems, projects),
-    [invoices, contracts, catalogModules, catalogItems, projects]
+    () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems, projects, receipts),
+    [invoices, contracts, catalogModules, catalogItems, projects, receipts]
   );
   const draftCoverageCount = useMemo(
     () => Array.from(invoiceCoverage.values()).filter(entry => entry.draft).length,
+    [invoiceCoverage]
+  );
+  const receiptCoverageCount = useMemo(
+    () => Array.from(invoiceCoverage.values()).filter(entry => entry.receiptTotal > 0).length,
     [invoiceCoverage]
   );
   const invoiceCoverageRef = useRef<InvoiceCoverageMap>(new Map());
@@ -471,8 +487,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
   // Change-request rows show the invoices their projects are billed by.
   const projectCoverage = useMemo(
-    () => buildProjectInvoiceCoverage(invoices, projects),
-    [invoices, projects]
+    () => buildProjectInvoiceCoverage(invoices, projects, receipts),
+    [invoices, projects, receipts]
   );
   const projectCoverageRef = useRef<InvoiceCoverageMap>(new Map());
   useEffect(() => {
@@ -811,9 +827,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             title={
               coverage
                 ? data?.kind === 'project'
-                  ? `Invoiced ${formatTotal(coverage.invoiceTotal)} · ${coverage.invoices.join(', ')} · ${
-                      coverage.draft ? 'draft, not issued yet' : coverage.paid ? 'paid' : 'not paid yet'
-                    } · ${
+                  ? `${coverageTooltip(coverage)} · ${
                       (data.projects ?? [])
                         .filter(project => projectCoverageRef.current.has(projectInvoiceCellKey(project.id, key)))
                         .map(projectBadgeLabel)
@@ -852,24 +866,28 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                 <button
                   type="button"
                   data-invoice-peek
-                  title={`${coverageTooltip(coverage)} · click for invoice details`}
+                  title={coverage.invoiceIds.length > 0 ? `${coverageTooltip(coverage)} · click for invoice details` : coverageTooltip(coverage)}
                   onMouseDown={event => event.stopPropagation()}
                   onClick={event => {
                     event.stopPropagation();
-                    if (data) openPeekRef.current(data.contract, coverage.invoiceIds);
+                    if (data && coverage.invoiceIds.length > 0) openPeekRef.current(data.contract, coverage.invoiceIds);
                   }}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: coverage.draft ? 4 : 2, padding: '0 3px', borderRadius: 3,
                     border: 0, fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                    cursor: 'pointer', ...(coverage.draft ? DRAFT_TONE : VARIANCE_TONES[tone as InvoiceVarianceTone]),
+                    cursor: coverage.invoiceIds.length > 0 ? 'pointer' : 'default',
+                    ...(coverage.draft ? DRAFT_TONE : VARIANCE_TONES[tone as InvoiceVarianceTone]),
                   }}
                 >
                   {coverage.draft && <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Draft</span>}
-                  <span>{formatTotal(coverage.invoiceTotal)}</span>
+                  {coverage.invoices.length === 0 && coverage.receipts.length > 0 && (
+                    <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Paid</span>
+                  )}
+                  <span>{formatTotal(coverageTotal(coverage))}</span>
                   {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
                 </button>
               )}
-              {coverage && showMarker && (
+              {coverage && showMarker && coverage.invoiceIds.length > 0 && (
                 <span
                   aria-hidden
                   style={{
@@ -1175,6 +1193,11 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   </span>
                 )}
                 <span className="text-slate-400">badge: invoice € vs contract</span>
+                {receiptCoverageCount > 0 && (
+                  <span className="inline-flex items-center gap-1" title="Money received without a tax invoice — the box is paid, the badge says Paid">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30 ring-1 ring-dashed ring-emerald-700/60" /> {receiptCoverageCount} receipt{receiptCoverageCount === 1 ? '' : 's'}
+                  </span>
+                )}
               </>
             )}
             {HAS_AG_GRID_LICENSE && <span className="text-slate-400">Shift+click to sum cells</span>}

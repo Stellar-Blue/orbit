@@ -70,7 +70,7 @@ export const SLICE_TABLES: Record<DataSliceKey, string[]> = {
   ],
   invoices: [
     'invoices', 'invoice_links', 'invoice_categories', 'invoice_documents',
-    'invoice_payments', 'invoice_allocations', 'budget_categories',
+    'invoice_payments', 'invoice_allocations', 'receipts', 'budget_categories',
   ],
   budget: ['budgets', 'budget_lines', 'recurring_commitments'],
   timesheets: [

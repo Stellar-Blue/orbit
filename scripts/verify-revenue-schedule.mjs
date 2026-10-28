@@ -22,7 +22,9 @@ import {
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
+  coverageTotal,
   projectInvoiceCellKey,
+  receiptCoveredMonths,
   INVOICE_BOX_COLORS,
   invoiceAmountEur,
   invoiceCellStyle,
@@ -830,6 +832,113 @@ assert(
 );
 const unlinkedForProjects = buildProjectInvoiceCoverage([invoice({ project_ids: [] })], [crAlpha]);
 assert(unlinkedForProjects.size === 0, 'An invoice without project links paints no change-request cell');
+
+// --- Receipts: money paid without a tax invoice -------------------------------
+const receipt = (overrides = {}) => ({
+  id: 'rcp-1',
+  counterparty_id: 'cp-1',
+  direction: 'incoming',
+  amount: 5000,
+  currency: 'EUR',
+  fx_rate: 1,
+  amount_eur: 5000,
+  received_on: '2025-02-10',
+  period_from: '2025-01-01',
+  period_to: '2025-02-28',
+  method: 'intercompany',
+  bank_reference: 'GCS mass transfer 02/2025',
+  note: null,
+  contract_ids: ['cnt-1'],
+  project_ids: [],
+  invoice_id: null,
+  ...overrides,
+});
+
+assert(
+  receiptCoveredMonths(receipt()).join(',') === '2025-01,2025-02' &&
+    receiptCoveredMonths(receipt({ period_from: null, period_to: null })).join(',') === '2025-02',
+  'A receipt covers its stated period, else the month the money landed',
+  receiptCoveredMonths(receipt()).join(',')
+);
+
+const receiptCoverage = buildInvoiceCoverage([], [baseContract], [], [], [], [receipt()]);
+const receiptCell = receiptCoverage.get('cnt-1:2025-01');
+assert(
+  receiptCoverage.size === 2 && receiptCell?.paid === true && receiptCell.receiptTotal === 5000,
+  'A receipt paints the months it covers as paid',
+  `${receiptCoverage.size} cells · paid ${receiptCell?.paid} · ${receiptCell?.receiptTotal}`
+);
+assert(
+  receiptCell?.invoiceTotal === 0 && coverageTotal(receiptCell) === 5000 &&
+    receiptCell.invoices.length === 0 && receiptCell.receipts[0] === 'GCS mass transfer 02/2025',
+  'Receipt money is tracked apart from invoiced money so the tooltip can name the transfer',
+  JSON.stringify({ invoiceTotal: receiptCell?.invoiceTotal, receipts: receiptCell?.receipts })
+);
+assert(
+  receiptCell?.contractTotal === 2000 && receiptCell.variance === 3000 && invoiceVarianceTone(receiptCell) === 'over',
+  'Receipts are compared against the contract charges they settle',
+  `contract ${receiptCell?.contractTotal} · variance ${receiptCell?.variance}`
+);
+const receiptStyle = invoiceCellStyle(receiptCell, '2025-01');
+assert(
+  receiptStyle.backgroundColor === INVOICE_BOX_COLORS.paid.fill &&
+    receiptStyle.boxShadow.includes(INVOICE_BOX_COLORS.paid.line) &&
+    invoiceMarkerColor(receiptCell) === INVOICE_BOX_COLORS.paid.marker,
+  'A receipt box uses the paid palette, not the issued one',
+  receiptStyle.backgroundColor
+);
+
+const receiptOnProject = buildInvoiceCoverage([], [baseContract], [], [], [crAlpha], [receipt({ contract_ids: [], project_ids: ['prj-alpha'] })]);
+assert(
+  receiptOnProject.has('cnt-1:2025-01'),
+  'A receipt linked to a change request covers that project’s agreement',
+  [...receiptOnProject.keys()].join(' ')
+);
+assert(
+  buildInvoiceCoverage([], [baseContract], [], [], [], [receipt({ contract_ids: [], project_ids: [] })]).size === 0,
+  'An unlinked receipt paints nothing on the schedule'
+);
+assert(
+  buildInvoiceCoverage([], [baseContract], [], [], [], [receipt({ direction: 'outgoing' })]).size === 0,
+  'Money paid out never marks revenue as received'
+);
+
+const receiptWithInvoice = buildInvoiceCoverage(
+  [invoice({ status: 'sent_received', net: 3000, invoice_number: 'INV-001' })],
+  [baseContract],
+  [],
+  [],
+  [],
+  [receipt({ amount: 3000, amount_eur: 3000, period_from: '2025-01-01', period_to: '2025-03-31' })]
+);
+const mergedCell = receiptWithInvoice.get('cnt-1:2025-02');
+assert(
+  mergedCell?.invoiceTotal === 3000 && mergedCell.receiptTotal === 3000 && coverageTotal(mergedCell) === 6000 &&
+    mergedCell.invoices.join(',') === 'INV-001' && mergedCell.receipts.length === 1,
+  'A receipt and an invoice covering the same month merge into one box',
+  JSON.stringify({ invoiceTotal: mergedCell?.invoiceTotal, receiptTotal: mergedCell?.receiptTotal })
+);
+assert(
+  mergedCell?.paid === true && mergedCell.variance === 3000,
+  'Received money flips the box to paid and counts towards the coverage total',
+  `paid ${mergedCell?.paid} · variance ${mergedCell?.variance}`
+);
+
+const receiptOverDraft = buildInvoiceCoverage([invoice({ status: 'draft' })], [baseContract], [], [], [], [receipt()]);
+const draftPlusReceipt = receiptOverDraft.get('cnt-1:2025-01');
+assert(
+  draftPlusReceipt?.draft === false && draftPlusReceipt.paid === true,
+  'A receipt over a draft invoice settles the box instead of leaving it grey',
+  `draft ${draftPlusReceipt?.draft} · paid ${draftPlusReceipt?.paid}`
+);
+
+const projectReceiptBoxes = buildProjectInvoiceCoverage([], [crAlpha], [receipt({ contract_ids: [], project_ids: ['prj-alpha'] })]);
+assert(
+  projectReceiptBoxes.get(projectInvoiceCellKey('prj-alpha', '2025-01'))?.paid === true &&
+    !projectReceiptBoxes.has(projectInvoiceCellKey('prj-beta', '2025-01')),
+  'A receipt linked to a change request paints only that row',
+  [...projectReceiptBoxes.keys()].join(' ')
+);
 
 // --- Invoice suggestions -----------------------------------------------------
 const today = new Date('2025-03-15T00:00:00');
