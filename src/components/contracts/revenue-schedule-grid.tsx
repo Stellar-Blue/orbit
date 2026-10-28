@@ -14,7 +14,7 @@ import {
 import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
-import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, groupMonthsByYear, scheduleExportTable, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   invoiceCellKey,
@@ -36,7 +36,7 @@ import Link from 'next/link';
 import { Modal, Badge } from '@/components/ui/primitives';
 import { formatMoney } from '@/lib/currency';
 import { formatDate } from '@/lib/date';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote } from 'lucide-react';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote, Download } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -398,6 +398,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   /** Recognition = money spread over the service months; cashflow = money on the months it is billed. */
   const [scheduleBasis, setScheduleBasis] = useState<ScheduleBasis>('recognition');
   const [pendingSuggestions, setPendingSuggestions] = useState<Record<string, true>>({});
+  const [isExporting, setIsExporting] = useState(false);
   const [peek, setPeek] = useState<{ contract: Contract; invoiceIds: string[] } | null>(null);
   const currentYear = new Date().getFullYear();
   const yearStore = useMemo(() => createYearStore(currentYear), [currentYear]);
@@ -624,6 +625,82 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const handleBodyScroll = useCallback((event: BodyScrollEvent<RevenueScheduleRow>) => {
     syncVisibleYear(event.api);
   }, [syncVisibleYear]);
+
+  /**
+   * Excel export of exactly what the grid shows: one line per contract charge stream and change
+   * request, a column per month with a total column per calendar year, and the portfolio line.
+   * `xlsx` is loaded on demand so the schedule screen stays light.
+   */
+  const exportToExcel = useCallback(async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const table = scheduleExportTable(schedule);
+      const fixedHeaders = ['Counterparty', 'Master agreement', 'Stream', 'Detail'];
+      const yearHeader = new Array<string>(fixedHeaders.length).fill('');
+      const columnHeader = [...fixedHeaders];
+      table.years.forEach(({ year, months }) => {
+        yearHeader.push(String(year));
+        months.slice(1).forEach(() => yearHeader.push(''));
+        yearHeader.push('');
+        months.forEach(month => columnHeader.push(monthLabel(month)));
+        columnHeader.push(`${year} total`);
+      });
+
+      const body: Array<Array<string | number>> = table.rows.map(row => {
+        const cells: Array<string | number> = [...row.identity];
+        table.years.forEach(({ year, months }) => {
+          months.forEach(month => cells.push(row.months[month] ?? 0));
+          cells.push(row.yearTotals[year] ?? 0);
+        });
+        return cells;
+      });
+      const totalRow: Array<string | number> = [...table.totals.identity];
+      table.years.forEach(({ year, months }) => {
+        months.forEach(month => totalRow.push(table.totals.months[month] ?? 0));
+        totalRow.push(table.totals.yearTotals[year] ?? 0);
+      });
+
+      const sheet = XLSX.utils.aoa_to_sheet([yearHeader, columnHeader, ...body, totalRow]);
+      const lastColumn = columnHeader.length - 1;
+      sheet['!merges'] = table.years.reduce<Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>>((merges, { months }, index) => {
+        const start = fixedHeaders.length + table.years
+          .slice(0, index)
+          .reduce((columns, group) => columns + group.months.length + 1, 0);
+        merges.push({ s: { r: 0, c: start }, e: { r: 0, c: start + months.length } });
+        return merges;
+      }, []);
+      sheet['!cols'] = columnHeader.map((_, index) => {
+        if (index === 0) return { wch: 30 };
+        if (index === 1) return { wch: 22 };
+        if (index === 2) return { wch: 17 };
+        if (index === 3) return { wch: 34 };
+        return { wch: String(columnHeader[index]).includes('total') ? 14 : 10 };
+      });
+      // Money cells carry a format so the workbook totals and reads like the grid.
+      Object.keys(sheet).forEach(address => {
+        if (address.startsWith('!')) return;
+        const cell = sheet[address];
+        if (!cell || typeof cell.v !== 'number') return;
+        cell.z = '#,##0.00';
+      });
+      const bold = (row: number) => {
+        for (let column = 0; column <= lastColumn; column++) {
+          const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
+          if (cell) cell.s = { font: { bold: true } };
+        }
+      };
+      bold(1);
+      bold(body.length + 2);
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, scheduleBasis === 'cashflow' ? 'Cashflow Schedule' : 'Revenue Schedule');
+      XLSX.writeFile(workbook, `orbit-${scheduleBasis === 'cashflow' ? 'cashflow' : 'revenue'}-schedule-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting, schedule, scheduleBasis]);
 
   const columnDefs = useMemo<(ColDef<RevenueScheduleRow> | ColGroupDef<RevenueScheduleRow>)[]>(() => {
     const monthColumn = (key: string): ColDef<RevenueScheduleRow> => ({
@@ -943,6 +1020,15 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           >
             <CalendarClock className="w-3.5 h-3.5 text-[#2f6fa3]" /> {currentYear}
             <ArrowRight className="w-3 h-3 text-slate-400" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportToExcel()}
+            disabled={isExporting}
+            title="Download this schedule as an Excel workbook"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] disabled:opacity-60 disabled:cursor-wait cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-[var(--ink-3)]" /> {isExporting ? 'Exporting…' : 'Excel'}
           </button>
           <div className="ui-segmented shrink-0" role="group" aria-label="Schedule view">
             <button

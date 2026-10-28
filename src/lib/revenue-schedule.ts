@@ -484,3 +484,55 @@ export function groupMonthsByYear(months: string[]): Array<{ year: number; month
   });
   return groups;
 }
+
+export interface ScheduleExportRow {
+  /** Counterparty, master agreement, stream and detail — the four identifying columns. */
+  identity: [string, string, string, string];
+  /** 'YYYY-MM' → amount, same source the grid renders. */
+  months: Record<string, number>;
+  /** Calendar year → total, so the workbook is self-contained without the frozen column. */
+  yearTotals: Record<number, number>;
+}
+
+export interface ScheduleExportTable {
+  /** Month columns in order, grouped by calendar year. */
+  years: Array<{ year: number; months: string[] }>;
+  rows: ScheduleExportRow[];
+  totals: ScheduleExportRow;
+}
+
+const STREAM_LABELS: Record<RevenueStreamKind, string> = {
+  contract: 'Contract charges',
+  project: 'Change request',
+};
+
+/**
+ * Flattens the grid into the table the Excel export writes: one line per stream (contract charges,
+ * then its change requests), one column per month plus a total column per calendar year, and the
+ * portfolio line at the bottom. Values stay numbers so Excel can sum them.
+ */
+export function scheduleExportTable(schedule: RevenueSchedule): ScheduleExportTable {
+  const years = groupMonthsByYear(schedule.months);
+  const toRow = (row: RevenueScheduleRow): ScheduleExportRow => ({
+    identity: [
+      row.counterparty,
+      row.reference,
+      STREAM_LABELS[row.kind] ?? row.kind,
+      row.kind === 'project'
+        ? (row.projects ?? []).map(project => project.code ? `${project.code} · ${project.name}` : project.name).join(' | ')
+        : row.product,
+    ],
+    months: row.months,
+    yearTotals: Object.fromEntries(years.map(group => [group.year, yearTotalOf(row.months, group.year)])),
+  });
+
+  return {
+    years,
+    rows: schedule.rows.map(toRow),
+    totals: {
+      identity: ['Portfolio total', '', '', ''],
+      months: schedule.monthTotals,
+      yearTotals: Object.fromEntries(years.map(group => [group.year, yearTotalOf(schedule.monthTotals, group.year)])),
+    },
+  };
+}

@@ -258,8 +258,10 @@ body {
 .ag-header-cell:last-child {
   border-right: 0;
 }
-.ag-header-row {
-  border-bottom: 1px solid var(--line-strong) !important;
+/* One rule under the whole header: per-row borders drew a line through pinned cells that span
+   a grouped header (e.g. Counterparty / Master agreement in the revenue schedule). */
+.ag-header {
+  border-bottom: 1px solid var(--line-strong);
 }
 .ag-row {
   border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, white);

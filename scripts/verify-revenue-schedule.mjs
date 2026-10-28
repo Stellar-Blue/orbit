@@ -30,6 +30,7 @@ import {
   invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
+import { scheduleExportTable } from '@/lib/revenue-schedule';
 import { buildDraftInvoicePayload, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
 import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
 import {
@@ -1127,6 +1128,49 @@ assert(
     vatRateForTreatment(undefined) === '24%' && vatPercentFromRate('0% (reverse charge)') === 0 &&
     vatPercentFromRate('24') === 24,
   'VAT treatment and stored rate strings normalise to a percentage'
+);
+
+// --- Excel export ------------------------------------------------------------
+// The workbook mirrors the grid: a line per stream, one column per month, a total per year.
+const exportProjects = [{ id: 'prj-x', contract_id: 'cnt-1', name: 'Rollout', code: 'CR-7', status: 'active', budget_value: 2400, starts_on: '2025-11-01', ends_on: '2026-02-28' }];
+const exportSchedule = buildRevenueSchedule(
+  [contract({ lines: [monthlyLine], starts_on: '2025-11-01', ends_on: '2026-02-28', service_start_date: '2025-11-01' })],
+  exportProjects
+);
+const exportTable = scheduleExportTable(exportSchedule);
+assert(
+  exportTable.years.map(group => group.year).join(',') === '2025,2026' &&
+    exportTable.years[0].months.join(',') === '2025-11,2025-12' &&
+    exportTable.years[1].months.join(',') === '2026-01,2026-02',
+  'The export groups the month columns by calendar year',
+  JSON.stringify(exportTable.years)
+);
+const contractExportRow = exportTable.rows[0];
+assert(
+  contractExportRow.identity[0] === 'DEPA Commercial S.A.' && contractExportRow.identity[1] === 'SB-ATLAS-2025-01' &&
+    contractExportRow.identity[2] === 'Contract charges' && contractExportRow.identity[3] === 'saas_subscription',
+  'A contract line carries counterparty, agreement, stream and product',
+  JSON.stringify(contractExportRow.identity)
+);
+assert(
+  contractExportRow.yearTotals[2025] === 2000 && contractExportRow.yearTotals[2026] === 2000 &&
+    contractExportRow.months['2025-11'] === 1000,
+  'Each exported line totals its own months per year',
+  JSON.stringify(contractExportRow.yearTotals)
+);
+const changeRequestExportRow = exportTable.rows[1];
+assert(
+  changeRequestExportRow.identity[2] === 'Change request' && changeRequestExportRow.identity[3] === 'CR-7 · Rollout' &&
+    changeRequestExportRow.yearTotals[2025] === 1200,
+  'Change requests export with their project codes',
+  JSON.stringify(changeRequestExportRow.identity)
+);
+assert(
+  exportTable.totals.identity[0] === 'Portfolio total' &&
+    exportTable.totals.months['2025-11'] === exportSchedule.monthTotals['2025-11'] &&
+    exportTable.totals.yearTotals[2026] === yearTotalOf(exportSchedule.monthTotals, 2026),
+  'The last exported row is the portfolio total',
+  JSON.stringify(exportTable.totals.yearTotals)
 );
 
 console.log('\n================================================================');
