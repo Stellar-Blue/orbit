@@ -120,11 +120,16 @@ export interface TimingSplitAmount {
 /**
  * The contract's line-derived charges split by invoicing timing, or null when the contract has no
  * billable lines (legacy / line-less agreements fall back to the total-only path).
+ *
+ * `arrearsAtCycleEnd` recognises a quarterly / annual charge billed in arrears on its cycle's last
+ * service month (the month the invoice is raised) instead of the cycle's first month. Cashflow reads
+ * the default split, because its own cycle bucketing already lands arrears money on the period end.
  */
 export function contractChargeMonthsByTiming(
   contract: Contract,
   catalogModules: CatalogModule[] = [],
-  catalogItems: CatalogItem[] = []
+  catalogItems: CatalogItem[] = [],
+  options: { arrearsAtCycleEnd?: boolean } = {}
 ): Record<string, TimingSplitAmount> | null {
   const billableLines = (contract.lines || []).filter(l => l.line_kind !== 'man_hours');
   if (billableLines.length === 0) return null;
@@ -138,7 +143,8 @@ export function contractChargeMonthsByTiming(
     catalogModules,
     catalogItems,
     contract.groups || [],
-    contract.invoice_timing || 'start_of_period'
+    contract.invoice_timing || 'start_of_period',
+    { arrearsAtCycleEnd: options.arrearsAtCycleEnd === true }
   ).forEach(({ period, advance, arrears }) => {
     const adv = round2(advance);
     const arr = round2(arrears);
@@ -147,7 +153,10 @@ export function contractChargeMonthsByTiming(
   return split;
 }
 
-/** The contract's own monthly charges. */
+/**
+ * The contract's own monthly charges — the revenue-recognition stream. A periodic charge billed in
+ * arrears lands on its cycle's last service month, matching the month its invoice is raised.
+ */
 export function contractChargeMonths(
   contract: Contract,
   catalogModules: CatalogModule[] = [],
@@ -158,7 +167,7 @@ export function contractChargeMonths(
 
   // The price sheet is the source of truth: a persisted schedule is only a projection of it, so it
   // must never win over the current lines (a removed line or a moved term would keep charging).
-  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems);
+  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems, { arrearsAtCycleEnd: true });
   if (split) return totalChargesFromTiming(split);
 
   // Man-hours-only contracts are billed from timesheets (their change requests), never as a fixed value.
@@ -236,7 +245,10 @@ export function resampleToBillingMonths(
   const billAtEnd = contract.invoice_timing === 'end_of_period';
   const window = contractEffectiveWindow(contract);
   const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
-  const lastMonth = chargeMonths[chargeMonths.length - 1];
+  // The last cycle has to reach its own end, or arrears money charged in its opening month would be
+  // billed there instead of at the period end (second annual fee → January instead of December).
+  const lastCharge = chargeMonths[chargeMonths.length - 1];
+  const lastMonth = window.endKey > lastCharge ? window.endKey : lastCharge;
   const horizon = monthKeysBetween(firstMonth, lastMonth);
 
   // Cycles are anchored on the contract (not the calendar), exactly like getContractBillingPeriods.
@@ -290,7 +302,8 @@ export function resampleTimingToBillingMonths(
 
   const window = contractEffectiveWindow(contract);
   const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
-  const lastMonth = chargeMonths[chargeMonths.length - 1];
+  const lastCharge = chargeMonths[chargeMonths.length - 1];
+  const lastMonth = window.endKey > lastCharge ? window.endKey : lastCharge;
   const horizon = monthKeysBetween(firstMonth, lastMonth);
 
   // Cycles are anchored on the contract, exactly like getContractBillingPeriods.
@@ -380,15 +393,14 @@ export function buildRevenueSchedule(
     const window = contractEffectiveWindow(contract);
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
-    const timingSplit = contractChargeMonthsByTiming(contract, catalogModules, catalogItems);
-    const monthlyCharges = timingSplit
-      ? totalChargesFromTiming(timingSplit)
-      : contractChargeMonths(contract, catalogModules, catalogItems);
-    const charges = basis === 'cashflow'
-      ? (timingSplit
-          ? resampleTimingToBillingMonths(contract, timingSplit)
-          : resampleToBillingMonths(contract, monthlyCharges))
-      : monthlyCharges;
+    // Cashflow re-buckets the raw split onto the contract's billing cycles; recognition reads the
+    // monthly stream, where periodic arrears charges already sit on their cycle's last month.
+    const timingSplit = basis === 'cashflow' ? contractChargeMonthsByTiming(contract, catalogModules, catalogItems) : null;
+    const charges = timingSplit
+      ? resampleTimingToBillingMonths(contract, timingSplit)
+      : basis === 'cashflow'
+        ? resampleToBillingMonths(contract, contractChargeMonths(contract, catalogModules, catalogItems))
+        : contractChargeMonths(contract, catalogModules, catalogItems);
     const projectSchedules = contractProjectSchedules(contract, projects);
 
     Object.keys(charges).forEach(key => effectiveMonths.add(key));

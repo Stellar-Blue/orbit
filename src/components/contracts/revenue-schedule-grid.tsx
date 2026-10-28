@@ -896,7 +896,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           <p className="text-[11px] text-slate-500 mt-0.5">
             {scheduleBasis === 'cashflow'
               ? 'What actually gets invoiced: each contract’s charges land once per billing cycle (monthly, quarterly or annual, at the period start or end), alongside the invoices issued, paid or suggested.'
-              : 'Month-by-month revenue mirroring the budget workbook — contract charges and project-based change requests per master agreement.'}
+              : 'Month-by-month revenue mirroring the budget workbook — contract charges and project-based change requests per master agreement. A quarterly or annual charge billed in arrears sits on the period it closes.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
@@ -948,7 +948,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <button
               type="button"
               onClick={() => setScheduleBasis('recognition')}
-              title="Spread each contract over the months the service is delivered"
+              title="Spread each contract over the months the service is delivered — a charge billed in arrears lands on the period it closes"
               aria-pressed={scheduleBasis === 'recognition'}
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                 scheduleBasis === 'recognition' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'

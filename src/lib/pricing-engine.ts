@@ -358,6 +358,11 @@ export function calculatePeriodAmountsByTiming(
  * The timing split of `calculatePeriodAmountsForPeriods`: identical inclusion rules (so advance +
  * arrears equals the monthly total), with each month's money attributed to the invoicing timing of
  * the lines that produced it. Explicit periods keep fractional terms from dropping the last month.
+ *
+ * `arrearsAtCycleEnd` moves a periodic charge billed in arrears (quarterly / annual) from the first
+ * month of its cycle to the cycle's last service month — revenue recognition follows the invoice,
+ * which is raised at the period end. Cashflow keeps the default so its own cycle bucketing is
+ * unaffected. The amount itself is still priced on the cycle's opening month.
  */
 export function calculatePeriodAmountsForPeriodsByTiming(
   lines: Array<Partial<ContractLine>>,
@@ -366,11 +371,24 @@ export function calculatePeriodAmountsForPeriodsByTiming(
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
   groups: Array<Partial<ContractLineGroup>> = [],
-  contractTiming: string = 'start_of_period'
+  contractTiming: string = 'start_of_period',
+  options: { arrearsAtCycleEnd?: boolean } = {}
 ): ContractPeriodTimingAmount[] {
   const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const groupFloors = buildGroupFloorMap(groups);
   const result: ContractPeriodTimingAmount[] = [];
+  const alignArrears = options.arrearsAtCycleEnd === true;
+  /** Arrears money waiting for the last month of its cycle, keyed by that month's index. */
+  const deferredArrears = new Map<number, number>();
+  const lastActiveCache = new Map<Partial<ContractLine>, number>();
+  const lastActiveIndex = (line: Partial<ContractLine>): number => {
+    const cached = lastActiveCache.get(line);
+    if (cached !== undefined) return cached;
+    let index = periods.length - 1;
+    while (index > 0 && !isLineActiveInPeriod(line, periods[index])) index--;
+    lastActiveCache.set(line, index);
+    return index;
+  };
 
   periods.forEach((period, pIdx) => {
     const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
@@ -397,12 +415,24 @@ export function calculatePeriodAmountsForPeriodsByTiming(
         : false;
       if (!included) return;
 
-      if (getLineInvoiceTiming(l, contractTiming) === 'end_of_period') arrears += netVal;
-      else advance += netVal;
+      if (getLineInvoiceTiming(l, contractTiming) === 'end_of_period') {
+        if (alignArrears && (l.frequency === 'quarterly' || l.frequency === 'annual')) {
+          const cycleMonths = l.frequency === 'quarterly' ? 3 : 12;
+          const cycleEnd = anchor + Math.floor((pIdx - anchor) / cycleMonths) * cycleMonths + cycleMonths - 1;
+          const target = Math.max(pIdx, Math.min(cycleEnd, lastActiveIndex(l)));
+          deferredArrears.set(target, (deferredArrears.get(target) || 0) + netVal);
+          return;
+        }
+        arrears += netVal;
+      } else {
+        advance += netVal;
+      }
     });
 
+    // Arrears money deferred to this month by an earlier cycle (and any that lands on itself).
+    const deferred = deferredArrears.get(pIdx) || 0;
     const adv = Number(advance.toFixed(2));
-    const arr = Number(arrears.toFixed(2));
+    const arr = Number((arrears + deferred).toFixed(2));
     result.push({ period, advance: adv, arrears: arr, total: Number((adv + arr).toFixed(2)) });
   });
 

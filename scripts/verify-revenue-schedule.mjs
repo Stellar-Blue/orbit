@@ -417,6 +417,103 @@ assert(
   mixedGridRow ? JSON.stringify(mixedGridRow.months) : 'missing'
 );
 
+// --- Recognition of periodic charges billed in arrears -----------------------
+// An annual / quarterly charge billed in arrears is invoiced at the end of its own cycle, so the
+// revenue view must land it on that last service month instead of the cycle's opening month.
+const annualArrearsLine = {
+  id: 'l-annual', contract_id: 'cnt-1', name: 'Support retainer', unit_price: 12000, quantity: 1,
+  unit_label: 'flat', frequency: 'annual', invoice_timing: 'end_of_period',
+};
+const annualContract = contract({
+  lines: [annualArrearsLine],
+  billing_cadence: 'annual',
+  invoice_timing: 'end_of_period',
+  starts_on: '2026-01-01',
+  ends_on: '2027-12-31',
+});
+const annualRecognition = contractChargeMonths(annualContract);
+assert(
+  JSON.stringify(annualRecognition) === JSON.stringify({ '2026-12': 12000, '2027-12': 12000 }),
+  'An annual charge billed in arrears is recognised at the end of its cycle',
+  JSON.stringify(annualRecognition)
+);
+const annualRecognitionGrid = buildRevenueSchedule([annualContract], []);
+assert(
+  annualRecognitionGrid.rows[0].months['2026-12'] === 12000 && annualRecognitionGrid.rows[0].months['2026-01'] === undefined,
+  'The revenue view shows the annual arrears charge in December',
+  JSON.stringify(annualRecognitionGrid.rows[0].months)
+);
+const annualCashGrid = buildRevenueSchedule([annualContract], [], [], [], { basis: 'cashflow' });
+assert(
+  JSON.stringify(annualCashGrid.rows[0].months) === JSON.stringify(annualRecognition),
+  'Cashflow and revenue agree on an annual cycle billed in arrears',
+  JSON.stringify(annualCashGrid.rows[0].months)
+);
+
+// Paying up front keeps the charge at the start of the cycle.
+const annualAdvanceRecognition = contractChargeMonths(contract({
+  lines: [{ ...annualArrearsLine, invoice_timing: 'start_of_period' }],
+  billing_cadence: 'annual',
+  invoice_timing: 'start_of_period',
+  starts_on: '2026-01-01',
+  ends_on: '2027-12-31',
+}));
+assert(
+  JSON.stringify(annualAdvanceRecognition) === JSON.stringify({ '2026-01': 12000, '2027-01': 12000 }),
+  'An annual charge billed in advance stays at the start of its cycle',
+  JSON.stringify(annualAdvanceRecognition)
+);
+
+// Quarterly in arrears behaves the same way, one quarter at a time.
+const quarterlyArrearsRecognition = contractChargeMonths(contract({
+  lines: [{ ...monthlyFeeLine, frequency: 'quarterly', unit_price: 3000, invoice_timing: 'end_of_period' }],
+  billing_cadence: 'quarterly',
+  invoice_timing: 'end_of_period',
+}));
+assert(
+  Object.keys(quarterlyArrearsRecognition).join(',') === '2025-03,2025-06,2025-09,2025-12' &&
+    yearTotalOf(quarterlyArrearsRecognition, 2025) === 12000,
+  'A quarterly arrears fee is recognised in the quarter last month',
+  JSON.stringify(quarterlyArrearsRecognition)
+);
+
+// A line that ends mid-cycle settles in its own last service month.
+const shortAnnual = contractChargeMonths(contract({
+  lines: [{ ...annualArrearsLine, starts_on: '2025-03-01', ends_on: '2025-12-31' }],
+  billing_cadence: 'annual',
+  invoice_timing: 'end_of_period',
+}));
+assert(
+  JSON.stringify(shortAnnual) === JSON.stringify({ '2025-12': 12000 }),
+  'An annual charge on a partial year settles in the line last month',
+  JSON.stringify(shortAnnual)
+);
+
+// A line starting after the contract anchor keeps its own annual rhythm.
+const lateAnnual = contractChargeMonths(contract({
+  lines: [{ ...annualArrearsLine, starts_on: '2025-07-01' }],
+  billing_cadence: 'annual',
+  invoice_timing: 'end_of_period',
+  ends_on: '2026-06-30',
+}));
+assert(
+  JSON.stringify(lateAnnual) === JSON.stringify({ '2026-06': 12000 }),
+  'A mid-term annual line is recognised twelve months after it starts',
+  JSON.stringify(lateAnnual)
+);
+
+// The move is placement only: every month still adds up to the contract value.
+const movedTotals = contractChargeMonths(contract({
+  lines: [monthlyFeeLine, annualArrearsLine],
+  billing_cadence: 'monthly',
+  invoice_timing: 'start_of_period',
+}));
+assert(
+  yearTotalOf(movedTotals, 2025) === 12000 + 12000,
+  'Recognising arrears at cycle end keeps the year total',
+  String(yearTotalOf(movedTotals, 2025))
+);
+
 // --- Invoice overlay ---------------------------------------------------------
 const invoice = (overrides = {}) => ({
   id: 'inv-1',
