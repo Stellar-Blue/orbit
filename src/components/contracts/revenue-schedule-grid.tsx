@@ -811,8 +811,13 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             title={
               coverage
                 ? data?.kind === 'project'
-                  ? `Invoiced ${formatTotal(coverage.invoiceTotal)} · ${coverage.invoices.join(', ')}${
-                      coverage.draft ? ' · draft, not issued yet' : coverage.paid ? ' · paid' : ' · not paid yet'
+                  ? `Invoiced ${formatTotal(coverage.invoiceTotal)} · ${coverage.invoices.join(', ')} · ${
+                      coverage.draft ? 'draft, not issued yet' : coverage.paid ? 'paid' : 'not paid yet'
+                    } · ${
+                      (data.projects ?? [])
+                        .filter(project => projectCoverageRef.current.has(projectInvoiceCellKey(project.id, key)))
+                        .map(projectBadgeLabel)
+                        .join(', ')
                     }`
                   : coverageTooltip(coverage)
                 : suggestion
@@ -831,7 +836,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   : showAction || showProjects ? 'flex-start' : markerAlign,
               }}
             >
-              {showProjects && projectShares && (
+              {showProjects && projectShares && !showBadge && (
                 <span
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: '100%', padding: '0 3px',
