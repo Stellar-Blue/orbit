@@ -196,8 +196,8 @@ function CounterpartyStreamRenderer(params: ICellRendererParams<RevenueScheduleR
       <div className="text-[11px] font-bold text-slate-800 truncate">
         {String(params.value ?? params.data?.counterparty ?? '')}
       </div>
-      <div className={`text-[9px] font-semibold flex items-center gap-1 ${isContractRow ? 'text-[#3D87D3]' : 'text-amber-600'}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${isContractRow ? 'bg-[#3D87D3]' : 'bg-amber-500'}`} />
+      <div className={`text-[9px] font-semibold flex items-center gap-1 ${isContractRow ? 'text-[#2f6fa3]' : 'text-amber-600'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${isContractRow ? 'bg-[#2f6fa3]' : 'bg-amber-500'}`} />
         {isContractRow ? 'Contract charges' : 'Change request'}
       </div>
     </div>
@@ -298,7 +298,7 @@ function InvoicePeekModal({ invoices, contract, onClose }: {
               <div className="flex justify-end">
                 <Link
                   href={`/invoices/${invoice.id}`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-[#3D87D3] hover:text-[#2f6ea9] transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-[#2f6fa3] hover:text-[#2f6ea9] transition-colors"
                 >
                   Open invoice <ArrowUpRight className="w-3 h-3" />
                 </Link>
@@ -752,7 +752,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 2, width: '100%', height: 10, padding: '0 3px',
-                    border: 0, borderRadius: 3, background: 'rgba(61, 135, 211, 0.18)', color: '#1d4e79',
+                    border: 0, borderRadius: 3, background: 'rgba(47, 111, 163, 0.18)', color: '#1d4e79',
                     fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
                     overflow: 'hidden', cursor: creating ? 'wait' : 'pointer',
                   }}
@@ -887,7 +887,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-[#3D87D3]" />
+            <TrendingUp className="w-4 h-4 text-[#2f6fa3]" />
             <span className="text-sm font-extrabold text-slate-800">{scheduleBasis === 'cashflow' ? 'Cashflow Schedule' : 'Revenue Schedule & MRR'}</span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {contracts.length} contract{contracts.length === 1 ? '' : 's'} · {changeRequestCount} change request{changeRequestCount === 1 ? '' : 's'}
@@ -910,7 +910,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           </div>
           <div className="text-right">
             <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">{visibleYear} total</span>
-            <span className="text-sm font-mono font-black text-[#3D87D3]">{formatTotal(visibleYearTotal)}</span>
+            <span className="text-sm font-mono font-black text-[#2f6fa3]">{formatTotal(visibleYearTotal)}</span>
           </div>
           <button
             type="button"
@@ -933,26 +933,23 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
               placeholder="Search counterparty or agreement…"
               value={quickFilter}
               onChange={event => setQuickFilter(event.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+              className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
             />
           </div>
           <button
             type="button"
             onClick={() => { if (gridApiRef.current) scrollToCurrentYear(gridApiRef.current); }}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-slate-600 cursor-pointer"
+            className="inline-flex items-center gap-1 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] cursor-pointer"
           >
-            <CalendarClock className="w-3.5 h-3.5 text-[#3D87D3]" /> {currentYear}
+            <CalendarClock className="w-3.5 h-3.5 text-[#2f6fa3]" /> {currentYear}
             <ArrowRight className="w-3 h-3 text-slate-400" />
           </button>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shrink-0" role="group" aria-label="Schedule view">
+          <div className="ui-segmented shrink-0" role="group" aria-label="Schedule view">
             <button
               type="button"
               onClick={() => setScheduleBasis('recognition')}
               title="Spread each contract over the months the service is delivered — a charge billed in arrears lands on the period it closes"
               aria-pressed={scheduleBasis === 'recognition'}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                scheduleBasis === 'recognition' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
             >
               <BarChart3 className="w-3 h-3" /> Revenue
             </button>
@@ -961,9 +958,6 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
               onClick={() => setScheduleBasis('cashflow')}
               title="Show one value per billing cycle — what will be invoiced"
               aria-pressed={scheduleBasis === 'cashflow'}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                scheduleBasis === 'cashflow' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
             >
               <Banknote className="w-3 h-3" /> Cashflow
             </button>
@@ -976,10 +970,11 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                 setSelectionVersion(version => version + 1);
               }}
               title={groupByCounterparty ? 'Show a flat list instead of counterparty groups' : 'Group the schedule by counterparty'}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+              aria-pressed={groupByCounterparty}
+              className={`h-7 px-2.5 inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border text-[12px] font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                 groupByCounterparty
-                  ? 'border-[#3D87D3]/40 bg-[#3D87D3]/10 text-[#3D87D3]'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  ? 'border-[color-mix(in_srgb,var(--accent)_40%,white)] bg-[var(--accent-soft)] text-[var(--accent-ink)]'
+                  : 'border-[var(--line-strong)] bg-white text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--surface-muted)]'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
@@ -988,8 +983,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           )}
         </div>
         {selectionStats ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#3D87D3]/30 bg-[#3D87D3]/5 px-2.5 py-1 text-[10px] font-bold text-slate-600">
-            <span className="uppercase tracking-wider text-[#3D87D3]">Selection</span>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#2f6fa3]/30 bg-[#2f6fa3]/5 px-2.5 py-1 text-[10px] font-bold text-slate-600">
+            <span className="uppercase tracking-wider text-[#2f6fa3]">Selection</span>
             <span>Σ <span className="font-mono text-slate-900">{formatTotal(selectionStats.sum)}</span></span>
             <span>Avg <span className="font-mono text-slate-900">{formatTotal(selectionStats.avg)}</span></span>
             <span>Min <span className="font-mono text-slate-900">{formatTotal(selectionStats.min)}</span></span>
@@ -1007,12 +1002,12 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500">
-            <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#3D87D3]" /> Contract charges</span>
+            <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#2f6fa3]" /> Contract charges</span>
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Change requests</span>
             <span className="inline-flex items-center gap-1"><Layers className="w-3 h-3 text-slate-400" /> {horizonLabel}</span>
             {invoiceSuggestions.list.length > 0 && (
               <span className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-[#3D87D3]/10 ring-1 ring-[#3D87D3]/40" />
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#2f6fa3]/10 ring-1 ring-[#2f6fa3]/40" />
                 {invoiceSuggestions.list.length} suggested invoice{invoiceSuggestions.list.length === 1 ? '' : 's'} · click ＋ to draft
               </span>
             )}

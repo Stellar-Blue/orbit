@@ -71,7 +71,7 @@ export function GeneralSettings() {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full text-sm border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3]"
+              className="w-full text-sm border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20 focus:border-[#2f6fa3]"
               placeholder="e.g. StellarBlue"
             />
           </div>
@@ -82,7 +82,7 @@ export function GeneralSettings() {
               type="text"
               value={vatNumber}
               onChange={(e) => setVatNumber(e.target.value)}
-              className="w-full text-sm border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3]"
+              className="w-full text-sm border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20 focus:border-[#2f6fa3]"
               placeholder="e.g. 802309756"
             />
             <p className="text-[11px] text-slate-500 mt-1.5">
@@ -96,7 +96,7 @@ export function GeneralSettings() {
               type="text"
               value={logoUrl}
               onChange={(e) => setLogoUrl(e.target.value)}
-              className="w-full text-sm border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3]"
+              className="w-full text-sm border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20 focus:border-[#2f6fa3]"
               placeholder="e.g. /logo.png"
             />
           </div>
@@ -105,7 +105,7 @@ export function GeneralSettings() {
             <button
               onClick={handleSave}
               disabled={isSaving || !name.trim()}
-              className="flex items-center justify-center space-x-2 w-full sm:w-auto bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white px-6 py-2.5 rounded-xl font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center space-x-2 w-full sm:w-auto bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white px-6 py-2.5 rounded-xl font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-4 h-4" />
               <span>{isSaving ? "Saving..." : "Save Profile"}</span>

@@ -11,7 +11,7 @@ import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDi
 import { Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, DollarSign, X,
-  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap
+  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap, LayoutList
 } from 'lucide-react';
 import { accountingInvoices } from '@/lib/invoice-netting';
 import { ContractPricingBuilder, type PricingDraft } from '@/components/contracts/contract-pricing-builder';
@@ -529,34 +529,21 @@ export default function ContractsRegistryPage() {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-150">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-[var(--line)] pb-4">
+      {/* Header — command bar: where you are, then the one action that matters. */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-[var(--line-strong)] pb-3">
         <div className="min-w-0">
-          <h1 className="ui-title">Contracts</h1>
-          <p className="text-[13px] text-[var(--ink-3)] mt-1 max-w-2xl">
+          <p className="ui-eyebrow">Operations · Contract registry</p>
+          <h1 className="ui-title mt-1">Contracts</h1>
+          <p className="text-[12.5px] text-[var(--ink-3)] mt-1 max-w-2xl">
             Client revenue and supplier spend in one registry, with renewal notice windows and invoicing per agreement.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <div className="inline-flex rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white p-0.5" role="group" aria-label="View">
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
-              aria-pressed={viewMode === 'table'}
-              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
-                viewMode === 'table' ? 'bg-[var(--accent)] text-white' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
-              }`}
-            >
-              List
+          <div className="ui-segmented" role="group" aria-label="View">
+            <button type="button" onClick={() => setViewMode('table')} aria-pressed={viewMode === 'table'}>
+              <LayoutList className="w-3.5 h-3.5" /> List
             </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('revenue')}
-              aria-pressed={viewMode === 'revenue'}
-              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
-                viewMode === 'revenue' ? 'bg-[var(--accent)] text-white' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
-              }`}
-            >
+            <button type="button" onClick={() => setViewMode('revenue')} aria-pressed={viewMode === 'revenue'}>
               <BarChart3 className="w-3.5 h-3.5" /> Revenue schedule
             </button>
           </div>
@@ -601,38 +588,17 @@ export default function ContractsRegistryPage() {
       </div>
 
       {/* Filters — direction, status and the reporting window in one strip */}
-      <div className="ui-card p-3">
+      <div className="ui-card p-2.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex flex-wrap items-center gap-0.5 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-muted)] p-0.5" role="group" aria-label="Direction">
-            <button
-              type="button"
-              onClick={() => setDirectionFilter('all')}
-              aria-pressed={directionFilter === 'all'}
-              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
-                directionFilter === 'all' ? 'bg-white text-[var(--ink)] shadow-[var(--shadow-card)]' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
-              }`}
-            >
+          <div className="ui-segmented" role="group" aria-label="Direction">
+            <button type="button" onClick={() => setDirectionFilter('all')} aria-pressed={directionFilter === 'all'}>
               All contracts
             </button>
-            <button
-              type="button"
-              onClick={() => setDirectionFilter('revenue')}
-              aria-pressed={directionFilter === 'revenue'}
-              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
-                directionFilter === 'revenue' ? 'bg-white text-emerald-700 shadow-[var(--shadow-card)]' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
-              }`}
-            >
-              Client revenue <span className="ui-num font-medium text-[var(--ink-4)]">€{revenueTotal.toLocaleString()}/yr</span>
+            <button type="button" onClick={() => setDirectionFilter('revenue')} aria-pressed={directionFilter === 'revenue'}>
+              Client revenue <span className="font-mono text-[11px] font-medium text-[var(--ink-4)]">€{revenueTotal.toLocaleString()}/yr</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setDirectionFilter('cost')}
-              aria-pressed={directionFilter === 'cost'}
-              className={`h-7 px-2.5 rounded-md text-[12px] font-semibold transition-colors cursor-pointer ${
-                directionFilter === 'cost' ? 'bg-white text-amber-700 shadow-[var(--shadow-card)]' : 'text-[var(--ink-3)] hover:text-[var(--ink)]'
-              }`}
-            >
-              Supplier spend <span className="ui-num font-medium text-[var(--ink-4)]">€{costTotal.toLocaleString()}/yr</span>
+            <button type="button" onClick={() => setDirectionFilter('cost')} aria-pressed={directionFilter === 'cost'}>
+              Supplier spend <span className="font-mono text-[11px] font-medium text-[var(--ink-4)]">€{costTotal.toLocaleString()}/yr</span>
             </button>
           </div>
 
@@ -641,7 +607,7 @@ export default function ContractsRegistryPage() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as ContractStatus | 'all')}
-              className="h-8 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+              className="h-7 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white px-2 text-[12px] font-medium text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
               <option value="all">All statuses</option>
               <option value="active">Active only</option>
@@ -715,6 +681,7 @@ export default function ContractsRegistryPage() {
         isOpen={!!selectedContract} 
         onClose={() => setSelectedContract(null)} 
         title={selectedContract ? selectedContract.reference : 'Contract'}
+        eyebrow={`Contract dossier · ${selectedContract?.direction === 'cost' ? 'Supplier spend' : 'Client revenue'}`}
         size="full"
       >
         {selectedContract && (
@@ -766,60 +733,30 @@ export default function ContractsRegistryPage() {
               );
             })()}
 
-            {/* Modal Internal Navigation */}
-            <div className="flex flex-wrap items-center gap-5 border-b border-[var(--line)] pb-2">
-              <button
-                type="button"
-                onClick={() => setDossierTab('general')}
-                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
-                  dossierTab === 'general' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-                }`}
-              >
+            {/* Modal internal navigation — same machined switch as the list screens. */}
+            <div className="ui-segmented flex-wrap" role="group" aria-label="Contract dossier sections">
+              <button type="button" aria-pressed={dossierTab === 'general'} onClick={() => setDossierTab('general')}>
                 <Edit3 className="w-3.5 h-3.5" /> Terms &amp; metadata
               </button>
-              <button
-                type="button"
-                onClick={() => setDossierTab('pricing')}
-                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
-                  dossierTab === 'pricing' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-                }`}
-              >
+              <button type="button" aria-pressed={dossierTab === 'pricing'} onClick={() => setDossierTab('pricing')}>
                 <Layers className="w-3.5 h-3.5" /> Rate sheet &amp; schedule
                 {selectedContract.lines && selectedContract.lines.length > 0 && (
-                  <Badge variant="neutral">{selectedContract.lines.length}</Badge>
+                  <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{selectedContract.lines.length}</span>
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setDossierTab('invoices')}
-                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
-                  dossierTab === 'invoices' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-                }`}
-              >
+              <button type="button" aria-pressed={dossierTab === 'invoices'} onClick={() => setDossierTab('invoices')}>
                 <Receipt className="w-3.5 h-3.5" /> Invoices
                 {(invoices ?? []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])).length > 0 && (
-                  <Badge variant="neutral">{(invoices ?? []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])).length}</Badge>
+                  <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{(invoices ?? []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])).length}</span>
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setDossierTab('projects')}
-                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
-                  dossierTab === 'projects' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-                }`}
-              >
+              <button type="button" aria-pressed={dossierTab === 'projects'} onClick={() => setDossierTab('projects')}>
                 <Layers className="w-3.5 h-3.5" /> Projects
                 {projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length > 0 && (
-                  <Badge variant="neutral">{projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length}</Badge>
+                  <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length}</span>
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setDossierTab('ratecard')}
-                className={`pb-2.5 text-[13px] font-semibold transition-colors border-b-2 -mb-[9px] cursor-pointer flex items-center gap-2 ${
-                  dossierTab === 'ratecard' ? 'border-[var(--accent)] text-[var(--accent-ink)]' : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-                }`}
-              >
+              <button type="button" aria-pressed={dossierTab === 'ratecard'} onClick={() => setDossierTab('ratecard')}>
                 <DollarSign className="w-3.5 h-3.5" /> Rate card
               </button>
             </div>
@@ -1357,7 +1294,7 @@ export default function ContractsRegistryPage() {
           <div>
             <label className="block font-semibold uppercase text-slate-500 mb-1.5 flex items-center justify-between">
               <span>Counterparty (Client / Supplier) <span className="text-red-500">*</span></span>
-              <span className="text-[11px] text-[#3D87D3] normal-case font-semibold">First-Class Registry Entity</span>
+              <span className="text-[11px] text-[#2f6fa3] normal-case font-semibold">First-Class Registry Entity</span>
             </label>
             <CounterpartyPicker
               value={newCounterpartyId}
@@ -1444,7 +1381,7 @@ export default function ContractsRegistryPage() {
               type="file" 
               onChange={handleSelectDocForNew} 
               accept=".pdf,.doc,.docx,.png,.jpg"
-              className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 text-xs font-medium file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#3D87D3]/10 file:text-[#3D87D3] hover:file:bg-[#3D87D3]/20 cursor-pointer"
+              className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 text-xs font-medium file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#2f6fa3]/10 file:text-[#2f6fa3] hover:file:bg-[#2f6fa3]/20 cursor-pointer"
             />
             {isUploadingDoc && <p className="text-[11px] text-blue-600 font-bold mt-1 animate-pulse">⏳ Uploading file to Supabase Storage bucket...</p>}
             {newDocName && !isUploadingDoc && <p className="text-[11px] text-emerald-700 font-extrabold mt-1">✓ Storage File Ready: {newDocName}</p>}

@@ -1,14 +1,23 @@
 import React from "react";
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { AppLayoutWrapper } from "@/components/layout/app-layout-wrapper";
 import { ValidationHost } from "@/lib/validation-modal";
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+// Industrial sans + true monospace: the pair an operations console is set in.
+const plexSans = IBM_Plex_Sans({
+  variable: "--font-plex-sans",
   subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -25,7 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${outfit.variable} antialiased bg-slate-50 text-slate-800 font-sans min-h-screen flex selection:bg-[#3D87D3] selection:text-white`}
+        className={`${plexSans.variable} ${plexMono.variable} antialiased text-[var(--ink-2)] font-sans min-h-screen flex selection:bg-[var(--accent)] selection:text-white`}
       >
         <AuthProvider>
           <AppLayoutWrapper>

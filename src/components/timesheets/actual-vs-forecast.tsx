@@ -86,7 +86,7 @@ export function ProjectActualVsForecast({ projectId }: { projectId: string }) {
     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center">
-          <Scale className="w-3 h-3 mr-1 text-[#3D87D3]" /> Actual vs Predicted man-hours
+          <Scale className="w-3 h-3 mr-1 text-[#2f6fa3]" /> Actual vs Predicted man-hours
         </span>
         <Badge variant="info" className="text-[9px]">
           <CalendarCheck2 className="w-2.5 h-2.5 mr-1" /> Approved hours to date
@@ -100,7 +100,7 @@ export function ProjectActualVsForecast({ projectId }: { projectId: string }) {
         </div>
         <div className="rounded-lg bg-white border border-slate-200 py-2">
           <div className="text-[9px] font-extrabold uppercase text-slate-400">Actual approved</div>
-          <div className="text-sm font-black text-[#3D87D3]">{hours(totalActual)}</div>
+          <div className="text-sm font-black text-[#2f6fa3]">{hours(totalActual)}</div>
         </div>
         <div className="rounded-lg bg-white border border-slate-200 py-2">
           <div className="text-[9px] font-extrabold uppercase text-slate-400">Variance</div>
@@ -151,7 +151,7 @@ export function ProjectActualVsForecast({ projectId }: { projectId: string }) {
             <tr className="border-t border-slate-200 bg-white/60">
               <td className="py-1.5 px-2 font-extrabold text-slate-800">Total</td>
               <td className="py-1.5 px-1.5 text-right font-mono font-black text-slate-800">{hours(totalForecast)}</td>
-              <td className="py-1.5 px-1.5 text-right font-mono font-black text-[#3D87D3]">{hours(totalActual)}</td>
+              <td className="py-1.5 px-1.5 text-right font-mono font-black text-[#2f6fa3]">{hours(totalActual)}</td>
               <td className={`py-1.5 px-1.5 text-right font-mono font-black ${deltaCls}`}>{delta >= 0 ? '+' : ''}{hours(delta)}</td>
             </tr>
           </tfoot>

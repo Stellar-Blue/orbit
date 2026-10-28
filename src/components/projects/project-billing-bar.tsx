@@ -46,7 +46,7 @@ export function ProjectBillingBar({
         </span>
         <Link
           href={link}
-          className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#3D87D3] hover:underline shrink-0"
+          className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#2f6fa3] hover:underline shrink-0"
           title={amount > 0 ? `Open the register pre-filled with ${money(amount)} (${projectBasisLabel(basis.basis)})` : 'Open the register for this project'}
         >
           <Receipt className="w-3.5 h-3.5" /> Create draft invoice →

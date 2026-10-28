@@ -100,7 +100,7 @@ export function PaymentDocumentTypesSettings() {
             />
           </div>
           <div className="flex items-end">
-            <Button size="sm" variant="primary" onClick={handleAdd} disabled={adding || !label.trim()} className="bg-[#3D87D3] text-white cursor-pointer">
+            <Button size="sm" variant="primary" onClick={handleAdd} disabled={adding || !label.trim()} className="bg-[#2f6fa3] text-white cursor-pointer">
               <Plus className="w-3.5 h-3.5 mr-1.5" /> {adding ? 'Adding…' : 'Add Type'}
             </Button>
           </div>
@@ -135,7 +135,7 @@ export function PaymentDocumentTypesSettings() {
                     />
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="primary" onClick={() => saveEdit(dt.id)} disabled={savingEdit || !editLabel.trim()} className="bg-[#3D87D3] text-white cursor-pointer">
+                    <Button size="sm" variant="primary" onClick={() => saveEdit(dt.id)} disabled={savingEdit || !editLabel.trim()} className="bg-[#2f6fa3] text-white cursor-pointer">
                       <Check className="w-3 h-3 mr-1" /> {savingEdit ? 'Saving…' : 'Save'}
                     </Button>
                     <Button size="sm" variant="outline" onClick={cancelEdit} disabled={savingEdit} className="text-slate-500 border-slate-200 cursor-pointer">

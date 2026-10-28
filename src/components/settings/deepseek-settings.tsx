@@ -157,7 +157,7 @@ export function DeepSeekSettings() {
               <Trash2 className="w-3.5 h-3.5 mr-1.5" /> {clearing ? 'Removing…' : 'Remove Key'}
             </Button>
           ) : <span />}
-          <Button size="sm" variant="primary" onClick={save} disabled={saving || !apiKey.trim()} className="bg-[#3D87D3] text-white cursor-pointer">
+          <Button size="sm" variant="primary" onClick={save} disabled={saving || !apiKey.trim()} className="bg-[#2f6fa3] text-white cursor-pointer">
             {saving ? 'Saving…' : configured ? 'Replace Key' : 'Save Key'}
           </Button>
         </div>

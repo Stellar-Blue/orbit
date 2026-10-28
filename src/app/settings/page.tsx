@@ -310,7 +310,7 @@ export default function CompanySettingsPage() {
                       max="365"
                       value={maxDays}
                       onChange={(e) => setMaxDays(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] focus:border-transparent transition-all shadow-2xs"
+                      className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3] focus:border-transparent transition-all shadow-2xs"
                     />
                     <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-xs text-slate-400 font-extrabold">
                       DAYS
@@ -328,7 +328,7 @@ export default function CompanySettingsPage() {
                   <select
                     value={periodType}
                     onChange={(e) => setPeriodType(e.target.value as PolicyPeriod)}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3] focus:border-transparent transition-all cursor-pointer shadow-2xs"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3] focus:border-transparent transition-all cursor-pointer shadow-2xs"
                   >
                     <option value="week">Per Week (Weekly Quota)</option>
                     <option value="month">Per Month (Monthly Quota)</option>
@@ -356,7 +356,7 @@ export default function CompanySettingsPage() {
                         onClick={() => setPeriodType(period)}
                         className={`p-3 rounded-xl border text-left transition-all cursor-pointer shadow-2xs ${
                           isActive
-                            ? 'bg-[#3D87D3]/10 border-[#3D87D3] ring-1 ring-[#3D87D3]/50 text-[#3D87D3] shadow-xs font-extrabold'
+                            ? 'bg-[#2f6fa3]/10 border-[#2f6fa3] ring-1 ring-[#2f6fa3]/50 text-[#2f6fa3] shadow-xs font-extrabold'
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
                         }`}
                       >
@@ -384,7 +384,7 @@ export default function CompanySettingsPage() {
                 <button
                   type="button"
                   onClick={() => setCountsLeave(v => !v)}
-                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${countsLeave ? 'bg-[#3D87D3]' : 'bg-slate-300'}`}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${countsLeave ? 'bg-[#2f6fa3]' : 'bg-slate-300'}`}
                   title={countsLeave ? 'Leave counts toward remote quota' : 'Leave does not count toward remote quota'}
                 >
                   <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${countsLeave ? 'left-[22px]' : 'left-0.5'}`} />
@@ -399,7 +399,7 @@ export default function CompanySettingsPage() {
                     Number of calendar days before the work date that employees must declare remote work. Days inside this window are blocked from declaration (and auto-fill turns them to office) unless an admin approves an exception. Set 0 to disable the rule.
                   </p>
                   {advanceDays > 0 && (
-                    <p className="text-[11px] text-[#3D87D3] mt-1.5 font-bold flex items-center">
+                    <p className="text-[11px] text-[#2f6fa3] mt-1.5 font-bold flex items-center">
                       <Calendar className="w-3 h-3 mr-1" />
                       Employees can only register remote days on or after {advanceDays} day{advanceDays === 1 ? '' : 's'} from today.
                     </p>
@@ -412,7 +412,7 @@ export default function CompanySettingsPage() {
                     max="60"
                     value={advanceDays}
                     onChange={(e) => setAdvanceDays(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 text-left focus:outline-none focus:ring-2 focus:ring-[#3D87D3] focus:border-transparent shadow-2xs"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 text-left focus:outline-none focus:ring-2 focus:ring-[#2f6fa3] focus:border-transparent shadow-2xs"
                   />
                   <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-[10px] text-slate-400 font-extrabold">
                     DAYS AHEAD
@@ -539,8 +539,8 @@ export default function CompanySettingsPage() {
 
                   if (isEditing) {
                     return (
-                      <div key={t.id} className="p-4 rounded-xl bg-slate-50 border-2 border-[#3D87D3] shadow-xs space-y-3">
-                        <div className="flex items-center justify-between font-bold text-xs text-[#3D87D3]">
+                      <div key={t.id} className="p-4 rounded-xl bg-slate-50 border-2 border-[#2f6fa3] shadow-xs space-y-3">
+                        <div className="flex items-center justify-between font-bold text-xs text-[#2f6fa3]">
                           <span>Editing Team Record</span>
                           <button onClick={() => setEditingTeamId(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                             <X className="w-4 h-4" />
@@ -572,7 +572,7 @@ export default function CompanySettingsPage() {
                         </div>
                         <div className="flex justify-end space-x-2 pt-1">
                           <Button size="sm" variant="outline" onClick={() => setEditingTeamId(null)}>Cancel</Button>
-                          <Button size="sm" variant="primary" onClick={() => handleUpdateTeam(t.id)} className="bg-[#3D87D3] font-bold cursor-pointer">
+                          <Button size="sm" variant="primary" onClick={() => handleUpdateTeam(t.id)} className="bg-[#2f6fa3] font-bold cursor-pointer">
                             Save Changes
                           </Button>
                         </div>
@@ -638,7 +638,7 @@ export default function CompanySettingsPage() {
                     value={newTeamName}
                     onChange={(e) => setNewTeamName(e.target.value)}
                     required
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#2f6fa3] focus:outline-none shadow-2xs"
                   />
                 </div>
 
@@ -647,7 +647,7 @@ export default function CompanySettingsPage() {
                   <select
                     value={newTeamLeadId}
                     onChange={(e) => setNewTeamLeadId(e.target.value)}
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs cursor-pointer text-xs"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:ring-2 focus:ring-[#2f6fa3] focus:outline-none shadow-2xs cursor-pointer text-xs"
                   >
                     <option value="">-- No Lead Assigned (Optional) --</option>
                     {activeEmployees.map(emp => (
@@ -663,7 +663,7 @@ export default function CompanySettingsPage() {
                   variant="primary" 
                   type="submit" 
                   disabled={isSubmittingTeam}
-                  className="w-full py-3 bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center"
+                  className="w-full py-3 bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center"
                 >
                   <Plus className="w-4 h-4 mr-1.5" /> Add Team to Organization
                 </Button>
@@ -698,8 +698,8 @@ export default function CompanySettingsPage() {
 
                   if (isEditing) {
                     return (
-                      <div key={t.id} className="p-4 rounded-xl bg-slate-50 border-2 border-[#3D87D3] shadow-xs space-y-3">
-                        <div className="flex items-center justify-between font-bold text-xs text-[#3D87D3]">
+                      <div key={t.id} className="p-4 rounded-xl bg-slate-50 border-2 border-[#2f6fa3] shadow-xs space-y-3">
+                        <div className="flex items-center justify-between font-bold text-xs text-[#2f6fa3]">
                           <span>Editing Leave Category: {t.code}</span>
                           <button onClick={() => setEditingLeaveId(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                             <X className="w-4 h-4" />
@@ -754,7 +754,7 @@ export default function CompanySettingsPage() {
                               type="checkbox"
                               checked={editLeaveCountsAgainstBalance}
                               onChange={(e) => setEditLeaveCountsAgainstBalance(e.target.checked)}
-                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                              className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4"
                             />
                             <span>Deduct from Employee's Annual Entitlement Balance</span>
                           </label>
@@ -763,7 +763,7 @@ export default function CompanySettingsPage() {
                               type="checkbox"
                               checked={editLeaveRequiresDocument}
                               onChange={(e) => setEditLeaveRequiresDocument(e.target.checked)}
-                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                              className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4"
                             />
                             <span>Requires Uploading Official Supporting Document (e.g., Medical Note)</span>
                           </label>
@@ -772,7 +772,7 @@ export default function CompanySettingsPage() {
                               type="checkbox"
                               checked={editLeaveRequiresApproval}
                               onChange={(e) => setEditLeaveRequiresApproval(e.target.checked)}
-                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                              className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4"
                             />
                             <span>Requires Manager / Founder Approval (Not Auto-approved)</span>
                           </label>
@@ -781,14 +781,14 @@ export default function CompanySettingsPage() {
                               type="checkbox"
                               checked={editLeaveIsHidden}
                               onChange={(e) => setEditLeaveIsHidden(e.target.checked)}
-                              className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4"
+                              className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4"
                             />
                             <span>Hide Category from New Leave Requests (Archival / Disable)</span>
                           </label>
                         </div>
                         <div className="flex justify-end space-x-2 pt-1">
                           <Button size="sm" variant="outline" onClick={() => setEditingLeaveId(null)}>Cancel</Button>
-                          <Button size="sm" variant="primary" onClick={() => handleUpdateLeaveType(t.id)} className="bg-[#3D87D3] font-bold cursor-pointer">
+                          <Button size="sm" variant="primary" onClick={() => handleUpdateLeaveType(t.id)} className="bg-[#2f6fa3] font-bold cursor-pointer">
                             Save Changes
                           </Button>
                         </div>
@@ -877,7 +877,7 @@ export default function CompanySettingsPage() {
                     value={newLeaveCode}
                     onChange={(e) => setNewLeaveCode(e.target.value)}
                     required
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs font-mono lowercase"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#2f6fa3] focus:outline-none shadow-2xs font-mono lowercase"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">Unique code used internally in database storage.</p>
                 </div>
@@ -890,7 +890,7 @@ export default function CompanySettingsPage() {
                     value={newLeaveNameEn}
                     onChange={(e) => setNewLeaveNameEn(e.target.value)}
                     required
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#2f6fa3] focus:outline-none shadow-2xs"
                   />
                 </div>
 
@@ -902,7 +902,7 @@ export default function CompanySettingsPage() {
                     value={newLeaveNameEl}
                     onChange={(e) => setNewLeaveNameEl(e.target.value)}
                     required
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#3D87D3] focus:outline-none shadow-2xs"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#2f6fa3] focus:outline-none shadow-2xs"
                   />
                 </div>
 
@@ -949,7 +949,7 @@ export default function CompanySettingsPage() {
                       type="checkbox"
                       checked={newLeaveCountsAgainstBalance}
                       onChange={(e) => setNewLeaveCountsAgainstBalance(e.target.checked)}
-                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                      className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4 mt-0.5"
                     />
                     <span>Deduct from Annual Entitlement Balance (usually OFF for sick/parental)</span>
                   </label>
@@ -958,7 +958,7 @@ export default function CompanySettingsPage() {
                       type="checkbox"
                       checked={newLeaveRequiresDocument}
                       onChange={(e) => setNewLeaveRequiresDocument(e.target.checked)}
-                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                      className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4 mt-0.5"
                     />
                     <span>Require Employee to Attach Medical/Legal Document</span>
                   </label>
@@ -967,7 +967,7 @@ export default function CompanySettingsPage() {
                       type="checkbox"
                       checked={newLeaveRequiresApproval}
                       onChange={(e) => setNewLeaveRequiresApproval(e.target.checked)}
-                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                      className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4 mt-0.5"
                     />
                     <span>Require Founder / Manager Approval Sign-off</span>
                   </label>
@@ -976,7 +976,7 @@ export default function CompanySettingsPage() {
                       type="checkbox"
                       checked={newLeaveIsHidden}
                       onChange={(e) => setNewLeaveIsHidden(e.target.checked)}
-                      className="rounded text-[#3D87D3] focus:ring-[#3D87D3] w-4 h-4 mt-0.5"
+                      className="rounded text-[#2f6fa3] focus:ring-[#2f6fa3] w-4 h-4 mt-0.5"
                     />
                     <span>Hide from New Leave Requests (Archived / Disabled)</span>
                   </label>
@@ -986,7 +986,7 @@ export default function CompanySettingsPage() {
                   variant="primary" 
                   type="submit" 
                   disabled={isSubmittingLeaveType}
-                  className="w-full py-3 bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center mt-4"
+                  className="w-full py-3 bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white font-extrabold rounded-xl shadow-xs cursor-pointer flex items-center justify-center mt-4"
                 >
                   <Plus className="w-4 h-4 mr-1.5" /> Register Leave Category
                 </Button>
@@ -1552,7 +1552,7 @@ export default function CompanySettingsPage() {
             {/* Create New Category Card */}
             <Card className="p-6 border-slate-200 shadow-sm bg-white rounded-2xl h-fit">
               <h4 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-[#3D87D3]" />
+                <Plus className="w-4 h-4 text-[#2f6fa3]" />
                 Add Custom Budget Category
               </h4>
               <div className="space-y-4">
@@ -1563,7 +1563,7 @@ export default function CompanySettingsPage() {
                     value={newCatName}
                     onChange={(e) => setNewCatName(e.target.value)}
                     placeholder="e.g., Software & R&D Licenses"
-                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3] transition-all"
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20 focus:border-[#2f6fa3] transition-all"
                   />
                 </div>
                 <div>
@@ -1573,7 +1573,7 @@ export default function CompanySettingsPage() {
                     value={newCatDesc}
                     onChange={(e) => setNewCatDesc(e.target.value)}
                     placeholder="Briefly describe what invoices should fall under this financial tag..."
-                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 focus:border-[#3D87D3] transition-all resize-none"
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20 focus:border-[#2f6fa3] transition-all resize-none"
                   />
                 </div>
                 <Button
@@ -1621,7 +1621,7 @@ export default function CompanySettingsPage() {
                         </td>
                         <td className="p-4">
                           {cat.is_default ? (
-                            <span className="px-2 py-1 rounded-md bg-blue-50 text-[#3D87D3] border border-blue-200/60 text-[11px] font-bold">
+                            <span className="px-2 py-1 rounded-md bg-blue-50 text-[#2f6fa3] border border-blue-200/60 text-[11px] font-bold">
                               System Default
                             </span>
                           ) : (
@@ -1698,7 +1698,7 @@ export default function CompanySettingsPage() {
         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-6">
           <div className="flex items-center justify-between pb-4 border-b border-slate-200/80">
             <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#3D87D3]/10 flex items-center justify-center text-[#3D87D3]">
+              <div className="w-9 h-9 rounded-xl bg-[#2f6fa3]/10 flex items-center justify-center text-[#2f6fa3]">
                 <Settings className="w-5 h-5" />
               </div>
               <div>

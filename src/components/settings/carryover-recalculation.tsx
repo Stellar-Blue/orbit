@@ -92,7 +92,7 @@ export function CarryoverRecalculationCard() {
           size="sm"
           onClick={() => run(undefined, 'Company-wide carry-over')}
           disabled={busy !== null}
-          className="bg-[#3D87D3] text-white cursor-pointer shrink-0"
+          className="bg-[#2f6fa3] text-white cursor-pointer shrink-0"
         >
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${busy === 'all' ? 'animate-spin' : ''}`} />
           {busy === 'all' ? 'Recalculating…' : 'Recalculate all'}
@@ -101,7 +101,7 @@ export function CarryoverRecalculationCard() {
     >
       <div className="space-y-4 mt-2">
         <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-[11px] text-blue-900 flex items-start gap-2.5">
-          <Info className="w-4 h-4 text-[#3D87D3] shrink-0 mt-0.5" />
+          <Info className="w-4 h-4 text-[#2f6fa3] shrink-0 mt-0.5" />
           <span>
             The balances already use the calculated carry-over — this writes the same number into the stored
             entitlement record, which is what People → Edit Profile and the Excel exports read. Records marked{' '}

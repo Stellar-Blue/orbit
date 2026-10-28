@@ -200,7 +200,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); if (p.data) onOpenCounterparty?.(p.data.inv); }}
-          className="font-bold text-slate-900 block truncate hover:text-[#3D87D3] hover:underline text-left cursor-pointer"
+          className="font-bold text-slate-900 block truncate hover:text-[#2f6fa3] hover:underline text-left cursor-pointer"
           title={`Open counterparty: ${p.value || ''}`}
         >
           {p.value}
@@ -214,7 +214,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         <button
           type="button"
           onClick={(e) => copyUuid(p.value || '', e)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#2f6fa3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
           title="Click to copy full Invoice UUID"
         >
           <span>{(p.value || '').slice(0, 8)}...{(p.value || '').slice(-4)}</span>
@@ -392,7 +392,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                 className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-emerald-100 transition-colors cursor-pointer"
                 title="Click to Preview or Download Document"
               >
-                <Eye className="w-3 h-3 text-[#3D87D3]" />
+                <Eye className="w-3 h-3 text-[#2f6fa3]" />
                 <span>PDF: {(p.data?.docName || '').slice(0, 12)}...</span>
               </button>
             ) : (
@@ -422,7 +422,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); if (p.data) onPreviewAade?.(p.data.inv); }}
-                className="inline-flex items-center gap-1 bg-sky-50 text-[#3D87D3] border border-sky-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-sky-100 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 bg-sky-50 text-[#2f6fa3] border border-sky-200 font-bold text-[10px] leading-none px-1.5 py-1 rounded hover:bg-sky-100 transition-colors cursor-pointer"
                 title="View on AADE (myDATA verification page)"
               >
                 <ExternalLink className="w-3 h-3" />
@@ -449,7 +449,7 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-slate-700 hover:text-[#3D87D3] hover:border-[#3D87D3] font-bold text-[10px] px-2 py-0.5 rounded transition-colors"
+                  className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-slate-700 hover:text-[#2f6fa3] hover:border-[#2f6fa3] font-bold text-[10px] px-2 py-0.5 rounded transition-colors"
                   title={link.title || link.url}
                 >
                   <LinkIcon className="w-3 h-3" />

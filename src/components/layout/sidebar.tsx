@@ -31,31 +31,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
 
   // Primary General Links (Top)
   const primaryItems = [
-    { label: 'Home', path: '/', icon: <Home className="w-4 h-4 mr-3 text-[#3D87D3]" />, show: true },
+    { label: 'Home', path: '/', icon: <Home className="w-4 h-4 mr-3 text-[#2f6fa3]" />, show: true },
   ];
 
   // Personal Section
   const personalItems = [
-    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-3 text-emerald-500" />, show: canSeeScreen('profile') },
-    { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: !isContractor && canSeeScreen('leave') },
-    { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-3 text-cyan-500" />, show: !isContractor && canSeeScreen('remote') },
-    { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-3 text-sky-500" />, show: canSeeScreen('timesheets') },
-    { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-3 text-emerald-500" />, show: canSeeScreen('compensation') },
+    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('profile') },
+    { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-slate-400" />, show: !isContractor && canSeeScreen('leave') },
+    { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-2.5 text-slate-400" />, show: !isContractor && canSeeScreen('remote') },
+    { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('timesheets') },
+    { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('compensation') },
   ];
 
   // Company Section
   const companyItems = [
-    { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-3 text-blue-500" />, show: canSeeScreen('people'), adminOnly: false },
-    { label: 'Leave Control Center', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-3 text-amber-500" />, show: isAdmin, adminOnly: true },
-    { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-3 text-indigo-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-3 text-emerald-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Reports', path: '/reports', icon: <BarChart3 className="w-4 h-4 mr-3 text-rose-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Counterparties & Attio', path: '/counterparties', icon: <Building2 className="w-4 h-4 mr-3 text-cyan-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Compensation & Payroll', path: '/payroll', icon: <Briefcase className="w-4 h-4 mr-3 text-purple-500" />, show: isAdmin, adminOnly: true },
+    { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('people'), adminOnly: false },
+    { label: 'Leave Control Center', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Reports', path: '/reports', icon: <BarChart3 className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Counterparties & Attio', path: '/counterparties', icon: <Building2 className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
+    { label: 'Compensation & Payroll', path: '/payroll', icon: <Briefcase className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
   ];
 
   // Bottom Settings
-  const settingsItem = { label: 'Settings', path: '/settings', icon: <Settings className="w-4 h-4 mr-3 text-slate-500" />, show: isAdmin };
+  const settingsItem = { label: 'Settings', path: '/settings', icon: <Settings className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin };
 
   const handleNavClick = () => {
     if (setMobileMenuOpen) {
@@ -71,13 +71,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         key={item.path} 
         href={item.path}
         onClick={handleNavClick}
-        className={`flex items-center h-8 px-2.5 rounded-[var(--radius-control)] text-[13px] transition-colors duration-150 group ${
+        aria-current={active ? 'page' : undefined}
+        className={`relative flex items-center h-8 pl-3 pr-2.5 rounded-[4px] text-[12.5px] transition-colors duration-150 group ${
           active
             ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)] font-semibold'
             : 'text-[var(--ink-2)] font-medium hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]'
         }`}
       >
-        <span className="shrink-0">{item.icon}</span>
+        {active && <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-[var(--accent)]" />}
+        <span className={`shrink-0 ${active ? 'text-[var(--accent)]' : 'text-[var(--ink-4)] group-hover:text-[var(--ink-3)]'}`}>{item.icon}</span>
         <span className="flex-1 truncate">{item.label}</span>
       </Link>
     );
@@ -87,14 +89,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
     <>
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
         {/* Brand Header */}
-        <div className="px-5 py-4 border-b border-[var(--line)] flex items-center justify-between shrink-0">
-          <Link href="/" onClick={handleNavClick} className="flex items-center space-x-3 group pr-8 md:pr-0">
-            <div className="w-8 h-8 rounded-lg bg-[var(--accent-soft)] border border-[color-mix(in_srgb,var(--accent)_18%,white)] flex items-center justify-center p-1.5 shrink-0">
+        <div className="px-3 py-4 border-b border-[var(--line)] flex items-center justify-between shrink-0">
+          <Link href="/" onClick={handleNavClick} className="flex items-center space-x-2.5 group pr-8 md:pr-0">
+            <div className="w-8 h-8 rounded-[5px] bg-[var(--surface-muted)] border border-[var(--line)] flex items-center justify-center p-1.5 shrink-0">
               <img src={companyProfile?.logo_url || "/icon.png"} alt={`${companyProfile?.name || 'Company'} Icon`} className="w-6 h-6 object-contain" />
             </div>
             <div className="truncate">
-              <span className="text-[15px] font-semibold text-[var(--ink)] tracking-[-0.01em] block leading-tight truncate">Orbit</span>
-              <span className="ui-meta block truncate">{companyProfile?.name || 'StellarBlue'}</span>
+              <span className="text-[14px] font-semibold uppercase tracking-[0.16em] text-[var(--ink)] block leading-tight truncate">Orbit</span>
+              <span className="block truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-4)]">{companyProfile?.name || 'StellarBlue'}</span>
             </div>
           </Link>
           {isMobile && (
@@ -118,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           {/* 2. Personal Section */}
           {personalItems.some(i => i.show) && (
             <nav className="space-y-1">
-              <div className="ui-label px-2.5 pb-1">Personal</div>
+              <div className="px-3 pb-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">Personal</div>
               {personalItems.map(item => renderNavItem(item))}
             </nav>
           )}
@@ -126,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           {/* 3. Company Section */}
           {companyItems.some(i => i.show) && (
             <nav className="space-y-1">
-              <div className="ui-label px-2.5 pb-1">Company</div>
+              <div className="px-3 pb-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">Company</div>
               {companyItems.map(item => renderNavItem(item))}
             </nav>
           )}
@@ -140,8 +142,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         )}
 
         {isContractor && (
-          <div className="mx-3 mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[11px] text-amber-900 font-medium flex items-start space-x-2 shadow-2xs shrink-0">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="mx-3 mb-3 p-2.5 rounded-[6px] bg-[var(--warning-soft)] border border-amber-300/70 text-[11px] text-[var(--warning)] font-medium flex items-start space-x-2 shrink-0">
+            <AlertTriangle className="w-3.5 h-3.5 text-[var(--warning)] shrink-0 mt-0.5" />
             <span>Contractor profile active: Leave & Remote logs auto-hidden.</span>
           </div>
         )}
@@ -172,9 +174,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
             <button
               onClick={() => setIsViewAsEmployee(!isViewAsEmployee)}
               className={`w-full p-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer shadow-2xs border ${
-                isViewAsEmployee 
-                  ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600' 
-                  : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50/80'
+                isViewAsEmployee
+                  ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600'
+                  : 'bg-white text-[var(--ink-2)] border-[var(--line-strong)] hover:bg-[var(--surface-muted)]'
               }`}
               title={isViewAsEmployee ? "Return to Full Admin view" : "Switch view to experience platform as an ordinary employee"}
             >
@@ -182,7 +184,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
                 {isViewAsEmployee ? (
                   <EyeOff className="w-3.5 h-3.5 mr-2 shrink-0 text-white" />
                 ) : (
-                  <Eye className="w-3.5 h-3.5 mr-2 shrink-0 text-indigo-600" />
+                  <Eye className="w-3.5 h-3.5 mr-2 shrink-0 text-[var(--accent)]" />
                 )}
                 <span>{isViewAsEmployee ? 'Exit Employee Preview' : 'View as Employee'}</span>
               </span>
@@ -194,8 +196,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         )}
 
         {isDevMode && (
-          <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-blue-50/90 border border-blue-200/80 text-[#3D87D3] flex items-center justify-between text-xs shadow-2xs">
-            <span className="flex items-center font-extrabold truncate">
+          <div className="mb-3 px-2.5 py-1.5 rounded-[4px] bg-[var(--surface-muted)] border border-[var(--line)] text-[var(--ink-2)] flex items-center justify-between text-[11px]">
+            <span className="flex items-center font-semibold truncate">
               <Sliders className="w-3.5 h-3.5 mr-1.5 animate-spin shrink-0" style={{ animationDuration: '8s' }} /> Dev Auth Mode
             </span>
             <Badge variant={isAdmin ? 'info' : 'neutral'} className="font-extrabold text-[10px] shrink-0">{currentUser.role.toUpperCase()}</Badge>
@@ -205,10 +207,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         <div className="relative">
           <button 
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-200/50 transition-colors border border-transparent hover:border-slate-300 text-left cursor-pointer"
+            className="w-full flex items-center justify-between p-2 rounded-[4px] hover:bg-[var(--surface-muted)] transition-colors border border-transparent hover:border-[var(--line)] text-left cursor-pointer"
           >
-            <div className="flex items-center space-x-3 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-extrabold text-xs shadow-xs shrink-0 overflow-hidden">
+            <div className="flex items-center space-x-2.5 overflow-hidden">
+              <div className="w-8 h-8 rounded-[4px] bg-[var(--ink)] text-white flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-[var(--ink)]">
                 {currentUser.photo_url ? (
                   <img src={currentUser.photo_url} alt="" className="w-full h-full object-cover" />
                 ) : (
@@ -216,11 +218,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
                 )}
               </div>
               <div className="truncate">
-                <p className="text-sm font-extrabold text-slate-900 truncate">{currentUser.first_name} {currentUser.last_name}</p>
-                <p className="text-xs text-slate-500 font-medium truncate">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</p>
+                <p className="text-[12.5px] font-semibold text-[var(--ink)] truncate">{currentUser.first_name} {currentUser.last_name}</p>
+                <p className="text-[10.5px] text-[var(--ink-4)] font-medium truncate">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</p>
               </div>
             </div>
-            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
+            <ChevronDown className="w-4 h-4 text-[var(--ink-4)] shrink-0 ml-1" />
           </button>
           
           {/* Dev Role Switcher & Sign Out Dropdown */}
@@ -235,7 +237,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
                     <button
                       key={p.id}
                       onClick={() => { switchUser(p.id); setDropdownOpen(false); }}
-                      className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer ${p.id === currentUser.id ? 'bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/20 font-extrabold' : 'text-slate-700 font-medium'}`}
+                      className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer ${p.id === currentUser.id ? 'bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/20 font-extrabold' : 'text-slate-700 font-medium'}`}
                     >
                       <div className="truncate pr-2">
                         <div className="font-bold truncate">{p.first_name} {p.last_name}</div>
@@ -264,7 +266,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
   return (
     <>
       {/* Desktop Sticky Sidebar */}
-      <aside className="hidden md:flex w-60 bg-white border-r border-[var(--line)] flex-col justify-between h-screen sticky top-0 z-30 select-none shrink-0">
+      <aside className="hidden md:flex w-[232px] bg-white border-r border-[var(--line-strong)] flex-col justify-between h-screen sticky top-0 z-30 select-none shrink-0">
         {renderSidebarContent(false)}
       </aside>
 

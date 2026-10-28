@@ -94,7 +94,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
       headerName: 'Legal / Trade Name', field: 'name', minWidth: 240, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<CpRow, string>) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[#3D87D3] font-bold text-xs shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[#2f6fa3] font-bold text-xs shrink-0">
             {(p.value || '').slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -114,7 +114,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
         <button
           type="button"
           onClick={(e) => copyUuid(p.value || '', e)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#3D87D3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#2f6fa3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
           title="Click to copy full UUID"
         >
           <span>{(p.value || '').slice(0, 8)}...{(p.value || '').slice(-4)}</span>
@@ -244,7 +244,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
             placeholder="Search counterparties across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

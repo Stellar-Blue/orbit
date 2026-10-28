@@ -41,7 +41,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
         startDate: req.start_date,
         endDate: req.end_date,
         category: lt?.name_el || (req.origin === 'mandatory' ? 'Mandatory Closure' : 'Regular Leave'),
-        categoryColour: lt?.colour || '#3D87D3',
+        categoryColour: lt?.colour || '#2f6fa3',
         workDays: getEffectiveDays(req),
         status: req.status,
         note: req.note || '',
@@ -67,7 +67,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
       headerName: 'Category / Type', field: 'category', minWidth: 200, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<LeaveRow, string>) => (
         <span className="flex items-center font-semibold text-slate-800">
-          <span className="w-2.5 h-2.5 rounded-full mr-2 inline-block shrink-0" style={{ backgroundColor: p.data?.categoryColour || '#3D87D3' }} />
+          <span className="w-2.5 h-2.5 rounded-full mr-2 inline-block shrink-0" style={{ backgroundColor: p.data?.categoryColour || '#2f6fa3' }} />
           {p.value}
         </span>
       )
@@ -136,7 +136,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
             placeholder="Search leave across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

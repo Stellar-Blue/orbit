@@ -57,7 +57,7 @@ export default function ReconciliationPage() {
           </p>
         </div>
         <div>
-          <label className="inline-flex items-center justify-center font-medium rounded-lg transition-all px-4 py-2 text-sm bg-[#3D87D3] hover:bg-[#3D87D3]/90 text-white shadow-sm cursor-pointer">
+          <label className="inline-flex items-center justify-center font-medium rounded-lg transition-all px-4 py-2 text-sm bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white shadow-sm cursor-pointer">
             <Upload className="w-4 h-4 mr-2" /> Upload Ministry Excel/CSV Export
             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
           </label>
@@ -82,7 +82,7 @@ export default function ReconciliationPage() {
           title="Reconciliation Engine Status" 
           value="Synchronized"
           subtitle="Last run: Today at 11:30 AM"
-          icon={<CheckCircle className="w-5 h-5 text-[#3D87D3]" />}
+          icon={<CheckCircle className="w-5 h-5 text-[#2f6fa3]" />}
         />
       </div>
 
@@ -96,7 +96,7 @@ export default function ReconciliationPage() {
           </p>
           <div className="pt-2 flex justify-center space-x-3">
             <Button size="sm" variant="secondary" onClick={() => alert('Simulated deep re-index against local state.')} className="cursor-pointer">
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Re-run Reconciliation Check
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> Re-run Reconciliation Check
             </Button>
           </div>
         </div>

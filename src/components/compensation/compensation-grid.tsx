@@ -67,7 +67,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
       headerName: 'Payment Type & Memo', field: 'typeEl', width: 240, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<CompRow, string>) => (
         <div>
-          <span className="block text-sm text-[#3D87D3] font-bold">{p.value}</span>
+          <span className="block text-sm text-[#2f6fa3] font-bold">{p.value}</span>
           <span className="text-xs text-slate-500 font-normal">{p.data?.note}</span>
         </div>
       )
@@ -109,7 +109,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onOpenDocs(p.data!.record); }}
-            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#3D87D3]/10 hover:bg-[#3D87D3]/20 text-[#3D87D3] font-bold text-xs border border-[#3D87D3]/20 transition-all cursor-pointer"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#2f6fa3]/10 hover:bg-[#2f6fa3]/20 text-[#2f6fa3] font-bold text-xs border border-[#2f6fa3]/20 transition-all cursor-pointer"
           >
             <Paperclip className="w-3.5 h-3.5 mr-1" /> {(p.value || 0)} Receipt{(p.value || 0) > 1 ? 's' : ''}
           </button>
@@ -119,7 +119,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
             onClick={(e) => { e.stopPropagation(); onDownloadPayslip(p.data!.record); }}
             className="inline-flex items-center px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs border border-slate-300/80 transition-all cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Statement
+            <Download className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> Statement
           </button>
         )
       )
@@ -136,7 +136,7 @@ export const CompensationGrid: React.FC<CompensationGridProps> = ({
             placeholder="Search statements across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

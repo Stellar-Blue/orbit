@@ -208,7 +208,7 @@ function McpAuthorizeContent() {
 
         <div className="p-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#3D87D3] text-white font-black flex items-center justify-center text-sm shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-[#2f6fa3] text-white font-black flex items-center justify-center text-sm shadow-xs">
               {currentUser?.first_name?.charAt(0) || "U"}
             </div>
             <div>

@@ -82,12 +82,12 @@ export const suggestionCellKey = (contractId: string, month: string) => `${contr
 
 /** Inline style painting one cell of the suggestion box; contiguous cells share the box outline. */
 export function suggestionCellStyle(suggestion: InvoiceSuggestion, month: string): Record<string, string> {
-  const line = 'rgba(61, 135, 211, 0.45)';
+  const line = 'rgba(47, 111, 163, 0.45)';
   const shadows = [`inset 0 1px 0 0 ${line}`, `inset 0 -1px 0 0 ${line}`];
   if (month === suggestion.months[0]) shadows.push(`inset 1px 0 0 0 ${line}`);
   if (month === suggestion.months[suggestion.months.length - 1]) shadows.push(`inset -1px 0 0 0 ${line}`);
   return {
-    backgroundColor: 'rgba(61, 135, 211, 0.06)',
+    backgroundColor: 'rgba(47, 111, 163, 0.06)',
     boxShadow: shadows.join(', '),
   };
 }

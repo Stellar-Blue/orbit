@@ -220,7 +220,7 @@ export function CoverageRulesCard() {
                   value={form.name}
                   onChange={e => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g. Engineering minimum crew"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
                 />
               </div>
               <div>
@@ -229,7 +229,7 @@ export function CoverageRulesCard() {
                   <select
                     value={form.scope_type}
                     onChange={e => setForm({ ...form, scope_type: e.target.value as 'team' | 'custom', team_id: '' })}
-                    className="px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#3D87D3]"
+                    className="px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
                   >
                     <option value="team">A team</option>
                     <option value="custom">Selected people</option>
@@ -238,7 +238,7 @@ export function CoverageRulesCard() {
                     <select
                       value={form.team_id}
                       onChange={e => setForm({ ...form, team_id: e.target.value })}
-                      className="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#3D87D3]"
+                      className="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
                     >
                       <option value="">Choose a team…</option>
                       {availableTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -265,7 +265,7 @@ export function CoverageRulesCard() {
                             ...form,
                             memberIds: checked ? form.memberIds.filter(id => id !== p.id) : [...form.memberIds, p.id]
                           })}
-                          className="accent-[#3D87D3]"
+                          className="accent-[#2f6fa3]"
                         />
                         <span className="font-semibold text-slate-800">{p.first_name} {p.last_name}</span>
                         <span className="text-slate-400 ml-auto">{p.team?.name || 'No team'}</span>
@@ -287,7 +287,7 @@ export function CoverageRulesCard() {
                   value={form.max_remote}
                   onChange={e => setForm({ ...form, max_remote: e.target.value })}
                   placeholder="No limit"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">Leave empty for no remote restriction.</p>
               </div>
@@ -301,7 +301,7 @@ export function CoverageRulesCard() {
                   value={form.max_leave}
                   onChange={e => setForm({ ...form, max_leave: e.target.value })}
                   placeholder="No limit"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">Pending requests count too. Mandatory closures never do.</p>
               </div>
@@ -312,7 +312,7 @@ export function CoverageRulesCard() {
                 type="checkbox"
                 checked={form.active}
                 onChange={e => setForm({ ...form, active: e.target.checked })}
-                className="accent-[#3D87D3]"
+                className="accent-[#2f6fa3]"
               />
               Rule active (pausing it stops enforcement without losing the configuration)
             </label>

@@ -19,17 +19,20 @@ if (HAS_AG_GRID_LICENSE) {
   ModuleRegistry.registerModules([AllCommunityModule]);
 }
 
+// Ledger-grade grid: stencilled header band, hairline rows, tabular figures inherited from the app.
 export const orbitGridTheme = themeQuartz.withParams({
   backgroundColor: '#ffffff',
-  foregroundColor: '#1e293b',
-  headerBackgroundColor: '#f8fafc',
-  headerTextColor: '#64748b',
-  borderColor: '#e2e8f0',
-  accentColor: '#3D87D3',
-  oddRowBackgroundColor: '#fafbfc',
-  rowHoverColor: '#f1f5f9',
+  foregroundColor: '#243040',
+  headerBackgroundColor: '#eef1f4',
+  headerTextColor: '#46525f',
+  headerFontWeight: 700,
+  borderColor: '#dde3e8',
+  accentColor: '#2f6fa3',
+  oddRowBackgroundColor: '#fbfcfd',
+  rowHoverColor: '#eff3f7',
+  selectedRowBackgroundColor: '#e9f1f7',
   fontSize: 12,
-  headerFontSize: 11,
+  headerFontSize: 10,
   fontFamily: 'inherit',
   wrapperBorderRadius: 0
 });

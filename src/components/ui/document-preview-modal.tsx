@@ -99,7 +99,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         {/* Top Audit & Security Header */}
         <div className="bg-slate-900 text-slate-100 p-4 rounded-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="p-2.5 bg-gradient-to-br from-[#3D87D3] to-indigo-600 rounded-xl shadow-inner shrink-0">
+            <div className="p-2.5 bg-gradient-to-br from-[#2f6fa3] to-indigo-600 rounded-xl shadow-inner shrink-0">
               <FileCheck className="w-6 h-6 text-white stroke-[2.2]" />
             </div>
             <div className="min-w-0">
@@ -169,7 +169,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                 
                 <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
                   <div className="flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-[#3D87D3]" />
+                    <Building2 className="w-5 h-5 text-[#2f6fa3]" />
                     <span className="font-extrabold tracking-wider text-slate-800 uppercase text-xs">StellarBlue Enterprise Vault</span>
                   </div>
                   <Badge variant="success" className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
@@ -197,7 +197,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
                 <div className="bg-blue-50/70 border border-blue-200/80 p-4 rounded-xl flex items-center justify-between text-xs text-blue-900 font-semibold">
                   <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-[#3D87D3] shrink-0" />
+                    <Lock className="w-4 h-4 text-[#2f6fa3] shrink-0" />
                     <span>Secure preview ready. Click Download Copy to inspect complete binary contents.</span>
                   </div>
                 </div>

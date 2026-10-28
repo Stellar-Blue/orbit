@@ -282,7 +282,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-            <Users className="w-6 h-6 mr-3 text-[#3D87D3]" /> StellarBlue Team Directory
+            <Users className="w-6 h-6 mr-3 text-[#2f6fa3]" /> StellarBlue Team Directory
           </h1>
           <p className="text-slate-500 text-xs mt-1">
             Core people database. All downstream modules join to this registry. Total: <strong className="text-slate-700">{filteredProfiles.length} active members</strong>.
@@ -292,13 +292,13 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
           <div className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5">
             <button 
               onClick={() => setViewMode('table')} 
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'table' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'table' ? 'bg-[#2f6fa3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Dense Table
             </button>
             <button 
               onClick={() => setViewMode('grid')} 
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'grid' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${viewMode === 'grid' ? 'bg-[#2f6fa3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Grid
             </button>
@@ -326,14 +326,14 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
             placeholder={isAdmin ? 'Search by name (Greek/English), email or phone...' : 'Search by name (Greek/English) or email...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div>
           <select
             value={teamFilter}
             onChange={e => setTeamFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
+            className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3]"
           >
             <option value="all">All Teams</option>
             {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -343,7 +343,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
           <select
             value={employmentFilter}
             onChange={e => setEmploymentFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
+            className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3]"
           >
             <option value="all">All Employment Types</option>
             <option value="full_time">Full-Time (μισθωτός / ΙΚΑ)</option>
@@ -391,7 +391,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                     {p.first_name[0]}{p.last_name[0]}
                   </div>
                   <div>
-                    <h3 className="font-bold text-base text-slate-800 group-hover:text-[#3D87D3] transition-colors">{p.first_name} {p.last_name}</h3>
+                    <h3 className="font-bold text-base text-slate-800 group-hover:text-[#2f6fa3] transition-colors">{p.first_name} {p.last_name}</h3>
                     <p className="text-xs text-slate-500">{p.name_el}</p>
                   </div>
                 </div>
@@ -404,7 +404,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                 <span>Start: {formatDate(p.start_date)}</span>
-                <span className="text-[#3D87D3] font-medium group-hover:underline">View details &rarr;</span>
+                <span className="text-[#2f6fa3] font-medium group-hover:underline">View details &rarr;</span>
               </div>
             </div>
           ))}
@@ -423,13 +423,13 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
             <div className="flex border-b border-slate-200 -mx-6 px-6 space-x-6 text-sm">
               <button 
                 onClick={() => setActiveTab('overview')} 
-                className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'overview' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'overview' ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3]' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Directory Info
               </button>
               <button 
                 onClick={() => setActiveTab('schedule')} 
-                className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'schedule' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'schedule' ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3]' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Work Schedule
               </button>
@@ -439,9 +439,9 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                     setActiveTab('edit');
                     setEditData(JSON.parse(JSON.stringify(selectedProfile)));
                   }} 
-                  className={`pb-3 font-semibold flex items-center transition-colors cursor-pointer ${activeTab === 'edit' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3]' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`pb-3 font-semibold flex items-center transition-colors cursor-pointer ${activeTab === 'edit' ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3]' : 'text-slate-500 hover:text-slate-800'}`}
                 >
-                  <Edit2 className="w-3.5 h-3.5 mr-1 text-[#3D87D3]" /> Edit Profile
+                  <Edit2 className="w-3.5 h-3.5 mr-1 text-[#2f6fa3]" /> Edit Profile
                 </button>
               )}
             </div>
@@ -461,7 +461,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                     </div>
                     <div>
                       <span className="text-slate-500 uppercase font-semibold block">Work Email</span>
-                      <span className="text-[#3D87D3] font-mono">{selectedProfile.work_email}</span>
+                      <span className="text-[#2f6fa3] font-mono">{selectedProfile.work_email}</span>
                     </div>
                     {/* Phone is admin-only PII in the directory. */}
                     {isAdmin && (
@@ -515,8 +515,8 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                 {/* Slack requirement — admin controls whether this employee must connect */}
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-[#3D87D3]/10 border border-[#3D87D3]/20 flex items-center justify-center shrink-0">
-                      <MessageSquare className="w-4.5 h-4.5 text-[#3D87D3]" />
+                    <div className="w-9 h-9 rounded-xl bg-[#2f6fa3]/10 border border-[#2f6fa3]/20 flex items-center justify-center shrink-0">
+                      <MessageSquare className="w-4.5 h-4.5 text-[#2f6fa3]" />
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-slate-800">Slack Connection Requirement</div>
@@ -538,7 +538,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                         checked={isSlackRequired(selectedProfile)}
                         disabled={savingSlackRequired}
                         onChange={e => toggleSlackRequired(selectedProfile.id, e.target.checked)}
-                        className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer"
+                        className="w-4 h-4 text-[#2f6fa3] rounded cursor-pointer"
                       />
                       {isSlackRequired(selectedProfile) ? 'Required' : 'Optional'}
                     </label>
@@ -558,7 +558,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                       <button
                         type="button"
                         onClick={() => editingContract ? setEditingContract(false) : openContractEditor()}
-                        className="text-[11px] font-bold text-[#3D87D3] hover:underline cursor-pointer"
+                        className="text-[11px] font-bold text-[#2f6fa3] hover:underline cursor-pointer"
                       >
                         {editingContract ? 'Cancel' : activeContract ? 'Edit Contract' : '+ Define Contract'}
                       </button>
@@ -593,11 +593,11 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                       </div>
                       <div className="flex items-center gap-4">
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="checkbox" checked={contractForm.auto_renew} onChange={e => setContractForm({ ...contractForm, auto_renew: e.target.checked })} className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer" />
+                          <input type="checkbox" checked={contractForm.auto_renew} onChange={e => setContractForm({ ...contractForm, auto_renew: e.target.checked })} className="w-4 h-4 text-[#2f6fa3] rounded cursor-pointer" />
                           <span className="font-semibold text-slate-600">Auto-renew</span>
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="checkbox" checked={contractForm.status === 'active'} onChange={e => setContractForm({ ...contractForm, status: e.target.checked ? 'active' : 'terminated' })} className="w-4 h-4 text-[#3D87D3] rounded cursor-pointer" />
+                          <input type="checkbox" checked={contractForm.status === 'active'} onChange={e => setContractForm({ ...contractForm, status: e.target.checked ? 'active' : 'terminated' })} className="w-4 h-4 text-[#2f6fa3] rounded cursor-pointer" />
                           <span className="font-semibold text-slate-600">Active</span>
                         </label>
                       </div>
@@ -614,7 +614,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                           type="button"
                           size="sm"
                           variant="primary"
-                          className="bg-[#3D87D3] text-white cursor-pointer"
+                          className="bg-[#2f6fa3] text-white cursor-pointer"
                           onClick={async () => {
                             if (!contractForm.start_date) { alert('Start date is required.'); return; }
                             const ok = activeContract
@@ -658,7 +658,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
               <div className="space-y-4">
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-3">
                   <p className="font-semibold text-sm text-slate-800">Weekly Working Schedule (Drives all leave deduction & mandatory font-out math)</p>
-                  <p className="text-slate-600">Current active working days: <strong className="text-[#3D87D3] font-mono">{selectedProfile.work_schedule.join(', ')}</strong></p>
+                  <p className="text-slate-600">Current active working days: <strong className="text-[#2f6fa3] font-mono">{selectedProfile.work_schedule.join(', ')}</strong></p>
                   {selectedProfile.employment_type === 'part_time' && (
                     <div className="p-3 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
                       Part-Time rules enforced: Public holiday deductions and mandatory closures only dock hours on these scheduled days.
@@ -801,7 +801,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
       {/* ADD PERSON MODAL (ADMIN ONLY) */}
       <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Onboard New Person (Admin)">
         <form onSubmit={handleCreatePerson} className="space-y-4 text-xs">
-          <div className="p-3 bg-[#3D87D3]/10 text-[#3D87D3] rounded-lg font-medium text-sm flex items-center justify-between">
+          <div className="p-3 bg-[#2f6fa3]/10 text-[#2f6fa3] rounded-lg font-medium text-sm flex items-center justify-between">
             <span>Creating new directory profile with database sync.</span>
             <Badge variant="info">Admin Priviledge</Badge>
           </div>

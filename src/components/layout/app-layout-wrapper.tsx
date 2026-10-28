@@ -34,7 +34,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
   if (isAuthPage) {
     return (
-      <div className="flex-1 flex flex-col min-h-screen w-full bg-slate-50 selection:bg-[#3D87D3] selection:text-white">
+      <div className="flex-1 flex flex-col min-h-screen w-full bg-slate-50 selection:bg-[#2f6fa3] selection:text-white">
         {children}
       </div>
     );
@@ -44,7 +44,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
     return (
       <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50">
         <div className="flex flex-col items-center justify-center">
-          <div className="w-8 h-8 rounded-full border-4 border-[#3D87D3] border-t-transparent animate-spin" />
+          <div className="w-8 h-8 rounded-full border-4 border-[#2f6fa3] border-t-transparent animate-spin" />
         </div>
       </div>
     );
@@ -56,34 +56,34 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
       <CommandMenu />
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden w-full max-w-full">
         {isDemo && (
-          <div className="bg-slate-900 text-white px-3 sm:px-4 md:px-5 py-2 text-[11px] sm:text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-sm">
+          <div className="bg-[var(--signal-soft)] text-[#7c2d12] border-b border-[#f2c6a8] px-3 sm:px-4 md:px-5 py-2 text-[11px] sm:text-xs font-medium flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <Sparkles className="w-3.5 h-3.5 text-[var(--signal)] shrink-0" />
               <span>Demo workspace — sample data only. Nothing you change here is saved.</span>
             </span>
             <button
               type="button"
               onClick={() => { exitDemoMode(); window.location.assign('/login'); }}
-              className="flex items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 hover:bg-white/20 px-2.5 py-1 font-extrabold transition-colors cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 rounded-[4px] border border-[#e2b28f] bg-white hover:bg-white/60 px-2.5 py-1 font-semibold text-[#7c2d12] transition-colors cursor-pointer shrink-0"
             >
               <LogOut className="w-3 h-3" /> Exit demo
             </button>
           </div>
         )}
         {/* Header / Quick Action & Mobile Toggle Bar */}
-        <header className="h-14 border-b border-[var(--line)] bg-white px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+        <header className="h-12 border-b border-[var(--line-strong)] bg-[var(--surface)] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center space-x-3 text-sm text-slate-500 overflow-hidden">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 rounded-xl text-slate-800 hover:bg-slate-100 border border-slate-200 shadow-2xs focus:outline-none transition-colors shrink-0 cursor-pointer"
+              className="md:hidden p-1.5 rounded-[4px] text-[var(--ink)] hover:bg-[var(--surface-muted)] border border-[var(--line)] focus:outline-none transition-colors shrink-0 cursor-pointer"
               aria-label="Open Navigation Menu"
             >
-              <Menu className="w-5 h-5 text-slate-800" />
+              <Menu className="w-4 h-4 text-[var(--ink)]" />
             </button>
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 truncate text-[13px]">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 truncate font-mono text-[10.5px] uppercase tracking-[0.12em]">
               <span className="text-[var(--ink-4)] font-medium truncate">{companyProfile?.name || 'StellarBlue'}</span>
               <span className="text-[var(--line-strong)]">/</span>
-              <span className="text-[var(--ink)] font-semibold tracking-[-0.005em] truncate">{currentPage}</span>
+              <span className="text-[var(--ink)] font-semibold truncate">{currentPage}</span>
             </nav>
           </div>
           
@@ -92,7 +92,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
               <>
                 <button
                   onClick={() => setIsViewAsEmployee(true)}
-                  className="h-8 px-2.5 rounded-[var(--radius-control)] bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border border-[var(--line-strong)] font-semibold text-[12px] flex items-center transition-colors cursor-pointer shrink-0"
+                  className="h-7 px-2.5 rounded-[var(--radius-control)] bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border border-[var(--line-strong)] font-semibold text-[11.5px] flex items-center transition-colors cursor-pointer shrink-0"
                   title="Switch view to experience Orbit exactly as an ordinary employee"
                 >
                   <Eye className="w-3.5 h-3.5 mr-1.5 text-indigo-600 shrink-0" />
@@ -102,7 +102,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
                 <div className="relative">
                   <button
                     onClick={() => setPreviewMenuOpen(v => !v)}
-                    className="h-8 px-2.5 rounded-[var(--radius-control)] bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border border-[var(--line-strong)] font-semibold text-[12px] flex items-center transition-colors cursor-pointer shrink-0"
+                    className="h-7 px-2.5 rounded-[var(--radius-control)] bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border border-[var(--line-strong)] font-semibold text-[11.5px] flex items-center transition-colors cursor-pointer shrink-0"
                     title="Preview exactly what a specific employee can see"
                   >
                     <Users className="w-3.5 h-3.5 mr-1.5 text-slate-500 shrink-0" />
@@ -140,19 +140,19 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
             <button
               type="button"
               onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
-              className="hidden sm:inline-flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-[var(--radius-control)] bg-white border border-[var(--line-strong)] text-[var(--ink-3)] hover:text-[var(--ink)] hover:border-slate-300 transition-colors cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-2 h-7 pl-2.5 pr-1.5 rounded-[var(--radius-control)] bg-white border border-[var(--line-strong)] text-[var(--ink-3)] hover:text-[var(--ink)] hover:border-[var(--ink-4)] transition-colors cursor-pointer"
               aria-label="Search the workspace"
             >
               <Search className="w-3.5 h-3.5" />
               <span className="text-[12px] font-medium">Search</span>
-              <kbd className="px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-muted)] font-sans font-semibold text-[10px] text-[var(--ink-3)]">⌘K</kbd>
+              <kbd className="px-1.5 py-0.5 rounded-[3px] border border-[var(--line)] bg-[var(--surface-muted)] font-mono font-semibold text-[10px] text-[var(--ink-3)]">⌘K</kbd>
             </button>
           </div>
         </header>
 
         {/* Persistent Admin Employee-Preview Mode Ribbon */}
         {realUserRole === 'admin' && isViewAsEmployee && (
-          <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white px-3 sm:px-4 md:px-5 py-2.5 text-xs font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-amber-700 animate-in slide-in-from-top duration-200">
+          <div className="bg-[var(--signal)] text-white px-3 sm:px-4 md:px-5 py-2 text-[11.5px] font-semibold flex flex-wrap items-center justify-between gap-3 border-b border-[#9a3412] animate-in slide-in-from-top duration-200">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
               <span>
@@ -179,7 +179,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
         {/* Persistent Slack Reconnect Ribbon (token revoked — gate re-arms at next sign-in) */}
         {slackIntegration?.status === 'revoked' && (
-          <div className="bg-gradient-to-r from-rose-500 via-rose-600 to-orange-600 text-white px-3 sm:px-4 md:px-5 py-2.5 text-xs font-bold flex flex-wrap items-center justify-between gap-3 shadow-md border-b border-rose-700 animate-in slide-in-from-top duration-200">
+          <div className="bg-rose-700 text-white px-3 sm:px-4 md:px-5 py-2 text-[11.5px] font-semibold flex flex-wrap items-center justify-between gap-3 border-b border-rose-900 animate-in slide-in-from-top duration-200">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
               <span>
@@ -196,7 +196,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
         )}
 
         {/* Page Content with Responsive Full-Width Layout */}
-        <main className="px-4 sm:px-6 py-6 w-full max-w-full flex-1 overflow-x-hidden">
+        <main className="px-4 sm:px-6 py-5 w-full max-w-full flex-1 overflow-x-hidden">
           {blockedScreen ? (
             <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
               <ShieldAlert className="w-10 h-10 mx-auto text-slate-400" />

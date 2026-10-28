@@ -549,7 +549,7 @@ export default function DashboardPage() {
                 <select
                   value={selectedTeamId}
                   onChange={(e) => setSelectedTeamId(e.target.value)}
-                  className="h-8 pl-3 pr-7 py-0 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-white text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D87D3] cursor-pointer shadow-2xs transition-all"
+                  className="h-8 pl-3 pr-7 py-0 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-white text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] cursor-pointer shadow-2xs transition-all"
                 >
                   <option value="all">All Teams</option>
                   {teams.map(t => (
@@ -566,7 +566,7 @@ export default function DashboardPage() {
                   placeholder="Find colleague..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-8 pl-7 pr-7 text-xs font-medium rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-white placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3D87D3] shadow-2xs transition-all"
+                  className="w-full h-8 pl-7 pr-7 text-xs font-medium rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-white placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] shadow-2xs transition-all"
                 />
                 {searchQuery && (
                   <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -583,7 +583,7 @@ export default function DashboardPage() {
                     onClick={() => setEventTypeFilter(type)}
                     className={`px-2.5 py-1 rounded-md transition-all capitalize cursor-pointer ${
                       eventTypeFilter === type
-                        ? 'bg-white text-[#3D87D3] shadow-2xs font-extrabold'
+                        ? 'bg-white text-[#2f6fa3] shadow-2xs font-extrabold'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
@@ -647,7 +647,7 @@ export default function DashboardPage() {
                               !day.isCurrentMonth
                                 ? 'bg-slate-50/70 text-slate-400'
                                 : day.isToday
-                                  ? 'bg-blue-50/30 ring-2 ring-inset ring-[#3D87D3]'
+                                  ? 'bg-blue-50/30 ring-2 ring-inset ring-[#2f6fa3]'
                                   : 'bg-white hover:bg-slate-50/90'
                             }`}
                           />
@@ -664,7 +664,7 @@ export default function DashboardPage() {
                               <span
                                 className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
                                   day.isToday
-                                    ? 'bg-[#3D87D3] text-white font-extrabold shadow-sm'
+                                    ? 'bg-[#2f6fa3] text-white font-extrabold shadow-sm'
                                     : day.isCurrentMonth
                                       ? 'text-slate-800'
                                       : 'text-slate-400'
@@ -945,7 +945,7 @@ export default function DashboardPage() {
                             {isOnLeave && (
                               <div
                                 title={`${p.first_name} ${p.last_name}: On Leave`}
-                                className={`h-6 bg-[#3D87D3] text-white flex items-center justify-center text-[9px] font-bold shadow-2xs ${
+                                className={`h-6 bg-[#2f6fa3] text-white flex items-center justify-center text-[9px] font-bold shadow-2xs ${
                                   prevOnLeave ? 'rounded-l-none ml-0' : 'rounded-l-md ml-0.5'
                                 } ${
                                   nextOnLeave ? 'rounded-r-none mr-0' : 'rounded-r-md mr-0.5'
@@ -1182,7 +1182,7 @@ export default function DashboardPage() {
                 <Link
                   href="/remote"
                   onClick={() => setSelectedDay(null)}
-                  className="px-4 py-2 rounded-xl bg-[#3D87D3] hover:bg-blue-600 text-white font-black text-xs transition-all flex items-center shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-[#2f6fa3] hover:bg-blue-600 text-white font-black text-xs transition-all flex items-center shadow-xs"
                 >
                   <Globe className="w-3.5 h-3.5 mr-1.5" />
                   <span>Log Override for Date</span>

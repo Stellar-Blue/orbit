@@ -82,7 +82,7 @@ function OnboardingInner() {
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950">
       <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl border-slate-700/60 rounded-3xl">
-        <div className="p-6 bg-gradient-to-r from-[#3D87D3] to-indigo-600 text-white">
+        <div className="p-6 bg-gradient-to-r from-[#2f6fa3] to-indigo-600 text-white">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center">
               <MessageSquare className="w-6 h-6" />
@@ -150,7 +150,7 @@ function OnboardingInner() {
               </div>
               <Button
                 onClick={connect}
-                className="w-full bg-[#3D87D3] hover:bg-blue-600 text-white font-black py-3 shadow-lg shadow-blue-500/20 cursor-pointer"
+                className="w-full bg-[#2f6fa3] hover:bg-blue-600 text-white font-black py-3 shadow-lg shadow-blue-500/20 cursor-pointer"
               >
                 <MessageSquare className="w-5 h-5 mr-2" />
                 {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}

@@ -676,9 +676,9 @@ export type ProjectStatus = 'planned' | 'in_progress' | 'done' | 'active' | 'on_
 /** Friendly labels + badge styling for the delivery lifecycle (legacy values included). */
 export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; badge: string }> = {
   planned: { label: 'Planned', badge: 'bg-slate-100 text-slate-700 border-slate-200' },
-  in_progress: { label: 'In Progress', badge: 'bg-blue-50 text-[#3D87D3] border-blue-200' },
+  in_progress: { label: 'In Progress', badge: 'bg-blue-50 text-[#2f6fa3] border-blue-200' },
   done: { label: 'Done', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  active: { label: 'Active (legacy)', badge: 'bg-blue-50 text-[#3D87D3] border-blue-200' },
+  active: { label: 'Active (legacy)', badge: 'bg-blue-50 text-[#2f6fa3] border-blue-200' },
   on_hold: { label: 'On Hold', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
   completed: { label: 'Completed (legacy)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   archived: { label: 'Archived', badge: 'bg-slate-100 text-slate-500 border-slate-200' },

@@ -29,6 +29,18 @@ import { DatePicker } from '@/components/ui/date-picker';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
 const BillingActionGrid = dynamic(() => import('@/components/billing/billing-action-grid').then(m => m.BillingActionGrid), { ssr: false });
 
+/** Numbered block inside the register modal — the form reads as a sequence, not a pile of fields. */
+const FormSection: React.FC<{ index: string; title: string; hint?: string; children: React.ReactNode }> = ({ index, title, hint, children }) => (
+  <section className="space-y-3 pt-4 first:pt-0 border-t border-[var(--line)] first:border-t-0">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{index}</span>
+      <h3 className="ui-section-title">{title}</h3>
+      {hint && <span className="text-[11px] text-[var(--ink-4)]">{hint}</span>}
+    </div>
+    {children}
+  </section>
+);
+
 const STAT_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function InvoicesRegistryPage() {
@@ -555,11 +567,12 @@ export default function InvoicesRegistryPage() {
   return (
     <div className="w-full space-y-5 animate-in fade-in duration-150">
 
-      {/* Header */}
-      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 border-b border-[var(--line)] pb-4">
+      {/* Header — command bar: where you are, then the actions you actually take here. */}
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3 border-b border-[var(--line-strong)] pb-3">
         <div className="min-w-0">
-          <h1 className="ui-title">Invoices</h1>
-          <p className="text-[13px] text-[var(--ink-3)] mt-1 max-w-xl">
+          <p className="ui-eyebrow">Operations · Invoice register</p>
+          <h1 className="ui-title mt-1">Invoices</h1>
+          <p className="text-[12.5px] text-[var(--ink-3)] mt-1 max-w-xl">
             Issued and received invoices, allocations, payments and myDATA archives.
           </p>
         </div>
@@ -623,32 +636,18 @@ export default function InvoicesRegistryPage() {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)]">
-        <button
-          onClick={() => setActiveTab('ledger')}
-          className={`inline-flex items-center gap-2 h-9 px-3 -mb-px border-b-2 text-[13px] font-semibold transition-colors cursor-pointer ${
-            activeTab === 'ledger'
-              ? 'border-[var(--accent)] text-[var(--accent-ink)]'
-              : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-          }`}
-        >
+      {/* Tabs — the same machined switch as the contract registry, so screens stay one system. */}
+      <div className="ui-segmented" role="group" aria-label="Invoice views">
+        <button type="button" onClick={() => setActiveTab('ledger')} aria-pressed={activeTab === 'ledger'}>
           <FileSpreadsheet className="w-3.5 h-3.5" /> Invoice ledger
-          <span className="ui-num text-[11px] font-semibold text-[var(--ink-4)]">{filteredInvoices.length}</span>
+          <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{filteredInvoices.length}</span>
         </button>
-        <button
-          onClick={() => setActiveTab('billing_actions')}
-          className={`inline-flex items-center gap-2 h-9 px-3 -mb-px border-b-2 text-[13px] font-semibold transition-colors cursor-pointer ${
-            activeTab === 'billing_actions'
-              ? 'border-[var(--accent)] text-[var(--accent-ink)]'
-              : 'border-transparent text-[var(--ink-3)] hover:text-[var(--ink)]'
-          }`}
-        >
+        <button type="button" onClick={() => setActiveTab('billing_actions')} aria-pressed={activeTab === 'billing_actions'}>
           <Zap className="w-3.5 h-3.5" /> Invoicing queue
           {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length > 0 && (
-            <Badge variant="warning">
+            <span className="font-mono text-[10px] font-semibold text-[var(--warning)]">
               {pendingInvoicesQueue.filter(i => i.status === 'unbilled' && !dismissedKeys.includes(suggestionId(i))).length}
-            </Badge>
+            </span>
           )}
         </button>
       </div>
@@ -664,13 +663,13 @@ export default function InvoicesRegistryPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search invoice number, MARK or counterparty"
-                className="w-full h-8 pl-8 pr-3 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)]"
+                className="w-full h-7 pl-8 pr-3 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
               />
             </div>
             <select
               value={directionFilter}
               onChange={(e: any) => setDirectionFilter(e.target.value)}
-              className="h-8 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+              className="h-7 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
               <option value="all">All directions</option>
               <option value="outgoing">Client (AR)</option>
@@ -679,7 +678,7 @@ export default function InvoicesRegistryPage() {
             <select
               value={statusFilter}
               onChange={(e: any) => setStatusFilter(e.target.value)}
-              className="h-8 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+              className="h-7 px-2 text-[12px] font-medium border border-[var(--line-strong)] rounded-[var(--radius-control)] bg-white text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
             >
               <option value="all">All statuses</option>
               <option value="draft">Draft</option>
@@ -869,7 +868,7 @@ export default function InvoicesRegistryPage() {
                     <button
                       type="button"
                       onClick={() => restoreSuggestion(suggestionId(item))}
-                      className="inline-flex items-center gap-1 text-[#3D87D3] hover:underline cursor-pointer"
+                      className="inline-flex items-center gap-1 text-[#2f6fa3] hover:underline cursor-pointer"
                       title="Bring this suggestion back into the queue"
                     >
                       <RotateCcw className="w-3 h-3" /> Restore
@@ -885,7 +884,13 @@ export default function InvoicesRegistryPage() {
 
       {/* REGISTRATION / EDIT MODAL */}
       {isRegisterModalOpen && (
-        <Modal isOpen={true} size="full" title={editingInvoiceId ? "Edit Corporate Tax Invoice" : "Register Corporate Tax Invoice (Common Truth)"} onClose={() => { setIsRegisterModalOpen(false); setEditingInvoiceId(null); }}>
+        <Modal
+          isOpen={true}
+          size="full"
+          eyebrow="Corporate tax invoice · common truth"
+          title={editingInvoiceId ? 'Edit invoice' : 'Register invoice'}
+          onClose={() => { setIsRegisterModalOpen(false); setEditingInvoiceId(null); }}
+        >
           <div className="space-y-4 max-h-[78vh] overflow-y-auto px-1">
             {duplicateWarning && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold flex items-center gap-2 animate-bounce">
@@ -894,13 +899,14 @@ export default function InvoicesRegistryPage() {
               </div>
             )}
 
+            <FormSection index="01" title="Document & party" hint="Who bills whom, and under which document">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Direction</label>
+                <label className="ui-label block mb-1.5">Direction</label>
                 <select
                   value={newDirection}
                   onChange={(e: any) => setNewDirection(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 >
                   <option value="outgoing">Outgoing Client Bill (AR)</option>
                   <option value="incoming">Incoming Supplier Bill (AP)</option>
@@ -908,11 +914,11 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Document Type</label>
+                <label className="ui-label block mb-1.5">Document Type</label>
                 <select
                   value={newType}
                   onChange={(e: any) => setNewType(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 >
                   <option value="invoice">Official Tax Invoice</option>
                   <option value="credit_note">Credit Note (Negative Refund)</option>
@@ -922,11 +928,11 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Invoice Status</label>
+                <label className="ui-label block mb-1.5">Invoice Status</label>
                 <select
                   value={newStatus}
                   onChange={(e: any) => setNewStatus(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 >
                   <option value="draft">Draft</option>
                   <option value="registered">Registered</option>
@@ -942,7 +948,7 @@ export default function InvoicesRegistryPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Corporate Counterparty</label>
+                <label className="ui-label block mb-1.5">Corporate Counterparty</label>
                 <SearchableSelect
                   value={newCpId}
                   onChange={setNewCpId}
@@ -958,7 +964,7 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Linkage: Agreements &amp; Projects</label>
+                <label className="ui-label block mb-1.5">Linkage: Agreements &amp; Projects</label>
                 <InvoiceLinkPicker
                   contractIds={newContractIds}
                   projectIds={newProjectIds}
@@ -972,7 +978,7 @@ export default function InvoicesRegistryPage() {
 
             {newContractIds.length === 0 && (
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Expense & Budget Category (For unlinked bills)</label>
+                <label className="ui-label block mb-1.5">Expense & Budget Category (For unlinked bills)</label>
                 <SearchableSelect
                   value={newCatName}
                   onChange={setNewCatName}
@@ -990,31 +996,33 @@ export default function InvoicesRegistryPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Invoice Number *</label>
+                <label className="ui-label block mb-1.5">Invoice Number *</label>
                 <input
                   type="text"
                   value={newInvNumber}
                   onChange={(e) => handleNumberChange(e.target.value, newCpId, newDirection)}
                   placeholder="e.g., TIM-2026-0089 or INV-892"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-mono font-semibold bg-[var(--surface-muted)]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">AADE myDATA MARK Code (Optional)</label>
+                <label className="ui-label block mb-1.5">AADE myDATA MARK Code (Optional)</label>
                 <input
                   type="text"
                   value={newMark}
                   onChange={(e) => setNewMark(e.target.value)}
                   placeholder="e.g., 4009281729013"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-mono bg-[var(--surface-muted)]"
                 />
               </div>
             </div>
+            </FormSection>
 
+            <FormSection index="02" title="Amounts" hint="Net is what the contract charges — VAT is added on top">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Invoice Currency</label>
+                <label className="ui-label block mb-1.5">Invoice Currency</label>
                 <select
                   value={newCurrency}
                   onChange={(e) => {
@@ -1023,7 +1031,7 @@ export default function InvoicesRegistryPage() {
                     // Only the EUR → EUR rate is knowable without an FX feed; non-EUR needs a manual rate.
                     if (code === DEFAULT_CURRENCY) setNewFxRate(1);
                   }}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 >
                   {INVOICE_CURRENCIES.map(c => (
                     <option key={c.code} value={c.code}>{c.label}</option>
@@ -1032,7 +1040,7 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">FX Rate — 1 {newCurrency} = ? EUR</label>
+                <label className="ui-label block mb-1.5">FX Rate — 1 {newCurrency} = ? EUR</label>
                 <input
                   type="number"
                   step="0.0001"
@@ -1040,7 +1048,7 @@ export default function InvoicesRegistryPage() {
                   value={newFxRate}
                   disabled={newCurrency === DEFAULT_CURRENCY}
                   onChange={(e) => setNewFxRate(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  className="ui-input font-semibold bg-[var(--surface-muted)] disabled:bg-[var(--surface-sunken)] disabled:text-[var(--ink-4)] disabled:cursor-not-allowed"
                 />
                 <p className="text-[10px] mt-1">
                   {newCurrency === DEFAULT_CURRENCY ? (
@@ -1058,21 +1066,21 @@ export default function InvoicesRegistryPage() {
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Net Amount ({newCurrency}) *</label>
+                <label className="ui-label block mb-1.5">Net Amount ({newCurrency}) *</label>
                 <input
                   type="number"
                   value={newNet}
                   onChange={(e) => setNewNet(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">VAT Rate</label>
+                <label className="ui-label block mb-1.5">VAT Rate</label>
                 <select
                   value={newVatRate}
                   onChange={(e) => setNewVatRate(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 >
                   <option value="24%">Standard 24% (Domestic)</option>
                   <option value="13%">Reduced 13% (Hospitality/Dining)</option>
@@ -1082,7 +1090,7 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Total Gross ({newCurrency})</label>
+                <label className="ui-label block mb-1.5">Total Gross ({newCurrency})</label>
                 <input
                   type="text"
                   value={formatMoney(calculatedGross, newCurrency)}
@@ -1092,48 +1100,54 @@ export default function InvoicesRegistryPage() {
               </div>
             </div>
 
+            </FormSection>
+
+            <FormSection index="03" title="Dates & billing period" hint="When it is raised, and what it covers">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Issue Date</label>
+                <label className="ui-label block mb-1.5">Issue Date</label>
                 <DatePicker value={newIssueDate} onChange={next => setNewIssueDate(next)} className="w-full" />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Due Date</label>
+                <label className="ui-label block mb-1.5">Due Date</label>
                 <DatePicker value={newDueDate} onChange={next => setNewDueDate(next)} className="w-full" />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50/80 border border-slate-200/80 rounded-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-[6px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">Reference Period</label>
+                <label className="ui-label block mb-1.5">Reference Period</label>
                 <input
                   type="text"
                   placeholder="e.g. 2026-08, 2026-Q3"
                   value={newReferencePeriod}
                   onChange={(e) => setNewReferencePeriod(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-mono font-semibold text-[var(--ink)]"
                 />
                 <span className="text-[10px] text-slate-500 block mt-1 leading-tight">Used for contract schedules & missing invoice checks</span>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Period From</label>
+                <label className="ui-label block mb-1.5">Period From</label>
                 <DatePicker value={newPeriodFrom} onChange={next => setNewPeriodFrom(next)} className="w-full" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Period To</label>
+                <label className="ui-label block mb-1.5">Period To</label>
                 <DatePicker value={newPeriodTo} onChange={next => setNewPeriodTo(next)} className="w-full" />
               </div>
             </div>
 
+            </FormSection>
+
+            <FormSection index="04" title="Notes, archive & links">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Notes & Description (Optional)</label>
+              <label className="ui-label block mb-1.5">Notes & Description (Optional)</label>
               <textarea
                 rows={2}
                 value={newNotes}
                 onChange={(e) => setNewNotes(e.target.value)}
                 placeholder="e.g., Quarterly SaaS Subscription billing or server hosting fee"
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 resize-none"
+                className="ui-input bg-[var(--surface-muted)] resize-none py-2 h-auto"
               />
             </div>
 
@@ -1142,7 +1156,7 @@ export default function InvoicesRegistryPage() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-[#3D87D3]" />
+                      <FileText className="w-4 h-4 text-[#2f6fa3]" />
                       Attached Invoice Documents & Receipts
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">AADE digital vouchers and tax receipt attachments linked to this invoice</p>
@@ -1160,14 +1174,14 @@ export default function InvoicesRegistryPage() {
                               subtitle: `myDATA ${inv.mark} · ${inv.counterparty?.legal_name || 'Counterparty'}`
                             });
                           }}
-                          className="inline-flex items-center gap-1.5 bg-sky-50 text-[#3D87D3] border border-sky-200 hover:bg-sky-100 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs"
+                          className="inline-flex items-center gap-1.5 bg-sky-50 text-[#2f6fa3] border border-sky-200 hover:bg-sky-100 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs"
                           title="Open the public ΑΑΔΕ verification page for this invoice"
                         >
                           <ExternalLink className="w-3.5 h-3.5" /> View on AADE
                         </button>
                       ) : null;
                     })()}
-                    <label className="inline-flex items-center gap-1.5 bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/20 hover:bg-[#3D87D3]/20 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs">
+                    <label className="inline-flex items-center gap-1.5 bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/20 hover:bg-[#2f6fa3]/20 font-bold text-[11px] px-3 py-1.5 rounded-xl cursor-pointer transition-colors shadow-2xs">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Attach PDF / Receipt</span>
                       <input
@@ -1255,13 +1269,13 @@ export default function InvoicesRegistryPage() {
             <div className="space-y-3 pt-3 border-t border-slate-200">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#3D87D3]" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#2f6fa3]" />
                   <h3 className="font-extrabold text-slate-900 text-xs uppercase tracking-wide">Associated Links</h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setNewLinks([...newLinks, { title: '', url: '' }])}
-                  className="text-[11px] font-bold text-[#3D87D3] hover:text-blue-700 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded transition-colors"
+                  className="text-[11px] font-bold text-[#2f6fa3] hover:text-blue-700 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded transition-colors"
                 >
                   + Add Link
                 </button>
@@ -1281,7 +1295,7 @@ export default function InvoicesRegistryPage() {
                           updated[idx].title = e.target.value;
                           setNewLinks(updated);
                         }}
-                        className="w-1/3 text-xs p-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
+                        className="w-1/3 text-xs p-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-[#2f6fa3]"
                       />
                       <input
                         type="url"
@@ -1292,7 +1306,7 @@ export default function InvoicesRegistryPage() {
                           updated[idx].url = e.target.value;
                           setNewLinks(updated);
                         }}
-                        className="flex-1 text-xs p-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-[#3D87D3]"
+                        className="flex-1 text-xs p-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-[#2f6fa3]"
                       />
                       <button
                         type="button"
@@ -1307,8 +1321,10 @@ export default function InvoicesRegistryPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-              <Button onClick={() => setIsRegisterModalOpen(false)} variant="outline" className="px-5 py-2.5 text-xs font-bold">
+            </FormSection>
+
+            <div className="sticky bottom-0 -mx-1 px-1 py-3 bg-[var(--surface)] border-t border-[var(--line-strong)] flex items-center justify-end gap-2">
+              <Button onClick={() => setIsRegisterModalOpen(false)} variant="outline" className="px-4 py-2 text-xs font-bold">
                 Cancel
               </Button>
               <Button
@@ -1397,9 +1413,10 @@ export default function InvoicesRegistryPage() {
                     notifySuccess('Invoice recorded in the archive.');
                   }
                 }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/20"
+                variant="primary"
+                className="px-5 py-2 text-xs font-bold"
               >
-                {editingInvoiceId ? "Save Changes" : "Save to Common Truth"}
+                {editingInvoiceId ? "Save changes" : "Register invoice"}
               </Button>
             </div>
           </div>
@@ -1425,40 +1442,40 @@ export default function InvoicesRegistryPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Amount Paid (€) *</label>
+                <label className="ui-label block mb-1.5">Amount Paid (€) *</label>
                 <input
                   type="number"
                   value={payAmount}
                   onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                  className="ui-input font-semibold bg-[var(--surface-muted)]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Payment Date *</label>
+                <label className="ui-label block mb-1.5">Payment Date *</label>
                 <DatePicker value={payDate} onChange={next => setPayDate(next)} className="w-full" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Bank / SEPA Reference Code (Optional)</label>
+              <label className="ui-label block mb-1.5">Bank / SEPA Reference Code (Optional)</label>
               <input
                 type="text"
                 value={payBankRef}
                 onChange={(e) => setPayBankRef(e.target.value)}
                 placeholder="e.g., EUR-SEPA-ALPHA-992182093"
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-mono focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                className="ui-input font-mono bg-[var(--surface-muted)]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Settlement Note</label>
+              <label className="ui-label block mb-1.5">Settlement Note</label>
               <input
                 type="text"
                 value={payNote}
                 onChange={(e) => setPayNote(e.target.value)}
                 placeholder="e.g. Paid via Alpha Bank business account"
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                className="ui-input bg-[var(--surface-muted)]"
               />
             </div>
 
@@ -1518,7 +1535,7 @@ export default function InvoicesRegistryPage() {
               className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
             >
               <span className="flex items-center gap-2">
-                <Copy className="w-3.5 h-3.5 text-[#3D87D3]" /> Copy Invoice UUID
+                <Copy className="w-3.5 h-3.5 text-[#2f6fa3]" /> Copy Invoice UUID
               </span>
               <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{contextMenu.invoice.id.slice(0, 6)}...</span>
             </button>

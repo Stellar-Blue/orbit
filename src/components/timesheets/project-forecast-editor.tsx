@@ -79,7 +79,7 @@ export function ProjectForecastEditor({ projectId }: { projectId: string }) {
                       </td>
                     );
                   })}
-                  <td className="py-1 px-1.5 text-center font-mono font-bold text-[#3D87D3]">{rowTotal > 0 ? rowTotal : '—'}</td>
+                  <td className="py-1 px-1.5 text-center font-mono font-bold text-[#2f6fa3]">{rowTotal > 0 ? rowTotal : '—'}</td>
                 </tr>
               );
             })}

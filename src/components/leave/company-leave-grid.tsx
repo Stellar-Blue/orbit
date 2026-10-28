@@ -65,7 +65,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
         employee: prof ? `${prof.first_name} ${prof.last_name}` : 'Unknown employee',
         employeeStatus: (prof?.status || 'active').replace('_', ' ').toUpperCase(),
         category: `${lType?.name_el || 'Leave'} (${lType?.name_en || 'Other'})`,
-        categoryColour: lType?.colour || '#3D87D3',
+        categoryColour: lType?.colour || '#2f6fa3',
         mandatory: req.origin === 'mandatory',
         source: req.origin === 'mandatory' ? 'Mandatory Closure' : req.origin === 'admin_entry' ? 'Admin Entry' : 'Employee Request',
         startDate: req.start_date,
@@ -105,11 +105,11 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
         <div>
           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-extrabold border"
             style={{
-              backgroundColor: `${p.data?.categoryColour || '#3D87D3'}15`,
-              color: p.data?.categoryColour || '#3D87D3',
-              borderColor: `${p.data?.categoryColour || '#3D87D3'}30`
+              backgroundColor: `${p.data?.categoryColour || '#2f6fa3'}15`,
+              color: p.data?.categoryColour || '#2f6fa3',
+              borderColor: `${p.data?.categoryColour || '#2f6fa3'}30`
             }}>
-            <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: p.data?.categoryColour || '#3D87D3' }} />
+            <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: p.data?.categoryColour || '#2f6fa3' }} />
             {p.value}
           </span>
         </div>
@@ -218,7 +218,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
                 onClick={(e) => { e.stopPropagation(); onEdit(row.req); }}
                 className="text-[11px] font-bold py-1 px-2.5 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-100 cursor-pointer flex items-center"
               >
-                <Edit3 className="w-3.5 h-3.5 mr-1 text-[#3D87D3]" /> Modify
+                <Edit3 className="w-3.5 h-3.5 mr-1 text-[#2f6fa3]" /> Modify
               </button>
             )}
             <button
@@ -245,7 +245,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
             placeholder="Search leave requests across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -159,7 +159,7 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
         <div className="border-t border-slate-200 pt-2 mt-1">
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
             <span>Assignment history ({history.length})</span>
-            {editingId && <span className="text-[10px] font-bold normal-case text-[#3D87D3]">editing…</span>}
+            {editingId && <span className="text-[10px] font-bold normal-case text-[#2f6fa3]">editing…</span>}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[11px]">
@@ -206,7 +206,7 @@ export function EmployeeRoleAssigner({ profileId, compact = false }: { profileId
                     <td className="py-1.5 px-2 font-mono text-slate-600 whitespace-nowrap">{h.row.valid_from}</td>
                     <td className="py-1.5 px-2 font-mono text-slate-600 whitespace-nowrap">{h.row.valid_to || <span className="text-emerald-700 font-bold">present</span>}</td>
                     <td className="py-1.5 pl-2 text-right whitespace-nowrap">
-                      <button type="button" onClick={() => beginEdit(h)} className="inline-flex items-center text-slate-400 hover:text-[#3D87D3] px-1 py-0.5 cursor-pointer" title="Edit entry"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={() => beginEdit(h)} className="inline-flex items-center text-slate-400 hover:text-[#2f6fa3] px-1 py-0.5 cursor-pointer" title="Edit entry"><Pencil className="w-3.5 h-3.5" /></button>
                       <button type="button" onClick={() => removeRow(h)} className="inline-flex items-center text-slate-400 hover:text-rose-600 px-1 py-0.5 cursor-pointer" title="Delete entry"><Trash2 className="w-3.5 h-3.5" /></button>
                     </td>
                   </tr>

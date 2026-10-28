@@ -146,7 +146,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
               type="button"
               disabled={isImporting}
               onClick={(e) => { e.stopPropagation(); if (p.data) onImport(p.data.comp); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#3D87D3] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all disabled:opacity-60 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2f6fa3] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all disabled:opacity-60 cursor-pointer"
             >
               {isImporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               {isImporting ? 'Importing...' : 'Import to Orbit'}
@@ -168,7 +168,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
             placeholder="Search by name, VAT, relationship, country, domain..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-500"
+            className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-500"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

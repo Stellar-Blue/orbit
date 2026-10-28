@@ -231,7 +231,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); if (p.data) onSelect(p.data.profile); }}
-          className="text-xs font-bold text-[#3D87D3] hover:underline px-2 py-1 rounded hover:bg-blue-50 cursor-pointer"
+          className="text-xs font-bold text-[#2f6fa3] hover:underline px-2 py-1 rounded hover:bg-blue-50 cursor-pointer"
         >
           View Profile →
         </button>
@@ -249,7 +249,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
             placeholder="Search people across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

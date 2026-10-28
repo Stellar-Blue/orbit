@@ -143,8 +143,8 @@ function LoginContent() {
         {isDevMode && (
           <div className="mt-6 pt-6 border-t border-slate-150">
             <div className="mb-3 flex items-center justify-between text-xs">
-              <span className="flex items-center text-[#3D87D3] font-semibold">
-                <Zap className="h-3.5 w-3.5 mr-1 text-[#3D87D3] fill-[#3D87D3]/20" />
+              <span className="flex items-center text-[#2f6fa3] font-semibold">
+                <Zap className="h-3.5 w-3.5 mr-1 text-[#2f6fa3] fill-[#2f6fa3]/20" />
                 Dev Auth Mode Active
               </span>
               <span className="text-[10px] text-slate-400 font-sans">Bypasses OIDC</span>
@@ -152,7 +152,7 @@ function LoginContent() {
             <button
               onClick={handleDevModeEnter}
               disabled={isLoading}
-              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[#3D87D3]/20 bg-[#3D87D3]/10 px-4 py-2.5 text-xs font-semibold text-[#3D87D3] hover:bg-[#3D87D3]/20 transition duration-200 active:scale-[0.99] cursor-pointer"
+              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[#2f6fa3]/20 bg-[#2f6fa3]/10 px-4 py-2.5 text-xs font-semibold text-[#2f6fa3] hover:bg-[#2f6fa3]/20 transition duration-200 active:scale-[0.99] cursor-pointer"
             >
               <span>Enter Workspace (Mock User Switcher)</span>
             </button>
@@ -174,7 +174,7 @@ export default function LoginPage() {
     <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-slate-50 p-6">
       <Suspense fallback={
         <div className="relative z-10 flex h-64 w-full max-w-md items-center justify-center rounded-2xl border border-slate-200/80 bg-white shadow-xl">
-          <Loader2 className="h-8 w-8 animate-spin text-[#3D87D3]" />
+          <Loader2 className="h-8 w-8 animate-spin text-[#2f6fa3]" />
         </div>
       }>
         <LoginContent />

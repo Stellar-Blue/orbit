@@ -437,22 +437,22 @@ export default function ReportsPage() {
           onClick={() => setActiveTab('evaluation')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'evaluation'
-              ? 'bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/30 shadow-sm'
+              ? 'bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/30 shadow-sm'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <BarChart3 className="w-4 h-4 text-[#3D87D3]" />
+          <BarChart3 className="w-4 h-4 text-[#2f6fa3]" />
           <span>Counterparty Evaluation</span>
         </button>
         <button
           onClick={() => setActiveTab('reconciliation')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'reconciliation'
-              ? 'bg-[#3D87D3]/10 text-[#3D87D3] border border-[#3D87D3]/30 shadow-sm'
+              ? 'bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/30 shadow-sm'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4 text-[#3D87D3]" />
+          <CheckCircle2 className="w-4 h-4 text-[#2f6fa3]" />
           <span>Expected vs. Actual & Month Close</span>
           {(monthDrift.uninvoicedArAmount > 0 || monthDrift.missingDocumentsCount > 0) && (
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Action needed in current month" />
@@ -726,7 +726,7 @@ export default function ReportsPage() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-[#3D87D3]" />
+                  <Calendar className="w-4 h-4 text-[#2f6fa3]" />
                   <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Period</span>
                 </div>
                 <select

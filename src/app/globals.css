@@ -1,29 +1,42 @@
 @import "tailwindcss";
 
 /*
-  Orbit design tokens.
+  Orbit design system — "graphite & steel".
 
-  The platform is an operations console for a contract/finance team: dense tables, money that must
-  line up in columns, and states that have to read at a glance. The system is deliberately quiet —
-  one accent (Stellar blue) reserved for action and selection, hairline rules instead of shadows,
-  tabular figures for every amount, and sentence-case labels instead of shouting.
+  An operations console for a contract/finance team: dense ledgers, money that must line up in
+  columns, and states that have to read at a glance. The language is industrial rather than
+  decorative — concrete canvas with a faint blueprint grid, graphite chrome, hairline rules instead
+  of soft shadows, machine-set micro labels, tabular figures everywhere and one steel-blue accent
+  reserved for action and selection. Nothing is rounded for cuteness: corners are 6–10px, badges
+  read like stamped plates, and hierarchy comes from type weight and rules, not colour.
 */
 :root {
-  --canvas: #f6f8fb;
+  --canvas: #eceff3;
   --surface: #ffffff;
-  --surface-muted: #f8fafc;
+  --surface-muted: #f4f6f8;
+  --surface-sunken: #e6eaee;
 
-  --ink: #0f172a;
-  --ink-2: #334155;
-  --ink-3: #64748b;
-  --ink-4: #94a3b8;
+  --ink: #0d1218;
+  --ink-2: #2b3540;
+  --ink-3: #586572;
+  --ink-4: #8894a0;
 
-  --line: #e4e9f0;
-  --line-strong: #cbd5e1;
+  --line: #dde3e8;
+  --line-strong: #c2cbd3;
 
-  --accent: #3d87d3;
-  --accent-ink: #24557f;
-  --accent-soft: #eef4fb;
+  --accent: #2f6fa3;
+  --accent-hover: #265b87;
+  --accent-ink: #1d4a70;
+  --accent-soft: #e9f1f7;
+
+  /* Chrome: the graphite rail and top bar that frame the workspace. */
+  --steel: #141b23;
+  --steel-2: #1c2530;
+  --steel-line: #2a3643;
+
+  /* Signal: safety orange, only for "look here now". */
+  --signal: #c2410c;
+  --signal-soft: #fff2e9;
 
   --positive: #047857;
   --positive-soft: #ecfdf5;
@@ -32,17 +45,18 @@
   --danger: #be123c;
   --danger-soft: #fff1f2;
 
-  --radius-card: 14px;
-  --radius-control: 8px;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-pop: 0 18px 40px -20px rgba(15, 23, 42, 0.35);
+  --radius-card: 10px;
+  --radius-control: 6px;
+  --shadow-card: 0 1px 0 rgba(13, 18, 24, 0.05);
+  --shadow-pop: 0 24px 48px -26px rgba(13, 18, 24, 0.45), 0 0 0 1px rgba(13, 18, 24, 0.05);
 
   --background: var(--canvas);
   --foreground: var(--ink-2);
 
-  /* next/font exposes --font-outfit on <html>; @theme inline does not emit --font-sans,
-     so the body rule needs the real stack to keep Outfit everywhere. */
-  --font-body: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* next/font exposes these on <html>; @theme inline does not emit --font-sans, so the body rule
+     needs the real stack to keep IBM Plex everywhere (including AG Grid, which inherits). */
+  --font-body: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-code: var(--font-plex-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
 
 @theme inline {
@@ -56,10 +70,11 @@
   --color-ink-4: var(--ink-4);
   --color-line: var(--line);
   --color-stellar: var(--accent);
-  --color-stellar-hover: #3272b4;
+  --color-stellar-hover: #265b87;
   --color-stellar-ink: var(--accent-ink);
   --color-stellar-light: var(--accent-soft);
-  --font-sans: var(--font-outfit), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
 
 html {
@@ -67,20 +82,36 @@ html {
 }
 
 body {
-  background: var(--canvas);
   color: var(--ink-2);
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.5;
-  font-feature-settings: "cv05" 1;
+  /* Concrete canvas with a blueprint rule every 28px — texture without noise. */
+  background-color: var(--canvas);
+  background-image:
+    linear-gradient(to right, rgba(13, 18, 24, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(13, 18, 24, 0.028) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -1px -1px;
 }
 
-/* Field and column labels: sentence case, quiet, never shouted. */
+/* Field and column labels: stencilled micro caps, the way a control panel is marked up. */
 .ui-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   color: var(--ink-3);
-  letter-spacing: 0.005em;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Section / eyebrow line above a block of data. */
+.ui-eyebrow {
+  font-family: var(--font-code);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-4);
 }
 
 /* Secondary metadata under a name or number. */
@@ -91,18 +122,72 @@ body {
 }
 
 .ui-title {
-  font-size: clamp(20px, 1.5vw, 24px);
+  font-size: clamp(21px, 1.6vw, 26px);
   font-weight: 650;
-  letter-spacing: -0.015em;
-  line-height: 1.2;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
   color: var(--ink);
 }
 
 .ui-section-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
   color: var(--ink);
+}
+
+/* Machine label: ids, codes, record numbers. */
+.ui-code {
+  font-family: var(--font-code);
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Shared field styling so every control in the platform reads the same. */
+.ui-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+}
+.ui-input:hover { border-color: var(--ink-4); }
+.ui-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* Segmented switch: a row of machined keys, the pressed one sits proud. */
+.ui-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+.ui-segmented > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ui-segmented > button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.ui-segmented > button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong), 0 1px 0 rgba(13, 18, 24, 0.04);
 }
 
 /* Every amount in the platform lines up column to column. */
@@ -116,6 +201,18 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
+}
+
+/* Panel with a stamped header band — the default container for data blocks. */
+.ui-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
 }
 
 .ui-divide {
@@ -145,6 +242,29 @@ body {
   color: var(--ink);
 }
 
+/* Grid chrome: headers read like a machine plate, not a spreadsheet. */
+.ag-header-cell-text {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.ag-header-cell {
+  border-right: 1px solid var(--line);
+  padding-left: 10px;
+  padding-right: 6px;
+}
+.ag-header-cell:last-child {
+  border-right: 0;
+}
+.ag-header-row {
+  border-bottom: 1px solid var(--line-strong) !important;
+}
+.ag-row {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, white);
+}
+
 /* AG Grid filter popups (the community OptionsFilter is a React popup; these rules cover the
    native set/date/number/text filters and the column menu). AG Grid's default popup width is
    ~200px — and the set filter list caps at `min-width: max(200px, 100%)` — which is too narrow
@@ -159,16 +279,16 @@ body {
 
 /* Revenue schedule grid: keep the calendar month you are in visible across the long month run. */
 .orbit-schedule-current-header {
-  background-color: #fff7ed !important;
-  color: #b45309 !important;
+  background-color: var(--signal-soft) !important;
+  color: var(--signal) !important;
 }
 
 .orbit-schedule-current-cell {
-  background-color: #fffbf5;
+  background-color: #fffaf6;
 }
 
 .ag-row-pinned .orbit-schedule-current-cell {
-  background-color: #fff7ed;
+  background-color: var(--signal-soft);
 }
 
 @media (prefers-reduced-motion: reduce) {

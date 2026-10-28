@@ -112,13 +112,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
                 isDisabled
                   ? 'text-slate-300 cursor-not-allowed'
                   : isStart || isEnd
-                    ? 'bg-[#3D87D3] text-white font-black shadow-sm cursor-pointer'
+                    ? 'bg-[#2f6fa3] text-white font-black shadow-sm cursor-pointer'
                     : range
-                      ? 'bg-[#3D87D3]/15 text-[#3D87D3] cursor-pointer'
+                      ? 'bg-[#2f6fa3]/15 text-[#2f6fa3] cursor-pointer'
                       : isBlocked
                         ? 'text-slate-400 line-through cursor-not-allowed bg-rose-50/60'
                         : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
-              } ${isToday && !isStart && !isEnd ? 'ring-1 ring-[#3D87D3]/50' : ''}`}
+              } ${isToday && !isStart && !isEnd ? 'ring-1 ring-[#2f6fa3]/50' : ''}`}
             >
               {d.getUTCDate()}
               {isBlocked && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-rose-500" />}

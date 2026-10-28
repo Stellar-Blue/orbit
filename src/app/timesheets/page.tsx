@@ -171,7 +171,7 @@ export default function TimesheetsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-            <Clock className="w-6 h-6 mr-3 text-[#3D87D3]" /> Timesheets
+            <Clock className="w-6 h-6 mr-3 text-[#2f6fa3]" /> Timesheets
           </h1>
           <p className="text-slate-500 text-xs mt-1">
             Log effort per project / feature for the week. Decimal hours allowed (1.5 = 1h30m). Leave & holidays are pre-marked and not enterable.
@@ -179,9 +179,9 @@ export default function TimesheetsPage() {
         </div>
         {isAdmin && (
           <div className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5">
-            <button onClick={() => setTab('week')} className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${tab === 'week' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}><Clock className="w-3.5 h-3.5" /> Week</button>
-            <button onClick={() => setTab('review')} className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${tab === 'review' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}><ClipboardCheck className="w-3.5 h-3.5" /> Review{submittedEntries.length > 0 ? ` (${submittedEntries.length})` : ''}</button>
-            <button onClick={() => setTab('setup')} className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${tab === 'setup' ? 'bg-[#3D87D3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}><Layers className="w-3.5 h-3.5" /> Projects</button>
+            <button onClick={() => setTab('week')} className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${tab === 'week' ? 'bg-[#2f6fa3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}><Clock className="w-3.5 h-3.5" /> Week</button>
+            <button onClick={() => setTab('review')} className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${tab === 'review' ? 'bg-[#2f6fa3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}><ClipboardCheck className="w-3.5 h-3.5" /> Review{submittedEntries.length > 0 ? ` (${submittedEntries.length})` : ''}</button>
+            <button onClick={() => setTab('setup')} className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${tab === 'setup' ? 'bg-[#2f6fa3] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}><Layers className="w-3.5 h-3.5" /> Projects</button>
           </div>
         )}
       </div>
@@ -196,11 +196,11 @@ export default function TimesheetsPage() {
                 {formatDayMonth(weekDays[0])} – {formatDayMonth(weekDays[6])} {weekDays[6].slice(0, 4)}
               </span>
               <button onClick={() => setWeekStart(d => addDays(d, 7))} className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"><ChevronRight className="w-4 h-4" /></button>
-              <button onClick={() => setWeekStart(mondayOf(new Date()))} className="text-[11px] font-bold text-[#3D87D3] hover:underline cursor-pointer">This week</button>
+              <button onClick={() => setWeekStart(mondayOf(new Date()))} className="text-[11px] font-bold text-[#2f6fa3] hover:underline cursor-pointer">This week</button>
             </div>
             <div className="flex items-center gap-2">
               {isAdmin && (
-                <select value={effectiveProfileId} onChange={e => setActiveProfileId(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#3D87D3]">
+                <select value={effectiveProfileId} onChange={e => setActiveProfileId(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3]">
                   {profiles.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
                 </select>
               )}
@@ -273,7 +273,7 @@ export default function TimesheetsPage() {
                           </td>
                         );
                       })}
-                      <td className="py-1.5 px-2 text-center font-mono font-black text-[#3D87D3] whitespace-nowrap">{rowTotals[ri] > 0 ? fmtH(rowTotals[ri]) : '—'}</td>
+                      <td className="py-1.5 px-2 text-center font-mono font-black text-[#2f6fa3] whitespace-nowrap">{rowTotals[ri] > 0 ? fmtH(rowTotals[ri]) : '—'}</td>
                     </tr>
                   ))}
                   <tr className="bg-slate-50 font-bold text-slate-700">
@@ -281,7 +281,7 @@ export default function TimesheetsPage() {
                     {dayTotals.map((t, i) => (
                       <td key={i} className={`py-2 px-1.5 text-center font-mono font-bold text-slate-700 ${offDays.has(weekDays[i]) ? 'text-slate-300' : ''}`}>{t > 0 ? fmtH(t) : '—'}</td>
                     ))}
-                    <td className="py-2 px-2 text-center font-mono font-black text-[#3D87D3]">{fmtH(weekTotal)}</td>
+                    <td className="py-2 px-2 text-center font-mono font-black text-[#2f6fa3]">{fmtH(weekTotal)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -308,7 +308,7 @@ export default function TimesheetsPage() {
                 <div key={`${profileId}-${wk}`} className="rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden">
                   <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
                     <div className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <Users className="w-4 h-4 text-[#3D87D3]" /> {person?.first_name} {person?.last_name}
+                      <Users className="w-4 h-4 text-[#2f6fa3]" /> {person?.first_name} {person?.last_name}
                       <Badge variant="warning">Week of {wk}</Badge>
                       <span className="font-mono text-xs text-slate-500">{fmtH(total)}</span>
                     </div>
@@ -342,7 +342,7 @@ export default function TimesheetsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Create project */}
           <div className="rounded-2xl bg-white border border-slate-200 shadow-2xs p-5 space-y-3 h-fit">
-            <span className="text-sm font-extrabold text-slate-800 flex items-center"><Plus className="w-4 h-4 mr-2 text-[#3D87D3]" /> New Project</span>
+            <span className="text-sm font-extrabold text-slate-800 flex items-center"><Plus className="w-4 h-4 mr-2 text-[#2f6fa3]" /> New Project</span>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Name</label>
               <input value={setupProject.name} onChange={e => setSetupProject(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Atlas ETRM — Bidding Engine" className={inputCls} />
@@ -356,7 +356,7 @@ export default function TimesheetsPage() {
             </div>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
-                <input type="checkbox" checked={setupProject.billable} onChange={e => setSetupProject(p => ({ ...p, billable: e.target.checked }))} className="accent-[#3D87D3]" /> Billable
+                <input type="checkbox" checked={setupProject.billable} onChange={e => setSetupProject(p => ({ ...p, billable: e.target.checked }))} className="accent-[#2f6fa3]" /> Billable
               </label>
               <label className="block text-xs font-bold text-slate-700 flex-1">Budget h
                 <input value={setupProject.budget_hours} onChange={e => setSetupProject(p => ({ ...p, budget_hours: e.target.value }))} className={`${inputCls} mt-1`} placeholder="optional" />

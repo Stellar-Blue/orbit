@@ -223,7 +223,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
                 variant="outline"
                 disabled={busy}
                 onClick={(e) => { e.stopPropagation(); onBackfill(row.sal); }}
-                className="text-[#3D87D3] border-[#3D87D3]/30 hover:bg-[#3D87D3]/5 cursor-pointer shrink-0"
+                className="text-[#2f6fa3] border-[#2f6fa3]/30 hover:bg-[#2f6fa3]/5 cursor-pointer shrink-0"
               >
                 <Zap className={`w-3.5 h-3.5 mr-1 ${busy ? 'animate-pulse' : ''}`} />
                 {busy ? 'Producing…' : 'Past Payments'}
@@ -262,7 +262,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
             placeholder="Search rates, extras & bonuses across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#3D87D3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">

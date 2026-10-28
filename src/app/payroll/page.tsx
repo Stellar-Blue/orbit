@@ -903,7 +903,7 @@ export default function PayrollPage() {
       {/* Header */}
       <div className="border-b border-slate-200/80 pb-5">
         <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
-          <DollarSign className="w-6 h-6 mr-3 text-[#3D87D3]" /> Compensation & Payroll Ledger
+          <DollarSign className="w-6 h-6 mr-3 text-[#2f6fa3]" /> Compensation & Payroll Ledger
         </h1>
         <p className="text-slate-500 text-xs mt-1">
           Version 1 Simple Ledger: Greek 14-salary statutory items, contractor retainers, effective-dated raise histories, and RLS receipt vaults.
@@ -963,7 +963,7 @@ export default function PayrollPage() {
           title={`Total Company Cost (${selectedPeriod})`}
           value={`€${totalCost.toLocaleString()}`}
           subtitle="Gross salaries, net disbursements & contractor retainers"
-          icon={<DollarSign className="w-5 h-5 text-[#3D87D3]" />}
+          icon={<DollarSign className="w-5 h-5 text-[#2f6fa3]" />}
         />
         <StatCard 
           title="Net Payable to Employees & Contractors"
@@ -998,19 +998,19 @@ export default function PayrollPage() {
                 setEndPeriod(`${selectedPeriod.split('-')[0]}-12`);
               }
             }}
-            className="px-2 py-1 bg-blue-50 text-[#3D87D3] hover:bg-blue-100 rounded text-[11px] font-bold transition-colors cursor-pointer"
+            className="px-2 py-1 bg-blue-50 text-[#2f6fa3] hover:bg-blue-100 rounded text-[11px] font-bold transition-colors cursor-pointer"
             title="Click to toggle between single month and remainder of the year"
           >
             {selectedPeriod === endPeriod ? '+ Year Range' : '1 Month'}
           </button>
         </div>
         {tab === 'ledger' && (
-          <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 shadow-xs cursor-pointer font-bold">
+          <Button variant="primary" size="sm" onClick={openUploadModal} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 shadow-xs cursor-pointer font-bold">
             <Upload className="w-3.5 h-3.5 mr-1.5 text-white" /> Upload Payment
           </Button>
         )}
         <Button variant="secondary" size="sm" onClick={handleGenerateDraft} className="cursor-pointer font-semibold" title={`Generate drafts for period range: ${periodLabel}`}>
-          <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Generate Draft ({periodLabel})
+          <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> Generate Draft ({periodLabel})
         </Button>
         <Button variant="primary" size="sm" onClick={() => setIsExportOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 shadow-xs cursor-pointer font-semibold">
           <Download className="w-4 h-4 mr-1.5" /> Accountant Bundle
@@ -1032,7 +1032,7 @@ export default function PayrollPage() {
             </select>
             <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 text-xs font-semibold">
               <button onClick={() => setLedgerFilter('all')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'all' ? 'bg-white text-slate-800 shadow-2xs font-bold' : 'text-slate-600'}`}>All</button>
-              <button onClick={() => setLedgerFilter('planned')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'planned' ? 'bg-white text-[#3D87D3] shadow-2xs font-bold' : 'text-slate-600'}`}>Draft Planned ({plannedPayments.length})</button>
+              <button onClick={() => setLedgerFilter('planned')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'planned' ? 'bg-white text-[#2f6fa3] shadow-2xs font-bold' : 'text-slate-600'}`}>Draft Planned ({plannedPayments.length})</button>
               <button onClick={() => setLedgerFilter('paid')} className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'paid' ? 'bg-white text-emerald-700 shadow-2xs font-bold' : 'text-slate-600'}`}>Paid</button>
               {paidMissingDocs.length > 0 && (
                 <button onClick={() => setLedgerFilter('missing_receipt')} className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'missing_receipt' ? 'bg-amber-100 text-amber-900 shadow-2xs font-extrabold' : 'text-amber-700'}`}>⚠️ Missing ({paidMissingDocs.length})</button>
@@ -1046,21 +1046,21 @@ export default function PayrollPage() {
       <div className="flex space-x-6 border-b border-slate-200 pb-3 text-sm -mt-4">
         <button 
           onClick={() => setTab('ledger')}
-          className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'ledger' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+          className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'ledger' ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
           Payment Ledger ({selectedPeriod})
         </button>
         <button 
           onClick={() => setTab('forecast')}
-          className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+          className={`pb-2 font-semibold transition-all cursor-pointer ${tab === 'forecast' ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
           Salary Records & Company Costs
         </button>
         <button 
           onClick={() => setTab('payment_types')}
-          className={`pb-2 font-semibold transition-all flex items-center cursor-pointer ${tab === 'payment_types' ? 'border-b-2 border-[#3D87D3] text-[#3D87D3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+          className={`pb-2 font-semibold transition-all flex items-center cursor-pointer ${tab === 'payment_types' ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3] font-bold' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          <Sliders className="w-3.5 h-3.5 mr-1.5 text-[#3D87D3]" /> Payment Types Table
+          <Sliders className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> Payment Types Table
         </button>
       </div>
 
@@ -1070,7 +1070,7 @@ export default function PayrollPage() {
           {plannedPayments.length > 0 && (
             <div className="flex items-center justify-between p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs text-indigo-950">
               <span><strong>Workflow Ready:</strong> You have {plannedPayments.length} draft/planned payment rows awaiting review for {selectedPeriod}. Adjust amounts against payroll run, then finalize.</span>
-              <Button variant="primary" size="sm" onClick={handleMarkAllPaid} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold shrink-0 shadow-xs">
+              <Button variant="primary" size="sm" onClick={handleMarkAllPaid} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold shrink-0 shadow-xs">
                 <CheckSquare className="w-4 h-4 mr-1.5" /> ✓ Mark All Drafts Paid ({plannedPayments.length})
               </Button>
             </div>
@@ -1125,7 +1125,7 @@ export default function PayrollPage() {
                           {isStatutoryMonth && <Badge variant="info" className="ml-2">13th/14th Salary Month</Badge>}
                         </td>
                         <td className="p-3.5 font-mono text-slate-700 font-medium">€{m.regularCost.toLocaleString()}</td>
-                        <td className="p-3.5 font-mono font-bold text-[#3D87D3]">€{m.statutoryCost.toLocaleString()}</td>
+                        <td className="p-3.5 font-mono font-bold text-[#2f6fa3]">€{m.statutoryCost.toLocaleString()}</td>
                         <td className="p-3.5 text-slate-600 font-semibold">
                           {m.statutoryItems.length > 0 ? m.statutoryItems.join(', ') : <span className="text-slate-400 font-normal italic">Regular Payroll Only</span>}
                         </td>
@@ -1158,7 +1158,7 @@ export default function PayrollPage() {
                 setRsProfileId(p?.id || '');
                 setRsPaymentTypeId(baseRecurringType(p?.employment_type)?.id || '');
                 setIsRaiseOpen(true);
-              }} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
+              }} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold cursor-pointer">
                 <Plus className="w-3.5 h-3.5 mr-1" /> Record Raise / New Contract
               </Button>
             }
@@ -1181,7 +1181,7 @@ export default function PayrollPage() {
       {/* TAB 3: PAYMENT TYPES SETTINGS */}
       {tab === 'payment_types' && (
         <Card title="Dynamic Payment Types Administration" subtitle="A table of payroll categories rather than hardcoded rules. Configures Greek statutory defaults, recurrence rules, and employee applicability." action={
-          <Button size="sm" variant="primary" onClick={openNewPaymentType} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold cursor-pointer">
+          <Button size="sm" variant="primary" onClick={openNewPaymentType} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold cursor-pointer">
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Payment Category
           </Button>
         }>
@@ -1211,7 +1211,7 @@ export default function PayrollPage() {
                   </div>
                   <div className="flex justify-between">
                     <span>Default Multiplier:</span>
-                    <strong className="font-mono text-[#3D87D3] font-bold">{pt.default_multiplier ? `${pt.default_multiplier}x monthly salary` : 'Variable Amount'}</strong>
+                    <strong className="font-mono text-[#2f6fa3] font-bold">{pt.default_multiplier ? `${pt.default_multiplier}x monthly salary` : 'Variable Amount'}</strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Applies to:</span>
@@ -1346,7 +1346,7 @@ export default function PayrollPage() {
             </Button>
             <div className="flex space-x-3">
               <Button size="sm" variant="outline" onClick={() => setEditSalaryId(null)} className="cursor-pointer">Cancel</Button>
-              <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#3D87D3] text-white cursor-pointer">
+              <Button size="sm" variant="primary" onClick={handleSaveSalaryEdit} className="bg-[#2f6fa3] text-white cursor-pointer">
                 <Check className="w-3.5 h-3.5 mr-1" /> Save Record
               </Button>
             </div>
@@ -1433,7 +1433,7 @@ export default function PayrollPage() {
 
           <div className="pt-3 border-t border-slate-200 flex justify-end space-x-2">
             <Button variant="outline" size="sm" onClick={() => setIsRaiseOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={handleSaveRaise} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">Record Salary Record &rarr;</Button>
+            <Button variant="primary" size="sm" onClick={handleSaveRaise} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold">Record Salary Record &rarr;</Button>
           </div>
         </div>
       </Modal>
@@ -1521,7 +1521,7 @@ export default function PayrollPage() {
           </div>
           <div className="pt-3 border-t border-slate-200 flex justify-end space-x-2">
             <Button variant="outline" size="sm" onClick={() => { setIsTypeOpen(false); setEditingTypeId(null); }}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={handleSaveNewPaymentType} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">{editingTypeId ? 'Update Category' : 'Save Category'} &rarr;</Button>
+            <Button variant="primary" size="sm" onClick={handleSaveNewPaymentType} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold">{editingTypeId ? 'Update Category' : 'Save Category'} &rarr;</Button>
           </div>
         </div>
       </Modal>
@@ -1531,7 +1531,7 @@ export default function PayrollPage() {
         <div className="space-y-4 text-xs">
           <div className="p-3 bg-indigo-50/80 border border-indigo-100 rounded-xl text-slate-700 space-y-1">
             <div className="font-bold flex items-center text-indigo-950">
-              <Upload className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Record Disbursement & Attach Vouchers
+              <Upload className="w-4 h-4 mr-1.5 text-[#2f6fa3]" /> Record Disbursement & Attach Vouchers
             </div>
             <p className="text-[11px] text-slate-600">
               Upload salary payments, contractor invoices, bonuses, or reimbursements. Attach multiple documents simultaneously (payslips, receipts, invoices).
@@ -1566,7 +1566,7 @@ export default function PayrollPage() {
               <select 
                 value={upTypeId} 
                 onChange={e => setUpTypeId(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded p-2 text-[#3D87D3] font-semibold shadow-2xs"
+                className="w-full bg-white border border-slate-200 rounded p-2 text-[#2f6fa3] font-semibold shadow-2xs"
               >
                 {paymentTypes.map(pt => (
                   <option key={pt.id} value={pt.id}>{pt.name_el} ({pt.name_en})</option>
@@ -1612,18 +1612,18 @@ export default function PayrollPage() {
           {/* MULTIPLE DOCUMENTS UPLOADER BOX */}
           <div className="pt-3 border-t border-slate-200">
             <label className="block font-bold text-slate-800 mb-2 flex items-center justify-between">
-              <span className="flex items-center"><Paperclip className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Attach Payment Documents & Receipts (Multiple Support)</span>
+              <span className="flex items-center"><Paperclip className="w-4 h-4 mr-1.5 text-[#2f6fa3]" /> Attach Payment Documents & Receipts (Multiple Support)</span>
               <Badge variant="info">{upDocs.length} Selected</Badge>
             </label>
 
-            <div className="relative border-2 border-dashed border-slate-300 hover:border-[#3D87D3] bg-slate-50 hover:bg-blue-50/30 transition-all rounded-xl p-4 text-center cursor-pointer mb-3">
+            <div className="relative border-2 border-dashed border-slate-300 hover:border-[#2f6fa3] bg-slate-50 hover:bg-blue-50/30 transition-all rounded-xl p-4 text-center cursor-pointer mb-3">
               <input 
                 type="file" 
                 multiple 
                 onChange={e => handleFileSelect(e, 'upload')} 
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
               />
-              <Upload className="w-7 h-7 mx-auto text-[#3D87D3] mb-1.5" />
+              <Upload className="w-7 h-7 mx-auto text-[#2f6fa3] mb-1.5" />
               <p className="font-bold text-slate-700 text-xs">Click or drag & drop multiple files here</p>
               <p className="text-[10px] text-slate-400 mt-0.5">Supports Payslip PDFs, Bank Wire Receipts, Contractor Invoices, and Tax Statements</p>
             </div>
@@ -1633,7 +1633,7 @@ export default function PayrollPage() {
                 {upDocs.map((doc, idx) => (
                   <div key={doc.id || idx} className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-slate-200 shadow-2xs text-xs">
                     <div className="flex items-center space-x-2.5 truncate max-w-[55%]">
-                      <FileText className="w-4 h-4 text-[#3D87D3] shrink-0" />
+                      <FileText className="w-4 h-4 text-[#2f6fa3] shrink-0" />
                       <div className="truncate">
                         <span className="font-bold text-slate-800 block truncate">{doc.name}</span>
                         <span className="text-[10px] text-slate-400 font-mono">{doc.size}</span>
@@ -1668,7 +1668,7 @@ export default function PayrollPage() {
 
           <div className="pt-4 border-t border-slate-200 flex justify-end space-x-2.5">
             <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={handleSaveUploadedPayment} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold px-5">
+            <Button variant="primary" size="sm" onClick={handleSaveUploadedPayment} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold px-5">
               <Check className="w-4 h-4 mr-1.5" /> Record Payment & Upload Docs ({upDocs.length})
             </Button>
           </div>
@@ -1703,7 +1703,7 @@ export default function PayrollPage() {
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center">
-                  <Edit className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Payment Record
+                  <Edit className="w-4 h-4 mr-1.5 text-[#2f6fa3]" /> Payment Record
                 </h4>
                 {aiReady && (selectedPaymentForDocs.documents?.length || 0) + addMoreDocs.length > 0 && (
                   <button
@@ -1773,7 +1773,7 @@ export default function PayrollPage() {
                   <label className="block font-semibold uppercase text-slate-500 mb-1">
                     Bank Reference{openBankRefRows.length > 1 ? 's' : ''}
                     {openBankRefRows.length > 1 && (
-                      <span className="ml-2 normal-case font-bold text-[10px] text-[#3D87D3]">
+                      <span className="ml-2 normal-case font-bold text-[10px] text-[#2f6fa3]">
                         {openBankRefRows.length} transfers
                       </span>
                     )}
@@ -1806,7 +1806,7 @@ export default function PayrollPage() {
                     <button
                       type="button"
                       onClick={() => patchOpenPayment({ bank_reference: [...openBankRefRows, ''] })}
-                      className="text-[11px] font-bold text-[#3D87D3] hover:text-[#2f6ca8] flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] font-bold text-[#2f6fa3] hover:text-[#2f6ca8] flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3 h-3" /> Add another transfer reference
                     </button>
@@ -1848,7 +1848,7 @@ export default function PayrollPage() {
 
             <div>
               <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] mb-2.5 flex items-center">
-                <FolderOpen className="w-4 h-4 mr-1.5 text-[#3D87D3]" /> Attached Documents ({selectedPaymentForDocs.documents?.length || 0})
+                <FolderOpen className="w-4 h-4 mr-1.5 text-[#2f6fa3]" /> Attached Documents ({selectedPaymentForDocs.documents?.length || 0})
               </h4>
 
               {(!selectedPaymentForDocs.documents || selectedPaymentForDocs.documents.length === 0) ? (
@@ -1862,7 +1862,7 @@ export default function PayrollPage() {
                     return (
                       <div key={doc.id} className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between hover:border-indigo-200 transition-all">
                         <div className="flex items-center space-x-3 truncate max-w-[50%]">
-                          <div className="p-2 bg-indigo-50 text-[#3D87D3] rounded-lg shrink-0">
+                          <div className="p-2 bg-indigo-50 text-[#2f6fa3] rounded-lg shrink-0">
                             {doc.type === 'invoice' ? <FileSpreadsheet className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                           </div>
                           <div className="truncate">
@@ -1906,7 +1906,7 @@ export default function PayrollPage() {
                             onClick={() => handleDownloadDoc(doc, `${prof?.first_name} ${prof?.last_name}`, formatBankReferences(selectedPaymentForDocs.bank_reference))}
                             className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-[11px] flex items-center gap-1 px-2.5 transition-colors cursor-pointer shadow-2xs"
                           >
-                            <Download className="w-3.5 h-3.5 text-[#3D87D3]" /> Download
+                            <Download className="w-3.5 h-3.5 text-[#2f6fa3]" /> Download
                           </button>
                           <button
                             type="button"
@@ -1996,7 +1996,7 @@ export default function PayrollPage() {
               </button>
               <div className="flex items-center space-x-2 shrink-0">
                 <Button variant="outline" size="sm" onClick={() => { setSelectedPaymentForDocs(null); setAddMoreDocs([]); }}>Close</Button>
-                <Button variant="primary" size="sm" onClick={handleSaveOpenPayment} className="bg-[#3D87D3] hover:bg-[#3D87D3]/90 font-bold">Save Changes</Button>
+                <Button variant="primary" size="sm" onClick={handleSaveOpenPayment} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-bold">Save Changes</Button>
               </div>
             </div>
           </div>
@@ -2044,7 +2044,7 @@ export default function PayrollPage() {
                     className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 font-semibold flex items-center justify-between transition-colors cursor-pointer"
                   >
                     <span className="flex items-center gap-2">
-                      <Copy className="w-3.5 h-3.5 text-[#3D87D3]" /> Copy Payment UUID
+                      <Copy className="w-3.5 h-3.5 text-[#2f6fa3]" /> Copy Payment UUID
                     </span>
                     <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{pay.id.slice(0, 6)}...</span>
                   </button>

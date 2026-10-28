@@ -141,7 +141,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         onClick={() => (open ? setOpen(false) : openPanel())}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`w-full flex items-center justify-between gap-2 text-left text-xs p-2.5 pr-2 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20 ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-white'} ${open ? 'ring-2 ring-[#3D87D3]/20' : ''}`}
+        className={`w-full flex items-center justify-between gap-2 text-left text-xs p-2.5 pr-2 border border-slate-300 rounded-xl bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20 ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-white'} ${open ? 'ring-2 ring-[#2f6fa3]/20' : ''}`}
       >
         <span className={`truncate ${isEmpty ? 'text-slate-400 font-medium' : 'text-slate-800'}`}>{triggerLabel}</span>
         <span className="flex items-center gap-1 shrink-0">
@@ -174,7 +174,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 onChange={e => { setQuery(e.target.value); setActiveIndex(0); }}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder}
-                className="w-full text-xs py-2 pl-8 pr-2.5 border border-slate-200 rounded-lg bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#3D87D3]/20"
+                className="w-full text-xs py-2 pl-8 pr-2.5 border border-slate-200 rounded-lg bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
               />
             </div>
           </div>
@@ -186,7 +186,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   type="button"
                   onClick={() => commit('')}
                   onMouseEnter={() => setActiveIndex(-1)}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-slate-50 ${isEmpty ? 'font-extrabold text-[#3D87D3]' : 'text-slate-500'}`}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-slate-50 ${isEmpty ? 'font-extrabold text-[#2f6fa3]' : 'text-slate-500'}`}
                 >
                   <span className="truncate">{emptyLabel}</span>
                   {isEmpty && <Check className="w-3.5 h-3.5 shrink-0" />}
@@ -202,7 +202,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   type="button"
                   onClick={() => commit(option.value)}
                   onMouseEnter={() => setActiveIndex(idx)}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-3 ${idx === activeIndex ? 'bg-[#3D87D3]/10' : 'hover:bg-slate-50'} ${option.value === value ? 'font-extrabold text-[#3D87D3]' : 'text-slate-700'}`}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-3 ${idx === activeIndex ? 'bg-[#2f6fa3]/10' : 'hover:bg-slate-50'} ${option.value === value ? 'font-extrabold text-[#2f6fa3]' : 'text-slate-700'}`}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-bold">{option.label}</span>
