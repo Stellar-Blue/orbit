@@ -104,6 +104,12 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
   ].join(' · ');
 }
 
+/** Stored VAT rates appear as '24%' (register) or '24' (older auto-drafts) — print one form. */
+const formatVatRate = (rate?: string | null) => {
+  const raw = String(rate ?? '').trim();
+  return raw.includes('%') ? raw : raw ? `${raw}%` : '24%';
+};
+
 /** Short badge label for a project: its code when it has one, else its name. */
 const projectBadgeLabel = (project: Project) => project.code?.trim() || project.name;
 
@@ -274,7 +280,7 @@ function InvoicePeekModal({ invoices, contract, onClose }: {
                   <div className="font-mono text-xs font-bold text-slate-800">{formatMoney(invoice.net, invoice.currency)}</div>
                 </div>
                 <div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">VAT {invoice.vat_rate}%</div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">VAT {formatVatRate(invoice.vat_rate)}</div>
                   <div className="font-mono text-xs font-bold text-slate-800">{formatMoney(invoice.vat_amount, invoice.currency)}</div>
                 </div>
                 <div>

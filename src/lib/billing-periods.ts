@@ -31,6 +31,7 @@ export interface BillingPeriodItem {
   label: string;
   from: string;
   to: string;
+  /** Contract amount charged for this window, excl. VAT — the draft invoice's net. */
   expectedAmount: number;
   /** When this part of the period is charged — the line's own timing, else the contract's. */
   timing: 'start_of_period' | 'end_of_period';
@@ -392,6 +393,18 @@ export function getContractBillingPeriods(
   return results.sort((a, b) => a.key.localeCompare(b.key) || a.timing.localeCompare(b.timing));
 }
 
+/** VAT rate the register stores for a contract's treatment: only domestic supplies carry Greek VAT. */
+export function vatRateForTreatment(treatment?: string | null): string {
+  return !treatment || treatment === 'domestic_24' ? '24%' : '0%';
+}
+
+/** Numeric percentage behind a stored rate string: '24%' → 24, '0% (reverse charge)' → 0. */
+export function vatPercentFromRate(rate?: string | null): number {
+  const match = /(\d+(?:[.,]\d+)?)/.exec(String(rate ?? '24%'));
+  const percent = match ? Number(match[1].replace(',', '.')) : 24;
+  return Number.isFinite(percent) ? percent : 24;
+}
+
 /** Draft-invoice insert payload for a billing period — shared by the hub's quick create and the dossier. */
 export function buildDraftInvoicePayload(args: {
   period: Pick<BillingPeriodItem, 'key' | 'label' | 'from' | 'to'> | { key: string; label: string; from: string; to: string };
@@ -401,15 +414,20 @@ export function buildDraftInvoicePayload(args: {
   currency?: string | null;
   /** FX rate for the EUR reporting amount (`gross_eur`). Optional — see the note on `fx_rate` below. */
   fxRate?: number | null;
-  expectedAmount: number;
+  /** Contract amount for the period, excl. VAT — it becomes the invoice's net. */
+  netAmount: number;
+  /** Register VAT rate for the contract, e.g. '24%'. Standard rate when omitted. */
+  vatRate?: string | null;
   reference?: string | null;
   timing?: string | null;
   invoiceNumber: string;
   issueDate: string;
   dueDate: string;
 }): InvoiceInsert {
-  const gross = Number(args.expectedAmount.toFixed(2));
-  const net = Number((gross / 1.24).toFixed(2));
+  const net = Number(args.netAmount.toFixed(2));
+  const vatRate = args.vatRate || '24%';
+  const vat = Number(((net * vatPercentFromRate(vatRate)) / 100).toFixed(2));
+  const gross = Number((net + vat).toFixed(2));
   return {
     direction: args.direction === 'revenue' ? 'outgoing' : 'incoming',
     counterparty_id: args.counterpartyId,
@@ -427,8 +445,8 @@ export function buildDraftInvoicePayload(args: {
     // Upgrade path: plug a rate service into pricing-engine and pass it here.
     fx_rate: args.fxRate || 1.0,
     net,
-    vat_rate: '24',
-    vat_amount: Number((gross - net).toFixed(2)),
+    vat_rate: vatRate,
+    vat_amount: vat,
     gross,
     gross_eur: Number((gross * (args.fxRate || 1)).toFixed(2)),
     status: 'draft',

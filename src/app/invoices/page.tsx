@@ -21,7 +21,7 @@ import { ClearFiltersControl } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
-import { buildDraftInvoicePayload, getContractBillingPeriods } from '@/lib/billing-periods';
+import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment } from '@/lib/billing-periods';
 import { INVOICE_CURRENCIES, DEFAULT_CURRENCY, formatMoney } from '@/lib/currency';
 import { DatePicker } from '@/components/ui/date-picker';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
@@ -398,6 +398,8 @@ export default function InvoicesRegistryPage() {
       periodTo: string;
       expectedAmount: number;
       currency: string;
+      /** Drives the draft's VAT rate: domestic supplies carry 24%, everything else is zero-rated. */
+      vatTreatment?: string | null;
       /** The date this period's invoice should be raised — period start in advance, period end in arrears. */
       billingDate: string;
       status: 'unbilled' | 'draft_created' | 'billed';
@@ -431,6 +433,7 @@ export default function InvoicesRegistryPage() {
           periodTo: period.to,
           expectedAmount: period.expectedAmount,
           currency: cnt.currency || 'EUR',
+          vatTreatment: cnt.vat_treatment,
           billingDate: period.billingDate,
           status: period.status,
           invoiceId: period.invoiceId
@@ -470,7 +473,8 @@ export default function InvoicesRegistryPage() {
       counterpartyId: item.counterpartyId,
       direction: item.direction,
       currency: item.currency,
-      expectedAmount: item.expectedAmount,
+      netAmount: item.expectedAmount,
+      vatRate: vatRateForTreatment(item.vatTreatment),
       reference: item.reference,
       timing: item.timing,
       invoiceNumber: invNumber,

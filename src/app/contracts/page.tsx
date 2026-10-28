@@ -21,7 +21,7 @@ import { CounterpartyPicker } from '@/components/counterparties/counterparty-pic
 import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
-import { buildDraftInvoicePayload, getContractBillingPeriods, type BillingPeriodItem } from '@/lib/billing-periods';
+import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment, type BillingPeriodItem } from '@/lib/billing-periods';
 import { DatePicker } from '@/components/ui/date-picker';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
@@ -76,7 +76,8 @@ export default function ContractsRegistryPage() {
         counterpartyId: contract.counterparty_id,
         direction: contract.direction,
         currency: contract.currency,
-        expectedAmount: period.expectedAmount,
+        netAmount: period.expectedAmount,
+        vatRate: vatRateForTreatment(contract.vat_treatment),
         reference: contract.reference,
         timing: period.timing,
         invoiceNumber: invNumber,

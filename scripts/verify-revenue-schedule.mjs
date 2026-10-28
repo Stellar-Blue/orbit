@@ -30,6 +30,7 @@ import {
   invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
+import { buildDraftInvoicePayload, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
 import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
 
 let passed = 0;
@@ -863,6 +864,92 @@ const reversedSuggestions = buildInvoiceSuggestions([billable], {
 assert(
   reversedSuggestions.some(s => s.period.key === '2025-01-01'),
   'An invoice cancelled by a credit note becomes billable again'
+);
+
+// --- Draft invoices created from a suggestion ---------------------------------
+// The contract amount for the period is the invoice's NET: VAT is added on top of it.
+const draft = buildDraftInvoicePayload({
+  period: { key: '2026-04-01@end', label: '01/04/2026 - 30/06/2026', from: '2026-04-01', to: '2026-06-30' },
+  contractId: 'cnt-1',
+  counterpartyId: 'cp-1',
+  direction: 'revenue',
+  currency: 'EUR',
+  netAmount: 3000,
+  vatRate: vatRateForTreatment('domestic_24'),
+  reference: 'DEPA-2026-FOSE',
+  timing: 'end_of_period',
+  invoiceNumber: 'INV-2026-0001',
+  issueDate: '2026-07-01',
+  dueDate: '2026-07-15',
+});
+assert(
+  draft.net === 3000 && draft.vat_amount === 720 && draft.gross === 3720,
+  'The contract amount lands in the net amount and VAT is added on top',
+  `net ${draft.net} / vat ${draft.vat_amount} / gross ${draft.gross}`
+);
+assert(draft.vat_rate === '24%' && draft.gross_eur === 3720, 'The draft stores the register VAT rate and the EUR gross');
+assert(draft.period_from === '2026-04-01' && draft.period_to === '2026-06-30', 'The draft keeps the billed window');
+
+// Zero-rated contracts (EU reverse charge / non-EU) bill the contract amount without VAT.
+const zeroRated = buildDraftInvoicePayload({
+  period: { key: '2026-05-01', label: 'May 2026', from: '2026-05-01', to: '2026-05-31' },
+  contractId: 'cnt-2',
+  counterpartyId: 'cp-2',
+  direction: 'cost',
+  netAmount: 1250.5,
+  vatRate: vatRateForTreatment('intra_eu_reverse_charge'),
+  invoiceNumber: 'INV-2026-0002',
+  issueDate: '2026-05-01',
+  dueDate: '2026-05-31',
+});
+assert(
+  zeroRated.net === 1250.5 && zeroRated.vat_amount === 0 && zeroRated.gross === 1250.5 && zeroRated.direction === 'incoming',
+  'A reverse-charge contract drafts the amount without VAT',
+  `net ${zeroRated.net} / vat ${zeroRated.vat_amount} / gross ${zeroRated.gross}`
+);
+
+// A foreign-currency draft converts the gross for reporting at the supplied rate.
+const converted = buildDraftInvoicePayload({
+  period: { key: '2026-06-01', label: 'June 2026', from: '2026-06-01', to: '2026-06-30' },
+  contractId: 'cnt-3',
+  counterpartyId: 'cp-3',
+  direction: 'revenue',
+  currency: 'USD',
+  fxRate: 1.1,
+  netAmount: 1000,
+  vatRate: '6%',
+  invoiceNumber: 'INV-2026-0003',
+  issueDate: '2026-06-01',
+  dueDate: '2026-06-30',
+});
+assert(
+  converted.net === 1000 && converted.vat_amount === 60 && converted.gross === 1060 && converted.gross_eur === 1166,
+  'The draft VAT follows the stored rate and gross_eur converts it',
+  `net ${converted.net} / vat ${converted.vat_amount} / gross ${converted.gross} / eur ${converted.gross_eur}`
+);
+
+// The suggestion's amount is exactly what the draft puts in the net.
+const suggestion = buildInvoiceSuggestions([billable], { today })[0];
+assert(
+  suggestion && buildDraftInvoicePayload({
+    period: suggestion.period,
+    contractId: suggestion.contractId,
+    counterpartyId: 'cp-1',
+    direction: 'revenue',
+    netAmount: suggestion.amount,
+    invoiceNumber: 'INV-2026-0004',
+    issueDate: '2025-01-01',
+    dueDate: '2025-01-15',
+  }).net === suggestion.amount,
+  'Creating a draft from a suggestion books the suggested amount as net',
+  suggestion ? String(suggestion.amount) : 'no suggestion'
+);
+
+assert(
+  vatRateForTreatment('domestic_24') === '24%' && vatRateForTreatment('non_eu') === '0%' &&
+    vatRateForTreatment(undefined) === '24%' && vatPercentFromRate('0% (reverse charge)') === 0 &&
+    vatPercentFromRate('24') === 24,
+  'VAT treatment and stored rate strings normalise to a percentage'
 );
 
 console.log('\n================================================================');
