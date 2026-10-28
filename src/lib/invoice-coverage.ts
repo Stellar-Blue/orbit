@@ -1,6 +1,6 @@
 import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
-import { invoiceLinkedContractIds } from '@/lib/invoice-links';
+import { invoiceLinkedContractIds, invoiceProjectIds } from '@/lib/invoice-links';
 import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -42,6 +42,9 @@ export type InvoiceVarianceTone = 'match' | 'under' | 'over';
 export type InvoiceCoverageMap = Map<string, InvoiceCellCoverage>;
 
 export const invoiceCellKey = (contractId: string, month: string) => `${contractId}:${month}`;
+
+/** Change-request cells use the same box model, keyed by project instead of contract. */
+export const projectInvoiceCellKey = (projectId: string, month: string) => `${projectId}:${month}`;
 
 const INACTIVE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>(['cancelled']);
 const MAX_INVOICE_LABELS = 3;
@@ -132,6 +135,81 @@ function pickContract(
 }
 
 /**
+ * Paints one invoice's month box into a coverage map. `keyFor(month)` decides the cell key, so the
+ * same merge rules serve contract rows and change-request rows. Overlapping invoices merge: `paid`
+ * is only true when every covering invoice is paid, `draft` only while all are drafts, and the
+ * latest issue date drives the asterisk.
+ */
+function paintInvoiceBox(
+  covered: InvoiceCoverageMap,
+  invoice: Invoice,
+  months: string[],
+  ownerId: string,
+  keyFor: (month: string) => string
+): void {
+  if (months.length === 0) return;
+  const firstMonth = months[0];
+  const lastMonth = months[months.length - 1];
+  const issuedMonth = toMonthKey(invoice.issue_date);
+  const markerMonth = !issuedMonth || issuedMonth < firstMonth
+    ? firstMonth
+    : issuedMonth > lastMonth
+      ? lastMonth
+      : issuedMonth;
+  const isPaid = invoice.status === 'paid';
+  const isDraft = invoice.status === 'draft';
+  const issueDate = invoice.issue_date || '';
+  const label = invoice.invoice_number || invoice.id;
+  const amount = invoiceAmountEur(invoice);
+
+  months.forEach(month => {
+    const key = keyFor(month);
+    const existing = covered.get(key);
+    if (!existing) {
+      covered.set(key, {
+        contractId: ownerId,
+        paid: isPaid,
+        draft: isDraft,
+        firstMonth,
+        lastMonth,
+        markerMonth,
+        markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
+        invoices: [label],
+        invoiceIds: [invoice.id],
+        issueDate,
+        invoiceTotal: amount,
+        contractTotal: 0,
+        variance: 0,
+      });
+      return;
+    }
+
+    const mergedFirst = firstMonth < existing.firstMonth ? firstMonth : existing.firstMonth;
+    const mergedLast = lastMonth > existing.lastMonth ? lastMonth : existing.lastMonth;
+    const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
+    covered.set(key, {
+      contractId: ownerId,
+      paid: existing.paid && isPaid,
+      draft: existing.draft && isDraft,
+      firstMonth: mergedFirst,
+      lastMonth: mergedLast,
+      markerMonth: latestMarker,
+      markerPosition: invoiceMarkerPosition(latestMarker, mergedFirst, mergedLast),
+      invoices: existing.invoices.includes(label)
+        ? existing.invoices
+        : [...existing.invoices, label].slice(-MAX_INVOICE_LABELS),
+      invoiceIds: existing.invoiceIds.includes(invoice.id)
+        ? existing.invoiceIds
+        : [...existing.invoiceIds, invoice.id].slice(-MAX_INVOICE_LABELS),
+      issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
+      invoiceTotal: round2(existing.invoiceTotal + amount),
+      contractTotal: 0,
+      variance: 0,
+    });
+  });
+}
+
+/**
  * Builds `${contractId}:${month}` → coverage for every month an active outgoing invoice bills,
  * drafts included — a draft is money already reserved for those months, so the schedule shows it
  * separately from an issued bill. Overlapping invoices merge into one box: `paid` is only true when
@@ -197,66 +275,8 @@ export function buildInvoiceCoverage(
     const targets = linkedContracts.length > 0 ? linkedContracts : inferred ? [inferred] : [];
     if (targets.length === 0) return;
 
-    const firstMonth = months[0];
-    const lastMonth = months[months.length - 1];
-    const issuedMonth = toMonthKey(invoice.issue_date);
-    const markerMonth = !issuedMonth || issuedMonth < firstMonth
-      ? firstMonth
-      : issuedMonth > lastMonth
-        ? lastMonth
-        : issuedMonth;
-    const isPaid = invoice.status === 'paid';
-    const isDraft = invoice.status === 'draft';
-    const issueDate = invoice.issue_date || '';
-    const label = invoice.invoice_number || invoice.id;
-    const amount = invoiceAmountEur(invoice);
-
     targets.forEach(contract => {
-      months.forEach(month => {
-        const key = invoiceCellKey(contract.id, month);
-        const existing = covered.get(key);
-        if (!existing) {
-          covered.set(key, {
-            contractId: contract.id,
-            paid: isPaid,
-            draft: isDraft,
-            firstMonth,
-            lastMonth,
-            markerMonth,
-            markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
-            invoices: [label],
-            invoiceIds: [invoice.id],
-            issueDate,
-            invoiceTotal: amount,
-            contractTotal: 0,
-            variance: 0,
-          });
-          return;
-        }
-
-        const mergedFirst = firstMonth < existing.firstMonth ? firstMonth : existing.firstMonth;
-        const mergedLast = lastMonth > existing.lastMonth ? lastMonth : existing.lastMonth;
-        const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
-        covered.set(key, {
-          contractId: contract.id,
-          paid: existing.paid && isPaid,
-          draft: existing.draft && isDraft,
-          firstMonth: mergedFirst,
-          lastMonth: mergedLast,
-          markerMonth: latestMarker,
-          markerPosition: invoiceMarkerPosition(latestMarker, mergedFirst, mergedLast),
-          invoices: existing.invoices.includes(label)
-            ? existing.invoices
-            : [...existing.invoices, label].slice(-MAX_INVOICE_LABELS),
-          invoiceIds: existing.invoiceIds.includes(invoice.id)
-            ? existing.invoiceIds
-            : [...existing.invoiceIds, invoice.id].slice(-MAX_INVOICE_LABELS),
-          issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
-          invoiceTotal: round2(existing.invoiceTotal + amount),
-          contractTotal: 0,
-          variance: 0,
-        });
-      });
+      paintInvoiceBox(covered, invoice, months, contract.id, month => invoiceCellKey(contract.id, month));
     });
   });
 
@@ -305,4 +325,36 @@ export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): 
     backgroundColor: palette.fill,
     boxShadow: shadows.join(', '),
   };
+}
+
+/**
+ * Coverage for the change-request rows: an invoice linked to a project paints that project's months.
+ * `contractTotal` is left at 0 — the grid fills it with the row's own charges, which it is the only
+ * one that knows.
+ */
+export function buildProjectInvoiceCoverage(
+  invoices: Invoice[],
+  projects: Array<Pick<Project, 'id' | 'contract_id'>>
+): InvoiceCoverageMap {
+  const parentByProject = new Map(projects.map(project => [project.id, String(project.contract_id || '')]));
+  const outgoing = invoices
+    .filter(invoice => invoice.direction === 'outgoing')
+    .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
+    .filter(invoice => invoiceProjectIds(invoice).length > 0);
+
+  const drafts = outgoing.filter(invoice => invoice.status === 'draft' && invoice.type !== 'credit_note');
+  const issued = outgoing.filter(invoice => invoice.status !== 'draft');
+  const ordered = [...netInvoices(issued).active, ...drafts].sort(
+    (a, b) => String(a.issue_date || '').localeCompare(String(b.issue_date || '')) || a.id.localeCompare(b.id)
+  );
+
+  const covered: InvoiceCoverageMap = new Map();
+  ordered.forEach(invoice => {
+    const months = invoiceCoveredMonths(invoice);
+    if (months.length === 0) return;
+    invoiceProjectIds(invoice).forEach(projectId => {
+      paintInvoiceBox(covered, invoice, months, parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month));
+    });
+  });
+  return covered;
 }

@@ -17,10 +17,13 @@ import { calculateContractValuation } from '@/lib/pricing-engine';
 import { buildRevenueSchedule, groupMonthsByYear, scheduleExportTable, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
+  buildProjectInvoiceCoverage,
   invoiceCellKey,
   invoiceCellStyle,
   invoiceMarkerColor,
+  invoiceMarkerPosition,
   invoiceVarianceTone,
+  projectInvoiceCellKey,
   type InvoiceCellCoverage,
   type InvoiceCoverageMap,
   type InvoiceVarianceTone,
@@ -109,6 +112,40 @@ const formatVatRate = (rate?: string | null) => {
   const raw = String(rate ?? '').trim();
   return raw.includes('%') ? raw : raw ? `${raw}%` : '24%';
 };
+
+/** Merge every covered project of a change-request row into the box drawn on that cell. */
+function projectCellCoverage(
+  row: RevenueScheduleRow,
+  month: string,
+  coverage: InvoiceCoverageMap
+): InvoiceCellCoverage | undefined {
+  const entries = (row.projects ?? [])
+    .map(project => coverage.get(projectInvoiceCellKey(project.id, month)))
+    .filter((entry): entry is InvoiceCellCoverage => Boolean(entry));
+  if (entries.length === 0) return undefined;
+
+  const merged: InvoiceCellCoverage = entries.length === 1 ? { ...entries[0] } : {
+    contractId: entries[0].contractId,
+    paid: entries.every(entry => entry.paid),
+    draft: entries.every(entry => entry.draft),
+    firstMonth: entries.map(entry => entry.firstMonth).sort()[0],
+    lastMonth: entries.map(entry => entry.lastMonth).sort().slice(-1)[0],
+    markerMonth: entries.map(entry => entry.markerMonth).sort().slice(-1)[0],
+    markerPosition: 'middle',
+    invoices: entries.flatMap(entry => entry.invoices).slice(-3),
+    invoiceIds: entries.flatMap(entry => entry.invoiceIds).slice(-3),
+    issueDate: entries.map(entry => entry.issueDate).sort().slice(-1)[0],
+    invoiceTotal: Math.round(entries.reduce((sum, entry) => sum + entry.invoiceTotal, 0) * 100) / 100,
+    contractTotal: 0,
+    variance: 0,
+  };
+  merged.markerPosition = invoiceMarkerPosition(merged.markerMonth, merged.firstMonth, merged.lastMonth);
+  // A change-request invoice is usually raised after the delivery months, so comparing it with the
+  // row's charges inside the invoice window would flag a variance that is not a billing error.
+  merged.contractTotal = merged.invoiceTotal;
+  merged.variance = 0;
+  return merged;
+}
 
 /** Short badge label for a project: its code when it has one, else its name. */
 const projectBadgeLabel = (project: Project) => project.code?.trim() || project.name;
@@ -432,6 +469,17 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     gridApiRef.current?.redrawRows();
   }, [invoiceCoverage]);
 
+  // Change-request rows show the invoices their projects are billed by.
+  const projectCoverage = useMemo(
+    () => buildProjectInvoiceCoverage(invoices, projects),
+    [invoices, projects]
+  );
+  const projectCoverageRef = useRef<InvoiceCoverageMap>(new Map());
+  useEffect(() => {
+    projectCoverageRef.current = projectCoverage;
+    gridApiRef.current?.redrawRows();
+  }, [projectCoverage]);
+
   // Suggested invoices: billing periods already due under the contract's cadence and invoicing
   // timing that still have no invoice. Months already invoiced drop out of the suggestion box.
   const invoiceSuggestions = useMemo(() => {
@@ -723,16 +771,23 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       valueFormatter: params => formatAmount(params.value),
       cellStyle: params => {
         const data = params.data;
-        if (!data || data.kind !== 'contract') return MONTH_CELL_PADDING;
-        const coverage = invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key));
+        if (!data) return MONTH_CELL_PADDING;
+        const coverage = data.kind === 'contract'
+          ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
+          : projectCellCoverage(data, key, projectCoverageRef.current);
         if (coverage) return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key) };
+        if (data.kind !== 'contract') return MONTH_CELL_PADDING;
         const suggestion = suggestionRef.current.get(suggestionCellKey(data.contractId, key));
         return suggestion ? { ...MONTH_CELL_PADDING, ...suggestionCellStyle(suggestion, key) } : MONTH_CELL_PADDING;
       },
       cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
         const data = params.data;
         const contractRow = data && data.kind === 'contract' ? data : undefined;
-        const coverage = contractRow ? invoiceCoverageRef.current.get(invoiceCellKey(contractRow.contractId, key)) : undefined;
+        const coverage = data
+          ? data.kind === 'contract'
+            ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
+            : projectCellCoverage(data, key, projectCoverageRef.current)
+          : undefined;
         const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.contractId, key)) : undefined;
         const projectShares = data && data.kind === 'project' ? data.projectMonths?.[key] : undefined;
         const text = formatAmount(Number(params.value) || 0);
@@ -755,7 +810,11 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           <span
             title={
               coverage
-                ? coverageTooltip(coverage)
+                ? data?.kind === 'project'
+                  ? `Invoiced ${formatTotal(coverage.invoiceTotal)} · ${coverage.invoices.join(', ')}${
+                      coverage.draft ? ' · draft, not issued yet' : coverage.paid ? ' · paid' : ' · not paid yet'
+                    }`
+                  : coverageTooltip(coverage)
                 : suggestion
                   ? suggestionTooltip(suggestion)
                   : projectShares && projectShares.length > 0
@@ -792,7 +851,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   onMouseDown={event => event.stopPropagation()}
                   onClick={event => {
                     event.stopPropagation();
-                    if (contractRow) openPeekRef.current(contractRow.contract, coverage.invoiceIds);
+                    if (data) openPeekRef.current(data.contract, coverage.invoiceIds);
                   }}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: coverage.draft ? 4 : 2, padding: '0 3px', borderRadius: 3,
@@ -1021,15 +1080,6 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <CalendarClock className="w-3.5 h-3.5 text-[#2f6fa3]" /> {currentYear}
             <ArrowRight className="w-3 h-3 text-slate-400" />
           </button>
-          <button
-            type="button"
-            onClick={() => void exportToExcel()}
-            disabled={isExporting}
-            title="Download this schedule as an Excel workbook"
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] disabled:opacity-60 disabled:cursor-wait cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-[var(--ink-3)]" /> {isExporting ? 'Exporting…' : 'Excel'}
-          </button>
           <div className="ui-segmented shrink-0" role="group" aria-label="Schedule view">
             <button
               type="button"
@@ -1068,6 +1118,15 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             </button>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => void exportToExcel()}
+          disabled={isExporting}
+          title="Download this schedule as an Excel workbook"
+          className="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] disabled:opacity-60 disabled:cursor-wait cursor-pointer shrink-0"
+        >
+          <Download className="w-3.5 h-3.5 text-[var(--ink-3)]" /> {isExporting ? 'Exporting…' : 'Excel'}
+        </button>
         {selectionStats ? (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#2f6fa3]/30 bg-[#2f6fa3]/5 px-2.5 py-1 text-[10px] font-bold text-slate-600">
             <span className="uppercase tracking-wider text-[#2f6fa3]">Selection</span>

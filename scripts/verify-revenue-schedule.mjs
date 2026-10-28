@@ -21,6 +21,8 @@ import {
 } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
+  buildProjectInvoiceCoverage,
+  projectInvoiceCellKey,
   INVOICE_BOX_COLORS,
   invoiceAmountEur,
   invoiceCellStyle,
@@ -807,6 +809,27 @@ assert(
   'A project-linked invoice covers its parent agreement only',
   [...projectCoverage.keys()].join(' ')
 );
+
+// Change-request rows show the invoices their projects are billed by.
+const crInvoice = invoice({
+  id: 'inv-cr',
+  invoice_number: 'Α-13',
+  status: 'paid',
+  contract_id: 'cnt-1',
+  contract_ids: ['cnt-1'],
+  project_ids: ['prj-alpha'],
+  net: 6000,
+});
+const projectBoxes = buildProjectInvoiceCoverage([crInvoice], [crAlpha, crBeta]);
+assert(
+  projectBoxes.get(projectInvoiceCellKey('prj-alpha', '2025-01'))?.invoices.join(',') === 'Α-13' &&
+    projectBoxes.get(projectInvoiceCellKey('prj-alpha', '2025-03'))?.paid === true &&
+    !projectBoxes.has(projectInvoiceCellKey('prj-beta', '2025-01')),
+  'A project-linked invoice paints that change request and no other',
+  [...projectBoxes.keys()].join(' ')
+);
+const unlinkedForProjects = buildProjectInvoiceCoverage([invoice({ project_ids: [] })], [crAlpha]);
+assert(unlinkedForProjects.size === 0, 'An invoice without project links paints no change-request cell');
 
 // --- Invoice suggestions -----------------------------------------------------
 const today = new Date('2025-03-15T00:00:00');
