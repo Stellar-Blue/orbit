@@ -881,6 +881,10 @@ export interface Invoice {
   counterparty_id: string;
   counterparty?: Counterparty;
   contract_id?: string | null;
+  /** Every agreement the invoice bills; `contract_id` mirrors the first entry (legacy primary). */
+  contract_ids?: string[] | null;
+  /** Projects (change requests) the invoice bills, possibly across several agreements. */
+  project_ids?: string[] | null;
   contract?: Contract;
   type: InvoiceType;
   credits_invoice_id?: string | null;

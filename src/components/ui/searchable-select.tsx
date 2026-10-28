@@ -21,6 +21,8 @@ interface SearchableSelectProps {
   options: SearchableSelectOption[];
   /** Label of the option that represents "nothing selected" (value ""). */
   emptyLabel?: string;
+  /** Hide the "nothing selected" row — for pickers that add items instead of choosing one. */
+  hideEmptyOption?: boolean;
   placeholder?: string;
   disabled?: boolean;
   /** Shows a clear (×) button whenever a value is selected. */
@@ -43,6 +45,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   onChange,
   options,
   emptyLabel = 'Select an option…',
+  hideEmptyOption = false,
   placeholder = 'Search…',
   disabled = false,
   allowClear = false,
@@ -177,7 +180,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           </div>
 
           <ul role="listbox" className="flex-1 overflow-y-auto py-1">
-            {emptyLabel && (
+            {emptyLabel && !hideEmptyOption && (
               <li>
                 <button
                   type="button"

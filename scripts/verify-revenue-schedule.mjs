@@ -32,6 +32,13 @@ import {
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
 import { buildDraftInvoicePayload, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
 import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
+import {
+  buildInvoiceLinks,
+  invoiceContractIds,
+  invoiceLinkedContractIds,
+  invoiceLinksContract,
+  invoiceProjectIds,
+} from '@/lib/invoice-links';
 
 let passed = 0;
 let failed = 0;
@@ -742,6 +749,64 @@ assert(
 );
 
 
+// --- Invoices that bill several agreements and projects ----------------------
+const crAlpha = { id: 'prj-alpha', contract_id: 'cnt-1', name: 'Alpha roll-out', status: 'active', budget_value: 6000 };
+const crBeta = { id: 'prj-beta', contract_id: 'cnt-2', name: 'Beta add-on', status: 'active', budget_value: 3000 };
+
+const builtLinks = buildInvoiceLinks({
+  contractIds: ['cnt-9'],
+  projectIds: ['prj-alpha', 'prj-beta', 'prj-alpha'],
+  projects: [crAlpha, crBeta],
+});
+assert(
+  JSON.stringify(builtLinks) === JSON.stringify({
+    contractIds: ['cnt-9', 'cnt-1', 'cnt-2'],
+    projectIds: ['prj-alpha', 'prj-beta'],
+    primaryContractId: 'cnt-9',
+  }),
+  'A project link brings its parent agreement along, first pick stays primary',
+  JSON.stringify(builtLinks)
+);
+
+assert(
+  invoiceContractIds({ contract_id: 'cnt-1', contract_ids: [] }).join(',') === 'cnt-1',
+  'Rows without link arrays fall back to the legacy single contract'
+);
+assert(
+  invoiceContractIds({ contract_id: 'cnt-1', contract_ids: ['cnt-2', 'cnt-1'] }).join(',') === 'cnt-2,cnt-1',
+  'The link array wins over the legacy column'
+);
+assert(
+  invoiceContractIds({ contract_id: null, contract_ids: null }).length === 0 &&
+    invoiceProjectIds({ contract_id: null, contract_ids: [], project_ids: ['prj-alpha', ' '] }).join(',') === 'prj-alpha',
+  'An unlinked invoice resolves to no links, and blank ids are dropped'
+);
+assert(
+  invoiceLinkedContractIds({ contract_id: null, contract_ids: [], project_ids: ['prj-alpha'] }, [crAlpha]).join(',') === 'cnt-1' &&
+    invoiceLinksContract({ contract_id: null, contract_ids: [], project_ids: ['prj-alpha'] }, 'cnt-1', [crAlpha]) &&
+    !invoiceLinksContract({ contract_id: null, contract_ids: [], project_ids: ['prj-alpha'] }, 'cnt-2', [crAlpha]),
+  'A project-only link resolves to its own agreement and no other'
+);
+
+const multiContractInvoice = invoice({ id: 'inv-multi', invoice_number: 'INV-MULTI', contract_ids: ['cnt-1', 'cnt-2'], net: 8000 });
+const multiCoverage = buildInvoiceCoverage([multiContractInvoice], twoSameCounterparty);
+assert(
+  multiCoverage.has('cnt-1:2025-01') && multiCoverage.has('cnt-2:2025-01') &&
+    multiCoverage.get('cnt-1:2025-01')?.invoices.join(',') === 'INV-MULTI',
+  'One invoice paints a box on every agreement it bills',
+  [...multiCoverage.keys()].join(' ')
+);
+
+const projectOnlyInvoice = invoice({
+  id: 'inv-project', invoice_number: 'INV-PROJECT', contract_id: null, contract_ids: [], project_ids: ['prj-alpha'],
+});
+const projectCoverage = buildInvoiceCoverage([projectOnlyInvoice], twoSameCounterparty, [], [], [crAlpha, crBeta]);
+assert(
+  projectCoverage.has('cnt-1:2025-01') && !projectCoverage.has('cnt-2:2025-01'),
+  'A project-linked invoice covers its parent agreement only',
+  [...projectCoverage.keys()].join(' ')
+);
+
 // --- Invoice suggestions -----------------------------------------------------
 const today = new Date('2025-03-15T00:00:00');
 const billable = contract({ lines: [monthlyLine], invoice_timing: 'start_of_period', billing_cadence: 'monthly' });
@@ -784,6 +849,21 @@ const linkedInvoice = {
 assert(
   buildInvoiceSuggestions([billable], { today, invoices: [linkedInvoice] }).every(s => s.period.key !== '2025-01-01'),
   'A period whose invoice already exists is no longer suggested'
+);
+const siblingContract = contract({
+  id: 'cnt-2',
+  reference: 'SB-EMS-2025-07',
+  lines: [{ ...monthlyLine, contract_id: 'cnt-2', unit_price: 5000 }],
+});
+const linkedToFirstOnly = buildInvoiceSuggestions([billable, siblingContract], {
+  today,
+  invoices: [{ ...linkedInvoice, contract_ids: ['cnt-1'] }],
+});
+assert(
+  !linkedToFirstOnly.some(s => s.contractId === 'cnt-1' && s.period.key === '2025-01-01') &&
+    linkedToFirstOnly.some(s => s.contractId === 'cnt-2' && s.period.key === '2025-01-01'),
+  'An invoice linked to one agreement leaves the sibling agreement billable',
+  linkedToFirstOnly.map(s => `${s.contract.reference}@${s.period.key}`).join(' ')
 );
 assert(
   buildInvoiceSuggestions([billable], { today, draftInvoiceIds: { 'cnt-1::2025-02-01': 'draft-1' } })

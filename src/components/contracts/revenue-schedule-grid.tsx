@@ -418,8 +418,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   // Invoiced months are read inside AG Grid callbacks, so the map lives in a ref: refreshing the
   // cells (below) picks up new invoices without rebuilding the column definitions and losing scroll.
   const invoiceCoverage = useMemo(
-    () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems),
-    [invoices, contracts, catalogModules, catalogItems]
+    () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems, projects),
+    [invoices, contracts, catalogModules, catalogItems, projects]
   );
   const draftCoverageCount = useMemo(
     () => Array.from(invoiceCoverage.values()).filter(entry => entry.draft).length,

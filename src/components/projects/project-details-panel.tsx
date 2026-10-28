@@ -9,6 +9,7 @@ import { type Project, type ProjectDocument, type ProjectLink, type ProjectStatu
 import { Button } from '@/components/ui/primitives';
 import { formatDate } from '@/lib/date';
 import { netInvoices, type NettableInvoice } from '@/lib/invoice-netting';
+import { invoiceProjectIds } from '@/lib/invoice-links';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Calendar, FileText, Link2, Paperclip, Plus, Save, Trash2, Upload, ExternalLink,
@@ -31,14 +32,17 @@ const linkIcon = (kind?: string | null) =>
 
 const euro = (n: number) => `€${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/** Invoices that cover a project's time entries, split into issued vs still in draft. */
-export function projectBillingStatus<T extends NettableInvoice>(
+/**
+ * Invoices that cover a project — billed time entries plus the ones explicitly linked to it in the
+ * register (`project_ids`) — split into issued vs still in draft.
+ */
+export function projectBillingStatus<T extends NettableInvoice & { project_ids?: string[] | null }>(
   timeEntries: Array<{ project_id: string; invoice_id?: string | null }>,
   invoices: T[],
   projectId: string
 ): { issued: T[]; drafts: T[]; billedTotal: number } {
   const ids = new Set(timeEntries.filter(e => e.project_id === projectId && e.invoice_id).map(e => e.invoice_id as string));
-  const linked = invoices.filter(i => ids.has(i.id));
+  const linked = invoices.filter(i => ids.has(i.id) || invoiceProjectIds(i).includes(projectId));
   const drafts = linked.filter(i => i.status === 'draft');
   // A credited invoice is no longer billed, and the credit note itself is not a bill.
   const issued = netInvoices(linked.filter(i => i.status !== 'draft')).active;

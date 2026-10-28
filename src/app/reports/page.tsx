@@ -18,6 +18,7 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { CashflowBarChart } from '@/components/invoices/cashflow-chart';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { accountingInvoices } from '@/lib/invoice-netting';
+import { invoiceContractIds, invoiceLinksContract } from '@/lib/invoice-links';
 import { formatDate } from '@/lib/date';
 import * as XLSX from 'xlsx';
 
@@ -98,7 +99,7 @@ export default function ReportsPage() {
       if (cnt.direction === 'revenue') {
         const sched = cnt.schedule?.find(s => s.period === currentMonthPeriod);
         if (sched) {
-          const hasAlloc = acctInvoices.some(i => i.contract_id === cnt.id && (i.reference_period === currentMonthPeriod || i.allocations?.some(a => a.period === currentMonthPeriod) || i.issue_date.startsWith(currentMonthPeriod) || (i.period_from || '').startsWith(currentMonthPeriod)));
+          const hasAlloc = acctInvoices.some(i => invoiceLinksContract(i, cnt.id) && (i.reference_period === currentMonthPeriod || i.allocations?.some(a => a.period === currentMonthPeriod) || i.issue_date.startsWith(currentMonthPeriod) || (i.period_from || '').startsWith(currentMonthPeriod)));
           if (!hasAlloc) {
             uninvoicedArAmount += sched.amount;
           }
@@ -613,7 +614,7 @@ export default function ReportsPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                       {sched.map(item => {
                         // Find matching invoices for this schedule period
-                        const matchedInv = acctInvoices.find(i => i.contract_id === cnt.id && (i.allocations?.some(a => a.period === item.period) || i.issue_date.startsWith(item.period)));
+                        const matchedInv = acctInvoices.find(i => invoiceLinksContract(i, cnt.id) && (i.allocations?.some(a => a.period === item.period) || i.issue_date.startsWith(item.period)));
                         const isPast = item.period <= currentMonthPeriod;
                         let tileColor = 'bg-slate-100 border-slate-200 text-slate-700';
                         let statusText = 'Scheduled';
@@ -963,11 +964,11 @@ export default function ReportsPage() {
                   Invoices synced from myDATA (or uploaded manually) that are not yet linked to a specific contract.
                 </p>
               </div>
-              <Badge variant="warning">{invoices.filter(i => !i.contract_id && i.status !== 'cancelled' && i.type !== 'credit_note').length} Unlinked</Badge>
+              <Badge variant="warning">{invoices.filter(i => invoiceContractIds(i).length === 0 && i.status !== 'cancelled' && i.type !== 'credit_note').length} Unlinked</Badge>
             </div>
             <div className="w-full">
               <InvoicesGrid
-                invoices={invoices.filter(i => !i.contract_id && i.status !== 'cancelled' && i.type !== 'credit_note')}
+                invoices={invoices.filter(i => invoiceContractIds(i).length === 0 && i.status !== 'cancelled' && i.type !== 'credit_note')}
                 hideToolbar={false}
                 onOpenCounterparty={(inv) => {
                   if (inv.counterparty_id) {

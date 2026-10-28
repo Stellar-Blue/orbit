@@ -34,6 +34,7 @@ import {
 } from './leave-carryover';
 import { calculateContractValuation } from './pricing-engine';
 import { contractChargeMonths } from './revenue-schedule';
+import { normalizeLinkIds } from './invoice-links';
 import { employerCostRatio, loadedMonthlyCost, isBaseSalary, loadedExtraCost } from './compensation';
 import { startRealtimeSync } from './realtime-sync';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
@@ -5048,6 +5049,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         direction: inv.direction,
         counterparty_id: inv.counterparty_id,
         contract_id: inv.contract_id || null,
+        // The arrays are the source of truth; the single column mirrors their first entry.
+        contract_ids: normalizeLinkIds(inv.contract_ids && inv.contract_ids.length > 0 ? inv.contract_ids : [inv.contract_id]),
+        project_ids: normalizeLinkIds(inv.project_ids),
         type: inv.type,
         credits_invoice_id: inv.credits_invoice_id || null,
         invoice_number: inv.invoice_number,

@@ -22,6 +22,8 @@ import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment } from '@/lib/billing-periods';
+import { buildInvoiceLinks, invoiceContractIds, invoiceLinkedContractIds, invoiceProjectIds } from '@/lib/invoice-links';
+import { InvoiceLinkPicker, type InvoiceLinkSelection } from '@/components/invoices/invoice-link-picker';
 import { INVOICE_CURRENCIES, DEFAULT_CURRENCY, formatMoney } from '@/lib/currency';
 import { DatePicker } from '@/components/ui/date-picker';
 const InvoicesGrid = dynamic(() => import('@/components/invoices/invoices-grid').then(m => m.InvoicesGrid), { ssr: false });
@@ -108,6 +110,9 @@ export default function InvoicesRegistryPage() {
   const [newStatus, setNewStatus] = useState<InvoiceStatus>('sent_received');
   const [newCpId, setNewCpId] = useState<string>('');
   const [newContractId, setNewContractId] = useState<string>('');
+  /** An invoice can bill several agreements and projects at once; `newContractId` is the primary. */
+  const [newContractIds, setNewContractIds] = useState<string[]>([]);
+  const [newProjectIds, setNewProjectIds] = useState<string[]>([]);
   const [newCatName, setNewCatName] = useState<string>('');
   const [newInvNumber, setNewInvNumber] = useState<string>('');
   const [newMark, setNewMark] = useState<string>('');
@@ -154,6 +159,8 @@ export default function InvoicesRegistryPage() {
     setNewStatus(inv.status || 'sent_received');
     setNewCpId(inv.counterparty_id || '');
     setNewContractId(inv.contract_id || '');
+    setNewContractIds(invoiceContractIds(inv));
+    setNewProjectIds(invoiceProjectIds(inv));
     setNewCatName(inv.category || '');
     setNewInvNumber(inv.invoice_number || '');
     setNewMark(inv.mark || '');
@@ -212,10 +219,8 @@ export default function InvoicesRegistryPage() {
     [calculatedGross, newFxRate]
   );
 
-  // Handle Contract selection change -> Auto-fill terms & default categories
-  const handleContractChange = (contractId: string) => {
-    setNewContractId(contractId);
-    if (!contractId) return;
+  // Adopting an agreement pulls in its terms, currency and default billing day.
+  const applyContractDefaults = (contractId: string) => {
     const cnt = contracts.find(c => c.id === contractId);
     if (cnt) {
       if (cnt.counterparty_id) setNewCpId(cnt.counterparty_id);
@@ -228,6 +233,15 @@ export default function InvoicesRegistryPage() {
         setNewDueDate(idate.toISOString().split('T')[0]);
       }
     }
+  };
+
+  /** Link picker → state. The first agreement stays the invoice's primary link. */
+  const handleLinksChange = (next: InvoiceLinkSelection) => {
+    const addedContractId = next.contractIds.find(id => !newContractIds.includes(id));
+    setNewContractIds(next.contractIds);
+    setNewProjectIds(next.projectIds);
+    setNewContractId(next.primaryContractId || '');
+    if (addedContractId) applyContractDefaults(addedContractId);
   };
 
   // Check duplicate invoice numbers on the fly
@@ -277,6 +291,9 @@ export default function InvoicesRegistryPage() {
     setNewStatus('draft');
     setNewCpId(contract?.counterparty_id || '');
     setNewContractId(contractId);
+    const deepLinks = buildInvoiceLinks({ contractIds: [contractId || ''], projectIds: [projectId || ''], projects });
+    setNewContractIds(deepLinks.contractIds);
+    setNewProjectIds(deepLinks.projectIds);
     setNewCatName('');
     setNewInvNumber('');
     setNewMark('');
@@ -315,7 +332,6 @@ export default function InvoicesRegistryPage() {
     setDuplicateWarning('');
     setIsRegisterModalOpen(true);
     window.history.replaceState(null, '', '/invoices');
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link prefill once the referenced rows have loaded
   }, [contracts, projects, timeEntries]);
 
   // Filtered Register Invoices
@@ -324,7 +340,7 @@ export default function InvoicesRegistryPage() {
       if (directionFilter !== 'all' && inv.direction !== directionFilter) return false;
       if (statusFilter !== 'all' && inv.status !== statusFilter) return false;
       if (selectedCpId !== 'all' && inv.counterparty_id !== selectedCpId) return false;
-      if (selectedContractId !== 'all' && inv.contract_id !== selectedContractId) return false;
+      if (selectedContractId !== 'all' && !invoiceLinkedContractIds(inv, projects || []).includes(selectedContractId)) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const numMatch = inv.invoice_number.toLowerCase().includes(q);
@@ -576,6 +592,8 @@ export default function InvoicesRegistryPage() {
                   setNewStatus('sent_received');
                   setNewCpId('');
                   setNewContractId('');
+                  setNewContractIds([]);
+                  setNewProjectIds([]);
                   setNewCatName('');
                   setNewInvNumber('');
                   setNewMark('');
@@ -940,26 +958,19 @@ export default function InvoicesRegistryPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Linkage: Contract Agreement</label>
-                <SearchableSelect
-                  value={newContractId}
-                  onChange={handleContractChange}
-                  emptyLabel="No Contract (One-off / General expense)"
-                  placeholder="Search contract by reference, product or id…"
-                  options={contracts.filter(c => !newCpId || c.counterparty_id === newCpId).map(cnt => ({
-                    value: cnt.id,
-                    // Reference is the contract's title; the id sits underneath it so two agreements
-                    // for the same product can still be told apart.
-                    label: cnt.reference || cnt.product || 'Contract',
-                    description: cnt.id,
-                    hint: `€${(cnt.value || 0).toLocaleString()}`,
-                    keywords: `${cnt.reference || ''} ${cnt.product || ''} ${cnt.direction || ''} ${cnt.id}`,
-                  }))}
+                <label className="block text-xs font-bold text-slate-700 mb-1">Linkage: Agreements &amp; Projects</label>
+                <InvoiceLinkPicker
+                  contractIds={newContractIds}
+                  projectIds={newProjectIds}
+                  contracts={contracts || []}
+                  projects={projects || []}
+                  counterpartyId={newCpId}
+                  onChange={handleLinksChange}
                 />
               </div>
             </div>
 
-            {!newContractId && (
+            {newContractIds.length === 0 && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Expense & Budget Category (For unlinked bills)</label>
                 <SearchableSelect
@@ -1321,10 +1332,12 @@ export default function InvoicesRegistryPage() {
                       direction: newDirection,
                       counterparty_id: newCpId,
                       contract_id: newContractId || null,
+                      contract_ids: newContractIds,
+                      project_ids: newProjectIds,
                       type: newType,
                       invoice_number: newInvNumber.trim(),
                       mark: newMark.trim() || null,
-                      category: newCatName || (newContractId ? null : 'Other Operational'),
+                      category: newCatName || (newContractIds.length > 0 ? null : 'Other Operational'),
                       issue_date: newIssueDate,
                       due_date: newDueDate,
                       period_from: newPeriodFrom || null,
@@ -1354,10 +1367,12 @@ export default function InvoicesRegistryPage() {
                     direction: newDirection,
                     counterparty_id: newCpId,
                     contract_id: newContractId || null,
+                    contract_ids: newContractIds,
+                    project_ids: newProjectIds,
                     type: newType,
                     invoice_number: newInvNumber.trim(),
                     mark: newMark.trim() || null,
-                    category: newCatName || (newContractId ? null : 'Other Operational'),
+                    category: newCatName || (newContractIds.length > 0 ? null : 'Other Operational'),
                     issue_date: newIssueDate,
                     due_date: newDueDate,
                     period_from: newPeriodFrom,
@@ -1553,7 +1568,8 @@ export default function InvoicesRegistryPage() {
                   `• Reference Period: ${inv.reference_period || 'N/A / Standalone'} (Period: ${inv.period_from || 'N/A'} to ${inv.period_to || 'N/A'})`,
                   `• Financial Breakdown: Net €${(inv.net || 0).toLocaleString()} + VAT (${inv.vat_rate || '24%'}): €${(inv.vat_amount || 0).toLocaleString()} = Total Gross €${(inv.gross_eur || 0).toLocaleString()}`,
                   `• Timelines: Issued on ${formatDate(inv.issue_date)} | Due by ${formatDate(inv.due_date)}`,
-                  `• Linked Contract UUID: ${inv.contract_id || 'Standalone / No contract linked'}`,
+                  `• Linked agreements: ${invoiceContractIds(inv).join(', ') || 'standalone (no contract)'}` +
+                    (invoiceProjectIds(inv).length > 0 ? ` · projects: ${invoiceProjectIds(inv).join(', ')}` : ''),
                   `• Notes: ${inv.notes || 'No additional settlement caveats reported.'}`
                 ].join('\n');
                 copyToClipboard(report, `Invoice Fast Report (${inv.invoice_number})`, undefined);

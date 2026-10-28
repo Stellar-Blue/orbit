@@ -1,6 +1,7 @@
 import { McpErrors } from './errors';
 import { validateInvoiceCreation, normalizeAfm, InvoiceCreationPayload } from './validation';
 import { Invoice, Counterparty, Contract } from '@/lib/types';
+import { normalizeLinkIds } from '@/lib/invoice-links';
 import { fetchMyDataInvoices } from '@/lib/integrations/mydata';
 
 /**
@@ -104,7 +105,9 @@ export const MCP_TOOL_SCHEMAS = [
       properties: {
         direction: { type: 'string', enum: ['outgoing', 'incoming'] },
         counterparty_id: { type: 'string' },
-        contract_id: { type: 'string' },
+        contract_id: { type: 'string', description: 'Primary contract agreement (mirrored as contract_ids[0])' },
+        contract_ids: { type: 'array', items: { type: 'string' }, description: 'Every agreement the invoice bills' },
+        project_ids: { type: 'array', items: { type: 'string' }, description: 'Projects (change requests) the invoice bills' },
         type: { type: 'string', enum: ['invoice', 'credit_note', 'proforma', 'debit_note'], default: 'invoice' },
         credits_invoice_id: { type: 'string' },
         invoice_number: { type: 'string' },
@@ -287,7 +290,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
           errorDetails = McpErrors.contractMismatch(args.contract_id, 'Contract ID not found in database.');
           break;
         }
-        const { data: invoices } = await supabase.from('invoices').select('*').eq('contract_id', args.contract_id);
+        const { data: invoices } = await supabase.from('invoices').select('*').contains('contract_ids', [args.contract_id]);
         
         const schedule = contract.schedule || [];
         const statusReport = schedule.map((s: any) => {
@@ -313,7 +316,7 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
       case 'search_invoices': {
         let queryBuilder = supabase.from('invoices').select('*, links:invoice_links(*)');
         if (args.counterparty_id) queryBuilder = queryBuilder.eq('counterparty_id', args.counterparty_id);
-        if (args.contract_id) queryBuilder = queryBuilder.eq('contract_id', args.contract_id);
+        if (args.contract_id) queryBuilder = queryBuilder.contains('contract_ids', [args.contract_id]);
         if (args.direction) queryBuilder = queryBuilder.eq('direction', args.direction);
         if (args.status) queryBuilder = queryBuilder.eq('status', args.status);
         if (args.category) queryBuilder = queryBuilder.eq('category', args.category);
@@ -360,6 +363,9 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
         const { idempotency_key, ...restArgs } = args;
         const payload: Record<string, any> = {
           ...restArgs,
+          // The arrays are the source of truth; a single contract_id seeds the first entry.
+          contract_ids: normalizeLinkIds([...(args.contract_ids ?? []), args.contract_id]),
+          project_ids: normalizeLinkIds(args.project_ids ?? []),
           ...valResult.applied_defaults,
           gross_eur: Number((args.gross * (args.fx_rate || 1)).toFixed(2)),
           status: 'registered',

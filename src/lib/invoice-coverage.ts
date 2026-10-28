@@ -1,12 +1,14 @@
-import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus } from '@/lib/types';
+import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
+import { invoiceLinkedContractIds } from '@/lib/invoice-links';
 import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
  * Maps outgoing invoices onto the revenue schedule's cells so the grid can overlay the months an
- * invoice already covers. Most invoices are not linked to a contract (`contract_id` is null), so an
- * unlinked invoice is attributed to the counterparty's revenue contract whose reference appears on
- * the invoice, or — failing that — whose charged total is closest to the invoice net.
+ * invoice already covers. An invoice paints every agreement it is linked to (and the agreements of
+ * the projects it bills). An invoice with no link at all is attributed to the counterparty's revenue
+ * contract whose reference appears on the invoice, or — failing that — whose charged total is
+ * closest to the invoice net.
  */
 
 export type InvoiceMarkerPosition = 'start' | 'middle' | 'end';
@@ -140,7 +142,8 @@ export function buildInvoiceCoverage(
   invoices: Invoice[],
   contracts: Contract[],
   catalogModules: CatalogModule[] = [],
-  catalogItems: CatalogItem[] = []
+  catalogItems: CatalogItem[] = [],
+  projects: Array<Pick<Project, 'id' | 'contract_id'>> = []
 ): InvoiceCoverageMap {
   const contractsById = new Map(contracts.map(contract => [contract.id, contract]));
   const contractsByCounterparty = new Map<string, Contract[]>();
@@ -180,15 +183,19 @@ export function buildInvoiceCoverage(
     const months = invoiceCoveredMonths(invoice);
     if (months.length === 0) return;
 
-    const linked = invoice.contract_id ? contractsById.get(invoice.contract_id) : undefined;
-    const contract = linked ?? pickContract(
+    const linkedContracts = invoiceLinkedContractIds(invoice, projects)
+      .map(contractId => contractsById.get(contractId))
+      .filter((contract): contract is Contract => Boolean(contract));
+    // Nothing linked: fall back to the counterparty contract the invoice actually mentions / matches.
+    const inferred = linkedContracts.length > 0 ? undefined : pickContract(
       invoice,
       months,
       contractsByCounterparty.get(invoice.counterparty_id) ?? [],
       catalogModules,
       catalogItems
     );
-    if (!contract) return;
+    const targets = linkedContracts.length > 0 ? linkedContracts : inferred ? [inferred] : [];
+    if (targets.length === 0) return;
 
     const firstMonth = months[0];
     const lastMonth = months[months.length - 1];
@@ -204,49 +211,51 @@ export function buildInvoiceCoverage(
     const label = invoice.invoice_number || invoice.id;
     const amount = invoiceAmountEur(invoice);
 
-    months.forEach(month => {
-      const key = invoiceCellKey(contract.id, month);
-      const existing = covered.get(key);
-      if (!existing) {
+    targets.forEach(contract => {
+      months.forEach(month => {
+        const key = invoiceCellKey(contract.id, month);
+        const existing = covered.get(key);
+        if (!existing) {
+          covered.set(key, {
+            contractId: contract.id,
+            paid: isPaid,
+            draft: isDraft,
+            firstMonth,
+            lastMonth,
+            markerMonth,
+            markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
+            invoices: [label],
+            invoiceIds: [invoice.id],
+            issueDate,
+            invoiceTotal: amount,
+            contractTotal: 0,
+            variance: 0,
+          });
+          return;
+        }
+
+        const mergedFirst = firstMonth < existing.firstMonth ? firstMonth : existing.firstMonth;
+        const mergedLast = lastMonth > existing.lastMonth ? lastMonth : existing.lastMonth;
+        const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
         covered.set(key, {
           contractId: contract.id,
-          paid: isPaid,
-          draft: isDraft,
-          firstMonth,
-          lastMonth,
-          markerMonth,
-          markerPosition: invoiceMarkerPosition(markerMonth, firstMonth, lastMonth),
-          invoices: [label],
-          invoiceIds: [invoice.id],
-          issueDate,
-          invoiceTotal: amount,
+          paid: existing.paid && isPaid,
+          draft: existing.draft && isDraft,
+          firstMonth: mergedFirst,
+          lastMonth: mergedLast,
+          markerMonth: latestMarker,
+          markerPosition: invoiceMarkerPosition(latestMarker, mergedFirst, mergedLast),
+          invoices: existing.invoices.includes(label)
+            ? existing.invoices
+            : [...existing.invoices, label].slice(-MAX_INVOICE_LABELS),
+          invoiceIds: existing.invoiceIds.includes(invoice.id)
+            ? existing.invoiceIds
+            : [...existing.invoiceIds, invoice.id].slice(-MAX_INVOICE_LABELS),
+          issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
+          invoiceTotal: round2(existing.invoiceTotal + amount),
           contractTotal: 0,
           variance: 0,
         });
-        return;
-      }
-
-      const mergedFirst = firstMonth < existing.firstMonth ? firstMonth : existing.firstMonth;
-      const mergedLast = lastMonth > existing.lastMonth ? lastMonth : existing.lastMonth;
-      const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
-      covered.set(key, {
-        contractId: contract.id,
-        paid: existing.paid && isPaid,
-        draft: existing.draft && isDraft,
-        firstMonth: mergedFirst,
-        lastMonth: mergedLast,
-        markerMonth: latestMarker,
-        markerPosition: invoiceMarkerPosition(latestMarker, mergedFirst, mergedLast),
-        invoices: existing.invoices.includes(label)
-          ? existing.invoices
-          : [...existing.invoices, label].slice(-MAX_INVOICE_LABELS),
-        invoiceIds: existing.invoiceIds.includes(invoice.id)
-          ? existing.invoiceIds
-          : [...existing.invoiceIds, invoice.id].slice(-MAX_INVOICE_LABELS),
-        issueDate: issueDate > existing.issueDate ? issueDate : existing.issueDate,
-        invoiceTotal: round2(existing.invoiceTotal + amount),
-        contractTotal: 0,
-        variance: 0,
       });
     });
   });

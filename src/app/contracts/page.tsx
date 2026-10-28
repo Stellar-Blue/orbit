@@ -22,6 +22,7 @@ import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment, type BillingPeriodItem } from '@/lib/billing-periods';
+import { invoiceLinksContract } from '@/lib/invoice-links';
 import { DatePicker } from '@/components/ui/date-picker';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
@@ -796,8 +797,8 @@ export default function ContractsRegistryPage() {
                 }`}
               >
                 <Receipt className="w-3.5 h-3.5" /> Invoices
-                {invoices?.filter(i => i.contract_id === selectedContract.id).length > 0 && (
-                  <Badge variant="neutral">{invoices?.filter(i => i.contract_id === selectedContract.id).length}</Badge>
+                {(invoices ?? []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])).length > 0 && (
+                  <Badge variant="neutral">{(invoices ?? []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])).length}</Badge>
                 )}
               </button>
               <button
@@ -861,7 +862,7 @@ export default function ContractsRegistryPage() {
             ) : dossierTab === 'invoices' ? (
               <div className="space-y-6 pt-3 animate-fadeIn">
                 {(() => {
-                  const linkedInvoices = accountingInvoices((invoices || []).filter(i => i.contract_id === selectedContract.id));
+                  const linkedInvoices = accountingInvoices((invoices || []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])));
                   const totalGross = linkedInvoices.reduce((s, i) => s + i.gross_eur, 0);
                   const totalPaid = linkedInvoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + p.amount, 0), 0);
                   const totalOpen = Math.max(0, totalGross - totalPaid);

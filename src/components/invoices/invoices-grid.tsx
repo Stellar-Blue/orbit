@@ -8,6 +8,7 @@ import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } 
 import { formatDate } from '@/lib/date';
 import { formatMoney, DEFAULT_CURRENCY } from '@/lib/currency';
 import { Invoice, InvoiceStatus, BudgetCategory } from '@/lib/types';
+import { invoiceContractIds, invoiceProjectIds } from '@/lib/invoice-links';
 import { useAuth } from '@/lib/auth-context';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, FileText, Tag, Eye, Upload, Trash2, Edit, Search, ExternalLink, Link as LinkIcon } from 'lucide-react';
@@ -125,8 +126,18 @@ export const InvoicesGrid: React.FC<InvoicesGridProps> = ({
         impact: (inv.direction === 'outgoing' ? (inv.type === 'credit_note' ? 'Credit' : 'Debit') : (inv.type === 'credit_note' ? 'Debit' : 'Credit')),
         invoiceNumber: inv.invoice_number,
         mark: inv.mark || '',
-        linkage: inv.contract ? (inv.contract.product || 'Agreement') : (inv.category || 'General Operating'),
-        linkageType: inv.contract ? 'contract' : 'category',
+        // An invoice can bill several agreements and projects; the cell names the primary one and
+        // counts the rest, the register modal lists them all.
+        linkage: (() => {
+          const contractCount = invoiceContractIds(inv).length;
+          const projectCount = invoiceProjectIds(inv).length;
+          if (contractCount === 0) return inv.category || 'General Operating';
+          const parts = [inv.contract?.product || 'Agreement'];
+          if (contractCount > 1) parts.push(`+${contractCount - 1}`);
+          if (projectCount > 0) parts.push(`${projectCount} project${projectCount === 1 ? '' : 's'}`);
+          return parts.join(' · ');
+        })(),
+        linkageType: invoiceContractIds(inv).length > 0 ? 'contract' : 'category',
         referencePeriod: inv.reference_period || '',
         yearQuarter: deriveYearQuarter(inv.issue_date),
         periodRange: [inv.period_from, inv.period_to].filter(Boolean).map(d => formatDate(d as string)).join(' → '),
