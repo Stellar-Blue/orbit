@@ -7,12 +7,20 @@ import {
 /**
  * Monthly revenue schedule used by the contract registry's "Revenue Schedule & MRR" grid.
  *
- * Every contract contributes a row for its own charges, mirroring the Excel revenue budget, plus one
- * row per linked project (change request), each with that project's budget value spread evenly over
- * its planned (or actual) delivery window. A contract without projects has no change-request rows.
+ * Every contract contributes a row for its own charges, mirroring the Excel revenue budget, plus a
+ * single change-request row that rolls up every linked project: each project's budget value is
+ * spread evenly over its own planned (or actual) delivery window, and the row keeps a per-month
+ * breakdown so the grid can name the projects behind a cell. A contract without projects has no
+ * change-request row.
  */
 
 export type RevenueStreamKind = 'contract' | 'project';
+
+/** One project's contribution to a change-request row's month. */
+export interface ProjectMonthShare {
+  project: Project;
+  amount: number;
+}
 
 export interface RevenueScheduleRow {
   id: string;
@@ -23,8 +31,10 @@ export interface RevenueScheduleRow {
   reference: string;
   /** Contract product, used as the second line under the master agreement. */
   product: string;
-  /** Set on change-request rows: the project behind the CR. */
-  project?: Project;
+  /** Set on change-request rows: every project behind the row, in start-date order. */
+  projects?: Project[];
+  /** Set on change-request rows: per month, the projects behind that cell and their amounts. */
+  projectMonths?: Record<string, ProjectMonthShare[]>;
   /** 'YYYY-MM' → amount. Only charged months are present; missing months are zero. */
   months: Record<string, number>;
 }
@@ -308,8 +318,8 @@ export interface ContractProjectSchedule {
 /**
  * One entry per change request (project) under the contract. Each project's budget value is spread
  * evenly across the months it is planned (or actually ran) for, clamped to the contract's own
- * effective window; the last month absorbs the rounding remainder so the row total equals the
- * project value. A project without a budget value still gets a row (with empty months) so the CR
+ * effective window; the last month absorbs the rounding remainder so the entry's total equals the
+ * project value. A project without a budget value still gets an entry (with empty months) so the CR
  * is visible, and archived projects are dropped.
  */
 export function contractProjectSchedules(
@@ -394,22 +404,33 @@ export function buildRevenueSchedule(
       months: charges,
     });
 
-    // One line per change request. A contract without projects contributes no CR rows at all.
-    projectSchedules.forEach(({ project, months: projectMonths }) => {
-      const months = basis === 'cashflow' ? resampleToBillingMonths(contract, projectMonths) : projectMonths;
+    // One row for all of the contract's change requests. Each month keeps the projects behind it,
+    // so a cell that mixes several CRs can still say which ones it sums.
+    if (projectSchedules.length > 0) {
+      const months: Record<string, number> = {};
+      const projectMonths: Record<string, ProjectMonthShare[]> = {};
+      projectSchedules.forEach(({ project, months: projectMonthly }) => {
+        const spread = basis === 'cashflow' ? resampleToBillingMonths(contract, projectMonthly) : projectMonthly;
+        Object.entries(spread).forEach(([key, amount]) => {
+          if (!amount) return;
+          months[key] = round2((months[key] || 0) + amount);
+          (projectMonths[key] ||= []).push({ project, amount });
+        });
+      });
       Object.keys(months).forEach(key => effectiveMonths.add(key));
       rows.push({
-        id: `${contract.id}::project::${project.id}`,
+        id: `${contract.id}::projects`,
         kind: 'project',
         contractId: contract.id,
         contract,
         counterparty,
         reference: contract.reference,
         product: contract.product || contract.type || '',
-        project,
+        projects: projectSchedules.map(entry => entry.project),
+        projectMonths,
         months,
       });
-    });
+    }
   });
 
   const now = currentMonthKey();

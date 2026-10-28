@@ -14,7 +14,7 @@ import {
 import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
-import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, groupMonthsByYear, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   invoiceCellKey,
@@ -102,6 +102,29 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
     `issued ${coverage.issueDate || '—'}`,
     coverage.draft ? 'draft, not issued yet' : coverage.paid ? 'paid' : 'not paid yet',
   ].join(' · ');
+}
+
+/** Short badge label for a project: its code when it has one, else its name. */
+const projectBadgeLabel = (project: Project) => project.code?.trim() || project.name;
+
+/** Mouse-over text for a change-request cell: the money and the projects that make it up. */
+function projectCellTooltip(key: string, shares: ProjectMonthShare[]): string {
+  const total = shares.reduce((sum, share) => sum + share.amount, 0);
+  return [
+    `${monthLabel(key)} ${key.slice(0, 4)} · change requests ${formatTotal(total)}`,
+    ...shares.map(share => `${projectBadgeLabel(share.project)} · ${share.project.name} — ${formatTotal(share.amount)}`),
+  ].join('\n');
+}
+
+/** Searchable text for a row: counterparty, agreement, product and every project behind it. */
+function quickFilterText(data?: RevenueScheduleRow): string {
+  if (!data) return '';
+  return [
+    data.counterparty,
+    data.reference,
+    data.product,
+    ...(data.projects ?? []).flatMap(project => [project.code || '', project.name]),
+  ].join(' ');
 }
 
 interface YearStore {
@@ -628,11 +651,13 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         const contractRow = data && data.kind === 'contract' ? data : undefined;
         const coverage = contractRow ? invoiceCoverageRef.current.get(invoiceCellKey(contractRow.contractId, key)) : undefined;
         const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.contractId, key)) : undefined;
+        const projectShares = data && data.kind === 'project' ? data.projectMonths?.[key] : undefined;
         const text = formatAmount(Number(params.value) || 0);
 
         const tone = coverage ? invoiceVarianceTone(coverage) : null;
         const showBadge = Boolean(coverage && key === coverage.firstMonth);
         const showMarker = Boolean(coverage && coverage.markerMonth === key);
+        const showProjects = Boolean(projectShares && projectShares.length > 0);
         const markerAlign = coverage?.markerPosition === 'start'
           ? 'flex-start'
           : coverage?.markerPosition === 'end'
@@ -645,15 +670,37 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         // the cell carries an invoice badge, an issue-date marker, a suggestion action, or nothing.
         return (
           <span
-            title={coverage ? coverageTooltip(coverage) : suggestion ? suggestionTooltip(suggestion) : undefined}
+            title={
+              coverage
+                ? coverageTooltip(coverage)
+                : suggestion
+                  ? suggestionTooltip(suggestion)
+                  : projectShares && projectShares.length > 0
+                    ? projectCellTooltip(key, projectShares)
+                    : undefined
+            }
             style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, height: '100%' }}
           >
             <span
               style={{
                 display: 'flex', alignItems: 'center', height: 10, lineHeight: '10px',
-                justifyContent: showBadge ? (showMarker ? 'space-between' : 'flex-start') : showAction ? 'flex-start' : markerAlign,
+                justifyContent: showBadge
+                  ? (showMarker ? 'space-between' : 'flex-start')
+                  : showAction || showProjects ? 'flex-start' : markerAlign,
               }}
             >
+              {showProjects && projectShares && (
+                <span
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: '100%', padding: '0 3px',
+                    borderRadius: 3, background: 'rgba(245, 158, 11, 0.18)', color: '#92400e',
+                    fontSize: 8, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden',
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{projectBadgeLabel(projectShares[0].project)}</span>
+                  {projectShares.length > 1 && <span style={{ flexShrink: 0, opacity: 0.85 }}>+{projectShares.length - 1}</span>}
+                </span>
+              )}
               {coverage && showBadge && (
                 <button
                   type="button"
@@ -728,11 +775,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         suppressMovable: true,
         sortable: false,
         cellClass: 'cursor-pointer',
-        getQuickFilterText: params => (
-          params.data
-            ? `${params.data.counterparty} ${params.data.reference} ${params.data.product} ${params.data.project?.name ?? ''} ${params.data.project?.code ?? ''}`
-            : ''
-        ),
+        getQuickFilterText: params => quickFilterText(params.data),
         cellRenderer: CounterpartyStreamRenderer,
       },
       {
@@ -744,26 +787,29 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         suppressMovable: true,
         sortable: false,
         cellClass: 'cursor-pointer',
-        getQuickFilterText: params => (
-          params.data
-            ? `${params.data.counterparty} ${params.data.reference} ${params.data.product} ${params.data.project?.name ?? ''} ${params.data.project?.code ?? ''}`
-            : ''
-        ),
+        getQuickFilterText: params => quickFilterText(params.data),
         cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
           if (params.node?.rowPinned) {
             return <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Monthly totals</span>;
           }
           if (!params.data) return null;
           const isContractRow = params.data.kind === 'contract';
-          const project = params.data.project;
-          const projectLabel = project ? `${project.code ? `${project.code} · ` : ''}${project.name}` : '';
-          const hasBudget = (Number(project?.budget_value) || 0) > 0;
+          const rowProjects = params.data.projects ?? [];
+          // A single CR keeps its own label; several share the row and are listed on hover.
+          const projectLabel = rowProjects.length === 1
+            ? `${rowProjects[0].code ? `${rowProjects[0].code} · ` : ''}${rowProjects[0].name}`
+            : `${rowProjects.length} change requests`;
+          const hasBudget = rowProjects.some(project => (Number(project.budget_value) || 0) > 0);
           return (
             <div className="leading-[1.15]" title="Double-click to open the contract dossier">
               <div className="text-[11px] font-extrabold text-slate-900 font-mono truncate">{params.data.reference}</div>
               <div
                 className={`text-[9px] font-semibold ${!isContractRow && !hasBudget ? 'text-amber-600' : 'text-slate-500'}`}
-                title={isContractRow ? params.data.product || 'Recurring contract' : `${projectLabel}${hasBudget ? '' : ' · no budget value'}`}
+                title={
+                  isContractRow
+                    ? params.data.product || 'Recurring contract'
+                    : `${projectLabel}${hasBudget ? '' : ' · no budget value'}${rowProjects.length > 1 ? `\n${rowProjects.map(project => project.name).join('\n')}` : ''}`
+                }
               >
                 {isContractRow ? (
                   <span className="block truncate">{params.data.product || 'Recurring contract'}</span>
@@ -820,7 +866,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   );
 
   const changeRequestCount = useMemo(
-    () => schedule.rows.filter(row => row.kind === 'project').length,
+    () => schedule.rows.reduce((count, row) => count + (row.projects?.length ?? 0), 0),
     [schedule.rows]
   );
   const visibleYearTotal = yearTotalOf(schedule.monthTotals, visibleYear);
