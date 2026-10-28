@@ -31,31 +31,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
 
   // Primary General Links (Top)
   const primaryItems = [
-    { label: 'Home', path: '/', icon: <Home className="w-4 h-4 mr-3 text-[#2f6fa3]" />, show: true },
+    { label: 'Home', path: '/', icon: <Home className="w-4 h-4 mr-2.5 text-[var(--accent)]" />, show: true },
   ];
 
   // Personal Section
   const personalItems = [
-    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('profile') },
-    { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-slate-400" />, show: !isContractor && canSeeScreen('leave') },
-    { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-2.5 text-slate-400" />, show: !isContractor && canSeeScreen('remote') },
-    { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('timesheets') },
-    { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('compensation') },
+    { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-2.5 text-emerald-500" />, show: canSeeScreen('profile') },
+    { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-amber-500" />, show: !isContractor && canSeeScreen('leave') },
+    { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-2.5 text-cyan-500" />, show: !isContractor && canSeeScreen('remote') },
+    { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-2.5 text-sky-500" />, show: canSeeScreen('timesheets') },
+    { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-2.5 text-emerald-500" />, show: canSeeScreen('compensation') },
   ];
 
   // Company Section
   const companyItems = [
-    { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-2.5 text-slate-400" />, show: canSeeScreen('people'), adminOnly: false },
-    { label: 'Leave Control Center', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Reports', path: '/reports', icon: <BarChart3 className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Counterparties & Attio', path: '/counterparties', icon: <Building2 className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
-    { label: 'Compensation & Payroll', path: '/payroll', icon: <Briefcase className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin, adminOnly: true },
+    { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-2.5 text-blue-500" />, show: canSeeScreen('people'), adminOnly: false },
+    { label: 'Leave Control Center', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-amber-500" />, show: isAdmin, adminOnly: true },
+    { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-2.5 text-indigo-500" />, show: isAdmin, adminOnly: true },
+    { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-2.5 text-teal-600" />, show: isAdmin, adminOnly: true },
+    { label: 'Reports', path: '/reports', icon: <BarChart3 className="w-4 h-4 mr-2.5 text-rose-500" />, show: isAdmin, adminOnly: true },
+    { label: 'Counterparties & Attio', path: '/counterparties', icon: <Building2 className="w-4 h-4 mr-2.5 text-cyan-600" />, show: isAdmin, adminOnly: true },
+    { label: 'Compensation & Payroll', path: '/payroll', icon: <Briefcase className="w-4 h-4 mr-2.5 text-violet-500" />, show: isAdmin, adminOnly: true },
   ];
 
   // Bottom Settings
-  const settingsItem = { label: 'Settings', path: '/settings', icon: <Settings className="w-4 h-4 mr-2.5 text-slate-400" />, show: isAdmin };
+  const settingsItem = { label: 'Settings', path: '/settings', icon: <Settings className="w-4 h-4 mr-2.5 text-slate-500" />, show: isAdmin };
 
   const handleNavClick = () => {
     if (setMobileMenuOpen) {
@@ -79,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         }`}
       >
         {active && <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-[var(--accent)]" />}
-        <span className={`shrink-0 ${active ? 'text-[var(--accent)]' : 'text-[var(--ink-4)] group-hover:text-[var(--ink-3)]'}`}>{item.icon}</span>
+        <span className="shrink-0 opacity-95 group-hover:opacity-100">{item.icon}</span>
         <span className="flex-1 truncate">{item.label}</span>
       </Link>
     );
@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           {/* 2. Personal Section */}
           {personalItems.some(i => i.show) && (
             <nav className="space-y-1">
-              <div className="px-3 pb-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">Personal</div>
+              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-4)]">Personal</div>
               {personalItems.map(item => renderNavItem(item))}
             </nav>
           )}
@@ -128,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           {/* 3. Company Section */}
           {companyItems.some(i => i.show) && (
             <nav className="space-y-1">
-              <div className="px-3 pb-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">Company</div>
+              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-4)]">Company</div>
               {companyItems.map(item => renderNavItem(item))}
             </nav>
           )}
