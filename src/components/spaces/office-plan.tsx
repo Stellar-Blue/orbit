@@ -35,10 +35,11 @@ export interface OfficePlanProps {
   height?: number;
 }
 
+/** Chair upholstery by seat state — the same colours the plan paints on the chairs. */
 const LEGEND = [
-  { label: 'Free', color: '#8bb4d4' },
-  { label: 'Taken', color: '#a99e8e' },
-  { label: 'Your seat', color: '#6f9f83' },
+  { label: 'Free', color: '#262a30' },
+  { label: 'Taken', color: '#5f7183' },
+  { label: 'Your seat', color: '#4f8566' },
 ];
 
 /**
@@ -98,7 +99,7 @@ export function OfficePlan({
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
         <MousePointerClick className="h-3 w-3 shrink-0" />
-        A grey disc marks a taken chair, a green disc is yours — pick a free one.
+        A black chair is free, a blue-grey one is taken, the green one is yours — click a free chair to take it.
         {sessionNote ? <span className="truncate">Showing {sessionNote}</span> : null}
       </p>
     </Card>

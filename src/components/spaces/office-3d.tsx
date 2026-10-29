@@ -92,15 +92,20 @@ interface SceneState {
 }
 
 const COLORS = {
-  // The model lives in warm neutrals; chairs are black office chairs, and the floor marker under a
-  // chair is what carries its state.
+  // The model lives in warm neutrals. A chair is upholstered in its own state colour — black when it
+  // is free, slate when a colleague holds it, green when it is yours — so the state reads from the
+  // furniture itself, and the disc on the floor repeats it for chairs tucked under a desk.
   chair: '#262a30',
   chairSoft: '#33383f',
   chairMetal: '#4a5057',
   caster: '#15181c',
+  chairTaken: '#5f7183',
+  chairTakenSoft: '#516270',
+  chairMine: '#4f8566',
+  chairMineSoft: '#427058',
   free: '#8bb4d4',
-  taken: '#a99e8e',
-  mine: '#6f9f83',
+  taken: '#5f7183',
+  mine: '#4f8566',
   selected: '#d99a4e',
   floor: '#e9e1d3',
   slab: '#e4dccb',
@@ -131,14 +136,26 @@ const material = (color: THREE.ColorRepresentation, options: THREE.MeshStandardM
 const rounded = (width: number, height: number, depth: number, radius: number) =>
   new RoundedBoxGeometry(width, height, depth, 2, radius);
 
+/** The upholstery of a chair, chosen by the state of its seat. */
+interface ChairTone {
+  shell: string;
+  trim: string;
+}
+
+const CHAIR_TONES = {
+  free: { shell: COLORS.chair, trim: COLORS.chairSoft },
+  taken: { shell: COLORS.chairTaken, trim: COLORS.chairTakenSoft },
+  mine: { shell: COLORS.chairMine, trim: COLORS.chairMineSoft },
+} as const;
+
 /**
  * A task chair: five-star base on casters, gas lift, padded seat, curved backrest and two armrests.
- * Drawn in black so it reads as furniture; the disc on the floor underneath carries its state.
+ * The upholstery carries the state of the seat; the disc on the floor repeats it.
  */
-function buildChair(): THREE.Group {
+function buildChair(tone: ChairTone = CHAIR_TONES.free): THREE.Group {
   const chair = new THREE.Group();
-  const upholstery = material(COLORS.chair, { roughness: 0.62 });
-  const trim = material(COLORS.chairSoft, { roughness: 0.55 });
+  const upholstery = material(tone.shell, { roughness: 0.62 });
+  const trim = material(tone.trim, { roughness: 0.55 });
   const metal = material(COLORS.chairMetal, { metalness: 0.45, roughness: 0.4 });
   const rubber = material(COLORS.caster, { roughness: 0.75 });
 
@@ -1201,8 +1218,8 @@ export const Office3D: React.FC<Office3DProps> = ({
         const label = `${seat.label || `Seat ${index + 1}`} · ${room.name}${isMine ? ' (yours)' : isTaken ? ' (taken)' : ''}`;
         const data = { kind: 'seat', roomId: room.id, seatId: seat.id, label };
 
-        // A black task chair. Its state is a soft disc on the floor, so the model stays monochrome.
-        seatGroup.add(buildChair());
+        // A black task chair when free; slate when a colleague holds it, green when it is yours.
+        seatGroup.add(buildChair(isMine ? CHAIR_TONES.mine : isTaken ? CHAIR_TONES.taken : CHAIR_TONES.free));
 
         if (isMine || isTaken) {
           const disc = new THREE.Mesh(
@@ -1210,7 +1227,7 @@ export const Office3D: React.FC<Office3DProps> = ({
             new THREE.MeshBasicMaterial({
               color: isMine ? COLORS.mine : COLORS.taken,
               transparent: true,
-              opacity: isMine ? 0.75 : 0.5,
+              opacity: isMine ? 0.6 : 0.42,
               depthWrite: false,
             })
           );
