@@ -32,7 +32,7 @@ export interface OfficePlanProps {
 
 const LEGEND = [
   { label: 'Free', color: '#2f6fa3' },
-  { label: 'Taken', color: '#94a3b8' },
+  { label: 'Taken', color: '#9ca8b8' },
   { label: 'Your seat', color: '#15803d' },
 ];
 
@@ -45,6 +45,10 @@ export function OfficePlan({
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
+    [typesById]
+  );
+  const kindForRoom = useMemo(
+    () => (room: Space) => typesById.get(room.type_id)?.booking_mode ?? null,
     [typesById]
   );
 
@@ -75,6 +79,7 @@ export function OfficePlan({
           mySeatIds={mySeatIds}
           mode="viewer"
           colorForRoom={colorForRoom}
+          kindForRoom={kindForRoom}
           onSelectSeat={onPickSeat}
         />
       </div>

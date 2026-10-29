@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { OfficeFloor, Space, SpaceSeat } from '@/lib/types';
 import {
   clampRoomToFloor, clampSeatToRoom, resizeFromCorner, roomSize, snap, type RoomCorner,
@@ -11,14 +13,20 @@ import {
 /**
  * The office, in three.js.
  *
- * One canvas serves both audiences: employees orbit the floor and click a seat to book it, admins get
- * corner handles and draggable seats. Geometry is in metres; a room's group sits at its centre and its
- * shell is scaled, so dragging a corner resizes the walls while the seats inside stay put.
+ * One canvas serves both audiences: employees orbit the floor and click a chair to book it, admins
+ * get corner handles and draggable chairs. Geometry is in metres; a room's group sits at its centre
+ * and `layoutShell` re-places its four walls around that centre, so a corner drag reshapes the room
+ * while the chairs inside stay put. Walls are deliberately knee-high: the plan is read from above.
  */
 
-const FLOOR_TOP = 0.11;
-const SEAT_HEIGHT = 0.46;
-const SEAT_RADIUS = 0.21;
+const FLOOR_TOP = 0.09;
+/** Knee-high walls: a room reads as a room without hiding the chairs behind it. */
+const WALL_HEIGHT = 0.95;
+const WALL_THICKNESS = 0.075;
+/** The slight platform every room stands on, so rooms read as separate places on the slab. */
+const PLATFORM_HEIGHT = 0.05;
+const SEAT_BASE = PLATFORM_HEIGHT;
+const CHAIR_SEAT = 0.48;
 const CLICK_TOLERANCE_PX = 5;
 
 export type Office3DMode = 'viewer' | 'editor';
@@ -35,6 +43,8 @@ export interface Office3DProps {
   selectedSeatId?: string | null;
   mode: Office3DMode;
   colorForRoom: (room: Space) => string;
+  /** How the room is booked: a whole-day area gets a desk per chair. */
+  kindForRoom?: (room: Space) => 'whole_day' | 'time_range' | null;
   onSelectRoom?: (room: Space | null) => void;
   onSelectSeat?: (seat: SpaceSeat, room: Space) => void;
   onMoveRoom?: (room: Space, x: number, z: number) => void;
@@ -52,6 +62,8 @@ interface DragState {
   start: THREE.Vector3;
   anchor: { x: number; z: number };
   moved: boolean;
+  /** Latest size/position of a corner drag, committed when the pointer is released. */
+  pending?: { width: number; depth: number; x: number; z: number };
 }
 
 interface SceneState {
@@ -64,50 +76,94 @@ interface SceneState {
   roomGroups: Map<string, THREE.Group>;
   drag: DragState | null;
   pointer: { x: number; y: number; at: number } | null;
+  hoveredSeatId: string | null;
 }
 
 const COLORS = {
   free: '#2f6fa3',
-  taken: '#94a3b8',
+  taken: '#9ca8b8',
   mine: '#15803d',
-  selected: '#f59e0b',
-  floor: '#e7ebf0',
-  slab: '#d7dde5',
-  grid: '#c3ccd6',
+  selected: '#e08a00',
+  floor: '#e4e9f1',
+  slab: '#b7c2d1',
+  grid: '#c8d0dc',
+  wall: '#ffffff',
+  leg: '#8d98a8',
+  wood: '#e0c39a',
 };
 
-/** A readable room name in 3D, without shipping a font loader. */
+const material = (color: THREE.ColorRepresentation, options: THREE.MeshStandardMaterialParameters = {}) =>
+  new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0.04, ...options });
+
+/** Round every edge a little: the whole scene reads softer than raw boxes. */
+const rounded = (width: number, height: number, depth: number, radius: number) =>
+  new RoundedBoxGeometry(width, height, depth, 2, radius);
+
+/** A desk in front of a chair in a whole-day area: warm top, four slim legs. */
+function buildDesk(): THREE.Group {
+  const desk = new THREE.Group();
+  const depth = -0.48;
+  const top = new THREE.Mesh(
+    rounded(1.0, 0.045, 0.56, 0.02),
+    material(COLORS.wood, { roughness: 0.7 })
+  );
+  top.position.set(0, 0.72, depth);
+  top.castShadow = true;
+  top.receiveShadow = true;
+  desk.add(top);
+
+  const legGeometry = new THREE.CylinderGeometry(0.018, 0.018, 0.7, 8);
+  const legMaterial = material(COLORS.leg, { metalness: 0.5, roughness: 0.4 });
+  [-0.45, 0.45].forEach(x => {
+    [-0.24, 0.24].forEach(offset => {
+      const leg = new THREE.Mesh(legGeometry, legMaterial);
+      leg.position.set(x, 0.35, depth + offset);
+      leg.castShadow = true;
+      desk.add(leg);
+    });
+  });
+
+  return desk;
+}
+
+/** A room's name plate, drawn on a canvas so no font file has to be downloaded. */
 function labelSprite(text: string, color: string): THREE.Sprite {
   const scale = 4;
-  const font = `${12 * scale}px "IBM Plex Sans", system-ui, sans-serif`;
+  const font = `600 ${13 * scale}px "IBM Plex Sans", system-ui, sans-serif`;
   const canvas = document.createElement('canvas');
   const measure = canvas.getContext('2d');
   if (measure) measure.font = font;
-  const pad = 14 * scale;
+  const pad = 18 * scale;
   const width = Math.ceil((measure?.measureText(text).width || 120) + pad * 2);
-  const height = 34 * scale;
+  const height = 38 * scale;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.font = font;
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.strokeStyle = 'rgba(148,163,184,0.6)';
-    ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(15,23,42,0.16)';
+    ctx.shadowBlur = 8 * scale;
+    ctx.shadowOffsetY = 2 * scale;
+    ctx.fillStyle = 'rgba(255,255,255,0.97)';
     ctx.beginPath();
-    ctx.roundRect(1, 1, width - 2, height - 2, 10 * scale);
+    ctx.roundRect(2 * scale, 2 * scale, width - 4 * scale, height - 6 * scale, 9 * scale);
     ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1.5 * scale;
     ctx.stroke();
+    ctx.globalAlpha = 1;
     ctx.fillStyle = color;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, width / 2, height / 2 + 1);
+    ctx.fillText(text, width / 2, height / 2 - scale);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  const worldHeight = 0.5;
+  const worldHeight = 0.72;
   sprite.scale.set(worldHeight * (width / height), worldHeight, 1);
   return sprite;
 }
@@ -128,29 +184,97 @@ function disposeGroup(group: THREE.Object3D): void {
 
 const shellOf = (group?: THREE.Group) => group?.children.find(child => child.name === 'shell') as THREE.Group | undefined;
 
-/** Resize the room's shell in place while a corner is being dragged. */
-function scaleShell(group: THREE.Group, width: number, depth: number): void {
-  shellOf(group)?.children.forEach(child => {
-    if (child.name === 'walls' || child.name === 'edges' || child.name === 'hit') {
-      child.scale.set(width, child.scale.y, depth);
-    } else if (child.name === 'patch') {
-      child.scale.set(width, depth, 1);
+const seatGroupOf = (state: SceneState, seatId: string): THREE.Group | undefined => {
+  for (const group of state.roomGroups.values()) {
+    const seat = group.children.find(child => child.name === `seat:${seatId}`);
+    if (seat) return seat as THREE.Group;
+  }
+  return undefined;
+};
+
+/** Lift the chair under the pointer a little, so it is obvious what a click will book. */
+function highlightSeat(state: SceneState, seatId: string | null): void {
+  if (state.hoveredSeatId === seatId) return;
+  if (state.hoveredSeatId) seatGroupOf(state, state.hoveredSeatId)?.scale.setScalar(1);
+  state.hoveredSeatId = seatId;
+  if (seatId) seatGroupOf(state, seatId)?.scale.setScalar(1.1);
+}
+
+/**
+ * Place the four walls, their rims and the floor patch of a room inside its shell. Called when the
+ * room is built and again on every corner drag, so the walls follow the corner without rebuilding
+ * the scene.
+ */
+function layoutShell(group: THREE.Group, width: number, depth: number): void {
+  const shell = shellOf(group);
+  const halfW = width / 2;
+  const halfD = depth / 2;
+  const t = WALL_THICKNESS;
+  const top = PLATFORM_HEIGHT;
+
+  const walls: Record<string, { size: [number, number, number]; pos: [number, number, number] }> = {
+    n: { size: [width, WALL_HEIGHT, t], pos: [0, top + WALL_HEIGHT / 2, -halfD + t / 2] },
+    s: { size: [width, WALL_HEIGHT, t], pos: [0, top + WALL_HEIGHT / 2, halfD - t / 2] },
+    w: { size: [t, WALL_HEIGHT, Math.max(depth - 2 * t, 0.05)], pos: [-halfW + t / 2, top + WALL_HEIGHT / 2, 0] },
+    e: { size: [t, WALL_HEIGHT, Math.max(depth - 2 * t, 0.05)], pos: [halfW - t / 2, top + WALL_HEIGHT / 2, 0] },
+  };
+
+  shell?.children.forEach(child => {
+    if (child.name.startsWith('wall:')) {
+      const wall = walls[child.name.slice(5)];
+      if (!wall) return;
+      child.scale.set(...wall.size);
+      child.position.set(...wall.pos);
+      return;
+    }
+    if (child.name.startsWith('rim:')) {
+      const wall = walls[child.name.slice(4)];
+      if (!wall) return;
+      // The rim is the coloured line on top of the wall — the room's only strong colour.
+      child.scale.set(wall.size[0] + 0.02, 0.035, wall.size[2] + 0.02);
+      child.position.set(wall.pos[0], top + WALL_HEIGHT + 0.016, wall.pos[2]);
+      return;
+    }
+    if (child.name === 'platform') {
+      child.scale.set(width, 1, depth);
+      return;
+    }
+    if (child.name.startsWith('skirt:')) {
+      const side = child.name.slice(6);
+      const inner = WALL_THICKNESS + 0.01;
+      const band = 0.045;
+      if (side === 'n' || side === 's') {
+        child.scale.set(width - inner * 2, band, 0.012);
+        child.position.set(0, PLATFORM_HEIGHT + band / 2, (side === 'n' ? -1 : 1) * (halfD - inner) - (side === 'n' ? band / 2 : -band / 2));
+      } else {
+        child.scale.set(0.012, band, depth - inner * 2);
+        child.position.set((side === 'w' ? -1 : 1) * (halfW - inner) - (side === 'w' ? band / 2 : -band / 2), PLATFORM_HEIGHT + band / 2, 0);
+      }
+      return;
+    }
+    if (child.name === 'label') {
+      child.position.set(0, top + WALL_HEIGHT + 0.45, -halfD);
+      return;
+    }
+    if (child.name === 'hit') {
+      child.scale.set(width, 2.4, depth);
     }
   });
+
   group.children.forEach(child => {
     if (!child.name.startsWith('handle:')) return;
     const corner = child.name.split(':')[1] as RoomCorner;
     child.position.set(
-      (corner === 'nw' || corner === 'sw' ? -1 : 1) * width / 2,
-      0.18,
-      (corner === 'nw' || corner === 'ne' ? -1 : 1) * depth / 2
+      (corner === 'nw' || corner === 'sw' ? -1 : 1) * halfW,
+      0.22,
+      (corner === 'nw' || corner === 'ne' ? -1 : 1) * halfD
     );
   });
 }
 
 export const Office3D: React.FC<Office3DProps> = ({
   floor, rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode,
-  colorForRoom, onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat,
+  colorForRoom, kindForRoom, onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<SceneState | null>(null);
@@ -160,12 +284,14 @@ export const Office3D: React.FC<Office3DProps> = ({
   const dataRef = useRef({ rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode });
   const callbacksRef = useRef({ onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat });
   const colorRef = useRef(colorForRoom);
+  const kindRef = useRef(kindForRoom);
   const floorRef = useRef(floor);
 
   useEffect(() => {
     dataRef.current = { rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode };
     callbacksRef.current = { onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat };
     colorRef.current = colorForRoom;
+    kindRef.current = kindForRoom;
     floorRef.current = floor;
   });
 
@@ -216,9 +342,18 @@ export const Office3D: React.FC<Office3DProps> = ({
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.touchAction = 'none';
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const environment = pmrem.fromScene(new RoomEnvironment(), 0.04);
+    scene.environment = environment.texture;
+    scene.environmentIntensity = 0.55;
+
     const camera = new THREE.PerspectiveCamera(36, mount.clientWidth / mount.clientHeight, 0.1, 400);
     camera.position.set(0, 17, 21);
 
@@ -229,12 +364,25 @@ export const Office3D: React.FC<Office3DProps> = ({
     controls.maxDistance = 70;
     controls.maxPolarAngle = Math.PI / 2.15;
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xd8dee6, 1.05));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.55);
-    sun.position.set(12, 22, 10);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc2cddd, 0.45));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.06));
+    // One shadow-casting key light, framed on the floor, is what gives the model its depth.
+    const sun = new THREE.DirectionalLight(0xfff6ea, 2.1);
+    sun.position.set(14, 24, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.radius = 3;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.02;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 90;
+    sun.shadow.camera.left = -20;
+    sun.shadow.camera.right = 20;
+    sun.shadow.camera.top = 20;
+    sun.shadow.camera.bottom = -20;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.5);
-    fill.position.set(-14, 10, -12);
+    const fill = new THREE.DirectionalLight(0xdce8ff, 0.32);
+    fill.position.set(-16, 12, -14);
     scene.add(fill);
 
     const content = new THREE.Group();
@@ -242,7 +390,7 @@ export const Office3D: React.FC<Office3DProps> = ({
 
     const state: SceneState = {
       renderer, scene, camera, controls, content,
-      pickables: [], roomGroups: new Map(), drag: null, pointer: null,
+      pickables: [], roomGroups: new Map(), drag: null, pointer: null, hoveredSeatId: null,
     };
     stateRef.current = state;
 
@@ -305,6 +453,7 @@ export const Office3D: React.FC<Office3DProps> = ({
         canvas.style.cursor = hit ? 'pointer' : 'grab';
         const label = hit ? String(hit.data.label || '') : '';
         setHover(previous => (previous === (label || null) ? previous : (label || null)));
+        highlightSeat(current, hit?.data.kind === 'seat' ? (hit.data.seatId ?? null) : null);
         return;
       }
 
@@ -336,14 +485,15 @@ export const Office3D: React.FC<Office3DProps> = ({
           resized.pos_z
         );
         group.position.set(next.x, FLOOR_TOP, next.z);
-        scaleShell(group, resized.room_width, resized.room_depth);
+        layoutShell(group, resized.room_width, resized.room_depth);
+        drag.pending = { width: resized.room_width, depth: resized.room_depth, x: next.x, z: next.z };
         return;
       }
       if (drag.kind === 'seat' && drag.seatId) {
         const seatGroup = group.children.find(child => child.name === `seat:${drag.seatId}`) as THREE.Group | undefined;
         if (!seatGroup) return;
         const local = clampSeatToRoom(room, snap(point.x - group.position.x), snap(point.z - group.position.z));
-        seatGroup.position.set(local.x, SEAT_HEIGHT / 2, local.z);
+        seatGroup.position.set(local.x, SEAT_BASE, local.z);
       }
     };
 
@@ -405,13 +555,13 @@ export const Office3D: React.FC<Office3DProps> = ({
         return;
       }
       if (drag.kind === 'corner') {
-        const walls = shellOf(group)?.children.find(child => child.name === 'walls') as THREE.Mesh | undefined;
+        const pending = drag.pending;
         resizeRoom?.(
           room,
-          snap(walls?.scale.x || room.room_width || 4),
-          snap(walls?.scale.z || room.room_depth || 3.5),
-          snap(group.position.x),
-          snap(group.position.z)
+          snap(pending?.width ?? room.room_width ?? 4),
+          snap(pending?.depth ?? room.room_depth ?? 3.5),
+          snap(pending?.x ?? group.position.x),
+          snap(pending?.z ?? group.position.z)
         );
         return;
       }
@@ -436,6 +586,8 @@ export const Office3D: React.FC<Office3DProps> = ({
       window.removeEventListener('pointerup', onPointerUp);
       controls.dispose();
       disposeGroup(content);
+      environment.dispose();
+      pmrem.dispose();
       renderer.dispose();
       if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement);
       stateRef.current = null;
@@ -451,10 +603,10 @@ export const Office3D: React.FC<Office3DProps> = ({
     const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
     const halfWidth = Math.tan(halfFov) * Math.max(camera.aspect, 0.2);
     // A 45° view foreshortens depth, so the slab needs less room than its real size suggests.
-    const fitDepth = (floor.depth * 0.72 + 1.5) / 2 / Math.tan(halfFov);
+    const fitDepth = (floor.depth * 0.68 + 1) / 2 / Math.tan(halfFov);
     const fitWidth = (floor.width + 1.5) / 2 / halfWidth;
-    const distance = Math.max(fitDepth, fitWidth) * 1.12;
-    camera.position.set(0, distance * 0.68, distance * 0.68);
+    const distance = Math.max(fitDepth, fitWidth) * 1.08;
+    camera.position.set(0, distance * 0.78, distance * 0.63);
     state.controls.target.set(0, 0, 0);
     state.controls.update();
   }, [floor.id, floor.width, floor.depth, ready]);
@@ -469,26 +621,63 @@ export const Office3D: React.FC<Office3DProps> = ({
     state.pickables = [];
     state.roomGroups.clear();
     state.drag = null;
+    state.hoveredSeatId = null;
 
+    const halfW = floor.width / 2;
+    const halfD = floor.depth / 2;
+
+    // The slab: a soft-edged base plate with the plan's walking surface on top.
     const slab = new THREE.Mesh(
-      new THREE.BoxGeometry(floor.width, 0.22, floor.depth),
-      new THREE.MeshLambertMaterial({ color: COLORS.slab })
+      rounded(floor.width, 0.26, floor.depth, 0.12),
+      material(COLORS.slab, { roughness: 0.95 })
     );
+    slab.position.y = FLOOR_TOP - 0.13;
+    slab.receiveShadow = true;
     state.content.add(slab);
 
+    // A soft blob under the slab, so the plan sits on the card instead of floating in it.
+    const contact = document.createElement('canvas');
+    contact.width = 256;
+    contact.height = 256;
+    const contactCtx = contact.getContext('2d');
+    if (contactCtx) {
+      const gradient = contactCtx.createRadialGradient(128, 128, 40, 128, 128, 128);
+      gradient.addColorStop(0, 'rgba(23,35,54,0.22)');
+      gradient.addColorStop(0.62, 'rgba(23,35,54,0.10)');
+      gradient.addColorStop(1, 'rgba(23,35,54,0)');
+      contactCtx.fillStyle = gradient;
+      contactCtx.fillRect(0, 0, 256, 256);
+    }
+    const contactTexture = new THREE.CanvasTexture(contact);
+    contactTexture.colorSpace = THREE.SRGBColorSpace;
+    const shadowPlate = new THREE.Mesh(
+      new THREE.PlaneGeometry(floor.width * 1.22, floor.depth * 1.3),
+      new THREE.MeshBasicMaterial({ map: contactTexture, transparent: true, depthWrite: false })
+    );
+    shadowPlate.rotation.x = -Math.PI / 2;
+    shadowPlate.position.y = FLOOR_TOP - 0.3;
+    state.content.add(shadowPlate);
+
     const surface = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.max(floor.width - 0.1, 1), Math.max(floor.depth - 0.1, 1)),
-      new THREE.MeshLambertMaterial({ color: COLORS.floor })
+      new THREE.PlaneGeometry(Math.max(floor.width - 0.12, 1), Math.max(floor.depth - 0.12, 1)),
+      material(COLORS.floor, { roughness: 0.98 })
     );
     surface.rotation.x = -Math.PI / 2;
-    surface.position.y = FLOOR_TOP;
+    surface.position.y = FLOOR_TOP + 0.001;
+    surface.receiveShadow = true;
     state.content.add(surface);
 
-    const span = Math.max(floor.width, floor.depth);
-    const grid = new THREE.GridHelper(span, Math.max(2, Math.round(span / 2)), COLORS.grid, COLORS.grid);
-    grid.position.y = FLOOR_TOP + 0.002;
-    (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.45;
+    // A one-metre grid drawn to the slab's own size, so it never spills past the edge.
+    const gridPoints: number[] = [];
+    for (let x = -halfW + 1; x < halfW - 0.05; x += 1) gridPoints.push(x, 0, -halfD, x, 0, halfD);
+    for (let z = -halfD + 1; z < halfD - 0.05; z += 1) gridPoints.push(-halfW, 0, z, halfW, 0, z);
+    const gridGeometry = new THREE.BufferGeometry();
+    gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(gridPoints, 3));
+    const grid = new THREE.LineSegments(
+      gridGeometry,
+      new THREE.LineBasicMaterial({ color: COLORS.grid, transparent: true, opacity: 0.5 })
+    );
+    grid.position.y = FLOOR_TOP + 0.003;
     state.content.add(grid);
 
     const taken = new Set(takenSeatIds);
@@ -496,44 +685,49 @@ export const Office3D: React.FC<Office3DProps> = ({
 
     rooms.forEach(room => {
       const { width, depth } = roomSize(room);
-      const height = Number(room.room_height) || 2.6;
       const color = colorRef.current(room);
+      const typeColor = new THREE.Color(color);
       const group = new THREE.Group();
       group.position.set(Number(room.pos_x) || 0, FLOOR_TOP, Number(room.pos_z) || 0);
 
       const shell = new THREE.Group();
       shell.name = 'shell';
 
-      const walls = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 1, 1),
-        new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.13, depthWrite: false })
+      // Platform and tinted floor: the room's footprint on the slab.
+      const platform = new THREE.Mesh(
+        rounded(1, PLATFORM_HEIGHT, 1, 0.02),
+        material(typeColor.clone().lerp(new THREE.Color('#ffffff'), 0.94), { roughness: 0.96 })
       );
-      walls.name = 'walls';
-      walls.position.y = height / 2;
-      walls.scale.set(width, height, depth);
-      shell.add(walls);
+      platform.name = 'platform';
+      platform.position.y = PLATFORM_HEIGHT / 2;
+      platform.receiveShadow = true;
+      shell.add(platform);
 
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-        new THREE.LineBasicMaterial({ color })
-      );
-      edges.name = 'edges';
-      edges.position.y = height / 2;
-      edges.scale.set(width, height, depth);
-      shell.add(edges);
+      // A painted band along the inside of the walls: colour without fogging the floor.
+      (['n', 's', 'w', 'e'] as const).forEach(side => {
+        const skirt = new THREE.Mesh(
+          new THREE.BoxGeometry(1, 1, 1),
+          new THREE.MeshBasicMaterial({ color: typeColor, transparent: true, opacity: 0.55 })
+        );
+        skirt.name = `skirt:${side}`;
+        shell.add(skirt);
+      });
 
-      const patch = new THREE.Mesh(
-        new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })
-      );
-      patch.name = 'patch';
-      patch.rotation.x = -Math.PI / 2;
-      patch.position.y = 0.004;
-      patch.scale.set(width, depth, 1);
-      shell.add(patch);
+      // Four low walls, each capped with the room type's colour.
+      (['n', 's', 'w', 'e'] as const).forEach(side => {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(COLORS.wall, { roughness: 0.9 }));
+        wall.name = `wall:${side}`;
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        shell.add(wall);
+
+        const rim = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(typeColor, { roughness: 0.55 }));
+        rim.name = `rim:${side}`;
+        shell.add(rim);
+      });
 
       const label = labelSprite(room.name, color);
-      label.position.y = height + 0.42;
+      label.name = 'label';
       label.userData = { kind: 'room', roomId: room.id, label: room.name };
       shell.add(label);
 
@@ -543,15 +737,16 @@ export const Office3D: React.FC<Office3DProps> = ({
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
       );
       hitBox.name = 'hit';
-      hitBox.position.y = height / 2;
-      hitBox.scale.set(width, height, depth);
+      hitBox.position.y = 1.2;
       hitBox.userData = { kind: 'room', roomId: room.id, label: room.name };
       shell.add(hitBox);
 
       group.add(shell);
 
-      seats
-        .filter(seat => seat.space_id === room.id && seat.active)
+      const roomSeats = seats.filter(seat => seat.space_id === room.id && seat.active);
+      const withDesks = kindRef.current?.(room) === 'whole_day' && roomSeats.length > 2;
+
+      roomSeats
         .forEach((seat, index) => {
           const isMine = mine.has(seat.id);
           const isTaken = taken.has(seat.id);
@@ -559,25 +754,54 @@ export const Office3D: React.FC<Office3DProps> = ({
           const seatColor = isSelected ? COLORS.selected : isMine ? COLORS.mine : isTaken ? COLORS.taken : COLORS.free;
           const seatGroup = new THREE.Group();
           seatGroup.name = `seat:${seat.id}`;
-          seatGroup.position.set(Number(seat.x) || 0, SEAT_HEIGHT / 2, Number(seat.z) || 0);
+          seatGroup.position.set(Number(seat.x) || 0, SEAT_BASE, Number(seat.z) || 0);
           seatGroup.rotation.y = ((Number(seat.rotation) || 0) * Math.PI) / 180;
           const label = `${seat.label || `Seat ${index + 1}`} · ${room.name}${isMine ? ' (yours)' : isTaken ? ' (taken)' : ''}`;
-          seatGroup.userData = { kind: 'seat', roomId: room.id, seatId: seat.id, label };
+          const data = { kind: 'seat', roomId: room.id, seatId: seat.id, label };
 
-          const cushion = new THREE.Mesh(
-            new THREE.CylinderGeometry(SEAT_RADIUS, SEAT_RADIUS, SEAT_HEIGHT, 18),
-            new THREE.MeshLambertMaterial({ color: seatColor })
-          );
-          cushion.userData = seatGroup.userData;
+          const fabric = material(seatColor, { roughness: 0.5 });
+          const cushion = new THREE.Mesh(rounded(CHAIR_SEAT, 0.12, CHAIR_SEAT * 0.96, 0.05), fabric);
+          cushion.position.y = 0.42;
+          cushion.castShadow = true;
+          cushion.receiveShadow = true;
           seatGroup.add(cushion);
 
-          const back = new THREE.Mesh(
-            new THREE.BoxGeometry(SEAT_RADIUS * 1.8, 0.34, 0.06),
-            new THREE.MeshLambertMaterial({ color: seatColor })
-          );
-          back.position.set(0, 0.14, -SEAT_RADIUS * 0.86);
-          back.userData = seatGroup.userData;
+          const back = new THREE.Mesh(rounded(CHAIR_SEAT * 0.96, 0.26, 0.09, 0.045), fabric);
+          back.position.set(0, 0.57, CHAIR_SEAT * 0.42);
+          back.rotation.x = THREE.MathUtils.degToRad(-10);
+          back.castShadow = true;
           seatGroup.add(back);
+
+          const post = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.028, 0.038, 0.36, 12),
+            material(COLORS.leg, { metalness: 0.55, roughness: 0.35 })
+          );
+          post.position.y = 0.19;
+          seatGroup.add(post);
+
+          const base = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.13, 0.15, 0.03, 24),
+            material(COLORS.leg, { metalness: 0.5, roughness: 0.4 })
+          );
+          base.position.y = 0.015;
+          base.castShadow = true;
+          seatGroup.add(base);
+
+          if (isSelected) {
+            const ring = new THREE.Mesh(
+              new THREE.RingGeometry(CHAIR_SEAT * 0.62, CHAIR_SEAT * 0.74, 28),
+              new THREE.MeshBasicMaterial({ color: COLORS.selected, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.004;
+            seatGroup.add(ring);
+          }
+
+          if (withDesks) seatGroup.add(buildDesk());
+
+          seatGroup.traverse(child => {
+            child.userData = data;
+          });
 
           group.add(seatGroup);
         });
@@ -585,19 +809,18 @@ export const Office3D: React.FC<Office3DProps> = ({
       if (mode === 'editor' && selectedRoomId === room.id) {
         (['nw', 'ne', 'sw', 'se'] as RoomCorner[]).forEach(corner => {
           const handle = new THREE.Mesh(
-            new THREE.SphereGeometry(0.17, 16, 16),
-            new THREE.MeshLambertMaterial({ color: COLORS.selected })
+            new THREE.SphereGeometry(0.14, 20, 20),
+            material(COLORS.selected, { roughness: 0.35, metalness: 0.15 })
           );
           handle.name = `handle:${corner}`;
-          handle.position.set(
-            (corner === 'nw' || corner === 'sw' ? -1 : 1) * width / 2,
-            0.18,
-            (corner === 'nw' || corner === 'ne' ? -1 : 1) * depth / 2
-          );
+          handle.castShadow = true;
           handle.userData = { kind: 'handle', roomId: room.id, corner, label: 'Drag to resize' };
           group.add(handle);
         });
       }
+
+      // Laid out last: the shell and the corner handles both need their final positions.
+      layoutShell(group, width, depth);
 
       state.content.add(group);
       state.roomGroups.set(room.id, group);

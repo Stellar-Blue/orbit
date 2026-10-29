@@ -222,6 +222,10 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
     [typesById]
   );
+  const kindForRoom = useCallback(
+    (room: Space) => typesById.get(room.type_id)?.booking_mode ?? null,
+    [typesById]
+  );
 
   const updateRoom = (id: string, patch: Partial<RoomDraft>) => {
     setRooms(prev => prev.map(room => (room.id === id ? { ...room, ...patch } : room)));
@@ -230,9 +234,15 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
 
   const moveRoom = (room: Space, x: number, z: number) => updateRoom(room.id, { pos_x: snap(x), pos_z: snap(z) });
 
-  const resizeRoom = (room: Space, width: number, depth: number, x: number, z: number) => updateRoom(room.id, {
-    room_width: width, room_depth: depth, pos_x: x, pos_z: z,
-  });
+  const resizeRoom = (room: Space, width: number, depth: number, x: number, z: number) => {
+    updateRoom(room.id, { room_width: width, room_depth: depth, pos_x: x, pos_z: z });
+    // Shrinking a room pulls its chairs back inside instead of leaving them in the corridor.
+    setSeats(prev => prev.map(seat => (
+      seat.space_id === room.id
+        ? { ...seat, ...clampSeatToRoom({ room_width: width, room_depth: depth }, seat.x, seat.z) }
+        : seat
+    )));
+  };
 
   const moveSeat = (seat: SpaceSeat, x: number, z: number) => {
     const room = rooms.find(entry => entry.id === seat.space_id);
@@ -401,6 +411,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
             selectedRoomId={selectedRoomId}
             selectedSeatId={selectedSeatId}
             colorForRoom={colorForRoom}
+            kindForRoom={kindForRoom}
             onSelectRoom={room => {
               setSelectedRoomId(room?.id || null);
               setSelectedSeatId(null);
