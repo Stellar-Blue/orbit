@@ -221,8 +221,9 @@ interface AppState {
     profileId: string;
     note?: string;
     seatId?: string | null;
+    seatIds?: string[];
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  }) => Promise<{ ok: boolean; error?: string; seatId?: string | null }>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
   refreshSpaces: () => Promise<void>;
   budgets: Budget[];
@@ -5795,9 +5796,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     note?: string;
     /** The chair picked on the floor plan; optional, the room's capacity still governs. */
     seatId?: string | null;
+    /** Chairs the room may hand out in turn, tried in order when one is taken by a faster colleague. */
+    seatIds?: string[];
     /** `id` joins a session that already exists; without it the window opens a new session. */
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
-  }): Promise<{ ok: boolean; error?: string }> => {
+  }): Promise<{ ok: boolean; error?: string; seatId?: string | null }> => {
     const supabase = getSupabaseBrowserClient();
     try {
       let sessionId: string | null = null;
@@ -5867,19 +5870,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const { data: booking, error } = await supabase.from('space_bookings').insert([{
-        space_id: input.space.id,
-        session_id: sessionId,
-        profile_id: input.profileId,
-        booking_date: input.date,
-        seat_id: input.seatId || null,
-        note: input.note?.trim() || null,
-        created_by: currentUser?.id || null,
-      }]).select().single();
+      // A chair the room hands out is only a suggestion: when two people join the same session at the
+      // same moment, the one who loses the race simply takes the next free chair.
+      const candidates = input.seatId ? [input.seatId] : (input.seatIds?.length ? input.seatIds : [null]);
+      let booking: SpaceBooking | null = null;
+      let error: { code?: string; message: string } | null = null;
+      let seatId: string | null = candidates[0] ?? null;
+      for (const candidate of candidates) {
+        seatId = candidate ?? null;
+        const attempt = await supabase.from('space_bookings').insert([{
+          space_id: input.space.id,
+          session_id: sessionId,
+          profile_id: input.profileId,
+          booking_date: input.date,
+          seat_id: candidate || null,
+          note: input.note?.trim() || null,
+          created_by: currentUser?.id || null,
+        }]).select().single();
+        booking = (attempt.data || null) as SpaceBooking | null;
+        error = attempt.error;
+        // Only a clash on that very chair is worth another try.
+        if (!error || error.code !== '23505' || !error.message.includes('seat_session_idx')) break;
+      }
       if (error) {
-        // The partial unique index on (space, date, seat) fires before the trigger's own message.
+        // A unique index fires before the trigger gets a word in, so name the rule that was broken.
         const message = error.code === '23505'
-          ? 'That seat has just been taken — pick another one.'
+          ? error.message.includes('one_seat_day')
+            ? 'A whole-day space takes one seat per day — that person already holds one on this date.'
+            : error.message.includes('one_seat_session')
+              ? 'That person already holds a seat in this session.'
+              : 'That chair was taken a moment ago — try again.'
           : error.message;
         return { ok: false, error: message };
       }
@@ -5893,13 +5913,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session_id: sessionId,
         profile_id: input.profileId,
         booking_date: input.date,
-        seat_id: input.seatId || null,
+        seat_id: seatId,
         note: input.note?.trim() || null,
         created_at: saved.created_at || new Date().toISOString(),
         profile: profiles.find(profile => profile.id === input.profileId),
       }]);
       void refreshSpaces();
-      return { ok: true };
+      return { ok: true, seatId };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error('bookSpaceSeat exception:', e);

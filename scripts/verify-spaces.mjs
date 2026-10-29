@@ -10,6 +10,7 @@ import {
   BOOKING_MODE_LABELS,
   clockLabel,
   defaultSessionWindow,
+  heldWholeDaySpace,
   overlappingSession,
   seatHolders,
   seatsLabel,
@@ -279,6 +280,46 @@ assert(
 assert(
   BOOKING_MODE_LABELS.whole_day.label === 'Whole day' && BOOKING_MODE_LABELS.time_range.label === 'Time range',
   'Both booking modes have labels for the admin screen'
+);
+
+// --- One whole-day seat per date ---------------------------------------------
+const deskState = (bookings) => spaceDayState({
+  space, type: deskType, date: '2026-11-10', sessions: [], bookings, profileId: 'me',
+});
+const other = { id: 'sp-2', capacity: 2 };
+const otherDeskState = (bookings) => spaceDayState({
+  space: other, type: deskType, date: '2026-11-10', sessions: [], bookings, profileId: 'me',
+});
+const roomState = spaceDayState({
+  space: { id: 'sp-3', capacity: 4 }, type: roomType, date: '2026-11-10',
+  sessions: [{ id: 'ss-1', space_id: 'sp-3', session_date: '2026-11-10', starts_at: '10:00', ends_at: '11:00', title: 'Sync' }],
+  bookings: [{ ...seat('b1', 'me'), space_id: 'sp-3', session_id: 'ss-1' }],
+  profileId: 'me',
+});
+
+const mine = new Map([['sp-1', deskState([seat('b1', 'me')])]]);
+assert(
+  heldWholeDaySpace(mine) === 'sp-1',
+  'The whole-day seat a person holds is found for the day',
+  heldWholeDaySpace(mine)
+);
+const twoDesks = new Map([
+  ['sp-1', deskState([seat('b1', 'me')])],
+  ['sp-2', otherDeskState([{ ...seat('b2', 'me'), space_id: 'sp-2' }])],
+]);
+assert(
+  heldWholeDaySpace(twoDesks) === 'sp-1',
+  'A second whole-day seat is still the same person-day, so only the first counts',
+  heldWholeDaySpace(twoDesks)
+);
+assert(
+  heldWholeDaySpace(new Map([['sp-3', roomState]])) === null,
+  'A seat in a meeting-room session is not a whole-day seat',
+  String(heldWholeDaySpace(new Map([['sp-3', roomState]])))
+);
+assert(
+  heldWholeDaySpace(new Map([['sp-1', deskState([seat('b1', 'a')])]])) === null,
+  'Nobody else\'s desk counts as your whole-day seat'
 );
 
 console.log('\n================================================================');

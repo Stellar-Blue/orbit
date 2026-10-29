@@ -271,3 +271,15 @@ export function seatHolders(bookings: SpaceBooking[]): string[] {
     return profile.first_name || profile.work_email || 'Colleague';
   });
 }
+
+/**
+ * The whole-day seat a person already holds on the day, if any. A whole-day space fills the whole
+ * day, so once one is held no other whole-day space can take a second — the database says the same
+ * with a unique index, this is what the screen explains the rule with.
+ */
+export function heldWholeDaySpace(states: Map<string, SpaceDayState>): string | null {
+  for (const [spaceId, state] of states) {
+    if (state.mode === 'whole_day' && state.myBooking) return spaceId;
+  }
+  return null;
+}

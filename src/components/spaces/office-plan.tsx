@@ -67,7 +67,7 @@ export function OfficePlan({
   return (
     <Card
       title={`Office plan · ${floor.name}`}
-      subtitle="Click a chair to book it, a meeting room to see its sessions. Drag to orbit, scroll to zoom."
+      subtitle="Click a chair to take it for the day, a meeting room to see and join its sessions. Drag to orbit, scroll to zoom."
       action={
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {LEGEND.map(entry => (
@@ -99,7 +99,7 @@ export function OfficePlan({
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
         <MousePointerClick className="h-3 w-3 shrink-0" />
-        A black chair is free, a blue-grey one is taken, the green one is yours — click a free chair to take it.
+        A black chair is free, a blue-grey one is taken, the green one is yours — meeting rooms seat their sessions, so pick a session first.
         {sessionNote ? <span className="truncate">Showing {sessionNote}</span> : null}
       </p>
     </Card>

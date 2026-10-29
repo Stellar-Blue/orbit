@@ -816,9 +816,14 @@ export const Office3D: React.FC<Office3DProps> = ({
       if (!drag) {
         const hit = pick(current, event.clientX, event.clientY);
         canvas.style.cursor = hit ? 'pointer' : 'grab';
-        const label = hit ? String(hit.data.label || '') : '';
+        // Hovering a chair in a meeting room points at the room, since that is what the click opens.
+        const hitRoom = hit ? dataRef.current.rooms.find(entry => entry.id === hit.data.roomId) : undefined;
+        const sessionChair = Boolean(
+          hit && hitRoom && hit.data.kind === 'seat' && kindRef.current?.(hitRoom) === 'time_range'
+        );
+        const label = hit ? (sessionChair ? `${hitRoom!.name} · sessions` : String(hit.data.label || '')) : '';
         setHover(previous => (previous === (label || null) ? previous : (label || null)));
-        highlightSeat(current, hit?.data.kind === 'seat' ? (hit.data.seatId ?? null) : null);
+        highlightSeat(current, hit?.data.kind === 'seat' && !sessionChair ? (hit.data.seatId ?? null) : null);
         return;
       }
 
@@ -926,7 +931,9 @@ export const Office3D: React.FC<Office3DProps> = ({
         }
         const room = currentRooms.find(entry => entry.id === hit.data.roomId);
         if (!room) return;
-        if (hit.data.kind === 'seat' && hit.data.seatId) {
+        // A meeting room's chairs carry no booking of their own: the click belongs to the room and
+        // opens its sessions instead of grabbing the chair under the pointer.
+        if (hit.data.kind === 'seat' && hit.data.seatId && kindRef.current?.(room) !== 'time_range') {
           const seat = currentSeats.find(entry => entry.id === hit.data.seatId);
           if (seat) selectSeat?.(seat, room);
           return;
@@ -1206,6 +1213,8 @@ export const Office3D: React.FC<Office3DProps> = ({
       }
 
       const roomSeats = seats.filter(seat => seat.space_id === room.id && seat.active);
+      // A meeting room's chairs belong to its sessions, not to a person, so they are not clickable.
+      const seatsArePerSession = kindRef.current?.(room) === 'time_range';
 
       roomSeats.forEach((seat, index) => {
         const isMine = mine.has(seat.id);
@@ -1244,7 +1253,7 @@ export const Office3D: React.FC<Office3DProps> = ({
           ring.rotation.x = -Math.PI / 2;
           ring.position.y = 0.006;
           seatGroup.add(ring);
-        } else if (!isMine && !isTaken) {
+        } else if (!isMine && !isTaken && !seatsArePerSession) {
           // Free chairs keep a hairline marker, so an empty chair still reads as clickable.
           const marker = new THREE.Mesh(
             new THREE.RingGeometry(0.3, 0.34, 28),

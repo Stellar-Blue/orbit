@@ -16,11 +16,11 @@ import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
 import { SessionSlots } from '@/components/spaces/session-slots';
 import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
 import {
-  BOOKING_MODE_LABELS, clockLabel, nextFreeSessionWindow, overlappingSession, seatHolders, seatsLabel, sessionLabel,
-  spaceDayState, validateSessionWindow, type SpaceDayState, type SpaceSessionState,
+  BOOKING_MODE_LABELS, clockLabel, heldWholeDaySpace, nextFreeSessionWindow, overlappingSession, seatHolders,
+  seatsLabel, sessionLabel, spaceDayState, validateSessionWindow, type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
-import type { Profile, Space, SpaceSeat, SpaceType } from '@/lib/types';
+import type { Profile, Space, SpaceBooking, SpaceSeat, SpaceType } from '@/lib/types';
 
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
 
@@ -105,11 +105,21 @@ export default function SpacesPage() {
     return { taken, capacity };
   }, [spaceBookings, day, activeSpaces]);
 
+  // The whole-day seat leads the summary card: joining sessions never hides where you sit all day.
   const mySeat = useMemo(() => {
-    const entry = [...states.entries()].find(([, state]) => Boolean(state.myBooking));
-    if (!entry) return null;
-    const [spaceId, state] = entry;
-    return { space: activeSpaces.find(space => space.id === spaceId), state };
+    const entries = [...states.entries()].filter(([, state]) => Boolean(state.myBooking));
+    if (entries.length === 0) return null;
+    const spaceId = heldWholeDaySpace(states) ?? entries[0][0];
+    const state = states.get(spaceId);
+    return state ? { space: activeSpaces.find(space => space.id === spaceId), state } : null;
+  }, [states, activeSpaces]);
+
+  /** A whole-day space takes a person's whole day, so only one of them can be held per date. */
+  const wholeDaySeat = useMemo(() => {
+    const spaceId = heldWholeDaySpace(states);
+    const state = spaceId ? states.get(spaceId) : undefined;
+    const space = spaceId ? activeSpaces.find(entry => entry.id === spaceId) : undefined;
+    return space && state ? { space, state } : null;
   }, [states, activeSpaces]);
 
   const myUpcoming = useMemo(
@@ -177,30 +187,32 @@ export default function SpacesPage() {
     setRoomModalId(room.id);
   };
 
+  /** A whole-day booking already held by this person on this date, in another space. */
+  const wholeDayHeldBy = (profileId: string, exceptSpaceId?: string): SpaceBooking | null =>
+    spaceBookings.find(booking =>
+      booking.booking_date === day
+      && booking.session_id === null
+      && booking.profile_id === profileId
+      && booking.space_id !== exceptSpaceId
+    ) ?? null;
+
   const pickSeat = (seat: SpaceSeat, room: Space) => {
+    const state = states.get(room.id);
+    // Meeting-room chairs belong to sessions, so they are never picked one by one — the room is.
+    if (!state || state.mode === 'time_range') return;
     if (isPast) {
       alert('You cannot book a seat on a past day.');
       return;
     }
-    const state = states.get(room.id);
-    if (!state) return;
-    if (state.mode === 'time_range') {
-      const open = state.sessions.filter(entry => !entry.myBooking && !entry.full && !entry.ended);
-      const focus = state.sessions.find(entry => entry.session.id === state.session?.id);
-      const target = focus && open.includes(focus) ? focus : open[0];
-      if (!target) {
-        alert(state.sessions.length === 0
-          ? `${room.name} has no session yet — open one from the room card first.`
-          : state.sessions.every(entry => entry.myBooking)
-            ? `You already hold a seat in every session of ${room.name} today.`
-            : `Every session of ${room.name} is full or over today.`);
-        return;
-      }
-      openDraft(room, state, seat.id, target);
-      return;
-    }
     if (state.myBooking) {
       alert(`You already hold a seat in ${room.name} on ${formatDate(day)}.`);
+      return;
+    }
+    if (!isAdmin && wholeDayHeldBy(currentUser.id, room.id)) {
+      alert(
+        `A whole-day space takes one seat per day and you already hold one in ${wholeDaySeat?.space.name || 'another workspace'} `
+        + `on ${formatDate(day)} — release it first.`
+      );
       return;
     }
     if (state.full) {
@@ -219,6 +231,18 @@ export default function SpacesPage() {
     return seatName(seat, siblings.findIndex(entry => entry.id === seat.id));
   };
 
+  /** A meeting room hands out its own chairs: the free ones of the session, in plan order. */
+  const freeChairsOf = (space: Space, session: SpaceSessionState | null): SpaceSeat[] => {
+    const roomSeats = spaceSeats.filter(seat => seat.active && seat.space_id === space.id);
+    const taken = new Set((session?.bookings ?? []).map(booking => booking.seat_id).filter(Boolean));
+    return roomSeats.filter(seat => !taken.has(seat.id));
+  };
+
+  const chairLabelOf = (space: Space, seat: SpaceSeat): string => {
+    const siblings = spaceSeats.filter(entry => entry.space_id === space.id);
+    return seatName(seat, siblings.findIndex(entry => entry.id === seat.id));
+  };
+
   const attendees = useMemo(
     () => profiles
       .filter(profile => profile.status === 'active')
@@ -233,6 +257,13 @@ export default function SpacesPage() {
     session: SpaceSessionState | null = null
   ) => {
     if (isPast) return;
+    if (state.mode === 'whole_day' && !isAdmin && wholeDayHeldBy(currentUser.id, space.id)) {
+      alert(
+        `A whole-day space takes one seat per day and you already hold one in ${wholeDaySeat?.space.name || 'another workspace'} `
+        + `on ${formatDate(day)} — release it first.`
+      );
+      return;
+    }
     const type = typesById.get(space.type_id);
     if (!type) return;
     const focus = session ?? state.sessions.find(entry => entry.session.id === state.session?.id) ?? null;
@@ -299,13 +330,31 @@ export default function SpacesPage() {
       return;
     }
     const timed = draft.type.booking_mode === 'time_range';
+    const heldElsewhere = timed ? null : wholeDayHeldBy(draft.attendeeId, draft.space.id);
+    if (heldElsewhere) {
+      const holder = draft.attendeeId === currentUser.id
+        ? 'You'
+        : personName(profiles.find(profile => profile.id === draft.attendeeId));
+      const other = spaces.find(space => space.id === heldElsewhere.space_id)?.name || 'another workspace';
+      alert(
+        `${holder} already hold${draft.attendeeId === currentUser.id ? '' : 's'} a whole-day seat in ${other} `
+        + `on ${formatDate(day)} — one whole-day seat per day.`
+      );
+      return;
+    }
+    const joining = draft.sessionId
+      ? draft.state.sessions.find(entry => entry.session.id === draft.sessionId) ?? null
+      : null;
+    // Nobody picks a chair for a meeting: the room seats the session in one of its free chairs.
+    const candidates = timed && !draft.seatId ? freeChairsOf(draft.space, joining) : [];
     setSaving(true);
     const result = await bookSpaceSeat({
       space: draft.space,
       mode: draft.type.booking_mode,
       date: day,
       profileId: draft.attendeeId,
-      seatId: draft.seatId,
+      seatId: draft.seatId ?? null,
+      seatIds: candidates.map(seat => seat.id),
       note: draft.note || undefined,
       session: timed
         ? draft.sessionId
@@ -318,9 +367,11 @@ export default function SpacesPage() {
       alert(result.error || 'The seat could not be booked.');
       return;
     }
+    const chair = result.seatId ? spaceSeats.find(seat => seat.id === result.seatId) : undefined;
     notifySuccess(
       timed
-        ? `${draft.space.name} booked for ${formatDate(day)}, ${clockLabel(draft.startsAt)} – ${clockLabel(draft.endsAt)}.`
+        ? `${draft.space.name} booked for ${formatDate(day)}, ${clockLabel(draft.startsAt)} – ${clockLabel(draft.endsAt)}`
+          + `${chair ? ` · ${chairLabelOf(draft.space, chair)}` : ''}.`
         : `${draft.space.name} booked for ${formatDate(day)}.`,
       draft.attendeeId === currentUser.id ? 'Seat booked' : 'Seat booked for a colleague'
     );
@@ -565,6 +616,16 @@ export default function SpacesPage() {
                             onClick={() => void leave(state.myBooking!.id, space.name)}
                           >
                             <X className="w-3.5 h-3.5" /> Release my seat
+                          </Button>
+                        ) : wholeDaySeat && !isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled
+                            className="w-full"
+                            title={`You already hold a whole-day seat in ${wholeDaySeat.space.name} on ${formatDate(day)}`}
+                          >
+                            One seat per day
                           </Button>
                         ) : state.full ? (
                           <Button size="sm" variant="secondary" disabled className="w-full" title="The database refuses a seat over capacity">
