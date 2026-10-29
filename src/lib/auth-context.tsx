@@ -5546,8 +5546,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      // Only prune inside the rooms being saved: another floor's chairs are not in this payload.
       const kept = new Set(rows.map(row => row.id));
-      const removed = spaceSeats.filter(seat => !kept.has(seat.id)).map(seat => seat.id);
+      const savedRoomIds = new Set(input.rooms.map(room => room.id));
+      const removed = spaceSeats
+        .filter(seat => savedRoomIds.has(seat.space_id) && !kept.has(seat.id))
+        .map(seat => seat.id);
       if (removed.length > 0) {
         const { error } = await supabase.from('space_seats').delete().in('id', removed);
         if (error) {

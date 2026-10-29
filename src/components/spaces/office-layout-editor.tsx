@@ -69,7 +69,28 @@ const toSeatDraft = (seat: SpaceSeat): SeatDraft => ({
   active: seat.active,
 });
 
-/** Chairs for a room: keeps the ones that exist (so bookings survive) and fills the gaps. */
+/**
+ * Match a room's chairs to a count without moving the ones already placed: dropping capacity removes
+ * the last chairs, adding capacity appends new ones. Used when the capacity field changes.
+ */
+function resizeSeats(room: RoomDraft, existing: SeatDraft[], count: number): SeatDraft[] {
+  if (count <= existing.length) {
+    return existing.slice(0, count).map((seat, index) => ({ ...seat, label: seat.label || `S${index + 1}` }));
+  }
+  const positions = seatGrid(room, count).slice(existing.length);
+  const added = positions.map((position, offset) => ({
+    id: crypto.randomUUID(),
+    space_id: room.id,
+    label: `S${existing.length + offset + 1}`,
+    x: position.x,
+    z: position.z,
+    rotation: 0,
+    active: true,
+  }));
+  return [...existing, ...added];
+}
+
+/** Re-lay every chair of a room on a fresh grid, keeping the ids so bookings survive. */
 function regenerateSeats(room: RoomDraft, existing: SeatDraft[], count: number): SeatDraft[] {
   const positions = seatGrid(room, count);
   return positions.map((position, index) => {
@@ -229,7 +250,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     setSeats(prev => {
       const roomSeats = prev.filter(seat => seat.space_id === room.id);
       const others = prev.filter(seat => seat.space_id !== room.id);
-      return [...others, ...regenerateSeats(nextRoom, roomSeats, next)];
+      return [...others, ...resizeSeats(nextRoom, roomSeats, next)];
     });
     setDirty(true);
   };
