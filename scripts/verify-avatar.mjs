@@ -10,7 +10,7 @@
 import {
   ACCESSORY_STYLES, AVATAR_BACKGROUNDS, AVATAR_FIELDS, AVATAR_HAIR_COLORS, AVATAR_SKINS,
   BEARD_STYLES, BROW_STYLES, DEFAULT_AVATAR, DETAIL_STYLES, EYE_STYLES, GLASSES_STYLES, HAIR_STYLES,
-  MOUTH_STYLES, NOSE_STYLES,
+  MOUTH_STYLES, NOSE_STYLES, OUTFIT_STYLES, AVATAR_OUTFIT_COLORS,
   avatarDataUrl, avatarNodes, avatarPartNodes, avatarSvg, isAvatarDataUrl, normalizeAvatar, shuffleAvatar, tone,
 } from '@/lib/avatar';
 
@@ -94,6 +94,7 @@ const styleFields = [
   ['beard', BEARD_STYLES],
   ['accessory', ACCESSORY_STYLES],
   ['details', DETAIL_STYLES],
+  ['outfit', OUTFIT_STYLES],
 ];
 
 styleFields.forEach(([field, options]) => {
@@ -127,6 +128,11 @@ assert(
 assert(
   AVATAR_FIELDS.every(entry => avatarPartNodes(DEFAULT_AVATAR, entry.key).length > 0 || entry.key === 'glasses' || entry.key === 'beard' || entry.key === 'accessory'),
   'Every editor tile can draw its part on its own'
+);
+assert(
+  avatarSvg({ ...DEFAULT_AVATAR, outfitColor: 'grey' }).includes(AVATAR_OUTFIT_COLORS.grey),
+  'The outfit takes the chosen colour',
+  AVATAR_OUTFIT_COLORS.grey
 );
 assert(tone('#808080', 0.5) === '#404040' && tone('#808080', 0.5, 'white') === '#c0c0c0', 'Shading mixes towards black or white', `${tone('#808080', 0.5)} / ${tone('#808080', 0.5, 'white')}`);
 

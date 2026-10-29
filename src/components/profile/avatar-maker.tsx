@@ -2,15 +2,17 @@
 
 import React, { useState } from 'react';
 import {
-  Brush, Check, CircleDot, Eye, Glasses, Loader2, PaintBucket, RotateCcw, Scissors, Shuffle, Slash,
+  Brush, Check, Shirt, CircleDot, Eye, Glasses, Loader2, PaintBucket, RotateCcw, Scissors, Shuffle, Slash,
   Smile, Sparkle, Sparkles, Spline, type LucideIcon,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/primitives';
 import { AvatarArt } from '@/components/ui/avatar-art';
 import {
-  AVATAR_FIELDS, AVATAR_HAIR_COLORS, DEFAULT_AVATAR, normalizeAvatar, randomOption, shuffleAvatar,
-  type AvatarConfig, type AvatarFieldKey,
+  AVATAR_FIELDS, AVATAR_HAIR_COLORS, AVATAR_OUTFIT_COLORS, DEFAULT_AVATAR, HAIR_LENGTH, normalizeAvatar, randomOption, shuffleAvatar,
+  type AvatarConfig, type AvatarFieldKey, type HairStyle,
 } from '@/lib/avatar';
+
+const HAIR_FILTERS = ['short', 'long', 'covered'] as const;
 
 export interface AvatarMakerProps {
   /** The saved design, if the person made one before. */
@@ -22,17 +24,24 @@ export interface AvatarMakerProps {
 }
 
 /** The sidebar: one entry per part, each framing its tiles around where that part sits on the face. */
+/** Colour circles shown above a part's tiles. */
+const SWATCHES: Partial<Record<AvatarFieldKey, { field: 'hairColor' | 'outfitColor'; label: string; palette: Record<string, string> }>> = {
+  hairStyle: { field: 'hairColor', label: 'Hair colour', palette: AVATAR_HAIR_COLORS },
+  outfit: { field: 'outfitColor', label: 'Outfit colour', palette: AVATAR_OUTFIT_COLORS },
+};
+
 const CATEGORIES: { field: AvatarFieldKey; label: string; icon: LucideIcon; frame?: string }[] = [
   { field: 'skin', label: 'Skin tone', icon: CircleDot, frame: '26 22 68 72' },
   { field: 'eyes', label: 'Eyes', icon: Eye, frame: '34 41 52 30' },
   { field: 'brows', label: 'Brows', icon: Spline, frame: '34 31 52 30' },
-  { field: 'glasses', label: 'Eyewear', icon: Glasses, frame: '24 36 72 40' },
+  { field: 'glasses', label: 'Eyewear', icon: Glasses, frame: '24 36 72 50' },
   { field: 'nose', label: 'Nose', icon: Slash, frame: '44 48 32 28' },
-  { field: 'mouth', label: 'Mouth', icon: Smile, frame: '42 61 36 26' },
+  { field: 'mouth', label: 'Mouth', icon: Smile, frame: '40 59 40 30' },
   { field: 'hairStyle', label: 'Hair', icon: Scissors, frame: '10 6 100 106' },
-  { field: 'beard', label: 'Beard', icon: Brush, frame: '24 44 72 52' },
+  { field: 'beard', label: 'Beard', icon: Brush, frame: '22 44 76 68' },
   { field: 'accessory', label: 'Accessories', icon: Sparkles, frame: '18 8 88 88' },
   { field: 'details', label: 'Details', icon: Sparkle, frame: '26 22 68 72' },
+  { field: 'outfit', label: 'Outfit', icon: Shirt, frame: '20 66 80 56' },
   { field: 'background', label: 'Background', icon: PaintBucket },
 ];
 
@@ -52,8 +61,10 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
   const [config, setConfig] = useState<AvatarConfig>(() => normalizeAvatar(value));
   const [field, setField] = useState<AvatarFieldKey>(value ? 'hairStyle' : 'skin');
   const [saving, setSaving] = useState(false);
+  const [hairFilter, setHairFilter] = useState<(typeof HAIR_FILTERS)[number] | null>(null);
 
   const category = CATEGORIES.find(entry => entry.field === field) ?? CATEGORIES[0];
+  const swatches = SWATCHES[field];
 
   const setOption = (key: AvatarFieldKey, option: string) => {
     setConfig(previous => ({ ...previous, [key]: option }) as AvatarConfig);
@@ -107,18 +118,18 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
             </button>
           </div>
 
-          {field === 'hairStyle' && (
-            <div className="flex gap-2 px-3 py-2" role="group" aria-label="Hair colour">
-              {Object.entries(AVATAR_HAIR_COLORS).map(([key, color]) => (
+          {swatches && (
+            <div className="flex gap-2 px-3 py-2" role="group" aria-label={swatches.label}>
+              {Object.entries(swatches.palette).map(([key, color]) => (
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setOption('hairColor', key)}
+                  onClick={() => setOption(swatches.field, key)}
                   title={key}
-                  aria-label={`Hair colour: ${key}`}
-                  aria-pressed={config.hairColor === key}
+                  aria-label={`${swatches.label}: ${key}`}
+                  aria-pressed={config[swatches.field] === key}
                   className={`h-6 w-6 cursor-pointer rounded-full border border-[#1a1a1a] ring-offset-2 ${
-                    config.hairColor === key ? 'ring-2 ring-[var(--accent)]' : ''
+                    config[swatches.field] === key ? 'ring-2 ring-[var(--accent)]' : ''
                   }`}
                   style={{ backgroundColor: color }}
                 />
@@ -126,36 +137,58 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
             </div>
           )}
 
-          <div className="grid max-h-[300px] content-start grid-cols-3 gap-2 overflow-y-auto p-3 pt-1 md:max-h-none md:flex-1">
-            {optionsOf(field).map(option => {
-              const selected = (config[field] as string) === option;
-              return (
+          {field === 'hairStyle' && (
+            <div className="flex gap-1.5 px-3 pb-2" role="group" aria-label="Filter hair styles">
+              {HAIR_FILTERS.map(filter => (
                 <button
-                  key={option}
+                  key={filter}
                   type="button"
-                  onClick={() => setOption(field, option)}
-                  aria-pressed={selected}
-                  aria-label={option === 'none' ? `No ${category.label.toLowerCase()}` : labelOf(option)}
-                  title={option === 'none' ? 'None' : labelOf(option)}
-                  className={`group flex aspect-square cursor-pointer items-center justify-center rounded-lg border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
-                    selected ? 'border-[var(--accent)] bg-[var(--accent-soft)]' : 'border-[var(--line)] hover:border-[var(--line-strong)]'
+                  onClick={() => setHairFilter(current => (current === filter ? null : filter))}
+                  aria-pressed={hairFilter === filter}
+                  className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[12px] capitalize transition-colors ${
+                    hairFilter === filter
+                      ? 'border-[var(--ink)] bg-[var(--ink)] text-white'
+                      : 'border-[var(--line)] text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
                   }`}
                 >
-                  {option === 'none' ? (
-                    <span className="text-[11px] text-[var(--ink-4)]">None</span>
-                  ) : (
-                    <AvatarArt
-                      config={{ ...config, [field]: option }}
-                      part={field}
-                      viewBox={category.frame}
-                      size={64}
-                      title=""
-                      className={`transition-opacity ${selected ? '' : 'opacity-40 group-hover:opacity-100'}`}
-                    />
-                  )}
+                  {filter}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+          )}
+
+          <div className="grid max-h-[300px] content-start grid-cols-3 gap-2 overflow-y-auto p-3 pt-1 md:max-h-none md:flex-1">
+            {optionsOf(field)
+              .filter(option => field !== 'hairStyle' || !hairFilter || HAIR_LENGTH[option as HairStyle] === hairFilter)
+              .map(option => {
+                const selected = (config[field] as string) === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setOption(field, option)}
+                    aria-pressed={selected}
+                    aria-label={option === 'none' ? `No ${category.label.toLowerCase()}` : labelOf(option)}
+                    title={option === 'none' ? 'None' : labelOf(option)}
+                    className={`group flex aspect-square cursor-pointer items-center justify-center rounded-lg border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                      selected ? 'border-[var(--accent)] bg-[var(--accent-soft)]' : 'border-[var(--line)] hover:border-[var(--line-strong)]'
+                    }`}
+                  >
+                    {option === 'none' ? (
+                      <span className="text-[11px] text-[var(--ink-4)]">None</span>
+                    ) : (
+                      <AvatarArt
+                        config={{ ...config, [field]: option }}
+                        part={field}
+                        viewBox={category.frame}
+                        size={64}
+                        title=""
+                        className={`transition-opacity ${selected ? '' : 'opacity-40 group-hover:opacity-100'}`}
+                      />
+                    )}
+                  </button>
+                );
+              })}
           </div>
         </section>
 
