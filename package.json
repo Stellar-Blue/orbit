@@ -24,12 +24,14 @@
     "test:schedule": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-revenue-schedule.mjs",
     "test:notices": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-contract-notices.mjs",
     "test:dates": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-date-input.mjs",
-    "test:spaces": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-spaces.mjs"
+    "test:spaces": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-spaces.mjs",
+    "test:office": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-office-layout.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.111.0",
     "@tanstack/react-table": "^8.21.3",
+    "@types/three": "^0.186.0",
     "ag-grid-community": "^36.0.2",
     "ag-grid-enterprise": "^36.0.2",
     "ag-grid-react": "^36.0.2",
@@ -46,6 +48,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0",
+    "three": "^0.186.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

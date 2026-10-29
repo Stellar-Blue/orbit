@@ -586,8 +586,42 @@ export interface Space {
   active: boolean;
   created_by?: string | null;
   created_at?: string;
+  /** Floor-plan geometry, in metres. Rooms without a floor are only listed, never drawn. */
+  floor_id?: string | null;
+  pos_x?: number;
+  pos_z?: number;
+  room_width?: number;
+  room_depth?: number;
+  room_height?: number;
+  rotation?: number;
   space_type?: SpaceType;
   sessions?: SpaceSession[];
+  seats?: SpaceSeat[];
+}
+
+/** A floor (or office) the 3D plan draws; rooms hang off exactly one floor. */
+export interface OfficeFloor {
+  id: string;
+  name: string;
+  /** Floor slab size in metres. */
+  width: number;
+  depth: number;
+  sort_order: number;
+  active: boolean;
+  created_at?: string;
+}
+
+/** A chair drawn inside a room. Optional on a booking; one seat per room per day. */
+export interface SpaceSeat {
+  id: string;
+  space_id: string;
+  label?: string | null;
+  /** Metres from the room centre: X east, Z south. */
+  x: number;
+  z: number;
+  rotation: number;
+  active: boolean;
+  created_at?: string;
 }
 
 /** The window the first booker defined for a time-range space on one day. */
@@ -612,12 +646,15 @@ export interface SpaceBooking {
   session_id?: string | null;
   profile_id: string;
   booking_date: string;
+  /** The chair taken, when the person picked one on the floor plan. */
+  seat_id?: string | null;
   note?: string | null;
   created_by?: string | null;
   created_at?: string;
   profile?: Profile;
   space?: Space;
   session?: SpaceSession;
+  seat?: SpaceSeat;
 }
 
 export interface CatalogModule {

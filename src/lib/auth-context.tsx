@@ -15,7 +15,7 @@ import {
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
   CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest,
-  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode
+  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
@@ -26,7 +26,7 @@ import {
   MOCK_LEAVE_TYPES, MOCK_ENTITLEMENTS, MOCK_MANDATORY_LEAVES,
   MOCK_PUBLIC_HOLIDAYS, MOCK_REMOTE_PATTERNS,
   MOCK_COUNTERPARTIES, MOCK_CONTRACTS,
-  MOCK_SPACE_TYPES, MOCK_SPACES,
+  MOCK_SPACE_TYPES, MOCK_SPACES, MOCK_OFFICE_FLOORS,
 } from './mock-data';
 import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount, publishedClosureIds, mandatoryRowDeducts, splitAcrossYears } from './leave-days';
 import {
@@ -44,6 +44,7 @@ import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
 import { validateSessionWindow } from './spaces';
+import { seatGrid } from './office-layout';
 
 /**
  * Every `profiles` column `authenticated` may read. `phone` is column-revoked (migration
@@ -188,6 +189,15 @@ interface AppState {
   spaces: Space[];
   spaceSessions: SpaceSession[];
   spaceBookings: SpaceBooking[];
+  officeFloors: OfficeFloor[];
+  spaceSeats: SpaceSeat[];
+  saveOfficeLayout: (input: {
+    rooms: Array<{
+      id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
+      capacity?: number; floor_id?: string | null;
+    }>;
+    seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
+  }) => Promise<boolean>;
   saveSpaceType: (input: { id?: string; name: string; booking_mode: SpaceBookingMode; color?: string; sort_order?: number; active?: boolean }) => Promise<boolean>;
   deleteSpaceType: (id: string) => Promise<boolean>;
   saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean }) => Promise<boolean>;
@@ -198,6 +208,7 @@ interface AppState {
     date: string;
     profileId: string;
     note?: string;
+    seatId?: string | null;
     session?: { startsAt: string; endsAt: string; title?: string } | null;
   }) => Promise<{ ok: boolean; error?: string }>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
@@ -596,6 +607,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spaceSessions, setSpaceSessions] = useState<SpaceSession[]>([]);
   const [spaceBookings, setSpaceBookings] = useState<SpaceBooking[]>([]);
+  const [officeFloors, setOfficeFloors] = useState<OfficeFloor[]>([]);
+  const [spaceSeats, setSpaceSeats] = useState<SpaceSeat[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -829,6 +842,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const demoToday = athensTodayStr();
     setSpaceTypes(MOCK_SPACE_TYPES);
     setSpaces(MOCK_SPACES);
+    setOfficeFloors(MOCK_OFFICE_FLOORS);
+    const demoSeats = MOCK_SPACES.flatMap(space =>
+      seatGrid(space, space.capacity).map((position, index) => ({
+        id: `${space.id}-s${index + 1}`,
+        space_id: space.id,
+        label: `S${index + 1}`,
+        x: position.x,
+        z: position.z,
+        rotation: 0,
+        active: true,
+      }))
+    );
+    setSpaceSeats(demoSeats);
     setSpaceSessions([{
       id: 'sps-conf-a-today',
       space_id: 'spc-conf-a',
@@ -840,11 +866,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       created_at: `${demoToday}T07:00:00Z`,
     }]);
     setSpaceBookings([
-      { id: 'spb-1', space_id: 'spc-desks', session_id: null, profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:10:00Z` },
-      { id: 'spb-2', space_id: 'spc-desks', session_id: null, profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:20:00Z` },
-      { id: 'spb-3', space_id: 'spc-desks', session_id: null, profile_id: 'prof-eleni', booking_date: demoToday, created_at: `${demoToday}T07:30:00Z` },
-      { id: 'spb-4', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:40:00Z` },
-      { id: 'spb-5', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:45:00Z` },
+      { id: 'spb-1', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s1', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:10:00Z` },
+      { id: 'spb-2', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s2', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:20:00Z` },
+      { id: 'spb-3', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s3', profile_id: 'prof-eleni', booking_date: demoToday, created_at: `${demoToday}T07:30:00Z` },
+      { id: 'spb-4', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', seat_id: 'spc-conf-a-s1', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:40:00Z` },
+      { id: 'spb-5', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', seat_id: 'spc-conf-a-s2', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:45:00Z` },
     ].map(booking => ({
       ...booking,
       profile: demoProfiles.find(profile => profile.id === booking.profile_id),
@@ -1208,14 +1234,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /** Spaces, their types, the sessions opened for them and every seat taken. */
   async function loadSpacesSlice() {
-    const [typeRows, spaceRows, sessionRows, bookingRows] = await Promise.all([
+    const [typeRows, spaceRows, sessionRows, bookingRows, floorRows, seatRows] = await Promise.all([
       fetchRows('space_types', 'all', { order: ['sort_order'] }),
       fetchRows('spaces', 'all', { order: ['name'] }),
       fetchRows('space_sessions', 'all', { order: ['session_date'] }),
       fetchRows('space_bookings', 'all', { order: ['booking_date'] }),
+      fetchRows('office_floors', 'all', { order: ['sort_order'] }),
+      fetchRows('space_seats', 'all'),
     ]);
     setSpaceTypes(typeRows as SpaceType[]);
     setSpaces(spaceRows as Space[]);
+    setOfficeFloors(floorRows as OfficeFloor[]);
+    setSpaceSeats(seatRows as SpaceSeat[]);
     setSpaceSessions(sessionRows as SpaceSession[]);
     setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
       ...booking,
@@ -5361,11 +5391,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // The demo answers every query with an empty set; refetching would wipe the sample bookings.
     if (isDemoMode()) return;
     try {
-      const [sessionRows, bookingRows] = await Promise.all([
+      const [sessionRows, bookingRows, floorRows, seatRows] = await Promise.all([
         fetchRows('space_sessions', 'all'),
         fetchRows('space_bookings', 'all'),
+        fetchRows('office_floors', 'all', { order: ['sort_order'] }),
+        fetchRows('space_seats', 'all'),
       ]);
       setSpaceSessions(sessionRows as SpaceSession[]);
+      setOfficeFloors(floorRows as OfficeFloor[]);
+      setSpaceSeats(seatRows as SpaceSeat[]);
       setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
         ...booking,
         profile: profiles.find(profile => profile.id === booking.profile_id),
@@ -5468,6 +5502,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
+   * Persists the 3D floor plan: room rectangles and the complete seat set. Rooms are updated one by
+   * one (few rows), seats are upserted and any that disappeared from the plan are deleted.
+   */
+  const saveOfficeLayout = async (input: {
+    rooms: Array<{
+      id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
+      capacity?: number; floor_id?: string | null;
+    }>;
+    seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      for (const room of input.rooms) {
+        const { error } = await supabase.from('spaces').update({
+          pos_x: room.pos_x,
+          pos_z: room.pos_z,
+          room_width: room.room_width,
+          room_depth: room.room_depth,
+          ...(room.capacity === undefined ? {} : { capacity: room.capacity }),
+          ...(room.floor_id === undefined ? {} : { floor_id: room.floor_id }),
+        }).eq('id', room.id);
+        if (error) {
+          alert(`Could not save the room layout: ${error.message}`);
+          return false;
+        }
+      }
+
+      const rows = input.seats.map(seat => ({
+        id: seat.id,
+        space_id: seat.space_id,
+        label: seat.label ?? null,
+        x: seat.x,
+        z: seat.z,
+        rotation: seat.rotation ?? 0,
+        active: seat.active ?? true,
+      }));
+      if (rows.length > 0) {
+        const { error } = await supabase.from('space_seats').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          alert(`Could not save the seats: ${error.message}`);
+          return false;
+        }
+      }
+
+      const kept = new Set(rows.map(row => row.id));
+      const removed = spaceSeats.filter(seat => !kept.has(seat.id)).map(seat => seat.id);
+      if (removed.length > 0) {
+        const { error } = await supabase.from('space_seats').delete().in('id', removed);
+        if (error) {
+          alert(`Could not remove the old seats: ${error.message}`);
+          return false;
+        }
+      }
+
+      setSpaces(prev => prev.map(space => {
+        const room = input.rooms.find(entry => entry.id === space.id);
+        return room ? { ...space, ...room } : space;
+      }));
+      setSpaceSeats(prev => {
+        const next = prev.filter(seat => kept.has(seat.id));
+        const byId = new Map(next.map(seat => [seat.id, seat]));
+        rows.forEach(row => byId.set(row.id, { ...(byId.get(row.id) || {}), ...row } as SpaceSeat));
+        return [...byId.values()];
+      });
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('saveOfficeLayout exception:', e);
+      alert(`Could not save the floor plan: ${message}`);
+      return false;
+    }
+  };
+
+  /**
    * Books one seat. For a timed space the first booking of the day opens the session with the
    * window the person picked; everyone after that joins the session that already exists.
    */
@@ -5477,6 +5586,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     date: string;
     profileId: string;
     note?: string;
+    /** The chair picked on the floor plan; optional, the room's capacity still governs. */
+    seatId?: string | null;
     session?: { startsAt: string; endsAt: string; title?: string } | null;
   }): Promise<{ ok: boolean; error?: string }> => {
     const supabase = getSupabaseBrowserClient();
@@ -5543,10 +5654,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session_id: sessionId,
         profile_id: input.profileId,
         booking_date: input.date,
+        seat_id: input.seatId || null,
         note: input.note?.trim() || null,
         created_by: currentUser?.id || null,
       }]).select().single();
-      if (error) return { ok: false, error: error.message };
+      if (error) {
+        // The partial unique index on (space, date, seat) fires before the trigger's own message.
+        const message = error.code === '23505'
+          ? 'That seat has just been taken — pick another one.'
+          : error.message;
+        return { ok: false, error: message };
+      }
 
       // The row is appended locally first: the demo workspace answers with no body, and a real
       // booking should appear on the card without waiting for the refetch below.
@@ -5557,6 +5675,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session_id: sessionId,
         profile_id: input.profileId,
         booking_date: input.date,
+        seat_id: input.seatId || null,
         note: input.note?.trim() || null,
         created_at: saved.created_at || new Date().toISOString(),
         profile: profiles.find(profile => profile.id === input.profileId),
@@ -6730,6 +6849,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       spaces,
       spaceSessions,
       spaceBookings,
+      officeFloors,
+      spaceSeats,
+      saveOfficeLayout,
       saveSpaceType,
       deleteSpaceType,
       saveSpace,

@@ -1,7 +1,7 @@
 import { 
   Team, Profile, PaymentType, SalaryRecord, PaymentRecord, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, Space, SpaceType 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, Space, SpaceType, OfficeFloor 
 } from './types';
 
 export const MOCK_TEAMS: Team[] = [
@@ -454,8 +454,24 @@ export const MOCK_SPACE_TYPES: SpaceType[] = [
   { id: 'spt-pod', name: 'Meeting pod', booking_mode: 'time_range', color: '#0d9488', sort_order: 30, active: true },
 ];
 
+export const MOCK_OFFICE_FLOORS: OfficeFloor[] = [
+  { id: 'flr-2', name: 'Floor 2', width: 24, depth: 16, sort_order: 10, active: true },
+];
+
 export const MOCK_SPACES: Space[] = [
-  { id: 'spc-desks', name: 'Desks · Floor 2', type_id: 'spt-desks', capacity: 12, location: 'Floor 2', notes: 'Open desk area', active: true },
-  { id: 'spc-conf-a', name: 'Conference room A', type_id: 'spt-conf', capacity: 8, location: 'Floor 2', notes: 'Screen + video conference', active: true },
-  { id: 'spc-pod-1', name: 'Phone pod 1', type_id: 'spt-pod', capacity: 1, location: 'Floor 2', notes: 'Single-occupancy calls', active: true },
+  {
+    id: 'spc-desks', name: 'Desks · Floor 2', type_id: 'spt-desks', capacity: 12, location: 'Floor 2',
+    notes: 'Open desk area', active: true, floor_id: 'flr-2',
+    pos_x: -5, pos_z: -3, room_width: 10, room_depth: 6, room_height: 2.6, rotation: 0,
+  },
+  {
+    id: 'spc-conf-a', name: 'Conference room A', type_id: 'spt-conf', capacity: 8, location: 'Floor 2',
+    notes: 'Screen + video conference', active: true, floor_id: 'flr-2',
+    pos_x: 5, pos_z: -3.5, room_width: 7, room_depth: 5, room_height: 2.6, rotation: 0,
+  },
+  {
+    id: 'spc-pod-1', name: 'Phone pod 1', type_id: 'spt-pod', capacity: 1, location: 'Floor 2',
+    notes: 'Single-occupancy calls', active: true, floor_id: 'flr-2',
+    pos_x: 8.5, pos_z: 4, room_width: 2.2, room_depth: 2.2, room_height: 2.6, rotation: 0,
+  },
 ];

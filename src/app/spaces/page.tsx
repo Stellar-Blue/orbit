@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import {
-  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock, DoorOpen, Grid2x2, MapPin, Users, X,
+  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock, DoorOpen, Grid2x2, LayoutGrid, MapPin, Users, X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Badge, Button, Card, Modal } from '@/components/ui/primitives';
@@ -11,11 +11,14 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/date';
 import { notifySuccess } from '@/lib/validation-modal';
 import { SpacesManager } from '@/components/spaces/spaces-manager';
+import { OfficePlan, OfficePlanEmpty } from '@/components/spaces/office-plan';
+import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
 import {
   BOOKING_MODE_LABELS, clockLabel, defaultSessionWindow, seatHolders, seatsLabel, sessionLabel, spaceDayState,
   validateSessionWindow, type SpaceDayState,
 } from '@/lib/spaces';
-import type { Profile, Space, SpaceType } from '@/lib/types';
+import { seatLabel as seatName } from '@/lib/office-layout';
+import type { Profile, Space, SpaceSeat, SpaceType } from '@/lib/types';
 
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
 
@@ -27,6 +30,7 @@ interface BookingDraft {
   type: SpaceType;
   state: SpaceDayState;
   attendeeId: string;
+  seatId: string | null;
   startsAt: string;
   endsAt: string;
   title: string;
@@ -43,12 +47,12 @@ interface BookingDraft {
 export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings,
-    bookSpaceSeat, cancelSpaceBooking,
+    officeFloors, spaceSeats, bookSpaceSeat, cancelSpaceBooking,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
   /** Admins get the room/type configuration as a second view here instead of a Settings tab. */
-  const [view, setView] = useState<'book' | 'manage'>('book');
+  const [view, setView] = useState<'book' | 'manage' | 'layout'>('book');
   const [day, setDay] = useState<string>(todayKey());
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -105,6 +109,64 @@ export default function SpacesPage() {
     [spaceBookings, currentUser.id, today]
   );
 
+  const planFloor = useMemo(() => {
+    const sorted = [...officeFloors].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    return sorted.find(floor => activeSpaces.some(space => space.floor_id === floor.id)) || sorted[0] || null;
+  }, [officeFloors, activeSpaces]);
+
+  const planRooms = useMemo(
+    () => (planFloor ? activeSpaces.filter(space => space.floor_id === planFloor.id) : []),
+    [activeSpaces, planFloor]
+  );
+
+  const planRoomIds = useMemo(() => new Set(planRooms.map(room => room.id)), [planRooms]);
+
+  const planSeats = useMemo(
+    () => spaceSeats.filter(seat => seat.active && planRoomIds.has(seat.space_id)),
+    [spaceSeats, planRoomIds]
+  );
+
+  const takenSeatIds = useMemo(
+    () => spaceBookings
+      .filter(booking => booking.booking_date === day && booking.seat_id && planRoomIds.has(booking.space_id))
+      .map(booking => booking.seat_id as string),
+    [spaceBookings, day, planRoomIds]
+  );
+
+  const mySeatId = useMemo(
+    () => spaceBookings.find(booking => (
+      booking.booking_date === day && booking.profile_id === currentUser.id && Boolean(booking.seat_id)
+    ))?.seat_id || null,
+    [spaceBookings, day, currentUser.id]
+  );
+
+  const pickSeat = (seat: SpaceSeat, room: Space) => {
+    if (isPast) {
+      alert('You cannot book a seat on a past day.');
+      return;
+    }
+    const state = states.get(room.id);
+    if (!state) return;
+    if (state.myBooking) {
+      alert(`You already hold a seat in ${room.name} on ${formatDate(day)}.`);
+      return;
+    }
+    if (state.full) {
+      alert(`${room.name} is fully booked on ${formatDate(day)}.`);
+      return;
+    }
+    openDraft(room, state, seat.id);
+  };
+
+  /** A seat's readable name inside its own room, for the booking summary. */
+  const seatNameOf = (seatId: string | null): string | null => {
+    if (!seatId) return null;
+    const seat = planSeats.find(entry => entry.id === seatId);
+    if (!seat) return null;
+    const siblings = planSeats.filter(entry => entry.space_id === seat.space_id);
+    return seatName(seat, siblings.findIndex(entry => entry.id === seat.id));
+  };
+
   const attendees = useMemo(
     () => profiles
       .filter(profile => profile.status === 'active')
@@ -112,7 +174,7 @@ export default function SpacesPage() {
     [profiles]
   );
 
-  const openDraft = (space: Space, state: SpaceDayState) => {
+  const openDraft = (space: Space, state: SpaceDayState, seatId: string | null = null) => {
     if (isPast) return;
     const type = typesById.get(space.type_id);
     if (!type) return;
@@ -124,6 +186,7 @@ export default function SpacesPage() {
       type,
       state,
       attendeeId: currentUser.id,
+      seatId,
       startsAt: window.startsAt,
       endsAt: window.endsAt,
       title: state.session?.title || '',
@@ -147,6 +210,7 @@ export default function SpacesPage() {
       mode: draft.type.booking_mode,
       date: day,
       profileId: draft.attendeeId,
+      seatId: draft.seatId,
       note: draft.note || undefined,
       session: needsWindow
         ? { startsAt: draft.startsAt, endsAt: draft.endsAt, title: draft.title }
@@ -216,6 +280,9 @@ export default function SpacesPage() {
               <button type="button" onClick={() => setView('book')} aria-pressed={view === 'book'}>
                 <DoorOpen className="w-3 h-3" /> Book a seat
               </button>
+              <button type="button" onClick={() => setView('layout')} aria-pressed={view === 'layout'}>
+                <LayoutGrid className="w-3 h-3" /> Layout
+              </button>
               <button type="button" onClick={() => setView('manage')} aria-pressed={view === 'manage'}>
                 <Grid2x2 className="w-3 h-3" /> Rooms &amp; types
               </button>
@@ -224,7 +291,9 @@ export default function SpacesPage() {
         </div>
       </div>
 
-      {view === 'manage' && isAdmin ? (
+      {view === 'layout' && isAdmin ? (
+        <OfficeLayoutEditor />
+      ) : view === 'manage' && isAdmin ? (
         <SpacesManager />
       ) : (
         <>
@@ -258,6 +327,20 @@ export default function SpacesPage() {
           <CalendarDays className="w-3.5 h-3.5 shrink-0" />
           You are looking at a past day — pick today or a future date to book a seat.
         </div>
+      )}
+
+      {planFloor && planRooms.length > 0 ? (
+        <OfficePlan
+          floor={planFloor}
+          rooms={planRooms}
+          seats={planSeats}
+          typesById={typesById}
+          takenSeatIds={takenSeatIds}
+          mySeatId={mySeatId}
+          onPickSeat={pickSeat}
+        />
+      ) : (
+        spacesByType.length > 0 && <OfficePlanEmpty isAdmin={isAdmin} onConfigure={() => setView('layout')} />
       )}
 
       {spacesByType.length === 0 ? (
@@ -425,6 +508,11 @@ export default function SpacesPage() {
                   ? `${sessionLabel(draft.state.session)} · ${draft.state.seatsTaken} of ${draft.space.capacity} seats taken`
                   : 'You are opening the session — others will join it.'}
               </p>
+              {draft.seatId && (
+                <p className="mt-1 text-[11.5px] font-semibold text-[var(--accent-ink)]">
+                  Chair {seatNameOf(draft.seatId)} selected on the plan
+                </p>
+              )}
             </div>
 
             {isAdmin && (
