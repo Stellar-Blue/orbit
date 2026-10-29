@@ -36,6 +36,13 @@ const VIEW_DIRECTION = new THREE.Vector3(1, 1.12, 1).normalize();
 
 export type Office3DMode = 'viewer' | 'editor';
 
+/** Who holds a chair, drawn above it as a round picture. */
+export interface SeatPerson {
+  seatId: string;
+  name: string;
+  photoUrl?: string | null;
+}
+
 export interface Office3DProps {
   floor: OfficeFloor;
   rooms: Space[];
@@ -46,6 +53,8 @@ export interface Office3DProps {
   takenSeatIds: string[];
   /** The viewer's own chairs for the day, highlighted green. One per room at most. */
   mySeatIds?: string[];
+  /** The people holding chairs, so their picture can float above the seat they took. */
+  seatPeople?: SeatPerson[];
   selectedRoomId?: string | null;
   selectedSeatId?: string | null;
   selectedDeskId?: string | null;
@@ -294,7 +303,79 @@ function shapeDesk(desk: THREE.Group, width: number, depth: number, hasMonitor =
   }
 }
 
-/** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. *//** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. */
+/** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. */
+const AVATAR_TEXTURES = new Map<string, THREE.Texture>();
+
+const initialsOf = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return `${(parts[0]?.[0] ?? '?')}${(parts[1]?.[0] ?? '')}`.toUpperCase();
+};
+
+/**
+ * The bubble above a taken chair: a round paper disc with the holder's initials, and their picture
+ * painted over it once it loads. Uploaded photos are cross-origin, so anything that cannot be drawn
+ * into the canvas simply leaves the initials in place — the chair still says who holds it.
+ */
+function avatarTexture(person: { name: string; photoUrl?: string | null }): THREE.Texture {
+  const initials = initialsOf(person.name);
+  const key = `${person.photoUrl || ''}|${initials}`;
+  const cached = AVATAR_TEXTURES.get(key);
+  if (cached) return cached;
+
+  const size = 160;
+  const radius = size / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  if (ctx) {
+    ctx.beginPath();
+    ctx.arc(radius, radius, radius - 4, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.paper;
+    ctx.fill();
+    ctx.fillStyle = '#3a352f';
+    ctx.font = `600 ${Math.round(size * 0.36)}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(initials, radius, radius + size * 0.03);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  AVATAR_TEXTURES.set(key, texture);
+
+  if (ctx && person.photoUrl) {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(radius, radius, radius - 8, 0, Math.PI * 2);
+        ctx.clip();
+        const scale = Math.max(size / image.width, size / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+        ctx.restore();
+        // Ring after the picture, so the bubble keeps its edge.
+        ctx.beginPath();
+        ctx.arc(radius, radius, radius - 6, 0, Math.PI * 2);
+        ctx.lineWidth = 7;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        texture.needsUpdate = true;
+      } catch {
+        // A tainted canvas (no CORS on the photo host) leaves the initials, which is still useful.
+      }
+    };
+    image.src = person.photoUrl;
+  }
+
+  return texture;
+}
+
 function softShadow(size: number, depth: number, opacity: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(size, depth),
@@ -592,7 +673,7 @@ function cutAwayWalls(state: SceneState): void {
 }
 
 export const Office3D: React.FC<Office3DProps> = ({
-  floor, rooms, seats, desks = [], takenSeatIds, mySeatIds,
+  floor, rooms, seats, desks = [], takenSeatIds, mySeatIds, seatPeople = [],
   selectedRoomId, selectedSeatId, selectedDeskId, mode,
   colorForRoom, kindForRoom, onSelectRoom, onSelectSeat, onSelectDesk,
   onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
@@ -603,7 +684,7 @@ export const Office3D: React.FC<Office3DProps> = ({
   const [ready, setReady] = useState(false);
 
   const dataRef = useRef({
-    rooms, seats, desks, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, selectedDeskId, mode,
+    rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
   });
   const callbacksRef = useRef({
     onSelectRoom, onSelectSeat, onSelectDesk, onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
@@ -614,7 +695,7 @@ export const Office3D: React.FC<Office3DProps> = ({
 
   useEffect(() => {
     dataRef.current = {
-      rooms, seats, desks, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, selectedDeskId, mode,
+      rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
     };
     callbacksRef.current = {
       onSelectRoom, onSelectSeat, onSelectDesk, onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
@@ -1120,6 +1201,7 @@ export const Office3D: React.FC<Office3DProps> = ({
 
     const taken = new Set(takenSeatIds);
     const mine = new Set(mySeatIds);
+    const people = new Map(seatPeople.map(person => [person.seatId, person]));
 
     rooms.forEach(room => {
       const { width, depth } = roomSize(room);
@@ -1268,6 +1350,19 @@ export const Office3D: React.FC<Office3DProps> = ({
         chairBlob.position.set(-0.1, 0.003, -0.1);
         seatGroup.add(chairBlob);
 
+        // Whoever holds the chair gets their face on a bubble above it, so the room reads at a glance.
+        const holder = people.get(seat.id);
+        if (holder) {
+          const bubble = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: avatarTexture(holder), transparent: true, depthWrite: false,
+          }));
+          bubble.name = 'avatar-bubble';
+          bubble.scale.setScalar(0.56);
+          bubble.position.set(0, 1.18, 0);
+          bubble.renderOrder = 3;
+          seatGroup.add(bubble);
+        }
+
         seatGroup.traverse(child => {
           child.userData = data;
         });
@@ -1351,7 +1446,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       state.pickables.push(group);
     });
 
-  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, selectedDeskId, mode, floor.width, floor.depth, floor.id]);
+  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode, floor.width, floor.depth, floor.id]);
 
   return (
     <div className="relative w-full h-full">

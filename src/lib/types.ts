@@ -1,3 +1,5 @@
+import type { AvatarConfig } from '@/lib/avatar';
+
 export type EmploymentType = 'full_time' | 'part_time' | 'contractor' | 'intern';
 export type UserRole = 'employee' | 'admin';
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'cancellation_requested' | 'in_progress' | 'taken' | 'expired';
@@ -61,6 +63,8 @@ export interface Profile {
   end_date?: string;
   status: 'active' | 'on_leave' | 'departed';
   photo_url?: string | null;
+  /** The choices behind a made avatar (see `src/lib/avatar.ts`); null when the photo is an upload. */
+  avatar_config?: AvatarConfig | null;
   work_schedule: string[];
   role: UserRole; // joined from user_roles
   contracted_weekly_hours?: number | null;

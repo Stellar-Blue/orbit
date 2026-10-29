@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { Building2, MousePointerClick } from 'lucide-react';
 import { Card } from '@/components/ui/primitives';
 import type { OfficeFloor, Space, SpaceDesk, SpaceSeat, SpaceType } from '@/lib/types';
-import type { Office3DProps } from '@/components/spaces/office-3d';
+import type { Office3DProps, SeatPerson } from '@/components/spaces/office-3d';
 
 const Office3D = dynamic<Office3DProps>(
   () => import('@/components/spaces/office-3d').then(module => module.Office3D),
@@ -27,6 +27,8 @@ export interface OfficePlanProps {
   typesById: Map<string, SpaceType>;
   takenSeatIds: string[];
   mySeatIds?: string[];
+  /** Who holds each chair, drawn above it as a round picture. */
+  seatPeople?: SeatPerson[];
   /** Which session the timed rooms are showing, so the taken chairs are not mistaken for the whole day. */
   sessionNote?: string | null;
   onPickSeat: (seat: SpaceSeat, room: Space) => void;
@@ -47,7 +49,7 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, sessionNote, onPickSeat, onPickRoom, height = 540,
+  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, seatPeople = [], sessionNote, onPickSeat, onPickRoom, height = 540,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -90,6 +92,7 @@ export function OfficePlan({
           desks={desks}
           takenSeatIds={takenSeatIds}
           mySeatIds={mySeatIds}
+          seatPeople={seatPeople}
           mode="viewer"
           colorForRoom={colorForRoom}
           kindForRoom={kindForRoom}

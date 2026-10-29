@@ -21,6 +21,7 @@ import {
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
 import type { Profile, Space, SpaceBooking, SpaceSeat, SpaceType } from '@/lib/types';
+import type { SeatPerson } from '@/components/spaces/office-3d';
 
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
 
@@ -156,6 +157,7 @@ export default function SpacesPage() {
   const planSeatMarks = useMemo(() => {
     const taken: string[] = [];
     const mine: string[] = [];
+    const people: SeatPerson[] = [];
     spaceBookings.forEach(booking => {
       if (booking.booking_date !== day || !booking.seat_id || !planRoomIds.has(booking.space_id)) return;
       const state = states.get(booking.space_id);
@@ -163,8 +165,13 @@ export default function SpacesPage() {
       if (state.mode === 'time_range' && (!state.session || booking.session_id !== state.session.id)) return;
       taken.push(booking.seat_id);
       if (booking.profile_id === currentUser.id) mine.push(booking.seat_id);
+      people.push({
+        seatId: booking.seat_id,
+        name: personName(booking.profile),
+        photoUrl: booking.profile?.photo_url ?? null,
+      });
     });
-    return { taken, mine };
+    return { taken, mine, people };
   }, [spaceBookings, day, planRoomIds, states, currentUser.id]);
 
   const planSessionNote = useMemo(() => {
@@ -494,6 +501,7 @@ export default function SpacesPage() {
           typesById={typesById}
           takenSeatIds={planSeatMarks.taken}
           mySeatIds={planSeatMarks.mine}
+          seatPeople={planSeatMarks.people}
           sessionNote={planSessionNote}
           onPickSeat={pickSeat}
           onPickRoom={openRoomSessions}

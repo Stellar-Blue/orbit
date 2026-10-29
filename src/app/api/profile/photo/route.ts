@@ -42,7 +42,11 @@ export async function POST(request: NextRequest) {
   const { data: publicUrlData } = admin.storage.from('profile-photos').getPublicUrl(path);
   const photoUrl = publicUrlData.publicUrl;
 
-  const { error: updateError } = await admin.from('profiles').update({ photo_url: photoUrl }).eq('id', session.profileId);
+  // A real picture replaces any made avatar, so its design is dropped with it.
+  const { error: updateError } = await admin
+    .from('profiles')
+    .update({ photo_url: photoUrl, avatar_config: null })
+    .eq('id', session.profileId);
   if (updateError) {
     console.error('profile photo url update error:', updateError);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
@@ -68,7 +72,10 @@ export async function DELETE(request: NextRequest) {
     }
   }
 
-  const { error } = await admin.from('profiles').update({ photo_url: null }).eq('id', session.profileId);
+  const { error } = await admin
+    .from('profiles')
+    .update({ photo_url: null, avatar_config: null })
+    .eq('id', session.profileId);
   if (error) {
     return NextResponse.json({ error: 'Failed to clear profile photo' }, { status: 500 });
   }

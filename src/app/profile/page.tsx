@@ -7,7 +7,10 @@ import { roleLabel } from '@/lib/profile-role';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { formatDate, formatDateTime } from '@/lib/date';
-import { Camera, Check, Edit3, Loader2, MessageSquare, RefreshCw, Trash2, UserRound, Calendar, Mail, Phone, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
+import { Camera, Check, Edit3, Loader2, MessageSquare, Palette, RefreshCw, Trash2, UserRound, Calendar, Mail, Phone, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
+import { AvatarMaker } from '@/components/profile/avatar-maker';
+import { avatarDataUrl, isAvatarDataUrl, type AvatarConfig } from '@/lib/avatar';
+import { notifySuccess } from '@/lib/validation-modal';
 
 export default function MyProfilePage() {
   return (
@@ -59,8 +62,10 @@ function MyProfileInner() {
   const [uploading, setUploading] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [makerOpen, setMakerOpen] = useState(false);
 
   const team = currentUser.team?.name || '—';
+  const madeAvatar = isAvatarDataUrl(currentUser.photo_url);
   const initials = `${currentUser.first_name[0] || ''}${currentUser.last_name[0] || ''}`.toUpperCase();
   const isRevoked = slackIntegration?.status === 'revoked';
   const isConnected = slackIntegration?.status === 'connected';
@@ -81,6 +86,14 @@ function MyProfileInner() {
     } finally {
       setUploading(false);
     }
+  };
+
+  /** Stores the design and the picture it draws, so every screen keeps showing one `photo_url`. */
+  const handleSaveAvatar = async (config: AvatarConfig): Promise<boolean> => {
+    const ok = await updateMyProfile({ avatar_config: config, photo_url: avatarDataUrl(config) });
+    if (!ok) return false;
+    notifySuccess('Your avatar is now used across Orbit.', 'Avatar saved');
+    return true;
   };
 
   const handleSave = async () => {
@@ -130,20 +143,29 @@ function MyProfileInner() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (!confirm('Remove your profile photo?')) return;
+                  if (!confirm(`Remove your ${madeAvatar ? 'avatar' : 'profile photo'}?`)) return;
                   const res = await fetch('/api/profile/photo', { method: 'DELETE' });
                   if (res.ok) {
-                    await updateMyProfile({ photo_url: null });
+                    await updateMyProfile({ photo_url: null, avatar_config: null });
                   } else {
                     alert('Failed to remove profile photo');
                   }
                 }}
                 className="absolute bottom-1 right-1 w-8 h-8 rounded-full bg-rose-500 text-white border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:bg-rose-600 transition-colors z-10"
-                title="Remove profile photo"
+                title={madeAvatar ? 'Remove your avatar' : 'Remove profile photo'}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setMakerOpen(true)}
+              className="absolute top-1 left-1 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors z-10"
+              title="Design an avatar instead of uploading a photo"
+              aria-label="Design an avatar"
+            >
+              <Palette className="w-4 h-4 text-slate-600" />
+            </button>
             <label
               className={`absolute top-1 right-1 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors ${uploading ? 'pointer-events-none opacity-60' : ''}`}
               title="Upload or replace profile photo"
@@ -439,6 +461,15 @@ function MyProfileInner() {
           </Card>
         </div>
       </div>
+
+      {makerOpen && (
+        <AvatarMaker
+          value={currentUser.avatar_config}
+          personName={`${currentUser.first_name} ${currentUser.last_name}`.trim()}
+          onClose={() => setMakerOpen(false)}
+          onSave={handleSaveAvatar}
+        />
+      )}
     </div>
   );
 }

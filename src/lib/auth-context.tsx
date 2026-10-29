@@ -18,6 +18,7 @@ import {
   Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat, SpaceDesk
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
+import type { AvatarConfig } from './avatar';
 import { toHiddenScreenKeys } from './screens';
 import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
 import { isDemoMode, exitDemoMode } from './demo-mode';
@@ -56,7 +57,7 @@ import { clampSeatToRoom, seatGrid } from './office-layout';
 const PROFILE_COLUMNS = [
   'id', 'auth_user_id', 'first_name', 'last_name', 'name_el', 'work_email', 'title',
   'team_id', 'manager_id', 'employment_type', 'start_date', 'end_date', 'status', 'photo_url',
-  'work_schedule', 'created_at', 'onboarding_completed_at', 'seniority_level',
+  'avatar_config', 'work_schedule', 'created_at', 'onboarding_completed_at', 'seniority_level',
   'contracted_weekly_hours', 'slack_required',
 ].join(',');
 
@@ -251,7 +252,10 @@ interface AppState {
   updateProfile: (profile: Profile) => void;
   /** Self-service edits. `title` is intentionally absent: the legacy job title is replaced by the
    *  effective-dated Role & Seniority assignment, which only admins set. */
-  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'phone'>> & { photo_url?: string | null }) => Promise<boolean>;
+  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'phone'>> & {
+    photo_url?: string | null;
+    avatar_config?: AvatarConfig | null;
+  }) => Promise<boolean>;
   employeeIntegrations: EmployeeIntegration[];
   addProfile: (profile: Profile) => Promise<boolean>;
   deleteProfile: (profileId: string) => Promise<boolean>;
@@ -1581,7 +1585,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & { photo_url?: string | null }): Promise<boolean> => {
+  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & {
+    photo_url?: string | null;
+    avatar_config?: AvatarConfig | null;
+  }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
       const { error } = await supabase.from('profiles').update(edits).eq('id', currentUser.id);
