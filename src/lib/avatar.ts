@@ -59,7 +59,11 @@ export const AVATAR_SHIRTS = {
   coral: '#c9695a',
 } as const;
 
-export const HAIR_STYLES = ['short', 'buzz', 'sidePart', 'wavy', 'bun', 'long', 'curly', 'bald'] as const;
+export const HAIR_STYLES = [
+  'short', 'buzz', 'taper', 'sidePart', 'combOver', 'quiff', 'undercut', 'mohawk', 'spiky',
+  'wavy', 'curly', 'fringe', 'shag', 'afro', 'receding', 'bald', 'topKnot',
+  'bob', 'long', 'layers', 'curlyLong', 'ponytail', 'braids', 'pigtails', 'spaceBuns', 'bun',
+] as const;
 export const EYE_STYLES = ['dot', 'round', 'happy', 'sleepy', 'wide', 'wink'] as const;
 export const BROW_STYLES = ['soft', 'flat', 'arched', 'bold', 'raised', 'angled'] as const;
 export const NOSE_STYLES = ['button', 'straight', 'round', 'wide'] as const;
@@ -216,14 +220,61 @@ function clothes(config: AvatarConfig): AvatarNode[] {
 
 function hairBack(config: AvatarConfig): AvatarNode[] {
   const hair = pick(AVATAR_HAIR_COLORS, config.hairColor, DEFAULT_HAIR());
-  if (config.hairStyle === 'long') {
-    return [
-      path('M31 47 C26 68 28 92 33 108 H47 C40 88 39 66 42 51 Z', hair),
-      path('M89 47 C94 68 92 92 87 108 H73 C80 88 81 66 78 51 Z', hair),
-    ];
+  switch (config.hairStyle) {
+    case 'long':
+      return [
+        path('M31 47 C26 68 28 92 33 108 H47 C40 88 39 66 42 51 Z', hair),
+        path('M89 47 C94 68 92 92 87 108 H73 C80 88 81 66 78 51 Z', hair),
+      ];
+    case 'bob':
+      return [
+        path('M31 48 C27 60 27 72 30 82 H45 C39 72 38 58 41 50 Z', hair),
+        path('M89 48 C93 60 93 72 90 82 H75 C81 72 82 58 79 50 Z', hair),
+      ];
+    case 'bun':
+      return [circle(60, 19, 9, hair)];
+    case 'ponytail':
+      return [
+        path('M83 42 C96 48 100 64 94 80 C91 88 83 88 80 81 C88 69 89 53 78 45 Z', hair),
+        ellipse(82.5, 44, 3.6, 3, tone(hair, 0.3)),
+      ];
+    case 'afro':
+      return [
+        circle(60, 31, 21, hair),
+        circle(40, 42, 13, hair),
+        circle(80, 42, 13, hair),
+        circle(44, 26, 11, hair),
+        circle(76, 26, 11, hair),
+        circle(60, 22, 14, hair),
+      ];
+    case 'receding':
+      return [path('M33 54 C34 36 45 27 60 27 C75 27 86 36 87 54 C85 45 79 39 71 37 C63 35 57 35 49 37 C41 39 35 45 33 54 Z', hair)];
+    case 'pigtails':
+      return [
+        path('M30 48 C22 56 21 72 26 82 C29 88 37 86 37 79 C32 70 32 57 36 50 Z', hair),
+        path('M90 48 C98 56 99 72 94 82 C91 88 83 86 83 79 C88 70 88 57 84 50 Z', hair),
+      ];
+    case 'spaceBuns':
+      return [circle(41, 25, 8.5, hair), circle(79, 25, 8.5, hair)];
+    case 'topKnot':
+      return [circle(60, 15, 7.5, hair), ellipse(60, 23, 5, 2.2, tone(hair, 0.3))];
+    case 'layers':
+      return [
+        path('M30 48 C25 66 26 86 30 98 H44 C38 84 37 64 40 50 Z', hair),
+        path('M90 48 C95 66 94 86 90 98 H76 C82 84 83 64 80 50 Z', hair),
+      ];
+    case 'curlyLong':
+      return [
+        circle(33, 50, 9, hair),
+        circle(31, 64, 9, hair),
+        circle(32, 78, 8.5, hair),
+        circle(87, 50, 9, hair),
+        circle(89, 64, 9, hair),
+        circle(88, 78, 8.5, hair),
+      ];
+    default:
+      return [];
   }
-  if (config.hairStyle === 'bun') return [circle(60, 19, 9, hair)];
-  return [];
 }
 
 const DEFAULT_HAIR = () => DEFAULT_AVATAR.hairColor;
@@ -261,6 +312,91 @@ function hairFront(config: AvatarConfig): AvatarNode[] {
       ];
     case 'bald':
       return [line('M37 51 Q36 58 38 62', hair, 2.4, { opacity: 0.55 }), line('M83 51 Q84 58 82 62', hair, 2.4, { opacity: 0.55 })];
+    case 'fringe':
+      return [path('M35 43 C35 30 46 23 60 23 C74 23 85 30 85 43 C78 45 69 46 60 46 C51 46 42 45 35 43 Z', hair)];
+    case 'bob':
+      return [path('M34 44 C34 30 46 23 60 23 C74 23 86 30 86 44 Z', hair)];
+    case 'spiky':
+      return [
+        path(HAIR_CAP, hair),
+        path('M38 34 L44 20 L52 32 Z', hair),
+        path('M48 31 L57 15 L66 30 Z', hair),
+        path('M62 30 L71 17 L79 33 Z', hair),
+        path('M74 33 L82 23 L85 38 Z', hair),
+      ];
+    case 'braids':
+      return [
+        path(HAIR_CAP, hair),
+        ...[58, 68, 78, 88].flatMap(y => [
+          circle(36, y, 4, hair),
+          circle(84, y, 4, hair),
+        ]),
+        circle(36, 48, 4.4, tone(hair, 0.25)),
+        circle(84, 48, 4.4, tone(hair, 0.25)),
+      ];
+    case 'ponytail':
+      return [path(HAIR_CAP, hair), path('M36 47 C38 36 46 31 60 31 C74 31 82 36 84 47 C80 40 72 36 60 36 C48 36 40 40 36 47 Z', hair)];
+    case 'afro':
+      return [path('M40 41 C46 34 53 32 60 32 C67 32 74 34 80 41 C74 37 67 35 60 35 C53 35 46 37 40 41 Z', hair)];
+    case 'receding':
+      return [
+        path('M33 54 C34 45 36 40 40 37 C39 45 39 50 40 55 Z', hair),
+        path('M87 54 C86 45 84 40 80 37 C81 45 81 50 80 55 Z', hair),
+      ];
+    case 'taper':
+      return [
+        path('M36 43 C38 31 48 25 60 25 C72 25 82 31 84 43 C82 35 72 31 60 31 C48 31 38 35 36 43 Z', hair),
+        line('M36 48 Q35 53 36 57', hair, 2.6, { opacity: 0.35 }),
+        line('M84 48 Q85 53 84 57', hair, 2.6, { opacity: 0.35 }),
+      ];
+    case 'combOver':
+      return [
+        path('M34 46 C34 28 48 21 62 22 C75 23 85 29 86 45 C81 34 71 29 58 31 C47 33 39 39 34 46 Z', hair),
+        line('M58 24 C68 26 78 32 83 41', tone(hair, 0.3, 'white'), 1.4, { opacity: 0.45 }),
+      ];
+    case 'quiff':
+      return [
+        path(HAIR_CAP, hair),
+        path('M40 32 C42 21 54 15 66 18 C76 21 82 27 82 34 C73 25 57 25 48 32 Z', hair),
+      ];
+    case 'undercut':
+      return [
+        path('M36 46 C34 26 48 19 63 20 C77 21 87 29 87 42 C80 32 68 29 57 32 C47 35 40 39 36 46 Z', hair),
+        line('M35 49 Q34 56 35 61', hair, 2.4, { opacity: 0.3 }),
+        line('M85 49 Q86 56 85 61', hair, 2.4, { opacity: 0.3 }),
+      ];
+    case 'mohawk':
+      return [
+        path('M49 27 C52 17 56 12 60 12 C64 12 68 17 71 27 C75 36 73 44 69 48 C66 41 63 37 60 37 C57 37 54 41 51 48 C47 44 45 36 49 27 Z', hair),
+        line('M36 49 Q35 56 36 61', hair, 2.4, { opacity: 0.3 }),
+        line('M84 49 Q85 56 84 61', hair, 2.4, { opacity: 0.3 }),
+      ];
+    case 'shag':
+      return [
+        path(HAIR_CAP, hair),
+        path('M34 44 C32 52 34 58 36 62 C37 55 37 48 39 44 Z', hair),
+        path('M86 44 C88 52 86 58 84 62 C83 55 83 48 81 44 Z', hair),
+        path('M36 46 C38 36 46 31 60 31 C74 31 82 36 84 46 C76 40 68 38 60 38 C52 38 44 40 36 46 Z', hair),
+      ];
+    case 'topKnot':
+      return [
+        path('M35 47 C36 31 46 24 60 24 C74 24 84 31 85 47 C80 36 70 31 60 31 C50 31 40 36 35 47 Z', hair),
+        line('M44 27 C50 23 70 23 76 27', tone(hair, 0.3, 'white'), 1.3, { opacity: 0.4 }),
+      ];
+    case 'layers':
+      return [
+        path('M60 26 C45 26 35 34 33 50 C36 40 44 34 56 33 C58 33 59 33 60 33 Z', hair),
+        path('M60 26 C75 26 85 34 87 50 C84 40 76 34 64 33 Z', hair),
+      ];
+    case 'curlyLong':
+      return [
+        path(HAIR_CAP, hair),
+        circle(40, 32, 6.2, hair),
+        circle(50, 27, 6.6, hair),
+        circle(61, 25, 6.8, hair),
+        circle(72, 27, 6.4, hair),
+        circle(80, 34, 6, hair),
+      ];
     case 'short':
     default:
       return [path(HAIR_CAP, hair)];

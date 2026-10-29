@@ -45,8 +45,8 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Design your avatar" eyebrow={`My profile · ${personName}`} size="xl">
-      <div className="grid gap-5 px-5 py-4 md:grid-cols-[190px_1fr]">
+    <Modal isOpen onClose={onClose} title="Design your avatar" eyebrow={`My profile · ${personName}`} size="2xl">
+      <div className="grid gap-5 px-5 py-4 md:grid-cols-[200px_1fr]">
         <div className="flex flex-col items-center gap-3">
           <div className="rounded-full bg-[var(--surface-muted)] p-1.5 ring-1 ring-[var(--line)]">
             <AvatarArt config={config} size={152} className="rounded-full" title={`${personName}'s avatar`} />
@@ -118,7 +118,7 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
               })}
             </div>
           ) : (
-            <div className="grid max-h-[320px] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
+            <div className="grid max-h-[540px] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 xl:grid-cols-5">
               {active.options.map(option => {
                 const preview = { ...config, [active.key]: option } as AvatarConfig;
                 const selected = (config[active.key] as string) === option;

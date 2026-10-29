@@ -40,7 +40,7 @@ assert(
   'A profile without an avatar config gets the default face',
   Object.values(fallback).join(', ')
 );
-const junk = normalizeAvatar({ hairStyle: 'mohawk', skin: 'neon', eyes: 42, background: '__proto__' });
+const junk = normalizeAvatar({ hairStyle: 'not-a-style', skin: 'neon', eyes: 42, background: '__proto__' });
 assert(
   junk.hairStyle === DEFAULT_AVATAR.hairStyle && junk.skin === DEFAULT_AVATAR.skin &&
     junk.eyes === DEFAULT_AVATAR.eyes && junk.background === DEFAULT_AVATAR.background,
