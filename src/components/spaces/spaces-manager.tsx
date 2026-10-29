@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import { Armchair, Clock, DoorOpen, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { Clock, DoorOpen, Grid2x2, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Badge, Button, Card } from '@/components/ui/primitives';
 import { BOOKING_MODE_LABELS } from '@/lib/spaces';
@@ -27,11 +27,11 @@ interface RoomDraft {
 }
 
 /**
- * Settings → Spaces. Two admin-only lists:
- *   • room types — the booking mode (whole day vs. timed session) lives here;
- *   • rooms — what people actually book, with their capacity.
+ * Admin view of the Spaces screen: two lists —
+ *   • room types, where the booking mode (whole day vs. timed session) is decided;
+ *   • rooms, what people actually book, with their capacity.
  */
-export const SpacesSettings: React.FC = () => {
+export const SpacesManager: React.FC = () => {
   const { spaceTypes, spaces, spaceBookings, saveSpaceType, deleteSpaceType, saveSpace, deleteSpace } = useAuth();
 
   const [typeDraft, setTypeDraft] = useState<TypeDraft | null>(null);
@@ -214,7 +214,7 @@ export const SpacesSettings: React.FC = () => {
                     <tr key={space.id} className="border-b border-[var(--line)] last:border-b-0 hover:bg-[var(--surface-muted)]">
                       <td className="py-2 pr-3">
                         <span className="flex items-center gap-1.5 min-w-0">
-                          <Armchair className="w-3.5 h-3.5 text-[var(--ink-4)] shrink-0" />
+                          <Grid2x2 className="w-3.5 h-3.5 text-[var(--ink-4)] shrink-0" />
                           <span className="font-semibold text-[var(--ink)] truncate">{space.name}</span>
                           {!space.active && <Badge variant="neutral">Hidden</Badge>}
                         </span>

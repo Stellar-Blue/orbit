@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { addDays, format, parseISO } from 'date-fns';
 import {
-  Armchair, CalendarDays, ChevronLeft, ChevronRight, Clock, DoorOpen, MapPin, Settings2, Users, X,
+  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock, DoorOpen, Grid2x2, MapPin, Users, X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Badge, Button, Card, Modal } from '@/components/ui/primitives';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/date';
 import { notifySuccess } from '@/lib/validation-modal';
+import { SpacesManager } from '@/components/spaces/spaces-manager';
 import {
   BOOKING_MODE_LABELS, clockLabel, defaultSessionWindow, seatHolders, seatsLabel, sessionLabel, spaceDayState,
   validateSessionWindow, type SpaceDayState,
@@ -47,6 +47,8 @@ export default function SpacesPage() {
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
+  /** Admins get the room/type configuration as a second view here instead of a Settings tab. */
+  const [view, setView] = useState<'book' | 'manage'>('book');
   const [day, setDay] = useState<string>(todayKey());
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -181,6 +183,8 @@ export default function SpacesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {view === 'book' && (
+            <>
           <button
             type="button"
             onClick={() => setDay(format(addDays(parseISO(day), -1), 'yyyy-MM-dd'))}
@@ -205,17 +209,25 @@ export default function SpacesPage() {
               Today
             </Button>
           )}
+            </>
+          )}
           {isAdmin && (
-            <Link
-              href="/settings?tab=spaces"
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)]"
-            >
-              <Settings2 className="w-3.5 h-3.5" /> Manage rooms
-            </Link>
+            <div className="ui-segmented shrink-0" role="group" aria-label="Spaces view">
+              <button type="button" onClick={() => setView('book')} aria-pressed={view === 'book'}>
+                <DoorOpen className="w-3 h-3" /> Book a seat
+              </button>
+              <button type="button" onClick={() => setView('manage')} aria-pressed={view === 'manage'}>
+                <Grid2x2 className="w-3 h-3" /> Rooms &amp; types
+              </button>
+            </div>
           )}
         </div>
       </div>
 
+      {view === 'manage' && isAdmin ? (
+        <SpacesManager />
+      ) : (
+        <>
       {/* Day summary */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
@@ -259,9 +271,13 @@ export default function SpacesPage() {
                 : 'An administrator has not declared any bookable rooms yet.'}
             </p>
             {isAdmin && (
-              <Link href="/settings?tab=spaces" className="inline-block mt-3 text-[12px] font-semibold text-[var(--accent-ink)] hover:underline">
-                Open Settings → Spaces
-              </Link>
+              <button
+                type="button"
+                onClick={() => setView('manage')}
+                className="mt-3 text-[12px] font-semibold text-[var(--accent-ink)] hover:underline cursor-pointer"
+              >
+                Declare the first room
+              </button>
             )}
           </div>
         </Card>
@@ -344,7 +360,7 @@ export default function SpacesPage() {
                       </Button>
                     ) : (
                       <Button size="sm" variant="primary" className="w-full" onClick={() => openDraft(space, state)}>
-                        <Armchair className="w-3.5 h-3.5" />
+                        <CalendarPlus className="w-3.5 h-3.5" />
                         {state.mode === 'time_range'
                           ? state.session ? 'Join session' : 'Open session'
                           : 'Book seat'}
@@ -385,6 +401,9 @@ export default function SpacesPage() {
             })}
           </ul>
         </Card>
+      )}
+
+        </>
       )}
 
       <Modal
