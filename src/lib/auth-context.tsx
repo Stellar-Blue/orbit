@@ -15,7 +15,7 @@ import {
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
   CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest,
-  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat
+  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat, SpaceDesk
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
@@ -191,12 +191,17 @@ interface AppState {
   spaceBookings: SpaceBooking[];
   officeFloors: OfficeFloor[];
   spaceSeats: SpaceSeat[];
+  spaceDesks: SpaceDesk[];
   saveOfficeLayout: (input: {
     rooms: Array<{
       id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
       capacity?: number; floor_id?: string | null;
     }>;
     seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
+    desks: Array<{
+      id: string; space_id: string; label?: string | null; description?: string | null;
+      x: number; z: number; width: number; depth: number; rotation?: number; active?: boolean;
+    }>;
   }) => Promise<boolean>;
   saveSpaceType: (input: { id?: string; name: string; booking_mode: SpaceBookingMode; color?: string; sort_order?: number; active?: boolean }) => Promise<boolean>;
   deleteSpaceType: (id: string) => Promise<boolean>;
@@ -609,6 +614,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [spaceBookings, setSpaceBookings] = useState<SpaceBooking[]>([]);
   const [officeFloors, setOfficeFloors] = useState<OfficeFloor[]>([]);
   const [spaceSeats, setSpaceSeats] = useState<SpaceSeat[]>([]);
+  const [spaceDesks, setSpaceDesks] = useState<SpaceDesk[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -855,6 +861,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }))
     );
     setSpaceSeats(demoSeats);
+    // A desk in front of every chair of a whole-day area, exactly like the seeded floor plan.
+    const wholeDayRooms = new Set(
+      MOCK_SPACES
+        .filter(space => MOCK_SPACE_TYPES.find(type => type.id === space.type_id)?.booking_mode === 'whole_day')
+        .map(space => space.id)
+    );
+    setSpaceDesks(
+      demoSeats
+        .filter(seat => wholeDayRooms.has(seat.space_id))
+        .map((seat, index) => ({
+          id: `${seat.id}-desk`,
+          space_id: seat.space_id,
+          label: `Desk ${index + 1}`,
+          description: null,
+          x: seat.x,
+          z: seat.z - 0.74,
+          width: 1.2,
+          depth: 0.62,
+          rotation: 0,
+          active: true,
+        }))
+    );
     setSpaceSessions([{
       id: 'sps-conf-a-today',
       space_id: 'spc-conf-a',
@@ -1234,18 +1262,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /** Spaces, their types, the sessions opened for them and every seat taken. */
   async function loadSpacesSlice() {
-    const [typeRows, spaceRows, sessionRows, bookingRows, floorRows, seatRows] = await Promise.all([
+    const [typeRows, spaceRows, sessionRows, bookingRows, floorRows, seatRows, deskRows] = await Promise.all([
       fetchRows('space_types', 'all', { order: ['sort_order'] }),
       fetchRows('spaces', 'all', { order: ['name'] }),
       fetchRows('space_sessions', 'all', { order: ['session_date'] }),
       fetchRows('space_bookings', 'all', { order: ['booking_date'] }),
       fetchRows('office_floors', 'all', { order: ['sort_order'] }),
       fetchRows('space_seats', 'all'),
+      fetchRows('space_desks', 'all'),
     ]);
     setSpaceTypes(typeRows as SpaceType[]);
     setSpaces(spaceRows as Space[]);
     setOfficeFloors(floorRows as OfficeFloor[]);
     setSpaceSeats(seatRows as SpaceSeat[]);
+    setSpaceDesks(deskRows as SpaceDesk[]);
     setSpaceSessions(sessionRows as SpaceSession[]);
     setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
       ...booking,
@@ -5391,15 +5421,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // The demo answers every query with an empty set; refetching would wipe the sample bookings.
     if (isDemoMode()) return;
     try {
-      const [sessionRows, bookingRows, floorRows, seatRows] = await Promise.all([
+      const [sessionRows, bookingRows, floorRows, seatRows, deskRows] = await Promise.all([
         fetchRows('space_sessions', 'all'),
         fetchRows('space_bookings', 'all'),
         fetchRows('office_floors', 'all', { order: ['sort_order'] }),
         fetchRows('space_seats', 'all'),
+        fetchRows('space_desks', 'all'),
       ]);
       setSpaceSessions(sessionRows as SpaceSession[]);
       setOfficeFloors(floorRows as OfficeFloor[]);
       setSpaceSeats(seatRows as SpaceSeat[]);
+      setSpaceDesks(deskRows as SpaceDesk[]);
       setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
         ...booking,
         profile: profiles.find(profile => profile.id === booking.profile_id),
@@ -5511,6 +5543,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       capacity?: number; floor_id?: string | null;
     }>;
     seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
+    desks: Array<{
+      id: string; space_id: string; label?: string | null; description?: string | null;
+      x: number; z: number; width: number; depth: number; rotation?: number; active?: boolean;
+    }>;
   }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
@@ -5560,6 +5596,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      const deskRows = input.desks.map(desk => ({
+        id: desk.id,
+        space_id: desk.space_id,
+        label: desk.label ?? null,
+        description: desk.description ?? null,
+        x: desk.x,
+        z: desk.z,
+        width: desk.width,
+        depth: desk.depth,
+        rotation: desk.rotation ?? 0,
+        active: desk.active ?? true,
+      }));
+      if (deskRows.length > 0) {
+        const { error } = await supabase.from('space_desks').upsert(deskRows, { onConflict: 'id' });
+        if (error) {
+          alert(`Could not save the desks: ${error.message}`);
+          return false;
+        }
+      }
+
+      const keptDesks = new Set(deskRows.map(row => row.id));
+      const removedDesks = spaceDesks
+        .filter(desk => savedRoomIds.has(desk.space_id) && !keptDesks.has(desk.id))
+        .map(desk => desk.id);
+      if (removedDesks.length > 0) {
+        const { error } = await supabase.from('space_desks').delete().in('id', removedDesks);
+        if (error) {
+          alert(`Could not remove the old desks: ${error.message}`);
+          return false;
+        }
+      }
+
       setSpaces(prev => prev.map(space => {
         const room = input.rooms.find(entry => entry.id === space.id);
         return room ? { ...space, ...room } : space;
@@ -5568,6 +5636,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const next = prev.filter(seat => kept.has(seat.id));
         const byId = new Map(next.map(seat => [seat.id, seat]));
         rows.forEach(row => byId.set(row.id, { ...(byId.get(row.id) || {}), ...row } as SpaceSeat));
+        return [...byId.values()];
+      });
+      setSpaceDesks(prev => {
+        const next = prev.filter(desk => keptDesks.has(desk.id));
+        const byId = new Map(next.map(desk => [desk.id, desk]));
+        deskRows.forEach(row => byId.set(row.id, { ...(byId.get(row.id) || {}), ...row } as SpaceDesk));
         return [...byId.values()];
       });
       void refreshSpaces();
@@ -6855,6 +6929,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       spaceBookings,
       officeFloors,
       spaceSeats,
+      spaceDesks,
       saveOfficeLayout,
       saveSpaceType,
       deleteSpaceType,

@@ -47,7 +47,7 @@ interface BookingDraft {
 export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings,
-    officeFloors, spaceSeats, bookSpaceSeat, cancelSpaceBooking,
+    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -124,6 +124,11 @@ export default function SpacesPage() {
   const planSeats = useMemo(
     () => spaceSeats.filter(seat => seat.active && planRoomIds.has(seat.space_id)),
     [spaceSeats, planRoomIds]
+  );
+
+  const planDesks = useMemo(
+    () => spaceDesks.filter(desk => desk.active && planRoomIds.has(desk.space_id)),
+    [spaceDesks, planRoomIds]
   );
 
   const takenSeatIds = useMemo(
@@ -336,6 +341,7 @@ export default function SpacesPage() {
           floor={planFloor}
           rooms={planRooms}
           seats={planSeats}
+          desks={planDesks}
           typesById={typesById}
           takenSeatIds={takenSeatIds}
           mySeatIds={mySeatIds}

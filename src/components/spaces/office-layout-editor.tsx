@@ -3,15 +3,16 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  Armchair, Building2, LayoutGrid, Plus, Redo2, RotateCcw, Save, Trash2, Wand2,
+  Armchair, Building2, LayoutGrid, Plus, Redo2, RotateCcw, Rows3, Save, Trash2, Wand2, RectangleHorizontal,
 } from 'lucide-react';
 import { Badge, Button, Card } from '@/components/ui/primitives';
 import { notifySuccess } from '@/lib/validation-modal';
 import { useAuth } from '@/lib/auth-context';
 import {
-  autoLayoutRooms, clampSeatToRoom, defaultRoomSize, roomSize, seatGrid, seatLabel, snap, SNAP_STEP,
+  autoLayoutRooms, clampDeskToRoom, clampSeatToRoom, defaultDeskSize, defaultRoomSize, deskRow,
+  DESK_PRESETS, MIN_DESK_SIZE, roomSize, seatGrid, seatLabel, snap, SNAP_STEP,
 } from '@/lib/office-layout';
-import type { OfficeFloor, Space, SpaceSeat } from '@/lib/types';
+import type { OfficeFloor, Space, SpaceDesk, SpaceSeat } from '@/lib/types';
 import type { Office3DProps } from '@/components/spaces/office-3d';
 
 const Office3D = dynamic<Office3DProps>(
@@ -45,6 +46,32 @@ type SeatDraft = {
   rotation: number;
   active: boolean;
 };
+
+type DeskDraft = {
+  id: string;
+  space_id: string;
+  label: string | null;
+  description: string | null;
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  rotation: number;
+  active: boolean;
+};
+
+const toDeskDraft = (desk: SpaceDesk): DeskDraft => ({
+  id: desk.id,
+  space_id: desk.space_id,
+  label: desk.label ?? null,
+  description: desk.description ?? null,
+  x: Number(desk.x) || 0,
+  z: Number(desk.z) || 0,
+  width: Number(desk.width) || 1.4,
+  depth: Number(desk.depth) || 0.7,
+  rotation: Number(desk.rotation) || 0,
+  active: desk.active,
+});
 
 const toRoomDraft = (room: Space, floorId: string): RoomDraft => {
   const { width, depth } = roomSize(room);
@@ -159,7 +186,7 @@ interface FloorEditorProps {
 
 function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
   const {
-    spaces, spaceTypes, spaceSeats, saveOfficeLayout,
+    spaces, spaceTypes, spaceSeats, spaceDesks, saveOfficeLayout,
   } = useAuth();
 
   const typesById = useMemo(() => new Map(spaceTypes.map(type => [type.id, type])), [spaceTypes]);
@@ -169,15 +196,25 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     () => spaces.filter(space => space.floor_id === floor.id).map(space => toRoomDraft(space, floor.id)),
     [spaces, floor.id]
   );
-  const seededSeats = useMemo(() => {
-    const roomIds = new Set(spaces.filter(space => space.floor_id === floor.id).map(space => space.id));
-    return spaceSeats.filter(seat => roomIds.has(seat.space_id)).map(toSeatDraft);
-  }, [spaceSeats, spaces, floor.id]);
+  const floorRoomIds = useMemo(
+    () => new Set(spaces.filter(space => space.floor_id === floor.id).map(space => space.id)),
+    [spaces, floor.id]
+  );
+  const seededSeats = useMemo(
+    () => spaceSeats.filter(seat => floorRoomIds.has(seat.space_id)).map(toSeatDraft),
+    [spaceSeats, floorRoomIds]
+  );
+  const seededDesks = useMemo(
+    () => spaceDesks.filter(desk => floorRoomIds.has(desk.space_id)).map(toDeskDraft),
+    [spaceDesks, floorRoomIds]
+  );
 
   const [rooms, setRooms] = useState<RoomDraft[]>(seededRooms);
   const [seats, setSeats] = useState<SeatDraft[]>(seededSeats);
+  const [desks, setDesks] = useState<DeskDraft[]>(seededDesks);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
+  const [selectedDeskId, setSelectedDeskId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -185,8 +222,10 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
   const reset = () => {
     setRooms(seededRooms);
     setSeats(seededSeats);
+    setDesks(seededDesks);
     setSelectedRoomId(null);
     setSelectedSeatId(null);
+    setSelectedDeskId(null);
     setDirty(false);
   };
 
@@ -214,9 +253,12 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
   );
 
   const draftSeatsAsSpaces = useMemo<SpaceSeat[]>(() => seats.map(seat => ({ ...seat })), [seats]);
+  const draftDesksAsSpaces = useMemo<SpaceDesk[]>(() => desks.map(desk => ({ ...desk })), [desks]);
 
   const selectedRoom = draftRoomsAsSpaces.find(room => room.id === selectedRoomId) || null;
   const selectedSeat = seats.find(seat => seat.id === selectedSeatId) || null;
+  const selectedDesk = desks.find(desk => desk.id === selectedDeskId) || null;
+  const desksOfRoom = (roomId: string) => desks.filter(desk => desk.space_id === roomId);
 
   const colorForRoom = useCallback(
     (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -236,11 +278,13 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
 
   const resizeRoom = (room: Space, width: number, depth: number, x: number, z: number) => {
     updateRoom(room.id, { room_width: width, room_depth: depth, pos_x: x, pos_z: z });
-    // Shrinking a room pulls its chairs back inside instead of leaving them in the corridor.
+    // Shrinking a room pulls its furniture back inside instead of leaving it in the corridor.
+    const size = { room_width: width, room_depth: depth };
     setSeats(prev => prev.map(seat => (
-      seat.space_id === room.id
-        ? { ...seat, ...clampSeatToRoom({ room_width: width, room_depth: depth }, seat.x, seat.z) }
-        : seat
+      seat.space_id === room.id ? { ...seat, ...clampSeatToRoom(size, seat.x, seat.z) } : seat
+    )));
+    setDesks(prev => prev.map(desk => (
+      desk.space_id === room.id ? { ...desk, ...clampDeskToRoom(size, desk, desk.x, desk.z) } : desk
     )));
   };
 
@@ -248,6 +292,93 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     const room = rooms.find(entry => entry.id === seat.space_id);
     const position = clampSeatToRoom(room || {}, snap(x), snap(z));
     setSeats(prev => prev.map(entry => (entry.id === seat.id ? { ...entry, x: position.x, z: position.z } : entry)));
+    setDirty(true);
+  };
+
+  const updateDesk = (id: string, patch: Partial<DeskDraft>) => {
+    setDesks(prev => prev.map(desk => (desk.id === id ? { ...desk, ...patch } : desk)));
+    setDirty(true);
+  };
+
+  /** Move or resize a desk, keeping its footprint inside its room. */
+  const placeDesk = (desk: SpaceDesk, patch: Partial<DeskDraft>) => {
+    const room = rooms.find(entry => entry.id === desk.space_id);
+    const next = { ...desk, ...patch };
+    const position = clampDeskToRoom(
+      (room || {}) as { room_width?: number; room_depth?: number },
+      { width: next.width, depth: next.depth, rotation: next.rotation },
+      snap(next.x ?? desk.x),
+      snap(next.z ?? desk.z)
+    );
+    updateDesk(desk.id, { ...patch, x: position.x, z: position.z });
+  };
+
+  const moveDesk = (desk: SpaceDesk, x: number, z: number) => placeDesk(desk, { x, z });
+
+  const resizeDesk = (desk: SpaceDesk, width: number, depth: number) => placeDesk(desk, {
+    width: Math.max(MIN_DESK_SIZE, width),
+    depth: Math.max(MIN_DESK_SIZE, depth),
+  });
+
+  const rotateDesk = (desk: SpaceDesk, degrees: number) => placeDesk(desk, {
+    rotation: ((Math.round(degrees) % 360) + 360) % 360,
+  });
+
+  /** Drop one desk into a room, just inside the north wall. */
+  const addDesk = (room: Space, preset: (typeof DESK_PRESETS)[number]['id'] = 'single') => {
+    const draft = rooms.find(entry => entry.id === room.id);
+    if (!draft) return;
+    const size = defaultDeskSize(preset);
+    const position = clampDeskToRoom(draft, { ...size, rotation: 0 }, 0, -draft.room_depth / 2 + size.depth / 2 + 0.45);
+    const desk: DeskDraft = {
+      id: crypto.randomUUID(),
+      space_id: room.id,
+      label: `${DESK_PRESETS.find(presetEntry => presetEntry.id === preset)?.label || 'Desk'} ${desksOfRoom(room.id).length + 1}`,
+      description: null,
+      x: position.x,
+      z: position.z,
+      width: size.width,
+      depth: size.depth,
+      rotation: 0,
+      active: true,
+    };
+    setDesks(prev => [...prev, desk]);
+    setSelectedDeskId(desk.id);
+    setSelectedSeatId(null);
+    setSelectedRoomId(room.id);
+    setDirty(true);
+  };
+
+  /** A whole row of desks along a wall, sized to fit the room. */
+  const addDeskRow = (room: Space) => {
+    const draft = rooms.find(entry => entry.id === room.id);
+    if (!draft) return;
+    const count = Math.max(2, Math.min(8, Math.floor(draft.room_width / 1.7)));
+    const size = defaultDeskSize('single');
+    const row = deskRow(draft, count, { size });
+    const existing = desksOfRoom(room.id).length;
+    const added: DeskDraft[] = row.map((position, index) => ({
+      id: crypto.randomUUID(),
+      space_id: room.id,
+      label: `Desk ${existing + index + 1}`,
+      description: null,
+      x: position.x,
+      z: position.z,
+      width: position.width,
+      depth: position.depth,
+      rotation: 0,
+      active: true,
+    }));
+    setDesks(prev => [...prev, ...added]);
+    setSelectedDeskId(added[0]?.id || null);
+    setSelectedSeatId(null);
+    setSelectedRoomId(room.id);
+    setDirty(true);
+  };
+
+  const removeDesk = (deskId: string) => {
+    setDesks(prev => prev.filter(desk => desk.id !== deskId));
+    setSelectedDeskId(null);
     setDirty(true);
   };
 
@@ -353,6 +484,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
         capacity: room.capacity,
         floor_id: room.floor_id,
       })),
+      desks,
       seats,
     });
     setSaving(false);
@@ -368,7 +500,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
       <Card
         title="Floor plan editor"
-        subtitle="Drag a room to move it, pull a corner to resize it, drag a chair to place it."
+        subtitle="Drag a room, a chair or a desk to move it; pull a corner to resize it."
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <div className="flex items-center gap-1.5">
@@ -406,29 +538,40 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
             floor={floor}
             rooms={draftRoomsAsSpaces}
             seats={draftSeatsAsSpaces}
+            desks={draftDesksAsSpaces}
             takenSeatIds={[]}
             mode="editor"
             selectedRoomId={selectedRoomId}
             selectedSeatId={selectedSeatId}
+            selectedDeskId={selectedDeskId}
             colorForRoom={colorForRoom}
             kindForRoom={kindForRoom}
             onSelectRoom={room => {
               setSelectedRoomId(room?.id || null);
               setSelectedSeatId(null);
+              setSelectedDeskId(null);
             }}
             onSelectSeat={(seat, room) => {
               setSelectedRoomId(room.id);
               setSelectedSeatId(seat.id);
+              setSelectedDeskId(null);
+            }}
+            onSelectDesk={(desk, room) => {
+              setSelectedRoomId(room.id);
+              setSelectedDeskId(desk.id);
+              setSelectedSeatId(null);
             }}
             onMoveRoom={moveRoom}
             onResizeRoom={resizeRoom}
             onMoveSeat={moveSeat}
+            onMoveDesk={moveDesk}
+            onResizeDesk={resizeDesk}
           />
         </div>
       </Card>
 
       <div className="space-y-3">
-        <Card title="Rooms on this floor" subtitle="Select a room to edit its size and chairs.">
+        <Card title="Rooms on this floor" subtitle="Select a room to edit its size, chairs and furniture.">
           {roomsOnFloor.length === 0 && (
             <p className="text-[12px] text-[var(--ink-4)]">Nothing placed yet — add a room below.</p>
           )}
@@ -440,7 +583,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                 <li key={room.id}>
                   <button
                     type="button"
-                    onClick={() => { setSelectedRoomId(room.id); setSelectedSeatId(null); }}
+                    onClick={() => { setSelectedRoomId(room.id); setSelectedSeatId(null); setSelectedDeskId(null); }}
                     className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-[var(--radius-control)] border px-2.5 py-1.5 text-left transition-colors ${
                       isSelected
                         ? 'border-[var(--accent)] bg-[var(--surface-muted)]'
@@ -451,7 +594,9 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: type?.color || '#64748b' }} />
                       <span className="truncate text-[12px] font-semibold text-[var(--ink)]">{room.name}</span>
                     </span>
-                    <span className="shrink-0 font-mono text-[10.5px] text-[var(--ink-4)]">{seatCountFor(room.id)}</span>
+                    <span className="shrink-0 font-mono text-[10.5px] text-[var(--ink-4)]">
+                      {seatCountFor(room.id)} chairs · {desksOfRoom(room.id).length} desks
+                    </span>
                   </button>
                 </li>
               );
@@ -459,7 +604,82 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
           </ul>
         </Card>
 
-        {selectedSeat ? (
+        {selectedDesk ? (
+          <Card
+            title={selectedDesk.label || 'Desk'}
+            subtitle={`Furniture · ${roomsById.get(selectedDesk.space_id)?.name || 'Room'}`}
+          >
+            <div className="space-y-2">
+              <div>
+                <label className="ui-label mb-1 block">Label</label>
+                <input
+                  type="text"
+                  value={selectedDesk.label ?? ''}
+                  onChange={event => updateDesk(selectedDesk.id, { label: event.target.value })}
+                  className="ui-input w-full"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="ui-label mb-1 block">Width (m)</label>
+                  <input
+                    type="number" step="0.05" min={MIN_DESK_SIZE} value={selectedDesk.width}
+                    onChange={event => resizeDesk(selectedDesk, Number(event.target.value), selectedDesk.depth)}
+                    className="ui-input w-full font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="ui-label mb-1 block">Depth (m)</label>
+                  <input
+                    type="number" step="0.05" min={MIN_DESK_SIZE} value={selectedDesk.depth}
+                    onChange={event => resizeDesk(selectedDesk, selectedDesk.width, Number(event.target.value))}
+                    className="ui-input w-full font-mono"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="ui-label mb-1 block">Rotation</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[0, 90, 180, 270].map(angle => (
+                    <button
+                      key={angle}
+                      type="button"
+                      onClick={() => rotateDesk(selectedDesk, angle)}
+                      className={`cursor-pointer rounded-[var(--radius-control)] border px-2 py-1 font-mono text-[11px] transition-colors ${
+                        Math.round(selectedDesk.rotation) === angle
+                          ? 'border-[var(--accent)] bg-[var(--surface-muted)] font-semibold text-[var(--ink)]'
+                          : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
+                      }`}
+                    >
+                      {angle}°
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="ui-label mb-1 block">X (m)</label>
+                  <input
+                    type="number" step="0.25" value={selectedDesk.x}
+                    onChange={event => moveDesk(selectedDesk, Number(event.target.value), selectedDesk.z)}
+                    className="ui-input w-full font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="ui-label mb-1 block">Z (m)</label>
+                  <input
+                    type="number" step="0.25" value={selectedDesk.z}
+                    onChange={event => moveDesk(selectedDesk, selectedDesk.x, Number(event.target.value))}
+                    className="ui-input w-full font-mono"
+                  />
+                </div>
+              </div>
+              <Button size="sm" variant="secondary" className="w-full" onClick={() => removeDesk(selectedDesk.id)}>
+                <Trash2 className="h-3.5 w-3.5" /> Remove this desk
+              </Button>
+            </div>
+          </Card>
+        ) : selectedSeat ? (
           <Card title="Chair" subtitle={seatLabel(selectedSeat, seats.filter(seat => seat.space_id === selectedSeat.space_id).findIndex(seat => seat.id === selectedSeat.id))}>
             <div className="space-y-2">
               <div>
@@ -535,15 +755,50 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                   <Plus className="h-3.5 w-3.5" /> Chair
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => regenerateRoomSeats(selectedRoom)}>
-                  <Redo2 className="h-3.5 w-3.5" /> Re-lay
+                  <Redo2 className="h-3.5 w-3.5" /> Re-lay chairs
                 </Button>
+              </div>
+
+              <div className="border-t border-[var(--line)] pt-2">
+                <p className="ui-label mb-1.5">Furniture · {desksOfRoom(selectedRoom.id).length} desk{desksOfRoom(selectedRoom.id).length === 1 ? '' : 's'}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => addDesk(selectedRoom)}>
+                    <RectangleHorizontal className="h-3.5 w-3.5" /> Desk
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => addDeskRow(selectedRoom)}>
+                    <Rows3 className="h-3.5 w-3.5" /> Desk row
+                  </Button>
+                </div>
+                {desksOfRoom(selectedRoom.id).length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {desksOfRoom(selectedRoom.id).map(desk => (
+                      <li key={desk.id}>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedDeskId(desk.id); setSelectedSeatId(null); }}
+                          className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-[var(--radius-control)] border px-2 py-1 text-left transition-colors ${
+                            desk.id === selectedDeskId
+                              ? 'border-[var(--accent)] bg-[var(--surface-muted)]'
+                              : 'border-[var(--line)] bg-white hover:bg-[var(--surface-muted)]'
+                          }`}
+                        >
+                          <span className="truncate text-[11.5px] font-medium text-[var(--ink-2)]">{desk.label || 'Desk'}</span>
+                          <span className="shrink-0 font-mono text-[10px] text-[var(--ink-4)]">
+                            {desk.width.toFixed(2)} × {desk.depth.toFixed(2)} m
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </Card>
         ) : (
-          <Card title="Nothing selected" subtitle="Click a room or a chair in the plan.">
+          <Card title="Nothing selected" subtitle="Click a room, a chair or a desk in the plan.">
             <p className="text-[12px] text-[var(--ink-4)]">
-              Rooms snap to a 25 cm grid. Chairs stay inside their room, even when the walls move.
+              Everything snaps to a 25 cm grid. Chairs and desks stay inside their room, even when the
+              walls move, and a room shrinks its furniture back in with it.
             </p>
           </Card>
         )}

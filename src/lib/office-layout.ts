@@ -1,4 +1,4 @@
-import type { OfficeFloor, Space, SpaceSeat, SpaceType } from '@/lib/types';
+import type { OfficeFloor, Space, SpaceDesk, SpaceSeat, SpaceType } from '@/lib/types';
 
 /**
  * Floor-plan maths shared by the 3D editor, the employee view and the tests.
@@ -92,7 +92,9 @@ export function resizeFromCorner(
   posX: number,
   posZ: number,
   corner: RoomCorner,
-  point: { x: number; z: number }
+  point: { x: number; z: number },
+  /** Smallest side the drag may leave behind — rooms and desks have different floors. */
+  minimum = MIN_ROOM_SIZE
 ): { pos_x: number; pos_z: number; room_width: number; room_depth: number } {
   const { width, depth } = roomSize(room);
   const west = posX - width / 2;
@@ -105,8 +107,8 @@ export function resizeFromCorner(
   const anchorX = movingWest ? east : west;
   const anchorZ = movingNorth ? south : north;
 
-  const nextWidth = Math.max(MIN_ROOM_SIZE, Math.abs(snap(point.x) - anchorX));
-  const nextDepth = Math.max(MIN_ROOM_SIZE, Math.abs(snap(point.z) - anchorZ));
+  const nextWidth = Math.max(minimum, Math.abs(snap(point.x) - anchorX));
+  const nextDepth = Math.max(minimum, Math.abs(snap(point.z) - anchorZ));
 
   return {
     room_width: round2(nextWidth),
@@ -114,6 +116,82 @@ export function resizeFromCorner(
     pos_x: round2(movingWest ? anchorX - nextWidth / 2 : anchorX + nextWidth / 2),
     pos_z: round2(movingNorth ? anchorZ - nextDepth / 2 : anchorZ + nextDepth / 2),
   };
+}
+
+/** Footprints the editor offers as starting points, in metres. */
+export const DESK_PRESETS = [
+  { id: 'single', label: 'Desk', width: 1.4, depth: 0.7 },
+  { id: 'compact', label: 'Compact desk', width: 1.1, depth: 0.6 },
+  { id: 'bench', label: 'Bench seat', width: 2.4, depth: 0.75 },
+  { id: 'table', label: 'Shared table', width: 2.8, depth: 1.1 },
+  { id: 'meeting', label: 'Meeting table', width: 3.2, depth: 1.4 },
+] as const;
+
+export const MIN_DESK_SIZE = 0.6;
+
+export const defaultDeskSize = (preset: (typeof DESK_PRESETS)[number]['id'] = 'single') => {
+  const entry = DESK_PRESETS.find(presetEntry => presetEntry.id === preset) || DESK_PRESETS[0];
+  return { width: entry.width, depth: entry.depth };
+};
+
+/**
+ * A desk is rotated about its centre, so the space it actually needs is its bounding box. Keeping
+ * the box inside the room is what stops a rotated desk from poking through a wall.
+ */
+export function deskFootprint(desk: Pick<SpaceDesk, 'width' | 'depth' | 'rotation'>): { width: number; depth: number } {
+  const angle = (Number(desk.rotation) || 0) * (Math.PI / 180);
+  const width = Math.max(Number(desk.width) || 1.4, MIN_DESK_SIZE);
+  const depth = Math.max(Number(desk.depth) || 0.7, MIN_DESK_SIZE);
+  const cos = Math.abs(Math.cos(angle));
+  const sin = Math.abs(Math.sin(angle));
+  return { width: width * cos + depth * sin, depth: width * sin + depth * cos };
+}
+
+/** Keep a dragged desk inside its room, measured by what the desk actually occupies. */
+export function clampDeskToRoom(
+  room: Pick<Space, 'room_width' | 'room_depth'>,
+  desk: Pick<SpaceDesk, 'width' | 'depth' | 'rotation'>,
+  x: number,
+  z: number
+): { x: number; z: number } {
+  const { width, depth } = roomSize(room);
+  const footprint = deskFootprint(desk);
+  const maxX = Math.max(width / 2 - footprint.width / 2 - 0.05, 0);
+  const maxZ = Math.max(depth / 2 - footprint.depth / 2 - 0.05, 0);
+  return {
+    x: Math.min(Math.max(x, -maxX), maxX),
+    z: Math.min(Math.max(z, -maxZ), maxZ),
+  };
+}
+
+/**
+ * A row of desks along one wall — the way a whole-day area is actually furnished. The row squeezes
+ * its gaps (then the desks) rather than overflowing a room that is too narrow for it.
+ */
+export function deskRow(
+  room: Pick<Space, 'room_width' | 'room_depth'>,
+  count: number,
+  options: { size?: { width: number; depth: number }; gap?: number; along?: 'north' | 'south' } = {}
+): Array<{ x: number; z: number; width: number; depth: number }> {
+  const total = Math.max(0, Math.round(count));
+  if (total === 0) return [];
+  const size = options.size || defaultDeskSize('single');
+  const gap = options.gap ?? 0.5;
+  const { width: roomWidth, depth: roomDepth } = roomSize(room);
+  const usable = Math.max(roomWidth - SEAT_MARGIN * 2, size.width);
+  const wanted = total * size.width + (total - 1) * gap;
+  const scale = wanted > usable ? usable / wanted : 1;
+  const deskWidth = Math.max(MIN_DESK_SIZE, size.width * scale);
+  const spacing = total > 1 ? ((usable - deskWidth * total) / (total - 1)) : 0;
+  const startX = -((total - 1) * (deskWidth + spacing)) / 2;
+  const z = (options.along === 'south' ? 1 : -1) * Math.max(roomDepth / 2 - size.depth / 2 - SEAT_MARGIN, 0);
+
+  return Array.from({ length: total }, (_, index) => ({
+    x: round2(startX + index * (deskWidth + spacing)),
+    z: round2(z),
+    width: round2(deskWidth),
+    depth: size.depth,
+  }));
 }
 
 /**

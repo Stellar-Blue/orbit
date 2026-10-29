@@ -597,6 +597,7 @@ export interface Space {
   space_type?: SpaceType;
   sessions?: SpaceSession[];
   seats?: SpaceSeat[];
+  desks?: SpaceDesk[];
 }
 
 /** A floor (or office) the 3D plan draws; rooms hang off exactly one floor. */
@@ -607,6 +608,22 @@ export interface OfficeFloor {
   width: number;
   depth: number;
   sort_order: number;
+  active: boolean;
+  created_at?: string;
+}
+
+/** A desk drawn inside a room. Furniture only — seats are booked, desks are not. */
+export interface SpaceDesk {
+  id: string;
+  space_id: string;
+  label?: string | null;
+  description?: string | null;
+  /** Centre of the desk, metres from the room centre: X east, Z south. */
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  rotation: number;
   active: boolean;
   created_at?: string;
 }

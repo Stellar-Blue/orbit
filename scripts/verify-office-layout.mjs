@@ -8,13 +8,19 @@
  */
 
 import {
+  DESK_PRESETS,
+  MIN_DESK_SIZE,
   MIN_ROOM_SIZE,
   SEAT_MARGIN,
   SNAP_STEP,
   autoLayoutRooms,
+  clampDeskToRoom,
   clampRoomToFloor,
   clampSeatToRoom,
+  defaultDeskSize,
   defaultRoomSize,
+  deskFootprint,
+  deskRow,
   freeSeatIds,
   resizeFromCorner,
   roomSize,
@@ -133,6 +139,46 @@ assert(
 assert(
   seatLabel({ ...seats[0], label: 'Window' }, 0) === 'Window',
   'A named chair keeps its name'
+);
+
+// ---- desks -------------------------------------------------------------------------
+assert(
+  defaultDeskSize('single').width === 1.4 && DESK_PRESETS.length >= 4,
+  'A new desk starts from a real-world footprint',
+  DESK_PRESETS.map(preset => preset.label).join(', ')
+);
+assert(
+  deskFootprint({ width: 2, depth: 1, rotation: 0 }).width === 2,
+  'An unrotated desk takes exactly its own width'
+);
+assert(
+  Math.abs(deskFootprint({ width: 2, depth: 1, rotation: 90 }).width - 1) < 1e-9,
+  'A desk turned 90° takes its depth where its width was'
+);
+const tightDesk = clampDeskToRoom(desks, { width: 1.4, depth: 0.7, rotation: 0 }, 100, -100);
+assert(
+  tightDesk.x === 5 - 0.7 - 0.05 && tightDesk.z === -(3 - 0.35 - 0.05),
+  'A desk cannot be dragged through a wall',
+  `x ${tightDesk.x} · z ${tightDesk.z}`
+);
+const row = deskRow(desks, 4, { size: { width: 1.4, depth: 0.7 } });
+assert(row.length === 4, 'A desk row adds one desk per place');
+assert(
+  row.every(desk => clampDeskToRoom(desks, desk, desk.x, desk.z).x === desk.x),
+  'Every desk in a row fits inside the room'
+);
+assert(
+  new Set(row.map(desk => desk.x)).size === 4,
+  'A desk row never stacks two desks on one spot'
+);
+assert(
+  deskRow({ room_width: 2, room_depth: 2 }, 6).every(desk => desk.width >= MIN_DESK_SIZE),
+  'A row squeezed into a narrow room stops at the minimum desk size'
+);
+assert(deskRow(desks, 0).length === 0, 'Zero places means no desks');
+assert(
+  resizeFromCorner({ room_width: 1.4, room_depth: 0.7 }, 0, 0, 'se', { x: -0.7, z: -0.35 }, MIN_DESK_SIZE).room_width === MIN_DESK_SIZE,
+  'A desk corner drag stops at the desk minimum, not the room minimum'
 );
 
 console.log('\n================================================================');

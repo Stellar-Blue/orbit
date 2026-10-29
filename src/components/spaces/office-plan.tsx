@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { Building2, MousePointerClick } from 'lucide-react';
 import { Card } from '@/components/ui/primitives';
-import type { OfficeFloor, Space, SpaceSeat, SpaceType } from '@/lib/types';
+import type { OfficeFloor, Space, SpaceDesk, SpaceSeat, SpaceType } from '@/lib/types';
 import type { Office3DProps } from '@/components/spaces/office-3d';
 
 const Office3D = dynamic<Office3DProps>(
@@ -23,6 +23,7 @@ export interface OfficePlanProps {
   floor: OfficeFloor;
   rooms: Space[];
   seats: SpaceSeat[];
+  desks?: SpaceDesk[];
   typesById: Map<string, SpaceType>;
   takenSeatIds: string[];
   mySeatIds?: string[];
@@ -41,7 +42,7 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, typesById, takenSeatIds, mySeatIds, onPickSeat, height = 540,
+  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, onPickSeat, height = 540,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -75,6 +76,7 @@ export function OfficePlan({
           floor={floor}
           rooms={rooms}
           seats={seats}
+          desks={desks}
           takenSeatIds={takenSeatIds}
           mySeatIds={mySeatIds}
           mode="viewer"

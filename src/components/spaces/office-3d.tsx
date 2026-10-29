@@ -5,9 +5,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { OfficeFloor, Space, SpaceSeat } from '@/lib/types';
+import type { OfficeFloor, Space, SpaceDesk, SpaceSeat } from '@/lib/types';
 import {
-  clampRoomToFloor, clampSeatToRoom, resizeFromCorner, roomSize, snap, type RoomCorner,
+  clampDeskToRoom, clampRoomToFloor, clampSeatToRoom, resizeFromCorner, roomSize, snap, type RoomCorner,
 } from '@/lib/office-layout';
 
 /**
@@ -40,29 +40,36 @@ export interface Office3DProps {
   floor: OfficeFloor;
   rooms: Space[];
   seats: SpaceSeat[];
+  /** Furniture drawn in the rooms. Desks never take a booking. */
+  desks?: SpaceDesk[];
   /** Seat ids already taken on the day being shown. */
   takenSeatIds: string[];
   /** The viewer's own chairs for the day, highlighted green. One per room at most. */
   mySeatIds?: string[];
   selectedRoomId?: string | null;
   selectedSeatId?: string | null;
+  selectedDeskId?: string | null;
   mode: Office3DMode;
   colorForRoom: (room: Space) => string;
-  /** How the room is booked: a whole-day area gets a desk per chair. */
+  /** How the room is booked — meeting rooms get a screen on the wall. */
   kindForRoom?: (room: Space) => 'whole_day' | 'time_range' | null;
   onSelectRoom?: (room: Space | null) => void;
   onSelectSeat?: (seat: SpaceSeat, room: Space) => void;
+  onSelectDesk?: (desk: SpaceDesk, room: Space) => void;
   onMoveRoom?: (room: Space, x: number, z: number) => void;
   onResizeRoom?: (room: Space, width: number, depth: number, x: number, z: number) => void;
   onMoveSeat?: (seat: SpaceSeat, x: number, z: number) => void;
+  onMoveDesk?: (desk: SpaceDesk, x: number, z: number) => void;
+  onResizeDesk?: (desk: SpaceDesk, width: number, depth: number) => void;
 }
 
-type PickedKind = 'room' | 'seat' | 'handle';
+type PickedKind = 'room' | 'seat' | 'desk' | 'handle' | 'desk-handle';
 
 interface DragState {
-  kind: 'room' | 'corner' | 'seat';
+  kind: 'room' | 'corner' | 'seat' | 'desk' | 'desk-corner';
   roomId: string;
   seatId?: string;
+  deskId?: string;
   corner?: RoomCorner;
   start: THREE.Vector3;
   anchor: { x: number; z: number };
@@ -119,49 +126,87 @@ const material = (color: THREE.ColorRepresentation, options: THREE.MeshStandardM
 const rounded = (width: number, height: number, depth: number, radius: number) =>
   new RoundedBoxGeometry(width, height, depth, 2, radius);
 
-/** A desk with a monitor and a keyboard, sitting in front of its chair. */
+/**
+ * A desk with a screen and a keyboard. Built once at its unit size and scaled to the footprint it is
+ * given, so a corner drag resizes it without rebuilding the scene.
+ */
 function buildDesk(): THREE.Group {
   const desk = new THREE.Group();
-  const z = -0.52;
+  const wood = material(COLORS.desk, { roughness: 0.72 });
   const metal = material(COLORS.leg, { metalness: 0.2, roughness: 0.5 });
 
-  const top = new THREE.Mesh(rounded(1.12, 0.055, 0.62, 0.025), material(COLORS.desk, { roughness: 0.72 }));
-  top.position.set(0, 0.74, z);
+  const top = new THREE.Mesh(rounded(1, 0.055, 1, 0.018), wood);
+  top.name = 'desk-top';
+  top.position.y = 0.74;
   top.castShadow = true;
   top.receiveShadow = true;
   desk.add(top);
 
-  const legGeometry = new THREE.CylinderGeometry(0.019, 0.019, 0.72, 8);
-  [-0.5, 0.5].forEach(x => {
-    [-0.24, 0.24].forEach(offset => {
-      const leg = new THREE.Mesh(legGeometry, metal);
-      leg.position.set(x, 0.36, z + offset);
+  const frame = new THREE.Group();
+  frame.name = 'desk-frame';
+  desk.add(frame);
+
+  [-1, 1].forEach(sx => {
+    [-1, 1].forEach(sz => {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.72, 8), metal);
+      leg.position.set(sx, 0.36, sz);
       leg.castShadow = true;
-      desk.add(leg);
+      frame.add(leg);
     });
   });
 
-  const foot = new THREE.Mesh(rounded(0.26, 0.02, 0.16, 0.008), metal);
-  foot.position.set(0, 0.78, z - 0.12);
-  desk.add(foot);
-
-  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 8), metal);
-  stand.position.set(0, 0.88, z - 0.12);
-  desk.add(stand);
-
-  const screen = new THREE.Mesh(rounded(0.62, 0.36, 0.035, 0.014), material(COLORS.screen, { roughness: 0.45 }));
-  screen.position.set(0, 1.14, z - 0.12);
+  const screen = new THREE.Mesh(rounded(0.5, 0.3, 0.03, 0.012), material(COLORS.screen, { roughness: 0.45 }));
+  screen.name = 'desk-screen';
+  screen.position.set(0, 1.06, -0.3);
   screen.castShadow = true;
   desk.add(screen);
 
-  const keyboard = new THREE.Mesh(rounded(0.34, 0.014, 0.13, 0.008), material(COLORS.paper, { roughness: 0.6 }));
-  keyboard.position.set(0, 0.78, z + 0.2);
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.16, 8), metal);
+  stand.name = 'desk-stand';
+  stand.position.set(0, 0.85, -0.3);
+  desk.add(stand);
+
+  const keyboard = new THREE.Mesh(rounded(0.3, 0.012, 0.12, 0.006), material(COLORS.paper, { roughness: 0.6 }));
+  keyboard.name = 'desk-keyboard';
+  keyboard.position.set(0, 0.775, 0.02);
   desk.add(keyboard);
 
   return desk;
 }
 
-/** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. */
+/** Shape a desk to its footprint: the top stretches, the legs move to the corners, the props follow. */
+function shapeDesk(desk: THREE.Group, width: number, depth: number): void {
+  const w = Math.max(0.3, width);
+  const d = Math.max(0.3, depth);
+  const hasProps = w >= 0.9;
+
+  const top = desk.getObjectByName('desk-top');
+  if (top) top.scale.set(w, 1, d);
+
+  desk.getObjectByName('desk-frame')?.children.forEach(child => {
+    child.position.x *= Math.max(w / 2 - 0.06, 0);
+    child.position.z *= Math.max(d / 2 - 0.06, 0);
+  });
+
+  const screen = desk.getObjectByName('desk-screen');
+  if (screen) {
+    screen.visible = hasProps;
+    screen.position.set(0, 1.05, -d / 2 + 0.16);
+    screen.scale.set(THREE.MathUtils.clamp(w / 1.4, 0.8, 1.8), 1, 1);
+  }
+  const stand = desk.getObjectByName('desk-stand');
+  if (stand) {
+    stand.visible = hasProps;
+    stand.position.set(0, 0.82, -d / 2 + 0.16);
+  }
+  const keyboard = desk.getObjectByName('desk-keyboard');
+  if (keyboard) {
+    keyboard.visible = hasProps;
+    keyboard.position.set(0, 0.775, Math.min(0.1, d / 2 - 0.12));
+  }
+}
+
+/** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. *//** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. */
 function softShadow(size: number, depth: number, opacity: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(size, depth),
@@ -370,23 +415,33 @@ function cutAwayWalls(state: SceneState): void {
 }
 
 export const Office3D: React.FC<Office3DProps> = ({
-  floor, rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode,
-  colorForRoom, kindForRoom, onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat,
+  floor, rooms, seats, desks = [], takenSeatIds, mySeatIds,
+  selectedRoomId, selectedSeatId, selectedDeskId, mode,
+  colorForRoom, kindForRoom, onSelectRoom, onSelectSeat, onSelectDesk,
+  onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<SceneState | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  const dataRef = useRef({ rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode });
-  const callbacksRef = useRef({ onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat });
+  const dataRef = useRef({
+    rooms, seats, desks, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, selectedDeskId, mode,
+  });
+  const callbacksRef = useRef({
+    onSelectRoom, onSelectSeat, onSelectDesk, onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
+  });
   const colorRef = useRef(colorForRoom);
   const kindRef = useRef(kindForRoom);
   const floorRef = useRef(floor);
 
   useEffect(() => {
-    dataRef.current = { rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode };
-    callbacksRef.current = { onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat };
+    dataRef.current = {
+      rooms, seats, desks, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, selectedDeskId, mode,
+    };
+    callbacksRef.current = {
+      onSelectRoom, onSelectSeat, onSelectDesk, onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
+    };
     colorRef.current = colorForRoom;
     kindRef.current = kindForRoom;
     floorRef.current = floor;
@@ -414,19 +469,22 @@ export const Office3D: React.FC<Office3DProps> = ({
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, state.camera);
     const hits = raycaster.intersectObjects(state.pickables, true);
-    // Seats and handles are small and sit inside the room volume, so they win over the room box.
-    for (const kind of ['handle', 'seat', 'room'] as PickedKind[]) {
-      const match = hits.find(hit => (hit.object.userData as { kind?: string }).kind === kind);
-      if (match) {
-        return {
-          data: match.object.userData as {
-            kind: PickedKind; roomId: string; seatId?: string; corner?: RoomCorner; label?: string;
-          },
-          point: match.point,
-        };
-      }
-    }
-    return null;
+    const kindOf = (hit: THREE.Intersection) => (hit.object.userData as { kind?: PickedKind }).kind;
+
+    // A room's hit box is as tall as its walls, so its near face is always in front of the furniture
+    // inside it. Handles are likewise hit "through" the object they belong to. Both are therefore
+    // resolved by priority; chairs and desks compete on plain distance, which is what a click means.
+    const handle = hits.find(hit => kindOf(hit) === 'desk-handle') || hits.find(hit => kindOf(hit) === 'handle');
+    const item = handle || hits.find(hit => kindOf(hit) === 'seat' || kindOf(hit) === 'desk');
+    const match = item || hits.find(hit => kindOf(hit) === 'room');
+    if (!match) return null;
+    return {
+      data: match.object.userData as {
+        kind: PickedKind; roomId: string; seatId?: string; deskId?: string;
+        corner?: RoomCorner; label?: string;
+      },
+      point: match.point,
+    };
   }, []);
 
   // ---- scene lifecycle -----------------------------------------------------
@@ -535,13 +593,35 @@ export const Office3D: React.FC<Office3DProps> = ({
 
       // Editing: claim the gesture, or OrbitControls would orbit the camera instead.
       setHover(null);
+      if (hit.data.kind === 'desk' || hit.data.kind === 'desk-handle') canvas.style.cursor = 'move';
       event.stopPropagation();
       event.preventDefault();
       const point = groundPoint(current, event.clientX, event.clientY);
       if (!point) return;
       const anchor = { x: Number(room.pos_x) || 0, z: Number(room.pos_z) || 0 };
 
-      if (hit.data.kind === 'handle' && hit.data.corner && room.id === selectedRoom) {
+      const desk = hit.data.deskId ? dataRef.current.desks.find(entry => entry.id === hit.data.deskId) : undefined;
+      if (hit.data.kind === 'desk-handle' && hit.data.corner && desk) {
+        current.drag = {
+          kind: 'desk-corner',
+          roomId: room.id,
+          deskId: desk.id,
+          corner: hit.data.corner,
+          start: point,
+          anchor: { x: Number(desk.x) || 0, z: Number(desk.z) || 0 },
+          moved: false,
+          pending: { width: Number(desk.width) || 1.4, depth: Number(desk.depth) || 0.7, x: Number(desk.x) || 0, z: Number(desk.z) || 0 },
+        };
+      } else if (hit.data.kind === 'desk' && desk) {
+        current.drag = {
+          kind: 'desk',
+          roomId: room.id,
+          deskId: desk.id,
+          start: point,
+          anchor: { x: Number(desk.x) || 0, z: Number(desk.z) || 0 },
+          moved: false,
+        };
+      } else if (hit.data.kind === 'handle' && hit.data.corner && room.id === selectedRoom) {
         current.drag = { kind: 'corner', roomId: room.id, corner: hit.data.corner, start: point, anchor, moved: false };
       } else if (hit.data.kind === 'seat' && hit.data.seatId) {
         current.drag = { kind: 'seat', roomId: room.id, seatId: hit.data.seatId, start: point, anchor, moved: false };
@@ -597,6 +677,39 @@ export const Office3D: React.FC<Office3DProps> = ({
         drag.pending = { width: resized.room_width, depth: resized.room_depth, x: next.x, z: next.z };
         return;
       }
+      if (drag.kind === 'desk' && drag.deskId) {
+        const desk = dataRef.current.desks.find(entry => entry.id === drag.deskId);
+        const deskGroup = group.children.find(child => child.name === `desk:${drag.deskId}`) as THREE.Group | undefined;
+        if (!desk || !deskGroup) return;
+        const next = clampDeskToRoom(room, desk, snap(drag.anchor.x + dx), snap(drag.anchor.z + dz));
+        deskGroup.position.set(next.x, SEAT_BASE, next.z);
+        return;
+      }
+      if (drag.kind === 'desk-corner' && drag.deskId && drag.corner) {
+        const desk = dataRef.current.desks.find(entry => entry.id === drag.deskId);
+        const deskGroup = group.children.find(child => child.name === `desk:${drag.deskId}`) as THREE.Group | undefined;
+        if (!desk || !deskGroup) return;
+        const resized = resizeFromCorner(
+          { room_width: Number(desk.width) || 1.4, room_depth: Number(desk.depth) || 0.7 },
+          drag.anchor.x,
+          drag.anchor.z,
+          drag.corner,
+          { x: drag.anchor.x + dx, z: drag.anchor.z + dz },
+          0.6
+        );
+        const placed = clampDeskToRoom(
+          room,
+          { width: resized.room_width, depth: resized.room_depth, rotation: Number(desk.rotation) || 0 },
+          resized.pos_x,
+          resized.pos_z
+        );
+        deskGroup.position.set(placed.x, SEAT_BASE, placed.z);
+        shapeDesk(deskGroup, resized.room_width, resized.room_depth);
+        drag.pending = {
+          width: resized.room_width, depth: resized.room_depth, x: placed.x, z: placed.z,
+        };
+        return;
+      }
       if (drag.kind === 'seat' && drag.seatId) {
         const seatGroup = group.children.find(child => child.name === `seat:${drag.seatId}`) as THREE.Group | undefined;
         if (!seatGroup) return;
@@ -615,10 +728,11 @@ export const Office3D: React.FC<Office3DProps> = ({
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
 
       const {
-        onSelectRoom: selectRoom, onSelectSeat: selectSeat,
+        onSelectRoom: selectRoom, onSelectSeat: selectSeat, onSelectDesk: selectDesk,
         onMoveRoom: moveRoom, onResizeRoom: resizeRoom, onMoveSeat: moveSeat,
+        onMoveDesk: moveDesk, onResizeDesk: resizeDesk,
       } = callbacksRef.current;
-      const { rooms: currentRooms, seats: currentSeats } = dataRef.current;
+      const { rooms: currentRooms, seats: currentSeats, desks: currentDesks } = dataRef.current;
 
       // A click (not a drag) selects — in the viewer that is how a seat gets booked.
       const isClick = pointer
@@ -640,6 +754,11 @@ export const Office3D: React.FC<Office3DProps> = ({
           if (seat) selectSeat?.(seat, room);
           return;
         }
+        if ((hit.data.kind === 'desk' || hit.data.kind === 'desk-handle') && hit.data.deskId) {
+          const desk = currentDesks.find(entry => entry.id === hit.data.deskId);
+          if (desk) selectDesk?.(desk, room);
+          return;
+        }
         selectRoom?.(room);
         return;
       }
@@ -652,6 +771,11 @@ export const Office3D: React.FC<Office3DProps> = ({
         if (drag.seatId) {
           const seat = currentSeats.find(entry => entry.id === drag.seatId);
           if (seat) selectSeat?.(seat, room);
+          return;
+        }
+        if (drag.deskId) {
+          const desk = currentDesks.find(entry => entry.id === drag.deskId);
+          if (desk) selectDesk?.(desk, room);
           return;
         }
         selectRoom?.(room);
@@ -677,6 +801,18 @@ export const Office3D: React.FC<Office3DProps> = ({
         const seat = currentSeats.find(entry => entry.id === drag.seatId);
         const seatGroup = group.children.find(child => child.name === `seat:${drag.seatId}`) as THREE.Group | undefined;
         if (seat && seatGroup) moveSeat?.(seat, snap(seatGroup.position.x), snap(seatGroup.position.z));
+        return;
+      }
+      if (drag.kind === 'desk' && drag.deskId) {
+        const desk = currentDesks.find(entry => entry.id === drag.deskId);
+        const deskGroup = group.children.find(child => child.name === `desk:${drag.deskId}`) as THREE.Group | undefined;
+        if (desk && deskGroup) moveDesk?.(desk, snap(deskGroup.position.x), snap(deskGroup.position.z));
+        return;
+      }
+      if (drag.kind === 'desk-corner' && drag.deskId) {
+        const desk = currentDesks.find(entry => entry.id === drag.deskId);
+        const pending = drag.pending;
+        if (desk && pending) resizeDesk?.(desk, snap(pending.width), snap(pending.depth));
       }
     };
 
@@ -859,15 +995,13 @@ export const Office3D: React.FC<Office3DProps> = ({
 
       group.add(shell);
 
-      const kind = kindRef.current?.(room) ?? null;
-      if (kind === 'time_range' && width >= 3.4) {
+      if (kindRef.current?.(room) === 'time_range' && width >= 3.4) {
         const screen = buildWallScreen(Math.min(width * 0.45, 1.6));
         screen.name = 'screen:n';
         shell.add(screen);
       }
 
       const roomSeats = seats.filter(seat => seat.space_id === room.id && seat.active);
-      const withDesks = kind === 'whole_day' && roomSeats.length > 2;
 
       roomSeats.forEach((seat, index) => {
         const isMine = mine.has(seat.id);
@@ -921,19 +1055,67 @@ export const Office3D: React.FC<Office3DProps> = ({
         chairBlob.position.set(-0.12, 0.004, -0.12);
         seatGroup.add(chairBlob);
 
-        if (withDesks) {
-          seatGroup.add(buildDesk());
-          const deskBlob = softShadow(2.0, 1.45, 0.7);
-          deskBlob.position.set(-0.15, 0.005, -0.62);
-          seatGroup.add(deskBlob);
-        }
-
         seatGroup.traverse(child => {
           child.userData = data;
         });
 
         group.add(seatGroup);
       });
+
+      // Desks: real furniture with their own footprint, placed and sized by an admin.
+      desks
+        .filter(desk => desk.space_id === room.id && desk.active)
+        .forEach(desk => {
+          const deskWidth = Math.max(Number(desk.width) || 1.4, 0.3);
+          const deskDepth = Math.max(Number(desk.depth) || 0.7, 0.3);
+          const isSelected = selectedDeskId === desk.id;
+          const deskGroup = new THREE.Group();
+          deskGroup.name = `desk:${desk.id}`;
+          deskGroup.position.set(Number(desk.x) || 0, SEAT_BASE, Number(desk.z) || 0);
+          deskGroup.rotation.y = ((Number(desk.rotation) || 0) * Math.PI) / 180;
+          const data = { kind: 'desk', roomId: room.id, deskId: desk.id, label: desk.label || 'Desk' };
+
+          deskGroup.add(buildDesk());
+          shapeDesk(deskGroup, deskWidth, deskDepth);
+
+          const deskBlob = softShadow(deskWidth * 1.28, deskDepth * 1.9, 0.62);
+          deskBlob.position.set(-0.06, 0.004, -0.06);
+          deskGroup.add(deskBlob);
+
+          if (isSelected) {
+            const outline = new THREE.LineSegments(
+              new THREE.EdgesGeometry(new THREE.BoxGeometry(deskWidth, 0.06, deskDepth)),
+              new THREE.LineBasicMaterial({ color: COLORS.selected })
+            );
+            outline.position.y = 0.76;
+            deskGroup.add(outline);
+          }
+
+          deskGroup.traverse(child => {
+            child.userData = data;
+          });
+          group.add(deskGroup);
+
+          if (mode === 'editor' && isSelected) {
+            (['nw', 'ne', 'sw', 'se'] as RoomCorner[]).forEach(corner => {
+              const handle = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1, 16, 16),
+                material(COLORS.selected, { roughness: 0.35, metalness: 0.15 })
+              );
+              handle.name = `desk-handle:${corner}`;
+              handle.position.set(
+                (corner === 'nw' || corner === 'sw' ? -1 : 1) * deskWidth / 2,
+                0.78,
+                (corner === 'nw' || corner === 'ne' ? -1 : 1) * deskDepth / 2
+              );
+              handle.castShadow = true;
+              handle.userData = {
+                kind: 'desk-handle', roomId: room.id, deskId: desk.id, corner, label: 'Drag to resize the desk',
+              };
+              deskGroup.add(handle);
+            });
+          }
+        });
 
       if (mode === 'editor' && selectedRoomId === room.id) {
         (['nw', 'ne', 'sw', 'se'] as RoomCorner[]).forEach(corner => {
@@ -956,7 +1138,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       state.pickables.push(group);
     });
 
-  }, [ready, rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode, floor.width, floor.depth, floor.id]);
+  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, selectedDeskId, mode, floor.width, floor.depth, floor.id]);
 
   return (
     <div className="relative w-full h-full">
