@@ -192,7 +192,10 @@ interface AppState {
   officeFloors: OfficeFloor[];
   spaceSeats: SpaceSeat[];
   spaceDesks: SpaceDesk[];
-  saveOfficeFloor: (input: { id?: string; name: string; width: number; depth: number }) => Promise<boolean>;
+  /** Saves the slab and answers with its id, so the editor can select the floor it just made. */
+  saveOfficeFloor: (input: { id?: string; name: string; width: number; depth: number }) => Promise<string | null>;
+  /** Deletes a floor; its rooms stay in Orbit but come off the plan. */
+  deleteOfficeFloor: (id: string) => Promise<boolean>;
   saveOfficeLayout: (input: {
     rooms: Array<{
       id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
@@ -5577,7 +5580,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /** Create or rename a floor and set its size. Only the plan depends on it, so nothing else moves. */
   const saveOfficeFloor = async (input: {
     id?: string; name: string; width: number; depth: number;
-  }): Promise<boolean> => {
+  }): Promise<string | null> => {
     const supabase = getSupabaseBrowserClient();
     const row = {
       name: input.name.trim(),
@@ -5586,41 +5589,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     if (!row.name) {
       alert('A floor needs a name.');
-      return false;
+      return null;
     }
     try {
       if (input.id) {
         const { error } = await supabase.from('office_floors').update(row).eq('id', input.id);
         if (error) {
           alert(`Could not save the floor: ${error.message}`);
-          return false;
+          return null;
         }
         setOfficeFloors(prev => prev.map(floor => (floor.id === input.id ? { ...floor, ...row } : floor)));
-      } else {
-        const sortOrder = officeFloors.reduce((max, floor) => Math.max(max, floor.sort_order), 0) + 10;
-        const { data, error } = await supabase
-          .from('office_floors')
-          .insert([{ ...row, sort_order: sortOrder }])
-          .select()
-          .single();
-        if (error) {
-          alert(`Could not add the floor: ${error.message}`);
-          return false;
-        }
-        const saved = (data || {}) as Partial<OfficeFloor>;
-        setOfficeFloors(prev => [...prev, {
-          id: saved.id || generateUUID(),
-          ...row,
-          sort_order: sortOrder,
-          active: true,
-        } as OfficeFloor]);
+        void refreshSpaces();
+        return input.id;
       }
+
+      const sortOrder = officeFloors.reduce((max, floor) => Math.max(max, floor.sort_order), 0) + 10;
+      const { data, error } = await supabase
+        .from('office_floors')
+        .insert([{ ...row, sort_order: sortOrder }])
+        .select()
+        .single();
+      if (error) {
+        alert(`Could not add the floor: ${error.message}`);
+        return null;
+      }
+      const saved = (data || {}) as Partial<OfficeFloor>;
+      const floorId = saved.id || generateUUID();
+      setOfficeFloors(prev => [...prev, {
+        id: floorId,
+        ...row,
+        sort_order: sortOrder,
+        active: true,
+      } as OfficeFloor]);
       void refreshSpaces();
-      return true;
+      return floorId;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error('saveOfficeFloor exception:', e);
       alert(`Could not save the floor: ${message}`);
+      return null;
+    }
+  };
+
+  /**
+   * Removes a floor. Rooms keep existing — `spaces.floor_id` is ON DELETE SET NULL — so they simply
+   * drop off the plan and wait to be placed again, which is why this needs no room cleanup here.
+   */
+  const deleteOfficeFloor = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('office_floors').delete().eq('id', id);
+      if (error) {
+        alert(`Could not delete the floor: ${error.message}`);
+        return false;
+      }
+      setOfficeFloors(prev => prev.filter(floor => floor.id !== id));
+      setSpaces(prev => prev.map(space => (
+        space.floor_id === id ? { ...space, floor_id: null } : space
+      )));
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('deleteOfficeFloor exception:', e);
+      alert(`Could not delete the floor: ${message}`);
       return false;
     }
   };
@@ -7039,6 +7071,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       spaceSeats,
       spaceDesks,
       saveOfficeFloor,
+      deleteOfficeFloor,
       saveOfficeLayout,
       saveSpaceType,
       deleteSpaceType,

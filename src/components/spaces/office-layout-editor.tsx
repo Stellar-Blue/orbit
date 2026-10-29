@@ -156,8 +156,12 @@ function regenerateSeats(room: RoomDraft, existing: SeatDraft[], count: number):
  * Floor name and slab size. Kept out of the layout draft on purpose: the slab is drawn before any
  * room, so it is saved on its own rather than with "Save layout".
  */
-function FloorSettings({ floor, floors }: { floor: OfficeFloor; floors: OfficeFloor[] }) {
-  const { saveOfficeFloor } = useAuth();
+function FloorSettings({
+  floor, floors, roomCount, onSelectFloor,
+}: {
+  floor: OfficeFloor; floors: OfficeFloor[]; roomCount: number; onSelectFloor: (id: string) => void;
+}) {
+  const { saveOfficeFloor, deleteOfficeFloor } = useAuth();
   const [name, setName] = useState(floor.name);
   const [width, setWidth] = useState(String(floor.width));
   const [depth, setDepth] = useState(String(floor.depth));
@@ -181,12 +185,29 @@ function FloorSettings({ floor, floors }: { floor: OfficeFloor; floors: OfficeFl
     const label = newName.trim();
     if (!label) return;
     setSaving(true);
-    const ok = await saveOfficeFloor({ name: label, width: Number(width) || 24, depth: Number(depth) || 16 });
+    const created = await saveOfficeFloor({ name: label, width: Number(width) || 24, depth: Number(depth) || 16 });
     setSaving(false);
-    if (ok) {
+    if (created) {
       setNewName('');
       setAdding(false);
+      onSelectFloor(created);
       notifySuccess(`${label} has been added.`, 'Floor added');
+    }
+  };
+
+  const remove = async () => {
+    if (saving) return;
+    const others = floors.filter(entry => entry.id !== floor.id);
+    const message = roomCount > 0
+      ? `Delete ${floor.name}? Its ${roomCount} room${roomCount === 1 ? '' : 's'} stay in Orbit but come off the plan until you place them on another floor.`
+      : `Delete ${floor.name}?`;
+    if (!confirm(message)) return;
+    setSaving(true);
+    const ok = await deleteOfficeFloor(floor.id);
+    setSaving(false);
+    if (ok) {
+      onSelectFloor(others[0]?.id ?? '');
+      notifySuccess(`${floor.name} has been deleted.`, 'Floor deleted');
     }
   };
 
@@ -246,6 +267,12 @@ function FloorSettings({ floor, floors }: { floor: OfficeFloor; floors: OfficeFl
             </Button>
           </div>
         )}
+
+        <div className="border-t border-[var(--line)] pt-2">
+          <Button size="sm" variant="ghost" className="w-full text-[var(--ink-3)] hover:text-[var(--danger)]" onClick={() => void remove()} disabled={saving}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete floor
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -291,6 +318,69 @@ function RotationControl({ value, onChange }: { value: number; onChange: (degree
 }
 
 /**
+ * Shown when every floor has been deleted: the plan needs a slab before rooms can be placed, so this
+ * is the way back rather than a dead end.
+ */
+function FirstFloor({ onCreated }: { onCreated: (id: string) => void }) {
+  const { saveOfficeFloor } = useAuth();
+  const [name, setName] = useState('Floor 1');
+  const [width, setWidth] = useState('24');
+  const [depth, setDepth] = useState('16');
+  const [saving, setSaving] = useState(false);
+
+  const create = async () => {
+    if (saving || !name.trim()) return;
+    setSaving(true);
+    const created = await saveOfficeFloor({ name, width: Number(width), depth: Number(depth) });
+    setSaving(false);
+    if (created) {
+      onCreated(created);
+      notifySuccess(`${name.trim()} has been added.`, 'Floor added');
+    }
+  };
+
+  return (
+    <Card title="Floor plan" subtitle="No floor has been declared yet.">
+      <div className="mx-auto max-w-sm space-y-2 py-4">
+        <div className="text-center">
+          <Building2 className="mx-auto h-6 w-6 text-[var(--ink-4)]" />
+          <p className="mt-2 text-[13px] font-semibold text-[var(--ink-2)]">Nothing to draw on</p>
+          <p className="mt-1 text-[12px] text-[var(--ink-4)]">
+            Declare a floor (or an office) and its size, then rooms can be placed on it. Your rooms are
+            safe: they wait here until a floor exists again.
+          </p>
+        </div>
+        <div>
+          <label className="ui-label mb-1 block">Floor name</label>
+          <input value={name} onChange={event => setName(event.target.value)} className="ui-input w-full" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="ui-label mb-1 block">Width (m)</label>
+            <input
+              type="number" min="4" step="0.5" value={width}
+              onChange={event => setWidth(event.target.value)}
+              className="ui-input w-full font-mono"
+            />
+          </div>
+          <div>
+            <label className="ui-label mb-1 block">Depth (m)</label>
+            <input
+              type="number" min="4" step="0.5" value={depth}
+              onChange={event => setDepth(event.target.value)}
+              className="ui-input w-full font-mono"
+            />
+          </div>
+        </div>
+        <Button size="sm" variant="primary" className="w-full" onClick={() => void create()} disabled={saving || !name.trim()}>
+          <Plus className="h-3.5 w-3.5" /> {saving ? 'Creating…' : 'Create floor'}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
  * Admin floor-plan editor.
  *
  * Everything is a local draft until Save: dragging a room, pulling a corner or moving a chair only
@@ -306,20 +396,7 @@ export function OfficeLayoutEditor() {
   const [floorId, setFloorId] = useState<string>('');
   const floor = floors.find(entry => entry.id === floorId) || floors[0] || null;
 
-  if (!floor) {
-    return (
-      <Card title="Floor plan" subtitle="No floor has been declared yet.">
-        <div className="py-8 text-center">
-          <Building2 className="mx-auto h-6 w-6 text-[var(--ink-4)]" />
-          <p className="mt-2 text-[13px] font-semibold text-[var(--ink-2)]">Nothing to draw on</p>
-          <p className="mx-auto mt-1 max-w-md text-[12px] text-[var(--ink-4)]">
-            A floor (or office) has to exist before rooms can be placed on it. Apply the office floor
-            migrations to seed the first floor.
-          </p>
-        </div>
-      </Card>
-    );
-  }
+  if (!floor) return <FirstFloor onCreated={setFloorId} />;
 
   return (
     <FloorEditor
@@ -806,7 +883,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
       </Card>
 
       <div className="space-y-3">
-        <FloorSettings floor={floor} floors={floors} />
+        <FloorSettings floor={floor} floors={floors} roomCount={rooms.length} onSelectFloor={onSelectFloor} />
 
         <Card title="Rooms on this floor" subtitle="Select a room to edit its size, chairs and furniture.">
           {roomsOnFloor.length === 0 && (
