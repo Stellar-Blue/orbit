@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { avatarNodes, type AvatarConfig } from '@/lib/avatar';
+import { avatarNodes, avatarPartNodes, type AvatarConfig, type AvatarFieldKey } from '@/lib/avatar';
 
 export interface AvatarArtProps {
   config: AvatarConfig | unknown;
@@ -9,14 +9,17 @@ export interface AvatarArtProps {
   className?: string;
   /** Used as the accessible name; the surrounding context usually names the person already. */
   title?: string;
+  /** Draw only this part (the editor's option tiles), framed by `viewBox`. */
+  part?: AvatarFieldKey;
+  viewBox?: string;
 }
 
 /** Draws a made avatar. The same node list feeds the stored SVG, so screen and data never drift. */
-export function AvatarArt({ config, size = 96, className = '', title }: AvatarArtProps) {
-  const nodes = avatarNodes(config);
+export function AvatarArt({ config, size = 96, className = '', title, part, viewBox = '0 0 120 120' }: AvatarArtProps) {
+  const nodes = part ? avatarPartNodes(config, part) : avatarNodes(config);
   return (
     <svg
-      viewBox="0 0 120 120"
+      viewBox={viewBox}
       width={size}
       height={size}
       className={className}

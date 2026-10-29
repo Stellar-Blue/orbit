@@ -12,12 +12,13 @@ export type AvatarNode = {
   attrs: Record<string, string | number>;
 };
 
-const INK = '#2a2622';
-const PAPER = '#fdfbf7';
-const GOLD = '#d8b25f';
-const MOUTH = '#8d4a45';
+// Drawn like a pen sketch: black ink outlines over white or grey fills, no colour in the face itself.
+const INK = '#1a1a1a';
+const PAPER = '#ffffff';
+const OUTLINE = { stroke: INK, strokeWidth: 2.2, strokeLinejoin: 'round' };
 
 export const AVATAR_BACKGROUNDS = {
+  white: '#ffffff',
   sand: '#efe7d8',
   cream: '#f7f1e6',
   sky: '#dbe9f4',
@@ -29,34 +30,19 @@ export const AVATAR_BACKGROUNDS = {
 } as const;
 
 export const AVATAR_SKINS = {
-  porcelain: '#f7dcc8',
-  fair: '#f0c9a8',
-  warm: '#e0a97f',
-  olive: '#c98f63',
-  tan: '#a8714c',
-  deep: '#7c4b2e',
+  porcelain: '#faf9f7',
+  fair: '#e6e6e2',
+  warm: '#cfcfca',
+  olive: '#b0b0aa',
+  tan: '#8f8f89',
+  deep: '#6e6e68',
 } as const;
 
 export const AVATAR_HAIR_COLORS = {
-  black: '#241d1a',
-  espresso: '#3b2a22',
-  chestnut: '#5c3a2a',
-  auburn: '#7b3b27',
-  honey: '#9b6a3c',
-  blond: '#c9a05a',
-  ash: '#8d8c88',
-  silver: '#c9c8c4',
-} as const;
-
-export const AVATAR_SHIRTS = {
-  navy: '#2f4a68',
-  chalk: '#f4f3ef',
-  charcoal: '#3a3d42',
-  teal: '#2f6b66',
-  plum: '#5b3a5e',
-  sand: '#c9ab84',
-  forest: '#355a3e',
-  coral: '#c9695a',
+  black: '#1a1a1a',
+  grey: '#737373',
+  silver: '#bdbdbd',
+  white: '#fefefe',
 } as const;
 
 export const HAIR_STYLES = [
@@ -70,7 +56,7 @@ export const NOSE_STYLES = ['button', 'straight', 'round', 'wide'] as const;
 export const MOUTH_STYLES = ['smile', 'grin', 'calm', 'smirk', 'open', 'small'] as const;
 export const GLASSES_STYLES = ['none', 'round', 'square', 'sun', 'reading'] as const;
 export const BEARD_STYLES = ['none', 'stubble', 'goatee', 'full', 'moustache'] as const;
-export const ACCESSORY_STYLES = ['none', 'earrings', 'headphones', 'cap', 'scarf'] as const;
+export const ACCESSORY_STYLES = ['none', 'earrings', 'headphones', 'cap', 'pencil'] as const;
 export const DETAIL_STYLES = ['none', 'freckles', 'blush', 'beautyMark'] as const;
 
 export type HairStyle = (typeof HAIR_STYLES)[number];
@@ -96,14 +82,13 @@ export interface AvatarConfig {
   beard: BeardStyle;
   accessory: AccessoryStyle;
   details: DetailStyle;
-  shirt: keyof typeof AVATAR_SHIRTS;
 }
 
 export const DEFAULT_AVATAR: AvatarConfig = {
-  background: 'sand',
-  skin: 'warm',
+  background: 'white',
+  skin: 'porcelain',
   hairStyle: 'short',
-  hairColor: 'espresso',
+  hairColor: 'black',
   eyes: 'dot',
   brows: 'soft',
   nose: 'button',
@@ -112,7 +97,6 @@ export const DEFAULT_AVATAR: AvatarConfig = {
   beard: 'none',
   accessory: 'none',
   details: 'none',
-  shirt: 'navy',
 };
 
 /** Which of the three kinds of choice each field offers, so the editor can lay itself out. */
@@ -129,7 +113,6 @@ export const AVATAR_FIELDS = [
   { key: 'beard', label: 'Beard', kind: 'style', options: BEARD_STYLES },
   { key: 'accessory', label: 'Extras', kind: 'style', options: ACCESSORY_STYLES },
   { key: 'details', label: 'Details', kind: 'style', options: DETAIL_STYLES },
-  { key: 'shirt', label: 'Outfit', kind: 'color', palette: AVATAR_SHIRTS },
 ] as const;
 
 export type AvatarFieldKey = (typeof AVATAR_FIELDS)[number]['key'];
@@ -195,7 +178,6 @@ export function normalizeAvatar(input: unknown): AvatarConfig {
     beard: of(BEARD_STYLES, raw.beard, DEFAULT_AVATAR.beard),
     accessory: of(ACCESSORY_STYLES, raw.accessory, DEFAULT_AVATAR.accessory),
     details: of(DETAIL_STYLES, raw.details, DEFAULT_AVATAR.details),
-    shirt: swatch(AVATAR_SHIRTS, raw.shirt, DEFAULT_AVATAR.shirt),
   };
 }
 
@@ -208,17 +190,26 @@ const EYE_Y = 56;
 const EYE_OFFSET = 11;
 const BROW_Y = 45;
 
-function clothes(config: AvatarConfig): AvatarNode[] {
-  const shirt = pick(AVATAR_SHIRTS, config.shirt, DEFAULT_AVATAR.shirt);
+function face(config: AvatarConfig): AvatarNode[] {
+  const skin = pick(AVATAR_SKINS, config.skin, 'warm');
   return [
-    // Neck first: the collar sits over it.
-    rect(52, 76, 16, 16, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.12)),
-    path('M11 120 C13 97 30 87 52 85 H68 C90 87 107 97 109 120 Z', shirt),
-    line('M52 85 Q60 95 68 85', tone(shirt, 0.22), 1.6),
+    ellipse(FACE.cx - FACE.rx + 1, 58, 4.6, 6, skin, OUTLINE),
+    ellipse(FACE.cx + FACE.rx - 1, 58, 4.6, 6, skin, OUTLINE),
+    ellipse(FACE.cx, FACE.cy, FACE.rx, FACE.ry, skin, OUTLINE),
   ];
 }
 
+/** Every filled shape gets the ink outline, so hair reads as a drawing in any colour, white included. */
+const inked = (nodes: AvatarNode[]): AvatarNode[] =>
+  nodes.map(node => (node.attrs.fill !== 'none' && !node.attrs.stroke
+    ? { ...node, attrs: { ...node.attrs, ...OUTLINE } }
+    : node));
+
 function hairBack(config: AvatarConfig): AvatarNode[] {
+  return inked(hairBackShapes(config));
+}
+
+function hairBackShapes(config: AvatarConfig): AvatarNode[] {
   const hair = pick(AVATAR_HAIR_COLORS, config.hairColor, DEFAULT_HAIR());
   switch (config.hairStyle) {
     case 'long':
@@ -282,6 +273,10 @@ const DEFAULT_HAIR = () => DEFAULT_AVATAR.hairColor;
 const HAIR_CAP = 'M33 52 C33 30 45 21 60 21 C75 21 87 30 87 52 C85 40 76 34 60 34 C44 34 35 40 33 52 Z';
 
 function hairFront(config: AvatarConfig): AvatarNode[] {
+  return inked(hairFrontShapes(config));
+}
+
+function hairFrontShapes(config: AvatarConfig): AvatarNode[] {
   const hair = pick(AVATAR_HAIR_COLORS, config.hairColor, DEFAULT_HAIR());
   switch (config.hairStyle) {
     case 'buzz':
@@ -311,7 +306,7 @@ function hairFront(config: AvatarConfig): AvatarNode[] {
         circle(81, 35, 6, hair),
       ];
     case 'bald':
-      return [line('M37 51 Q36 58 38 62', hair, 2.4, { opacity: 0.55 }), line('M83 51 Q84 58 82 62', hair, 2.4, { opacity: 0.55 })];
+      return [line('M37 51 Q36 58 38 62', INK, 2.4, { opacity: 0.55 }), line('M83 51 Q84 58 82 62', INK, 2.4, { opacity: 0.55 })];
     case 'fringe':
       return [path('M35 43 C35 30 46 23 60 23 C74 23 85 30 85 43 C78 45 69 46 60 46 C51 46 42 45 35 43 Z', hair)];
     case 'bob':
@@ -346,8 +341,8 @@ function hairFront(config: AvatarConfig): AvatarNode[] {
     case 'taper':
       return [
         path('M36 43 C38 31 48 25 60 25 C72 25 82 31 84 43 C82 35 72 31 60 31 C48 31 38 35 36 43 Z', hair),
-        line('M36 48 Q35 53 36 57', hair, 2.6, { opacity: 0.35 }),
-        line('M84 48 Q85 53 84 57', hair, 2.6, { opacity: 0.35 }),
+        line('M36 48 Q35 53 36 57', INK, 2.6, { opacity: 0.35 }),
+        line('M84 48 Q85 53 84 57', INK, 2.6, { opacity: 0.35 }),
       ];
     case 'combOver':
       return [
@@ -362,14 +357,14 @@ function hairFront(config: AvatarConfig): AvatarNode[] {
     case 'undercut':
       return [
         path('M36 46 C34 26 48 19 63 20 C77 21 87 29 87 42 C80 32 68 29 57 32 C47 35 40 39 36 46 Z', hair),
-        line('M35 49 Q34 56 35 61', hair, 2.4, { opacity: 0.3 }),
-        line('M85 49 Q86 56 85 61', hair, 2.4, { opacity: 0.3 }),
+        line('M35 49 Q34 56 35 61', INK, 2.4, { opacity: 0.3 }),
+        line('M85 49 Q86 56 85 61', INK, 2.4, { opacity: 0.3 }),
       ];
     case 'mohawk':
       return [
         path('M49 27 C52 17 56 12 60 12 C64 12 68 17 71 27 C75 36 73 44 69 48 C66 41 63 37 60 37 C57 37 54 41 51 48 C47 44 45 36 49 27 Z', hair),
-        line('M36 49 Q35 56 36 61', hair, 2.4, { opacity: 0.3 }),
-        line('M84 49 Q85 56 84 61', hair, 2.4, { opacity: 0.3 }),
+        line('M36 49 Q35 56 36 61', INK, 2.4, { opacity: 0.3 }),
+        line('M84 49 Q85 56 84 61', INK, 2.4, { opacity: 0.3 }),
       ];
     case 'shag':
       return [
@@ -409,13 +404,13 @@ function eyes(config: AvatarConfig): AvatarNode[] {
     const cx = FACE.cx + side * EYE_OFFSET;
     const style = config.eyes;
     if (style === 'round') {
-      nodes.push(circle(cx, EYE_Y, 3.4, PAPER), circle(cx, EYE_Y + 0.5, 1.9, INK));
+      nodes.push(circle(cx, EYE_Y, 3.6, PAPER, { stroke: INK, strokeWidth: 1.5 }), circle(cx, EYE_Y + 0.5, 1.9, INK));
     } else if (style === 'happy') {
       nodes.push(line(`M${cx - 3.4} ${EYE_Y + 1} Q${cx} ${EYE_Y - 3.4} ${cx + 3.4} ${EYE_Y + 1}`, INK, 2));
     } else if (style === 'sleepy') {
       nodes.push(line(`M${cx - 3.4} ${EYE_Y - 0.4} Q${cx} ${EYE_Y + 3.4} ${cx + 3.4} ${EYE_Y - 0.4}`, INK, 2));
     } else if (style === 'wide') {
-      nodes.push(ellipse(cx, EYE_Y, 3.9, 4.3, PAPER), circle(cx, EYE_Y + 0.4, 2, INK));
+      nodes.push(ellipse(cx, EYE_Y, 4, 4.4, PAPER, { stroke: INK, strokeWidth: 1.5 }), circle(cx, EYE_Y + 0.4, 2, INK));
     } else if (style === 'wink') {
       nodes.push(side < 0
         ? line(`M${cx - 3.4} ${EYE_Y + 1} Q${cx} ${EYE_Y - 3.4} ${cx + 3.4} ${EYE_Y + 1}`, INK, 2)
@@ -428,8 +423,7 @@ function eyes(config: AvatarConfig): AvatarNode[] {
 }
 
 function eyebrows(config: AvatarConfig): AvatarNode[] {
-  const hair = pick(AVATAR_HAIR_COLORS, config.hairColor, DEFAULT_HAIR());
-  const brow = tone(hair, 0.12);
+  const brow = INK;
   return [-1, 1].flatMap(side => {
     const cx = FACE.cx + side * EYE_OFFSET;
     switch (config.brows) {
@@ -451,12 +445,12 @@ function eyebrows(config: AvatarConfig): AvatarNode[] {
 }
 
 function nose(config: AvatarConfig): AvatarNode[] {
-  const shade = tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.26);
+  const shade = INK;
   switch (config.nose) {
     case 'straight':
       return [line('M60 57.5 V65.4 Q60 67.2 58.4 67.2', shade, 1.8)];
     case 'round':
-      return [circle(60, 65, 2.2, shade, { opacity: 0.75 })];
+      return [circle(60, 64.4, 2.6, 'none', { stroke: shade, strokeWidth: 1.8 })];
     case 'wide':
       return [line('M56.6 64 Q60 67.6 63.4 64', shade, 1.8)];
     case 'button':
@@ -477,7 +471,7 @@ function mouth(config: AvatarConfig): AvatarNode[] {
     case 'smirk':
       return [line('M53 74 Q59 77.6 67 72.4', INK, 2.2)];
     case 'open':
-      return [ellipse(60, 75, 5, 4.2, MOUTH), ellipse(60, 77, 2.6, 1.8, '#b8605a')];
+      return [ellipse(60, 75, 5, 4.2, INK), ellipse(60, 77, 2.6, 1.6, '#8a8a8a')];
     case 'small':
       return [line('M56.5 73.5 Q60 76.5 63.5 73.5', INK, 2.2)];
     case 'smile':
@@ -487,12 +481,19 @@ function mouth(config: AvatarConfig): AvatarNode[] {
 }
 
 function beard(config: AvatarConfig): AvatarNode[] {
+  return config.beard === 'stubble' ? beardShapes(config) : inked(beardShapes(config));
+}
+
+function beardShapes(config: AvatarConfig): AvatarNode[] {
   const hair = pick(AVATAR_HAIR_COLORS, config.hairColor, DEFAULT_HAIR());
   switch (config.beard) {
     case 'stubble':
-      return [
-        path('M37 60 C39 77 49 86 60 86 C71 86 81 77 83 60 C79 74 71 79 60 79 C49 79 41 74 37 60 Z', hair, { opacity: 0.28 }),
-      ];
+      // A scatter of pen dots along the jaw.
+      return Array.from({ length: 19 }, (_, index) => {
+        const angle = Math.PI * (0.12 + 0.76 * (index / 18));
+        const inset = index % 2 ? 0.86 : 1;
+        return circle(60 - Math.cos(angle) * 21 * inset, 66 + Math.sin(angle) * 17 * inset, 0.75, INK);
+      });
     case 'goatee':
       return [
         path('M51 76 Q55 88 60 88 Q65 88 69 76 Q64 80 60 80 Q56 80 51 76 Z', hair),
@@ -517,7 +518,7 @@ function beard(config: AvatarConfig): AvatarNode[] {
 
 function glasses(config: AvatarConfig): AvatarNode[] {
   if (config.glasses === 'none') return [];
-  const frame = tone(INK, 0.1);
+  const frame = INK;
   const left = FACE.cx - EYE_OFFSET;
   const right = FACE.cx + EYE_OFFSET;
   if (config.glasses === 'round') {
@@ -538,8 +539,8 @@ function glasses(config: AvatarConfig): AvatarNode[] {
   }
   if (config.glasses === 'sun') {
     return [
-      rect(left - 8, EYE_Y - 5.5, 16, 12, tone(INK, 0.25), { rx: 3, opacity: 0.86 }),
-      rect(right - 8, EYE_Y - 5.5, 16, 12, tone(INK, 0.25), { rx: 3, opacity: 0.86 }),
+      rect(left - 8, EYE_Y - 5.5, 16, 12, INK, { rx: 3 }),
+      rect(right - 8, EYE_Y - 5.5, 16, 12, INK, { rx: 3 }),
       line(`M${left + 8} ${EYE_Y - 1.5} H${right - 8}`, frame, 2),
     ];
   }
@@ -554,25 +555,27 @@ function glasses(config: AvatarConfig): AvatarNode[] {
 function accessory(config: AvatarConfig): AvatarNode[] {
   switch (config.accessory) {
     case 'earrings':
-      return [circle(34.6, 65, 1.9, GOLD), circle(85.4, 65, 1.9, GOLD)];
+      return [circle(34.6, 66, 2.2, PAPER, OUTLINE), circle(85.4, 66, 2.2, PAPER, OUTLINE)];
     case 'headphones':
       return [
-        line('M31 54 C31 28 44 17 60 17 C76 17 89 28 89 54', tone(INK, 0.2), 4.2),
-        rect(26.5, 50, 9, 15, tone(INK, 0.25), { rx: 4.5 }),
-        rect(84.5, 50, 9, 15, tone(INK, 0.25), { rx: 4.5 }),
+        line('M31 54 C31 28 44 17 60 17 C76 17 89 28 89 54', INK, 4.2),
+        rect(26.5, 50, 9, 15, INK, { rx: 4.5 }),
+        rect(84.5, 50, 9, 15, INK, { rx: 4.5 }),
       ];
-    case 'cap': {
-      const capColor = pick(AVATAR_SHIRTS, config.shirt, 'navy');
+    case 'cap':
       return [
-        path('M33 40 C33 23 46 15 60 15 C74 15 87 23 87 40 Z', tone(capColor, 0.1)),
-        path('M29.5 40 Q60 35 90.5 40 Q60 46 29.5 40 Z', capColor),
-        circle(60, 15, 2.2, tone(capColor, 0.1)),
+        path('M33 40 C33 23 46 15 60 15 C74 15 87 23 87 40 Z', PAPER, OUTLINE),
+        line('M60 16 V39', INK, 1.4),
+        path('M29.5 40 Q60 35 90.5 40 Q60 46 29.5 40 Z', INK, OUTLINE),
+        circle(60, 15, 2.2, INK),
       ];
-    }
-    case 'scarf':
+    case 'pencil':
+      // Tucked behind the right ear.
       return [
-        path('M47 82 Q60 90 73 82 L75 92 Q60 101 45 92 Z', pick(AVATAR_SHIRTS, 'coral', 'coral')),
-        path('M66 90 L74 104 L66 106 L60 92 Z', pick(AVATAR_SHIRTS, 'coral', 'coral')),
+        path('M78 52 L95 31 L99.5 34.5 L82.5 55.5 Z', PAPER, OUTLINE),
+        path('M95 31 L99.5 34.5 L101 25.5 Z', PAPER, OUTLINE),
+        path('M99.6 29.4 L101 25.5 L97.9 28.1 Z', INK),
+        line('M80.5 50.5 L85 54.2', INK, 1.4),
       ];
     case 'none':
     default:
@@ -583,21 +586,13 @@ function accessory(config: AvatarConfig): AvatarNode[] {
 function details(config: AvatarConfig): AvatarNode[] {
   switch (config.details) {
     case 'freckles':
-      return [
-        circle(45, 64, 0.9, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.35), { opacity: 0.8 }),
-        circle(48.5, 66.4, 0.8, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.35), { opacity: 0.8 }),
-        circle(43, 68, 0.7, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.35), { opacity: 0.8 }),
-        circle(75, 64, 0.9, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.35), { opacity: 0.8 }),
-        circle(71.5, 66.4, 0.8, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.35), { opacity: 0.8 }),
-        circle(77, 68, 0.7, tone(pick(AVATAR_SKINS, config.skin, 'warm'), 0.35), { opacity: 0.8 }),
-      ];
+      return [[45, 64, 0.9], [48.5, 66.4, 0.8], [43, 68, 0.7], [75, 64, 0.9], [71.5, 66.4, 0.8], [77, 68, 0.7]]
+        .map(([cx, cy, r]) => circle(cx, cy, r, INK, { opacity: 0.8 }));
     case 'blush':
-      return [
-        ellipse(45, 66.5, 5.2, 3.1, '#e08a7a', { opacity: 0.32 }),
-        ellipse(75, 66.5, 5.2, 3.1, '#e08a7a', { opacity: 0.32 }),
-      ];
+      // Hatched cheeks, the way a pen shades.
+      return [41, 45, 49, 71, 75, 79].map(x => line(`M${x} 68.5 L${x + 2.4} 64.5`, INK, 1.2, { opacity: 0.7 }));
     case 'beautyMark':
-      return [circle(71.5, 68.5, 1.1, INK, { opacity: 0.75 })];
+      return [circle(71.5, 68.5, 1.1, INK)];
     case 'none':
     default:
       return [];
@@ -607,15 +602,10 @@ function details(config: AvatarConfig): AvatarNode[] {
 /** Every primitive of the portrait, back to front. */
 export function avatarNodes(input: AvatarConfig | unknown): AvatarNode[] {
   const config = normalizeAvatar(input);
-  const skin = pick(AVATAR_SKINS, config.skin, 'warm');
   return [
-    circle(60, 60, 60, pick(AVATAR_BACKGROUNDS, config.background, 'sand')),
+    circle(60, 60, 60, pick(AVATAR_BACKGROUNDS, config.background, 'white')),
     ...hairBack(config),
-    ...clothes(config),
-    ellipse(FACE.cx - FACE.rx + 1, 58, 4.6, 6, skin),
-    ellipse(FACE.cx + FACE.rx - 1, 58, 4.6, 6, skin),
-    ellipse(FACE.cx, FACE.cy, FACE.rx, FACE.ry, skin),
-    ellipse(FACE.cx, FACE.cy - 3, FACE.rx - 1, FACE.ry - 4, tone(skin, 0.05, 'white')),
+    ...face(config),
     ...hairFront(config),
     ...eyebrows(config),
     ...eyes(config),
@@ -626,6 +616,25 @@ export function avatarNodes(input: AvatarConfig | unknown): AvatarNode[] {
     ...glasses(config),
     ...accessory(config),
   ];
+}
+
+/** One part on its own — what the editor's option tiles show. */
+export function avatarPartNodes(input: AvatarConfig | unknown, part: AvatarFieldKey): AvatarNode[] {
+  const config = normalizeAvatar(input);
+  switch (part) {
+    case 'background': return [circle(60, 60, 60, pick(AVATAR_BACKGROUNDS, config.background, 'white'), { stroke: '#e2e2e2', strokeWidth: 1 })];
+    case 'skin': return face(config);
+    case 'hairStyle':
+    case 'hairColor': return [...hairBack(config), ...face(config), ...hairFront(config)];
+    case 'eyes': return eyes(config);
+    case 'brows': return eyebrows(config);
+    case 'nose': return nose(config);
+    case 'mouth': return mouth(config);
+    case 'glasses': return glasses(config);
+    case 'beard': return beard(config);
+    case 'accessory': return accessory(config);
+    case 'details': return [...face(config), ...details(config)];
+  }
 }
 
 const ATTR_NAMES: Record<string, string> = {
@@ -662,38 +671,15 @@ export function isAvatarDataUrl(url?: string | null): boolean {
   return typeof url === 'string' && url.startsWith('data:image/svg+xml');
 }
 
-const STYLE_FIELDS = ['hairStyle', 'eyes', 'brows', 'nose', 'mouth', 'glasses', 'beard', 'accessory', 'details'] as const;
-const COLOR_FIELDS = ['background', 'skin', 'hairColor', 'shirt'] as const;
+/** A random choice for one field; optional extras come up bare half the time, so faces stay uncluttered. */
+export function randomOption(field: AvatarFieldKey, random: () => number = Math.random): string {
+  const entry = AVATAR_FIELDS.find(candidate => candidate.key === field) ?? AVATAR_FIELDS[0];
+  const options: readonly string[] = entry.kind === 'color' ? Object.keys(entry.palette) : entry.options;
+  if (options.includes('none') && random() < 0.5) return 'none';
+  return options[Math.floor(random() * options.length) % options.length];
+}
 
-/**
- * A new face for the "shuffle" button: one or two choices change, so the result stays a person rather
- * than a jumble. `random` is injected so the caller decides where the numbers come from.
- */
-export function shuffleAvatar(current: AvatarConfig, random: () => number = Math.random): AvatarConfig {
-  const next = { ...current };
-  const change = <T extends readonly string[]>(options: T): T[number] =>
-    options[Math.floor(random() * options.length) % options.length];
-  const colorKey = <T extends Record<string, string>>(palette: T): keyof T => {
-    const keys = Object.keys(palette) as (keyof T)[];
-    return keys[Math.floor(random() * keys.length) % keys.length];
-  };
-
-  const styleField = STYLE_FIELDS[Math.floor(random() * STYLE_FIELDS.length) % STYLE_FIELDS.length];
-  if (styleField === 'hairStyle') next.hairStyle = change(HAIR_STYLES);
-  if (styleField === 'eyes') next.eyes = change(EYE_STYLES);
-  if (styleField === 'brows') next.brows = change(BROW_STYLES);
-  if (styleField === 'nose') next.nose = change(NOSE_STYLES);
-  if (styleField === 'mouth') next.mouth = change(MOUTH_STYLES);
-  if (styleField === 'glasses') next.glasses = change(GLASSES_STYLES);
-  if (styleField === 'beard') next.beard = change(BEARD_STYLES);
-  if (styleField === 'accessory') next.accessory = change(ACCESSORY_STYLES);
-  if (styleField === 'details') next.details = change(DETAIL_STYLES);
-
-  const colorField = COLOR_FIELDS[Math.floor(random() * COLOR_FIELDS.length) % COLOR_FIELDS.length];
-  if (colorField === 'background') next.background = colorKey(AVATAR_BACKGROUNDS);
-  if (colorField === 'skin') next.skin = colorKey(AVATAR_SKINS);
-  if (colorField === 'hairColor') next.hairColor = colorKey(AVATAR_HAIR_COLORS);
-  if (colorField === 'shirt') next.shirt = colorKey(AVATAR_SHIRTS);
-
-  return next;
+/** A whole new face for the "shuffle" button. `random` is injected so the caller decides where the numbers come from. */
+export function shuffleAvatar(random: () => number = Math.random): AvatarConfig {
+  return normalizeAvatar(Object.fromEntries(AVATAR_FIELDS.map(entry => [entry.key, randomOption(entry.key, random)])));
 }

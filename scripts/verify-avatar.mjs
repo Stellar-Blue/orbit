@@ -8,10 +8,10 @@
  */
 
 import {
-  ACCESSORY_STYLES, AVATAR_BACKGROUNDS, AVATAR_FIELDS, AVATAR_HAIR_COLORS, AVATAR_SHIRTS, AVATAR_SKINS,
+  ACCESSORY_STYLES, AVATAR_BACKGROUNDS, AVATAR_FIELDS, AVATAR_HAIR_COLORS, AVATAR_SKINS,
   BEARD_STYLES, BROW_STYLES, DEFAULT_AVATAR, DETAIL_STYLES, EYE_STYLES, GLASSES_STYLES, HAIR_STYLES,
   MOUTH_STYLES, NOSE_STYLES,
-  avatarDataUrl, avatarNodes, avatarSvg, isAvatarDataUrl, normalizeAvatar, shuffleAvatar, tone,
+  avatarDataUrl, avatarNodes, avatarPartNodes, avatarSvg, isAvatarDataUrl, normalizeAvatar, shuffleAvatar, tone,
 } from '@/lib/avatar';
 
 let passed = 0;
@@ -57,7 +57,7 @@ assert(
 const nodes = avatarNodes(DEFAULT_AVATAR);
 const svg = avatarSvg(DEFAULT_AVATAR);
 assert(
-  nodes.length >= 12 && nodes[0].tag === 'circle' && nodes[0].attrs.r === 60,
+  nodes.length >= 10 && nodes[0].tag === 'circle' && nodes[0].attrs.r === 60,
   'The portrait opens with a full-bleed background disc',
   `${nodes.length} shapes`
 );
@@ -118,12 +118,15 @@ noneOptions.forEach(field => {
 });
 
 // --- Colours ----------------------------------------------------------------
-const hairColour = avatarSvg({ ...DEFAULT_AVATAR, hairStyle: 'short', hairColor: 'auburn' });
-assert(hairColour.includes(AVATAR_HAIR_COLORS.auburn), 'Hair takes the chosen colour', AVATAR_HAIR_COLORS.auburn);
+const hairColour = avatarSvg({ ...DEFAULT_AVATAR, hairStyle: 'short', hairColor: 'grey' });
+assert(hairColour.includes(AVATAR_HAIR_COLORS.grey), 'Hair takes the chosen colour', AVATAR_HAIR_COLORS.grey);
 assert(
-  avatarSvg({ ...DEFAULT_AVATAR, shirt: 'forest' }).includes(AVATAR_SHIRTS.forest),
-  'The outfit takes the chosen colour',
-  AVATAR_SHIRTS.forest
+  avatarSvg({ ...DEFAULT_AVATAR, hairColor: 'white' }).includes('stroke="#1a1a1a"'),
+  'Hair is outlined in ink, so white hair still shows on a white face'
+);
+assert(
+  AVATAR_FIELDS.every(entry => avatarPartNodes(DEFAULT_AVATAR, entry.key).length > 0 || entry.key === 'glasses' || entry.key === 'beard' || entry.key === 'accessory'),
+  'Every editor tile can draw its part on its own'
 );
 assert(tone('#808080', 0.5) === '#404040' && tone('#808080', 0.5, 'white') === '#c0c0c0', 'Shading mixes towards black or white', `${tone('#808080', 0.5)} / ${tone('#808080', 0.5, 'white')}`);
 
@@ -145,13 +148,9 @@ const random = () => {
   seed = (seed * 1103515245 + 12345) % 2147483648;
   return seed / 2147483648;
 };
-const shuffled = shuffleAvatar(DEFAULT_AVATAR, random);
+const shuffled = shuffleAvatar(random);
 const changed = Object.keys(DEFAULT_AVATAR).filter(key => shuffled[key] !== DEFAULT_AVATAR[key]);
-assert(
-  changed.length > 0 && changed.length <= 2,
-  'Shuffle changes a couple of choices, not the whole person',
-  changed.join(', ')
-);
+assert(changed.length >= 3, 'Shuffle draws a whole new face', changed.join(', '));
 assert(
   JSON.stringify(normalizeAvatar(shuffled)) === JSON.stringify(shuffled),
   'A shuffled face is still a valid config'

@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
-import { Check, Dices, Loader2, RotateCcw } from 'lucide-react';
-import { Button, Modal } from '@/components/ui/primitives';
+import React, { useState } from 'react';
+import {
+  Brush, Check, CircleDot, Eye, Glasses, Loader2, PaintBucket, RotateCcw, Scissors, Shuffle, Slash,
+  Smile, Sparkle, Sparkles, Spline, type LucideIcon,
+} from 'lucide-react';
+import { Modal } from '@/components/ui/primitives';
 import { AvatarArt } from '@/components/ui/avatar-art';
 import {
-  AVATAR_FIELDS, DEFAULT_AVATAR, normalizeAvatar, shuffleAvatar,
+  AVATAR_FIELDS, AVATAR_HAIR_COLORS, DEFAULT_AVATAR, normalizeAvatar, randomOption, shuffleAvatar,
   type AvatarConfig, type AvatarFieldKey,
 } from '@/lib/avatar';
 
@@ -18,20 +21,39 @@ export interface AvatarMakerProps {
   onSave: (config: AvatarConfig) => Promise<boolean>;
 }
 
+/** The sidebar: one entry per part, each framing its tiles around where that part sits on the face. */
+const CATEGORIES: { field: AvatarFieldKey; label: string; icon: LucideIcon; frame?: string }[] = [
+  { field: 'skin', label: 'Skin tone', icon: CircleDot, frame: '26 22 68 72' },
+  { field: 'eyes', label: 'Eyes', icon: Eye, frame: '34 41 52 30' },
+  { field: 'brows', label: 'Brows', icon: Spline, frame: '34 31 52 30' },
+  { field: 'glasses', label: 'Eyewear', icon: Glasses, frame: '24 36 72 40' },
+  { field: 'nose', label: 'Nose', icon: Slash, frame: '44 48 32 28' },
+  { field: 'mouth', label: 'Mouth', icon: Smile, frame: '42 61 36 26' },
+  { field: 'hairStyle', label: 'Hair', icon: Scissors, frame: '10 6 100 106' },
+  { field: 'beard', label: 'Beard', icon: Brush, frame: '24 44 72 52' },
+  { field: 'accessory', label: 'Accessories', icon: Sparkles, frame: '18 8 88 88' },
+  { field: 'details', label: 'Details', icon: Sparkle, frame: '26 22 68 72' },
+  { field: 'background', label: 'Background', icon: PaintBucket },
+];
+
+const optionsOf = (field: AvatarFieldKey): readonly string[] => {
+  const entry = AVATAR_FIELDS.find(candidate => candidate.key === field) ?? AVATAR_FIELDS[0];
+  return entry.kind === 'color' ? Object.keys(entry.palette) : entry.options;
+};
+
+const labelOf = (option: string) => option.replace(/([A-Z])/g, ' $1').toLowerCase();
+
 /**
- * The avatar maker: pick a background, a face, hair, eyes and the rest, watch it change in the
- * preview, then save. Every tile is drawn with the same renderer as the big preview and the stored
- * picture, so a choice looks exactly like what ends up on the profile.
+ * The avatar maker, laid out like a sketchbook: parts down the left, the drawings for the chosen part
+ * in the middle, the portrait on the right. Tiles show the part on its own, drawn by the same renderer
+ * as the portrait and the stored picture, so a choice looks exactly like what ends up on the profile.
  */
 export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerProps) {
   const [config, setConfig] = useState<AvatarConfig>(() => normalizeAvatar(value));
   const [field, setField] = useState<AvatarFieldKey>(value ? 'hairStyle' : 'skin');
   const [saving, setSaving] = useState(false);
 
-  const active = useMemo(
-    () => AVATAR_FIELDS.find(entry => entry.key === field) ?? AVATAR_FIELDS[0],
-    [field]
-  );
+  const category = CATEGORIES.find(entry => entry.field === field) ?? CATEGORIES[0];
 
   const setOption = (key: AvatarFieldKey, option: string) => {
     setConfig(previous => ({ ...previous, [key]: option }) as AvatarConfig);
@@ -45,109 +67,131 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Design your avatar" eyebrow={`My profile · ${personName}`} size="2xl">
-      <div className="grid gap-5 px-5 py-4 md:grid-cols-[200px_1fr]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="rounded-full bg-[var(--surface-muted)] p-1.5 ring-1 ring-[var(--line)]">
-            <AvatarArt config={config} size={152} className="rounded-full" title={`${personName}'s avatar`} />
-          </div>
-          <div className="flex w-full gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setConfig(previous => shuffleAvatar(previous))}
-              title="Try another look"
-            >
-              <Dices className="w-3.5 h-3.5" /> Shuffle
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfig(DEFAULT_AVATAR)}
-              title="Start over from the default face"
-              aria-label="Reset the avatar"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-          <Button size="sm" variant="primary" className="w-full" onClick={() => void save()} disabled={saving}>
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-            {saving ? 'Saving…' : 'Use this avatar'}
-          </Button>
-        </div>
-
-        <div className="min-w-0 space-y-3">
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Avatar parts">
-            {AVATAR_FIELDS.map(entry => (
+    <Modal isOpen onClose={onClose} title="Design your avatar" eyebrow={`My profile · ${personName}`} size="5xl">
+      <div className="-m-5 grid md:h-[560px] md:grid-cols-[176px_minmax(0,300px)_1fr]">
+        <nav
+          aria-label="Avatar parts"
+          className="flex gap-0.5 overflow-x-auto border-b border-[var(--line)] p-2 md:flex-col md:justify-center md:border-b-0 md:border-r"
+        >
+          {CATEGORIES.map(entry => {
+            const Icon = entry.icon;
+            const current = entry.field === field;
+            return (
               <button
-                key={entry.key}
+                key={entry.field}
                 type="button"
-                role="tab"
-                aria-selected={field === entry.key}
-                onClick={() => setField(entry.key)}
-                className={`cursor-pointer rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
-                  field === entry.key
-                    ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
-                    : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
+                onClick={() => setField(entry.field)}
+                aria-current={current}
+                className={`flex shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                  current ? 'bg-[var(--surface-sunken)] font-semibold text-[var(--ink)]' : 'text-[var(--ink-2)] hover:bg-[var(--surface-muted)]'
                 }`}
               >
+                <Icon className="h-4 w-4" strokeWidth={2.2} />
                 {entry.label}
               </button>
-            ))}
+            );
+          })}
+        </nav>
+
+        <section aria-label={category.label} className="flex min-h-0 flex-col border-b border-[var(--line)] md:border-b-0 md:border-r">
+          <div className="flex items-center justify-between px-3 pb-1 pt-3">
+            <h4 className="text-[13px] text-[var(--ink-3)]">{category.label}</h4>
+            <button
+              type="button"
+              onClick={() => setOption(field, randomOption(field))}
+              title={`Random ${category.label.toLowerCase()}`}
+              aria-label={`Pick a random ${category.label.toLowerCase()}`}
+              className="cursor-pointer rounded-md p-1.5 text-[var(--ink-3)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]"
+            >
+              <Shuffle className="h-3.5 w-3.5" />
+            </button>
           </div>
 
-          {active.kind === 'color' ? (
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(active.palette).map(([key, color]) => {
-                const selected = (config[active.key] as string) === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setOption(active.key, key)}
-                    title={key}
-                    aria-label={`${active.label}: ${key}`}
-                    aria-pressed={selected}
-                    className={`h-8 w-8 cursor-pointer rounded-full ring-offset-2 transition-shadow ${
-                      selected ? 'ring-2 ring-[var(--accent)]' : 'ring-1 ring-[var(--line-strong)] hover:ring-[var(--ink-4)]'
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                );
-              })}
-            </div>
-          ) : (
-            <div className="grid max-h-[540px] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 xl:grid-cols-5">
-              {active.options.map(option => {
-                const preview = { ...config, [active.key]: option } as AvatarConfig;
-                const selected = (config[active.key] as string) === option;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setOption(active.key, option)}
-                    aria-pressed={selected}
-                    className={`flex cursor-pointer flex-col items-center gap-1 rounded-[var(--radius-control)] border px-1 py-1.5 transition-colors ${
-                      selected
-                        ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
-                        : 'border-[var(--line)] bg-white hover:bg-[var(--surface-muted)]'
-                    }`}
-                  >
-                    <AvatarArt config={preview} size={46} className="rounded-full" title="" />
-                    <span className="w-full truncate text-center text-[10.5px] font-medium capitalize text-[var(--ink-3)]">
-                      {option === 'none' ? 'None' : option.replace(/([A-Z])/g, ' $1').toLowerCase()}
-                    </span>
-                  </button>
-                );
-              })}
+          {field === 'hairStyle' && (
+            <div className="flex gap-2 px-3 py-2" role="group" aria-label="Hair colour">
+              {Object.entries(AVATAR_HAIR_COLORS).map(([key, color]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setOption('hairColor', key)}
+                  title={key}
+                  aria-label={`Hair colour: ${key}`}
+                  aria-pressed={config.hairColor === key}
+                  className={`h-6 w-6 cursor-pointer rounded-full border border-[#1a1a1a] ring-offset-2 ${
+                    config.hairColor === key ? 'ring-2 ring-[var(--accent)]' : ''
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
             </div>
           )}
 
-          <p className="text-[11px] text-[var(--ink-4)]">
-            Your avatar is drawn from these choices and used wherever your photo appears — upload a
-            picture instead any time from the profile card.
-          </p>
+          <div className="grid max-h-[300px] content-start grid-cols-3 gap-2 overflow-y-auto p-3 pt-1 md:max-h-none md:flex-1">
+            {optionsOf(field).map(option => {
+              const selected = (config[field] as string) === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setOption(field, option)}
+                  aria-pressed={selected}
+                  aria-label={option === 'none' ? `No ${category.label.toLowerCase()}` : labelOf(option)}
+                  title={option === 'none' ? 'None' : labelOf(option)}
+                  className={`group flex aspect-square cursor-pointer items-center justify-center rounded-lg border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                    selected ? 'border-[var(--accent)] bg-[var(--accent-soft)]' : 'border-[var(--line)] hover:border-[var(--line-strong)]'
+                  }`}
+                >
+                  {option === 'none' ? (
+                    <span className="text-[11px] text-[var(--ink-4)]">None</span>
+                  ) : (
+                    <AvatarArt
+                      config={{ ...config, [field]: option }}
+                      part={field}
+                      viewBox={category.frame}
+                      size={64}
+                      title=""
+                      className={`transition-opacity ${selected ? '' : 'opacity-40 group-hover:opacity-100'}`}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className="order-first flex flex-col items-center justify-center gap-5 bg-[#f1f1ef] px-5 py-6 md:order-none">
+          <div className="rounded-full shadow-[0_1px_0_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.06)]">
+            <AvatarArt config={config} size={220} className="h-40 w-40 rounded-full md:h-[260px] md:w-[260px]" title={`${personName}'s avatar`} />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setConfig(DEFAULT_AVATAR)}
+              title="Start over from the default face"
+              aria-label="Reset the avatar"
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white text-[var(--ink-3)] shadow-sm hover:text-[var(--ink)]"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfig(shuffleAvatar())}
+              title="Draw a whole new face"
+              aria-label="Shuffle the whole face"
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white text-[var(--accent)] shadow-sm hover:bg-[var(--surface-muted)]"
+            >
+              <Shuffle className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving}
+              className="flex h-10 cursor-pointer items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-[13px] font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {saving ? 'Saving…' : 'Use this avatar'}
+            </button>
+          </div>
         </div>
       </div>
     </Modal>
