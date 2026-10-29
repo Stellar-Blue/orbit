@@ -29,7 +29,6 @@ const WALL_THICKNESS = 0.18;
 /** The paper-thin platform each room stands on, so a room reads as its own place on the slab. */
 const PLATFORM_HEIGHT = 0.05;
 const SEAT_BASE = PLATFORM_HEIGHT;
-const CHAIR_SEAT = 0.5;
 const CLICK_TOLERANCE_PX = 5;
 /** Camera direction of the default isometric view. */
 const VIEW_DIRECTION = new THREE.Vector3(1, 1.12, 1).normalize();
@@ -92,10 +91,15 @@ interface SceneState {
 }
 
 const COLORS = {
-  // The whole model lives in warm neutrals; the only strong hues are the seat states.
-  free: '#7fa8c9',
-  taken: '#b3a898',
-  mine: '#7cab8b',
+  // The model lives in warm neutrals; chairs are black office chairs, and the floor marker under a
+  // chair is what carries its state.
+  chair: '#262a30',
+  chairSoft: '#33383f',
+  chairMetal: '#4a5057',
+  caster: '#15181c',
+  free: '#8bb4d4',
+  taken: '#a99e8e',
+  mine: '#6f9f83',
   selected: '#d99a4e',
   floor: '#e9e1d3',
   slab: '#e4dccb',
@@ -125,6 +129,72 @@ const material = (color: THREE.ColorRepresentation, options: THREE.MeshStandardM
 /** Round every edge a little: the whole scene reads softer than raw boxes. */
 const rounded = (width: number, height: number, depth: number, radius: number) =>
   new RoundedBoxGeometry(width, height, depth, 2, radius);
+
+/**
+ * A task chair: five-star base on casters, gas lift, padded seat, curved backrest and two armrests.
+ * Drawn in black so it reads as furniture; the disc on the floor underneath carries its state.
+ */
+function buildChair(): THREE.Group {
+  const chair = new THREE.Group();
+  const upholstery = material(COLORS.chair, { roughness: 0.62 });
+  const trim = material(COLORS.chairSoft, { roughness: 0.55 });
+  const metal = material(COLORS.chairMetal, { metalness: 0.45, roughness: 0.4 });
+  const rubber = material(COLORS.caster, { roughness: 0.75 });
+
+  // Five legs radiating from the centre, each ending in a caster.
+  const base = new THREE.Group();
+  base.name = 'chair-base';
+  for (let index = 0; index < 5; index += 1) {
+    const angle = (index / 5) * Math.PI * 2;
+    const leg = new THREE.Mesh(rounded(0.3, 0.032, 0.055, 0.014), metal);
+    leg.position.set(Math.cos(angle) * 0.15, 0.075, Math.sin(angle) * 0.15);
+    leg.rotation.y = -angle;
+    leg.castShadow = true;
+    base.add(leg);
+
+    const wheel = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), rubber);
+    wheel.position.set(Math.cos(angle) * 0.29, 0.038, Math.sin(angle) * 0.29);
+    wheel.castShadow = true;
+    base.add(wheel);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.05, 14), metal);
+  hub.position.y = 0.08;
+  base.add(hub);
+  chair.add(base);
+
+  const lift = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.24, 12), metal);
+  lift.position.y = 0.23;
+  chair.add(lift);
+
+  const seat = new THREE.Mesh(rounded(0.46, 0.085, 0.44, 0.035), upholstery);
+  seat.position.y = 0.42;
+  seat.castShadow = true;
+  seat.receiveShadow = true;
+  chair.add(seat);
+
+  const back = new THREE.Mesh(rounded(0.42, 0.46, 0.075, 0.03), upholstery);
+  back.position.set(0, 0.66, 0.2);
+  back.rotation.x = THREE.MathUtils.degToRad(10);
+  back.castShadow = true;
+  chair.add(back);
+
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.03), trim);
+  spine.position.set(0, 0.44, 0.225);
+  chair.add(spine);
+
+  [-1, 1].forEach(side => {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.03), trim);
+    post.position.set(side * 0.225, 0.5, 0.02);
+    post.castShadow = true;
+    chair.add(post);
+
+    const rest = new THREE.Mesh(rounded(0.07, 0.03, 0.24, 0.014), trim);
+    rest.position.set(side * 0.225, 0.575, 0.03);
+    chair.add(rest);
+  });
+
+  return chair;
+}
 
 /**
  * A desk with a screen and a keyboard. Built once at its unit size and scaled to the footprint it is
@@ -1007,7 +1077,6 @@ export const Office3D: React.FC<Office3DProps> = ({
         const isMine = mine.has(seat.id);
         const isTaken = taken.has(seat.id);
         const isSelected = selectedSeatId === seat.id;
-        const seatColor = isSelected ? COLORS.selected : isMine ? COLORS.mine : isTaken ? COLORS.taken : COLORS.free;
         const seatGroup = new THREE.Group();
         seatGroup.name = `seat:${seat.id}`;
         seatGroup.position.set(Number(seat.x) || 0, SEAT_BASE, Number(seat.z) || 0);
@@ -1015,44 +1084,45 @@ export const Office3D: React.FC<Office3DProps> = ({
         const label = `${seat.label || `Seat ${index + 1}`} · ${room.name}${isMine ? ' (yours)' : isTaken ? ' (taken)' : ''}`;
         const data = { kind: 'seat', roomId: room.id, seatId: seat.id, label };
 
-        // One chair: a soft square seat, a slim back and four thin legs — nothing else.
-        const fabric = material(seatColor, { roughness: 0.6 });
-        const frame = material(COLORS.leg, { roughness: 0.45, metalness: 0.25 });
+        // A black task chair. Its state is a soft disc on the floor, so the model stays monochrome.
+        seatGroup.add(buildChair());
 
-        const cushion = new THREE.Mesh(rounded(CHAIR_SEAT, 0.1, CHAIR_SEAT * 0.94, 0.045), fabric);
-        cushion.position.y = 0.45;
-        cushion.castShadow = true;
-        cushion.receiveShadow = true;
-        seatGroup.add(cushion);
-
-        const back = new THREE.Mesh(rounded(CHAIR_SEAT * 0.94, 0.3, 0.075, 0.04), fabric);
-        back.position.set(0, 0.61, CHAIR_SEAT * 0.4);
-        back.rotation.x = THREE.MathUtils.degToRad(9);
-        back.castShadow = true;
-        seatGroup.add(back);
-
-        const legGeometry = new THREE.CylinderGeometry(0.016, 0.016, 0.41, 8);
-        [-1, 1].forEach(sx => {
-          [-1, 1].forEach(sz => {
-            const leg = new THREE.Mesh(legGeometry, frame);
-            leg.position.set(sx * CHAIR_SEAT * 0.36, 0.205, sz * CHAIR_SEAT * 0.34);
-            leg.castShadow = true;
-            seatGroup.add(leg);
-          });
-        });
+        if (isMine || isTaken) {
+          const disc = new THREE.Mesh(
+            new THREE.CircleGeometry(0.34, 32),
+            new THREE.MeshBasicMaterial({
+              color: isMine ? COLORS.mine : COLORS.taken,
+              transparent: true,
+              opacity: isMine ? 0.75 : 0.5,
+              depthWrite: false,
+            })
+          );
+          disc.rotation.x = -Math.PI / 2;
+          disc.position.y = 0.005;
+          seatGroup.add(disc);
+        }
 
         if (isSelected) {
           const ring = new THREE.Mesh(
-            new THREE.RingGeometry(CHAIR_SEAT * 0.64, CHAIR_SEAT * 0.78, 28),
-            new THREE.MeshBasicMaterial({ color: COLORS.selected, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+            new THREE.RingGeometry(0.36, 0.44, 32),
+            new THREE.MeshBasicMaterial({ color: COLORS.selected, transparent: true, opacity: 0.95, side: THREE.DoubleSide })
           );
           ring.rotation.x = -Math.PI / 2;
-          ring.position.y = 0.004;
+          ring.position.y = 0.006;
           seatGroup.add(ring);
+        } else if (!isMine && !isTaken) {
+          // Free chairs keep a hairline marker, so an empty chair still reads as clickable.
+          const marker = new THREE.Mesh(
+            new THREE.RingGeometry(0.3, 0.34, 28),
+            new THREE.MeshBasicMaterial({ color: COLORS.free, transparent: true, opacity: 0.45, side: THREE.DoubleSide })
+          );
+          marker.rotation.x = -Math.PI / 2;
+          marker.position.y = 0.005;
+          seatGroup.add(marker);
         }
 
-        const chairBlob = softShadow(1.3, 1.3, 0.8);
-        chairBlob.position.set(-0.12, 0.004, -0.12);
+        const chairBlob = softShadow(1.25, 1.25, 0.7);
+        chairBlob.position.set(-0.1, 0.003, -0.1);
         seatGroup.add(chairBlob);
 
         seatGroup.traverse(child => {

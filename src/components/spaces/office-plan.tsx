@@ -32,9 +32,9 @@ export interface OfficePlanProps {
 }
 
 const LEGEND = [
-  { label: 'Free', color: '#7fa8c9' },
-  { label: 'Taken', color: '#b3a898' },
-  { label: 'Your seat', color: '#7cab8b' },
+  { label: 'Free', color: '#8bb4d4' },
+  { label: 'Taken', color: '#a99e8e' },
+  { label: 'Your seat', color: '#6f9f83' },
 ];
 
 /**
@@ -87,7 +87,7 @@ export function OfficePlan({
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
         <MousePointerClick className="h-3 w-3 shrink-0" />
-        Grey chairs are already taken on this day — pick a blue one.
+        A grey disc marks a chair that is taken on this day, a green disc is yours — pick a free one.
       </p>
     </Card>
   );

@@ -137,6 +137,45 @@ function regenerateSeats(room: RoomDraft, existing: SeatDraft[], count: number):
   });
 }
 
+/** Four quick angles plus a slider, used for chairs and desks alike. */
+function RotationControl({ value, onChange }: { value: number; onChange: (degrees: number) => void }) {
+  const angle = ((Math.round(value) % 360) + 360) % 360;
+  return (
+    <div>
+      <label className="ui-label mb-1 block">Rotation</label>
+      <div className="grid grid-cols-4 gap-1.5">
+        {[0, 90, 180, 270].map(step => (
+          <button
+            key={step}
+            type="button"
+            onClick={() => onChange(step)}
+            className={`cursor-pointer rounded-[var(--radius-control)] border px-2 py-1 font-mono text-[11px] transition-colors ${
+              angle === step
+                ? 'border-[var(--accent)] bg-[var(--surface-muted)] font-semibold text-[var(--ink)]'
+                : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
+            }`}
+          >
+            {step}°
+          </button>
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <input
+          type="range"
+          min={0}
+          max={355}
+          step={5}
+          value={angle}
+          onChange={event => onChange(Number(event.target.value))}
+          className="w-full cursor-pointer accent-[var(--accent)]"
+          aria-label="Rotation angle"
+        />
+        <span className="w-10 shrink-0 text-right font-mono text-[11px] text-[var(--ink-3)]">{angle}°</span>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Admin floor-plan editor.
  *
@@ -292,6 +331,13 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     const room = rooms.find(entry => entry.id === seat.space_id);
     const position = clampSeatToRoom(room || {}, snap(x), snap(z));
     setSeats(prev => prev.map(entry => (entry.id === seat.id ? { ...entry, x: position.x, z: position.z } : entry)));
+    setDirty(true);
+  };
+
+  /** Turn a chair in place; the base stays where it is, only the facing changes. */
+  const rotateSeat = (seat: SpaceSeat, degrees: number) => {
+    const angle = ((Math.round(degrees) % 360) + 360) % 360;
+    setSeats(prev => prev.map(entry => (entry.id === seat.id ? { ...entry, rotation: angle } : entry)));
     setDirty(true);
   };
 
@@ -637,25 +683,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                   />
                 </div>
               </div>
-              <div>
-                <label className="ui-label mb-1 block">Rotation</label>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[0, 90, 180, 270].map(angle => (
-                    <button
-                      key={angle}
-                      type="button"
-                      onClick={() => rotateDesk(selectedDesk, angle)}
-                      className={`cursor-pointer rounded-[var(--radius-control)] border px-2 py-1 font-mono text-[11px] transition-colors ${
-                        Math.round(selectedDesk.rotation) === angle
-                          ? 'border-[var(--accent)] bg-[var(--surface-muted)] font-semibold text-[var(--ink)]'
-                          : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
-                      }`}
-                    >
-                      {angle}°
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <RotationControl value={selectedDesk.rotation} onChange={angle => rotateDesk(selectedDesk, angle)} />
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="ui-label mb-1 block">X (m)</label>
@@ -713,6 +741,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                   />
                 </div>
               </div>
+              <RotationControl value={selectedSeat.rotation} onChange={angle => rotateSeat(selectedSeat, angle)} />
               <Button size="sm" variant="secondary" className="w-full" onClick={() => removeSeat(selectedSeat.id)}>
                 <Trash2 className="h-3.5 w-3.5" /> Remove this chair
               </Button>
