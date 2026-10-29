@@ -304,7 +304,7 @@ export const SpacesManager: React.FC = () => {
                 className="ui-input w-full"
               >
                 <option value="whole_day">Whole day — one seat per person for the date</option>
-                <option value="time_range">Time range — first booking opens a session, others join</option>
+                <option value="time_range">Time range — the room runs sessions, each with its own seats</option>
               </select>
               <p className="ui-meta mt-1.5">{BOOKING_MODE_LABELS[typeDraft.booking_mode].hint}</p>
             </div>

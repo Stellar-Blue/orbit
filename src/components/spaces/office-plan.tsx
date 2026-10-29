@@ -27,6 +27,8 @@ export interface OfficePlanProps {
   typesById: Map<string, SpaceType>;
   takenSeatIds: string[];
   mySeatIds?: string[];
+  /** Which session the timed rooms are showing, so the taken chairs are not mistaken for the whole day. */
+  sessionNote?: string | null;
   onPickSeat: (seat: SpaceSeat, room: Space) => void;
   height?: number;
 }
@@ -42,7 +44,7 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, onPickSeat, height = 540,
+  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, sessionNote, onPickSeat, height = 540,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -87,7 +89,8 @@ export function OfficePlan({
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
         <MousePointerClick className="h-3 w-3 shrink-0" />
-        A grey disc marks a chair that is taken on this day, a green disc is yours — pick a free one.
+        A grey disc marks a taken chair, a green disc is yours — pick a free one.
+        {sessionNote ? <span className="truncate">Showing {sessionNote}</span> : null}
       </p>
     </Card>
   );

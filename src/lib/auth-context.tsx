@@ -43,7 +43,7 @@ import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig,
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
-import { validateSessionWindow } from './spaces';
+import { clockLabel, validateSessionWindow } from './spaces';
 import { clampSeatToRoom, seatGrid } from './office-layout';
 
 /**
@@ -218,7 +218,7 @@ interface AppState {
     profileId: string;
     note?: string;
     seatId?: string | null;
-    session?: { startsAt: string; endsAt: string; title?: string } | null;
+    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
   }) => Promise<{ ok: boolean; error?: string }>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
   refreshSpaces: () => Promise<void>;
@@ -478,6 +478,25 @@ const generateUUID = (): string => {
     const r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
+};
+
+/**
+ * Two demo meeting windows around the current clock: one already over, one still ahead. Both stay
+ * inside the day, so the demo always shows an "Ended" row and a joinable one.
+ */
+const demoSessionWindows = (now: Date): { earlier: { startsAt: string; endsAt: string }; later: { startsAt: string; endsAt: string } } => {
+  const MINUTES = 60;
+  const lastStart = 24 * 60 - MINUTES;
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const clamp = (value: number) => Math.max(0, Math.min(lastStart, value));
+  const label = (total: number) =>
+    `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`;
+  const earlierStart = clamp(minutesNow - 120);
+  const laterStart = clamp(Math.max(minutesNow + 90, earlierStart + MINUTES));
+  return {
+    earlier: { startsAt: label(earlierStart), endsAt: label(earlierStart + MINUTES) },
+    later: { startsAt: label(laterStart), endsAt: label(laterStart + MINUTES) },
+  };
 };
 
 const signInvoiceDocuments = async (
@@ -888,15 +907,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           active: true,
         }))
     );
+    // Two sessions in the same room, so the demo shows a day of back-to-back meetings. They sit
+    // around the current clock, so whichever hour the demo is opened at one is over and one is ahead.
+    const demoTimes = demoSessionWindows(new Date());
     setSpaceSessions([{
       id: 'sps-conf-a-today',
       space_id: 'spc-conf-a',
       session_date: demoToday,
-      starts_at: '10:00:00',
-      ends_at: '11:00:00',
+      starts_at: demoTimes.earlier.startsAt,
+      ends_at: demoTimes.earlier.endsAt,
       title: 'Weekly sync',
       created_by: 'prof-nikos',
       created_at: `${demoToday}T07:00:00Z`,
+    }, {
+      id: 'sps-conf-a-later',
+      space_id: 'spc-conf-a',
+      session_date: demoToday,
+      starts_at: demoTimes.later.startsAt,
+      ends_at: demoTimes.later.endsAt,
+      title: 'Design review',
+      created_by: 'prof-eleni',
+      created_at: `${demoToday}T07:05:00Z`,
     }]);
     setSpaceBookings([
       { id: 'spb-1', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s1', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:10:00Z` },
@@ -904,6 +935,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       { id: 'spb-3', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s3', profile_id: 'prof-eleni', booking_date: demoToday, created_at: `${demoToday}T07:30:00Z` },
       { id: 'spb-4', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', seat_id: 'spc-conf-a-s1', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:40:00Z` },
       { id: 'spb-5', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', seat_id: 'spc-conf-a-s2', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:45:00Z` },
+      { id: 'spb-6', space_id: 'spc-conf-a', session_id: 'sps-conf-a-later', seat_id: 'spc-conf-a-s3', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:50:00Z` },
     ].map(booking => ({
       ...booking,
       profile: demoProfiles.find(profile => profile.id === booking.profile_id),
@@ -5731,65 +5763,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     note?: string;
     /** The chair picked on the floor plan; optional, the room's capacity still governs. */
     seatId?: string | null;
-    session?: { startsAt: string; endsAt: string; title?: string } | null;
+    /** `id` joins a session that already exists; without it the window opens a new session. */
+    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
   }): Promise<{ ok: boolean; error?: string }> => {
     const supabase = getSupabaseBrowserClient();
     try {
       let sessionId: string | null = null;
       if (input.mode === 'time_range') {
-        let session = spaceSessions.find(
-          entry => entry.space_id === input.space.id && entry.session_date === input.date
-        );
-        if (!session) {
-          const { data: existing } = await supabase
-            .from('space_sessions').select('*')
-            .eq('space_id', input.space.id).eq('session_date', input.date)
-            .maybeSingle();
-          const fetched = existing as SpaceSession | null;
-          session = fetched?.id ? fetched : undefined;
-        }
-        if (!session) {
-          if (!input.session) return { ok: false, error: 'Choose the time window for this session first.' };
+        if (input.session?.id) {
+          sessionId = input.session.id;
+        } else {
+          if (!input.session) return { ok: false, error: 'Choose the session this seat belongs to.' };
           const invalid = validateSessionWindow(input.session.startsAt, input.session.endsAt);
           if (invalid) return { ok: false, error: invalid };
-          const { data: created, error: sessionError } = await supabase.from('space_sessions').insert([{
-            space_id: input.space.id,
-            session_date: input.date,
-            starts_at: input.session.startsAt,
-            ends_at: input.session.endsAt,
-            title: input.session.title?.trim() || null,
-            created_by: input.profileId,
-          }]).select().single();
-          if (sessionError) {
-            // Someone opened the session a moment earlier — join theirs instead of failing.
-            if (sessionError.code === '23505') {
-              const { data: raced } = await supabase
-                .from('space_sessions').select('*')
-                .eq('space_id', input.space.id).eq('session_date', input.date)
-                .maybeSingle();
-              const racedSession = raced as SpaceSession | null;
-              if (!racedSession?.id) return { ok: false, error: sessionError.message };
-              session = racedSession;
-            } else {
-              return { ok: false, error: sessionError.message };
-            }
-          } else {
-            // Build the row locally as well: the demo workspace answers writes without a body, and
-            // the card must show the window it just opened either way.
-            session = {
-              ...(created as SpaceSession | null),
-              id: (created as SpaceSession | null)?.id || generateUUID(),
+          const startsAt = clockLabel(input.session.startsAt);
+          const endsAt = clockLabel(input.session.endsAt);
+          const sameWindow = (entry: SpaceSession) =>
+            entry.space_id === input.space.id &&
+            entry.session_date === input.date &&
+            clockLabel(entry.starts_at) === startsAt &&
+            clockLabel(entry.ends_at) === endsAt;
+
+          let session = spaceSessions.find(sameWindow);
+          if (!session) {
+            const { data: existing, error: lookupError } = await supabase
+              .from('space_sessions').select('*')
+              .eq('space_id', input.space.id).eq('session_date', input.date).eq('starts_at', startsAt);
+            if (lookupError) return { ok: false, error: lookupError.message };
+            session = ((existing || []) as SpaceSession[]).find(sameWindow);
+          }
+          if (!session) {
+            const { data: created, error: sessionError } = await supabase.from('space_sessions').insert([{
               space_id: input.space.id,
               session_date: input.date,
-              starts_at: input.session.startsAt,
-              ends_at: input.session.endsAt,
+              starts_at: startsAt,
+              ends_at: endsAt,
               title: input.session.title?.trim() || null,
-              created_at: new Date().toISOString(),
-            } as SpaceSession;
-            setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
+              // The session belongs to whoever is booking, even when an admin books for a colleague.
+              created_by: currentUser?.id || null,
+            }]).select().single();
+            if (sessionError) {
+              // Someone opened the same window a moment earlier — join theirs instead of failing.
+              if (sessionError.code === '23505') {
+                const { data: raced } = await supabase
+                  .from('space_sessions').select('*')
+                  .eq('space_id', input.space.id).eq('session_date', input.date).eq('starts_at', startsAt);
+                const racedSession = ((raced || []) as SpaceSession[]).find(sameWindow);
+                if (!racedSession?.id) return { ok: false, error: sessionError.message };
+                session = racedSession;
+              } else {
+                // An overlapping window raises the trigger's own readable message.
+                return { ok: false, error: sessionError.message };
+              }
+            } else {
+              // Build the row locally as well: the demo workspace answers writes without a body, and
+              // the card must show the window it just opened either way.
+              session = {
+                ...(created as SpaceSession | null),
+                id: (created as SpaceSession | null)?.id || generateUUID(),
+                space_id: input.space.id,
+                session_date: input.date,
+                starts_at: startsAt,
+                ends_at: endsAt,
+                title: input.session.title?.trim() || null,
+                created_at: new Date().toISOString(),
+              } as SpaceSession;
+              setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
+            }
           }
+          sessionId = session.id;
         }
-        sessionId = session.id;
       }
 
       const { data: booking, error } = await supabase.from('space_bookings').insert([{

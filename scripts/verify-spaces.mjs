@@ -10,9 +10,12 @@ import {
   BOOKING_MODE_LABELS,
   clockLabel,
   defaultSessionWindow,
+  overlappingSession,
   seatHolders,
   seatsLabel,
+  sessionEnded,
   sessionLabel,
+  spaceDaySessions,
   spaceDayState,
   validateSessionWindow,
 } from '@/lib/spaces';
@@ -91,8 +94,13 @@ assert(
 );
 
 // --- Timed rooms and sessions ------------------------------------------------
+const DAY = '2026-11-10';
+// A fixed clock keeps the "has this window already ended" rule deterministic.
+const at = (hhmm) => new Date(`${DAY}T${hhmm}:00`);
+const morning = at('09:00');
+
 const roomNoSession = spaceDayState({
-  space, type: roomType, date: '2026-11-10', sessions: [], bookings: [], profileId: 'me',
+  space, type: roomType, date: DAY, sessions: [], bookings: [], profileId: 'me', now: morning,
 });
 assert(
   roomNoSession.needsSession && roomNoSession.action === 'book' && roomNoSession.session === undefined,
@@ -101,12 +109,17 @@ assert(
 );
 
 const session = {
-  id: 'ses-1', space_id: 'sp-1', session_date: '2026-11-10',
+  id: 'ses-1', space_id: 'sp-1', session_date: DAY,
   starts_at: '09:30:00', ends_at: '10:30:00', title: 'Sprint planning', created_at: '2026-11-01T09:00:00Z',
 };
+const afternoon = {
+  id: 'ses-2', space_id: 'sp-1', session_date: DAY,
+  starts_at: '14:00:00', ends_at: '15:00:00', title: 'Design review', created_at: '2026-11-01T09:05:00Z',
+};
+
 const roomJoining = spaceDayState({
-  space, type: roomType, date: '2026-11-10', sessions: [session],
-  bookings: [seat('b1', 'someone', { session_id: 'ses-1' })], profileId: 'me',
+  space, type: roomType, date: DAY, sessions: [session],
+  bookings: [seat('b1', 'someone', { session_id: 'ses-1' })], profileId: 'me', now: morning,
 });
 assert(
   roomJoining.session?.id === 'ses-1' && roomJoining.action === 'join' && !roomJoining.needsSession &&
@@ -116,8 +129,8 @@ assert(
 );
 
 const roomFull = spaceDayState({
-  space: { id: 'sp-1', capacity: 1 }, type: roomType, date: '2026-11-10', sessions: [session],
-  bookings: [seat('b1', 'someone', { session_id: 'ses-1' })], profileId: 'me',
+  space: { id: 'sp-1', capacity: 1 }, type: roomType, date: DAY, sessions: [session],
+  bookings: [seat('b1', 'someone', { session_id: 'ses-1' })], profileId: 'me', now: morning,
 });
 assert(
   roomFull.full && roomFull.action === 'full',
@@ -126,18 +139,106 @@ assert(
 );
 
 const roomMine = spaceDayState({
-  space, type: roomType, date: '2026-11-10', sessions: [session],
-  bookings: [seat('b1', 'me', { session_id: 'ses-1' })], profileId: 'me',
+  space, type: roomType, date: DAY, sessions: [session],
+  bookings: [seat('b1', 'me', { session_id: 'ses-1' })], profileId: 'me', now: morning,
 });
 assert(roomMine.action === 'leave', 'Joining a session can be undone from the same card');
 
 const wrongDaySession = spaceDayState({
-  space, type: roomType, date: '2026-11-12', sessions: [session], bookings: [], profileId: 'me',
+  space, type: roomType, date: '2026-11-12', sessions: [session], bookings: [], profileId: 'me', now: morning,
 });
 assert(
   wrongDaySession.session === undefined && wrongDaySession.needsSession,
   'A session belongs to its own date only',
   String(wrongDaySession.session?.id)
+);
+
+// --- Several sessions in one day ---------------------------------------------
+const twoSessions = [session, afternoon];
+const bothSessions = spaceDayState({
+  space, type: roomType, date: DAY, sessions: [afternoon, session], bookings: [], profileId: 'me', now: morning,
+});
+assert(
+  bothSessions.sessions.length === 2 &&
+    bothSessions.sessions[0].session.id === 'ses-1' &&
+    bothSessions.sessions[1].session.id === 'ses-2',
+  'A room lists every session of the day in start order',
+  bothSessions.sessions.map(entry => clockLabel(entry.session.starts_at)).join(', ')
+);
+
+const perSession = spaceDaySessions({
+  space, date: DAY,
+  sessions: twoSessions,
+  bookings: [
+    seat('b1', 'a', { session_id: 'ses-1' }),
+    seat('b2', 'b', { session_id: 'ses-1' }),
+    seat('b3', 'c', { session_id: 'ses-2' }),
+  ],
+  profileId: 'me',
+  now: morning,
+});
+assert(
+  perSession[0].seatsTaken === 2 && perSession[0].seatsFree === 1 && perSession[0].action === 'join' &&
+    perSession[1].seatsTaken === 1 && perSession[1].seatsFree === 2,
+  'Each session counts only its own seats',
+  `${perSession[0].seatsTaken}/${space.capacity} · ${perSession[1].seatsTaken}/${space.capacity}`
+);
+
+const afternoonFocus = spaceDayState({
+  space, type: roomType, date: DAY, sessions: twoSessions, bookings: [], profileId: 'me', now: at('12:00'),
+});
+assert(
+  afternoonFocus.session?.id === 'ses-2',
+  'The card leads with the next session that has not started yet',
+  sessionLabel(afternoonFocus.session || session)
+);
+
+const roomFullPerSession = spaceDaySessions({
+  space: { id: 'sp-1', capacity: 1 },
+  date: DAY,
+  sessions: twoSessions,
+  bookings: [seat('b1', 'someone', { session_id: 'ses-1' })],
+  profileId: 'me',
+  now: morning,
+});
+assert(
+  roomFullPerSession[0].full && roomFullPerSession[0].action === 'full' && roomFullPerSession[1].action === 'join',
+  'A full session leaves the other session of the day open',
+  `${roomFullPerSession[0].action} / ${roomFullPerSession[1].action}`
+);
+
+const mineMorning = spaceDayState({
+  space, type: roomType, date: DAY, sessions: twoSessions,
+  bookings: [seat('b1', 'me', { session_id: 'ses-1' }), seat('b2', 'other', { session_id: 'ses-2' })],
+  profileId: 'me', now: morning,
+});
+assert(
+  mineMorning.session?.id === 'ses-1' && mineMorning.sessions[1].action === 'join',
+  'Holding a seat in one session still lets you join the next one',
+  `${mineMorning.sessions[0].action} / ${mineMorning.sessions[1].action}`
+);
+
+const endedMorning = spaceDaySessions({
+  space, date: DAY, sessions: twoSessions, bookings: [], profileId: 'me', now: at('11:00'),
+});
+assert(
+  endedMorning[0].ended && endedMorning[0].action === 'ended' && !endedMorning[1].ended,
+  'A window that already ended cannot be joined',
+  `${endedMorning[0].action} / ${endedMorning[1].action}`
+);
+assert(
+  sessionEnded({ session_date: '2026-11-09', ends_at: '23:00:00' }, morning) &&
+    !sessionEnded({ session_date: '2026-11-11', ends_at: '00:10:00' }, morning) &&
+    !sessionEnded(session, at('10:29')) && sessionEnded(session, at('10:30')),
+  'Ended means a past date, or today once the end time has gone by'
+);
+
+assert(
+  Boolean(overlappingSession(twoSessions, { startsAt: '10:00', endsAt: '11:00' })) &&
+    overlappingSession(twoSessions, { startsAt: '10:30', endsAt: '14:00' }) === undefined &&
+    overlappingSession(twoSessions, { startsAt: '09:00', endsAt: '09:30' }) === undefined,
+  'A new window may not overlap a session already in the room',
+  sessionLabel(overlappingSession(twoSessions, { startsAt: '10:00', endsAt: '11:00' }) || session)
 );
 
 // --- Formatting + validation -------------------------------------------------

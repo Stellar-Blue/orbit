@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import {
-  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock, DoorOpen, Grid2x2, LayoutGrid, MapPin, Users, X,
+  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Grid2x2, LayoutGrid, MapPin, Users, X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Badge, Button, Card, Modal } from '@/components/ui/primitives';
@@ -13,9 +13,10 @@ import { notifySuccess } from '@/lib/validation-modal';
 import { SpacesManager } from '@/components/spaces/spaces-manager';
 import { OfficePlan, OfficePlanEmpty } from '@/components/spaces/office-plan';
 import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
+import { SessionSlots } from '@/components/spaces/session-slots';
 import {
-  BOOKING_MODE_LABELS, clockLabel, defaultSessionWindow, seatHolders, seatsLabel, sessionLabel, spaceDayState,
-  validateSessionWindow, type SpaceDayState,
+  BOOKING_MODE_LABELS, clockLabel, nextFreeSessionWindow, overlappingSession, seatHolders, seatsLabel, sessionLabel,
+  spaceDayState, validateSessionWindow, type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
 import type { Profile, Space, SpaceSeat, SpaceType } from '@/lib/types';
@@ -31,6 +32,8 @@ interface BookingDraft {
   state: SpaceDayState;
   attendeeId: string;
   seatId: string | null;
+  /** The session being joined; null means the dialog opens a new one from `startsAt`/`endsAt`. */
+  sessionId: string | null;
   startsAt: string;
   endsAt: string;
   title: string;
@@ -89,11 +92,15 @@ export default function SpacesPage() {
     [activeTypes, activeSpaces]
   );
 
+  // Every booking of the day counts here, whichever session of the room it belongs to.
   const seatsToday = useMemo(() => {
-    const taken = [...states.values()].reduce((sum, state) => sum + state.seatsTaken, 0);
+    const bookable = new Set(activeSpaces.map(space => space.id));
+    const taken = spaceBookings.filter(
+      booking => booking.booking_date === day && bookable.has(booking.space_id)
+    ).length;
     const capacity = activeSpaces.reduce((sum, space) => sum + space.capacity, 0);
     return { taken, capacity };
-  }, [states, activeSpaces]);
+  }, [spaceBookings, day, activeSpaces]);
 
   const mySeat = useMemo(() => {
     const entry = [...states.entries()].find(([, state]) => Boolean(state.myBooking));
@@ -131,21 +138,29 @@ export default function SpacesPage() {
     [spaceDesks, planRoomIds]
   );
 
-  const takenSeatIds = useMemo(
-    () => spaceBookings
-      .filter(booking => booking.booking_date === day && booking.seat_id && planRoomIds.has(booking.space_id))
-      .map(booking => booking.seat_id as string),
-    [spaceBookings, day, planRoomIds]
-  );
+  // A timed room shows the chairs of the session it leads with (yours, otherwise the next one), so a
+  // chair booked for the 10:00 meeting does not look taken for the 14:00 one.
+  const planSeatMarks = useMemo(() => {
+    const taken: string[] = [];
+    const mine: string[] = [];
+    spaceBookings.forEach(booking => {
+      if (booking.booking_date !== day || !booking.seat_id || !planRoomIds.has(booking.space_id)) return;
+      const state = states.get(booking.space_id);
+      if (!state) return;
+      if (state.mode === 'time_range' && (!state.session || booking.session_id !== state.session.id)) return;
+      taken.push(booking.seat_id);
+      if (booking.profile_id === currentUser.id) mine.push(booking.seat_id);
+    });
+    return { taken, mine };
+  }, [spaceBookings, day, planRoomIds, states, currentUser.id]);
 
-  const mySeatIds = useMemo(
-    () => spaceBookings
-      .filter(booking => (
-        booking.booking_date === day && booking.profile_id === currentUser.id && Boolean(booking.seat_id)
-      ))
-      .map(booking => booking.seat_id as string),
-    [spaceBookings, day, currentUser.id]
-  );
+  const planSessionNote = useMemo(() => {
+    const lines = planRooms
+      .map(room => ({ room, state: states.get(room.id) }))
+      .filter(entry => entry.state?.mode === 'time_range' && entry.state.session)
+      .map(({ room, state }) => `${room.name}: ${sessionLabel(state!.session!)}`);
+    return lines.length > 0 ? lines.join(' · ') : null;
+  }, [planRooms, states]);
 
   const pickSeat = (seat: SpaceSeat, room: Space) => {
     if (isPast) {
@@ -154,6 +169,21 @@ export default function SpacesPage() {
     }
     const state = states.get(room.id);
     if (!state) return;
+    if (state.mode === 'time_range') {
+      const open = state.sessions.filter(entry => !entry.myBooking && !entry.full && !entry.ended);
+      const focus = state.sessions.find(entry => entry.session.id === state.session?.id);
+      const target = focus && open.includes(focus) ? focus : open[0];
+      if (!target) {
+        alert(state.sessions.length === 0
+          ? `${room.name} has no session yet — open one from the room card first.`
+          : state.sessions.every(entry => entry.myBooking)
+            ? `You already hold a seat in every session of ${room.name} today.`
+            : `Every session of ${room.name} is full or over today.`);
+        return;
+      }
+      openDraft(room, state, seat.id, target);
+      return;
+    }
     if (state.myBooking) {
       alert(`You already hold a seat in ${room.name} on ${formatDate(day)}.`);
       return;
@@ -181,36 +211,79 @@ export default function SpacesPage() {
     [profiles]
   );
 
-  const openDraft = (space: Space, state: SpaceDayState, seatId: string | null = null) => {
+  const openDraft = (
+    space: Space,
+    state: SpaceDayState,
+    seatId: string | null = null,
+    session: SpaceSessionState | null = null
+  ) => {
     if (isPast) return;
     const type = typesById.get(space.type_id);
     if (!type) return;
-    const window = state.session
-      ? { startsAt: clockLabel(state.session.starts_at), endsAt: clockLabel(state.session.ends_at) }
-      : defaultSessionWindow();
+    const focus = session ?? state.sessions.find(entry => entry.session.id === state.session?.id) ?? null;
+    const window = focus
+      ? { startsAt: clockLabel(focus.session.starts_at), endsAt: clockLabel(focus.session.ends_at) }
+      : nextFreeSessionWindow(state.sessions.map(entry => entry.session));
     setDraft({
       space,
       type,
       state,
       attendeeId: currentUser.id,
       seatId,
+      sessionId: focus?.session.id ?? null,
       startsAt: window.startsAt,
       endsAt: window.endsAt,
-      title: state.session?.title || '',
+      title: focus?.session.title || '',
       note: '',
     });
   };
 
+  /** Opens the dialog on a brand-new window, whatever session the room is currently showing. */
+  const openNewSession = (space: Space, state: SpaceDayState) => {
+    if (isPast) return;
+    const type = typesById.get(space.type_id);
+    if (!type) return;
+    const window = nextFreeSessionWindow(state.sessions.map(entry => entry.session));
+    setDraft({
+      space,
+      type,
+      state,
+      attendeeId: currentUser.id,
+      seatId: null,
+      sessionId: null,
+      startsAt: window.startsAt,
+      endsAt: window.endsAt,
+      title: '',
+      note: '',
+    });
+  };
+
+  /** A brand-new window must be valid and must not collide with a session already in the room. */
+  const windowErrorOf = (entry: BookingDraft): string | null => {
+    if (entry.type.booking_mode !== 'time_range') return null;
+    if (entry.sessionId) {
+      const chosen = entry.state.sessions.find(item => item.session.id === entry.sessionId);
+      return chosen?.ended ? 'That session is already over — pick another one.' : null;
+    }
+    const invalid = validateSessionWindow(entry.startsAt, entry.endsAt);
+    if (invalid) return invalid;
+    const clash = overlappingSession(entry.state.sessions.map(item => item.session), {
+      startsAt: entry.startsAt,
+      endsAt: entry.endsAt,
+    });
+    return clash
+      ? `${entry.space.name} already has a session ${sessionLabel(clash)}. Pick a window that does not overlap.`
+      : null;
+  };
+
   const submit = async () => {
     if (!draft || saving) return;
-    const needsWindow = draft.type.booking_mode === 'time_range' && !draft.state.session;
-    if (needsWindow) {
-      const invalid = validateSessionWindow(draft.startsAt, draft.endsAt);
-      if (invalid) {
-        alert(invalid);
-        return;
-      }
+    const windowError = windowErrorOf(draft);
+    if (windowError) {
+      alert(windowError);
+      return;
     }
+    const timed = draft.type.booking_mode === 'time_range';
     setSaving(true);
     const result = await bookSpaceSeat({
       space: draft.space,
@@ -219,8 +292,10 @@ export default function SpacesPage() {
       profileId: draft.attendeeId,
       seatId: draft.seatId,
       note: draft.note || undefined,
-      session: needsWindow
-        ? { startsAt: draft.startsAt, endsAt: draft.endsAt, title: draft.title }
+      session: timed
+        ? draft.sessionId
+          ? { id: draft.sessionId, startsAt: draft.startsAt, endsAt: draft.endsAt }
+          : { startsAt: draft.startsAt, endsAt: draft.endsAt, title: draft.title }
         : null,
     });
     setSaving(false);
@@ -229,7 +304,9 @@ export default function SpacesPage() {
       return;
     }
     notifySuccess(
-      `${draft.space.name} booked for ${formatDate(day)}.`,
+      timed
+        ? `${draft.space.name} booked for ${formatDate(day)}, ${clockLabel(draft.startsAt)} – ${clockLabel(draft.endsAt)}.`
+        : `${draft.space.name} booked for ${formatDate(day)}.`,
       draft.attendeeId === currentUser.id ? 'Seat booked' : 'Seat booked for a colleague'
     );
     setDraft(null);
@@ -241,6 +318,12 @@ export default function SpacesPage() {
     if (ok) notifySuccess(`The seat in ${label} has been released.`, 'Seat released');
   };
 
+  const draftSession = draft?.state.sessions.find(entry => entry.session.id === draft.sessionId) ?? null;
+  const draftSeatTaken = Boolean(
+    draft?.seatId && draftSession?.bookings.some(booking => booking.seat_id === draft.seatId)
+  );
+  const windowError = draft ? windowErrorOf(draft) : null;
+
   return (
     <div className="w-full space-y-5 animate-in fade-in duration-150">
       {/* Header — where you are, then the day you are booking. */}
@@ -250,7 +333,7 @@ export default function SpacesPage() {
           <h1 className="ui-title mt-1">Spaces</h1>
           <p className="text-[12.5px] text-[var(--ink-3)] mt-1 max-w-xl">
             Declare the rooms the company has and book a seat in them. Desks are booked for the day;
-            meeting rooms open a session at a time that the rest of the team joins.
+            meeting rooms run sessions and each session takes its own seats.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -343,8 +426,9 @@ export default function SpacesPage() {
           seats={planSeats}
           desks={planDesks}
           typesById={typesById}
-          takenSeatIds={takenSeatIds}
-          mySeatIds={mySeatIds}
+          takenSeatIds={planSeatMarks.taken}
+          mySeatIds={planSeatMarks.mine}
+          sessionNote={planSessionNote}
           onPickSeat={pickSeat}
         />
       ) : (
@@ -381,16 +465,18 @@ export default function SpacesPage() {
               <span className="text-[11px] text-[var(--ink-4)]">
                 {BOOKING_MODE_LABELS[type.booking_mode].label} · {type.booking_mode === 'whole_day'
                   ? 'one seat for the day'
-                  : 'the first booking opens the session, the rest join it'}
+                  : 'the room runs sessions, each with its own seats'}
               </span>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {rooms.map(space => {
                 const state = states.get(space.id);
                 if (!state) return null;
+                const timed = state.mode === 'time_range';
                 const mine = Boolean(state.myBooking);
                 const holders = seatHolders(state.bookings);
                 const fillPct = Math.min(100, Math.round((state.seatsTaken / Math.max(space.capacity, 1)) * 100));
+                const sessionCount = state.sessions.length;
                 return (
                   <div key={space.id} className="bg-white border border-[var(--line)] rounded-[var(--radius-card)] p-3.5 space-y-2.5 shadow-[var(--shadow-card)]">
                     <div className="flex items-start justify-between gap-2">
@@ -400,62 +486,69 @@ export default function SpacesPage() {
                           {space.location ? <><MapPin className="w-3 h-3" />{space.location}</> : <span>No location</span>}
                         </p>
                       </div>
-                      <Badge variant={state.full ? 'error' : mine ? 'success' : 'neutral'}>
-                        {mine ? 'Your seat' : seatsLabel(state, space.capacity)}
-                      </Badge>
+                      {timed ? (
+                        <Badge variant={mine ? 'success' : sessionCount === 0 ? 'neutral' : 'info'}>
+                          {mine ? 'Your seat' : sessionCount === 0
+                            ? 'No sessions'
+                            : `${sessionCount} session${sessionCount === 1 ? '' : 's'}`}
+                        </Badge>
+                      ) : (
+                        <Badge variant={state.full ? 'error' : mine ? 'success' : 'neutral'}>
+                          {mine ? 'Your seat' : seatsLabel(state, space.capacity)}
+                        </Badge>
+                      )}
                     </div>
 
-                    {state.mode === 'time_range' && (
-                      <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--ink-2)]">
-                        <Clock className="w-3 h-3 text-[var(--ink-4)] shrink-0" />
-                        {state.session ? (
-                          <span className="truncate" title={sessionLabel(state.session)}>{sessionLabel(state.session)}</span>
-                        ) : (
-                          <span className="text-[var(--ink-3)]">No session yet — the first booking sets the time</span>
-                        )}
-                      </div>
-                    )}
-
-                    <div>
-                      <div className="h-1.5 w-full rounded-full bg-[var(--surface-sunken)] overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${state.full ? 'bg-rose-500' : 'bg-[var(--accent)]'}`}
-                          style={{ width: `${Math.max(fillPct, state.seatsTaken > 0 ? 6 : 0)}%` }}
-                        />
-                      </div>
-                      <div className="mt-1.5 flex items-center justify-between gap-2">
-                        <p className="ui-meta truncate" title={holders.join(', ')}>
-                          <Users className="w-3 h-3 inline mr-1 -mt-0.5" />
-                          {holders.length > 0 ? holders.join(', ') : 'Nobody booked yet'}
-                        </p>
-                        <span className="ui-meta shrink-0">{state.seatsFree} free</span>
-                      </div>
-                    </div>
-
-                    {isPast ? (
-                      <Button size="sm" variant="secondary" disabled className="w-full">
-                        Past day
-                      </Button>
-                    ) : mine && state.myBooking ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="w-full"
-                        onClick={() => void leave(state.myBooking!.id, space.name)}
-                      >
-                        <X className="w-3.5 h-3.5" /> Release my seat
-                      </Button>
-                    ) : state.full ? (
-                      <Button size="sm" variant="secondary" disabled className="w-full" title="The database refuses a seat over capacity">
-                        Fully booked
-                      </Button>
+                    {timed ? (
+                      <SessionSlots
+                        space={space}
+                        state={state}
+                        disabled={isPast}
+                        onJoin={entry => openDraft(space, state, null, entry)}
+                        onLeave={booking => void leave(booking.id, space.name)}
+                        onOpen={() => openNewSession(space, state)}
+                      />
                     ) : (
-                      <Button size="sm" variant="primary" className="w-full" onClick={() => openDraft(space, state)}>
-                        <CalendarPlus className="w-3.5 h-3.5" />
-                        {state.mode === 'time_range'
-                          ? state.session ? 'Join session' : 'Open session'
-                          : 'Book seat'}
-                      </Button>
+                      <>
+                        <div>
+                          <div className="h-1.5 w-full rounded-full bg-[var(--surface-sunken)] overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${state.full ? 'bg-rose-500' : 'bg-[var(--accent)]'}`}
+                              style={{ width: `${Math.max(fillPct, state.seatsTaken > 0 ? 6 : 0)}%` }}
+                            />
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between gap-2">
+                            <p className="ui-meta truncate" title={holders.join(', ')}>
+                              <Users className="w-3 h-3 inline mr-1 -mt-0.5" />
+                              {holders.length > 0 ? holders.join(', ') : 'Nobody booked yet'}
+                            </p>
+                            <span className="ui-meta shrink-0">{state.seatsFree} free</span>
+                          </div>
+                        </div>
+
+                        {isPast ? (
+                          <Button size="sm" variant="secondary" disabled className="w-full">
+                            Past day
+                          </Button>
+                        ) : mine && state.myBooking ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => void leave(state.myBooking!.id, space.name)}
+                          >
+                            <X className="w-3.5 h-3.5" /> Release my seat
+                          </Button>
+                        ) : state.full ? (
+                          <Button size="sm" variant="secondary" disabled className="w-full" title="The database refuses a seat over capacity">
+                            Fully booked
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="primary" className="w-full" onClick={() => openDraft(space, state)}>
+                            <CalendarPlus className="w-3.5 h-3.5" /> Book seat
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 );
@@ -500,7 +593,11 @@ export default function SpacesPage() {
       <Modal
         isOpen={Boolean(draft)}
         onClose={() => setDraft(null)}
-        title={draft?.state.session ? `Join ${draft.space.name}` : `Book ${draft?.space.name || 'a seat'}`}
+        title={!draft
+          ? 'Book a seat'
+          : draft.type.booking_mode === 'time_range'
+            ? draft.sessionId ? `Join ${draft.space.name}` : `Open a session in ${draft.space.name}`
+            : `Book ${draft.space.name}`}
         eyebrow={`Spaces · ${draft ? formatDate(day) : ''}`}
         size="xl"
       >
@@ -512,16 +609,57 @@ export default function SpacesPage() {
                 {draft.type.name} · {BOOKING_MODE_LABELS[draft.type.booking_mode].label} · {draft.space.capacity} seat{draft.space.capacity === 1 ? '' : 's'}
               </p>
               <p className="ui-meta mt-0.5">
-                {draft.state.session
-                  ? `${sessionLabel(draft.state.session)} · ${draft.state.seatsTaken} of ${draft.space.capacity} seats taken`
-                  : 'You are opening the session — others will join it.'}
+                {draftSession
+                  ? `${sessionLabel(draftSession.session)} · ${draftSession.seatsTaken} of ${draft.space.capacity} seats taken`
+                  : draft.type.booking_mode === 'time_range'
+                    ? 'You are opening the session — others will join it.'
+                    : `${draft.state.seatsTaken} of ${draft.space.capacity} seats taken for the day`}
               </p>
               {draft.seatId && (
-                <p className="mt-1 text-[11.5px] font-semibold text-[var(--accent-ink)]">
+                <p className={`mt-1 text-[11.5px] font-semibold ${draftSeatTaken ? 'text-rose-600' : 'text-[var(--accent-ink)]'}`}>
                   Chair {seatNameOf(draft.seatId)} selected on the plan
+                  {draftSeatTaken ? ' — already taken for this session' : ''}
                 </p>
               )}
             </div>
+
+            {draft.type.booking_mode === 'time_range' && draft.state.sessions.length > 0 && (
+              <div>
+                <label className="ui-label block mb-1.5">Session</label>
+                <select
+                  value={draft.sessionId ?? 'new'}
+                  onChange={event => {
+                    const value = event.target.value;
+                    if (value === 'new') {
+                      const window = nextFreeSessionWindow(draft.state.sessions.map(entry => entry.session));
+                      setDraft({
+                        ...draft, sessionId: null, startsAt: window.startsAt, endsAt: window.endsAt, title: '',
+                      });
+                      return;
+                    }
+                    const chosen = draft.state.sessions.find(entry => entry.session.id === value);
+                    if (!chosen) return;
+                    setDraft({
+                      ...draft,
+                      sessionId: chosen.session.id,
+                      startsAt: clockLabel(chosen.session.starts_at),
+                      endsAt: clockLabel(chosen.session.ends_at),
+                      title: chosen.session.title || '',
+                    });
+                  }}
+                  className="ui-input w-full"
+                >
+                  {draft.state.sessions.map(entry => (
+                    <option key={entry.session.id} value={entry.session.id}>
+                      {sessionLabel(entry.session)} · {entry.full
+                        ? `full (${entry.seatsTaken}/${draft.space.capacity})`
+                        : `${entry.seatsFree} free`}{entry.ended ? ' · ended' : ''}
+                    </option>
+                  ))}
+                  <option value="new">Open a new session…</option>
+                </select>
+              </div>
+            )}
 
             {isAdmin && (
               <div>
@@ -539,7 +677,7 @@ export default function SpacesPage() {
               </div>
             )}
 
-            {draft.type.booking_mode === 'time_range' && !draft.state.session && (
+            {draft.type.booking_mode === 'time_range' && !draft.sessionId && (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -586,13 +724,26 @@ export default function SpacesPage() {
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] pt-3">
-              <span className="text-[11px] text-[var(--ink-4)]">
-                {draft.state.seatsFree} of {draft.space.capacity} seats free on {formatDate(day)}.
+              <span className={`text-[11px] ${draftSeatTaken || windowError ? 'font-medium text-rose-600' : 'text-[var(--ink-4)]'}`}>
+                {draftSeatTaken
+                  ? 'That chair is taken for this session — pick another one on the plan.'
+                  : windowError
+                    ? windowError
+                    : `${draftSession ? draftSession.seatsFree : draft.state.seatsFree} of ${draft.space.capacity} seats free ${draftSession ? 'in this session' : `on ${formatDate(day)}`}.`}
               </span>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setDraft(null)}>Cancel</Button>
-                <Button size="sm" variant="primary" onClick={() => void submit()} disabled={saving}>
-                  {saving ? 'Booking…' : draft.state.session ? 'Join session' : 'Book seat'}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => void submit()}
+                  disabled={saving || draftSeatTaken || Boolean(windowError)}
+                >
+                  {saving
+                    ? 'Booking…'
+                    : draft.type.booking_mode === 'time_range'
+                      ? draft.sessionId ? 'Join session' : 'Open session'
+                      : 'Book seat'}
                 </Button>
               </div>
             </div>
