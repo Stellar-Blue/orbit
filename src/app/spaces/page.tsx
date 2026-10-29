@@ -17,7 +17,8 @@ import { SessionSlots } from '@/components/spaces/session-slots';
 import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
 import {
   BOOKING_MODE_LABELS, clockLabel, heldWholeDaySpace, nextFreeSessionWindow, overlappingSession, seatHolders,
-  seatsLabel, sessionLabel, spaceDayState, validateSessionWindow, type SpaceDayState, type SpaceSessionState,
+  seatsLabel, sessionLabel, spaceDayState, validateSessionWindow, wholeDayHeldOn,
+  type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
 import type { Profile, Space, SpaceBooking, SpaceSeat, SpaceType } from '@/lib/types';
@@ -196,12 +197,7 @@ export default function SpacesPage() {
 
   /** A whole-day booking already held by this person on this date, in another space. */
   const wholeDayHeldBy = (profileId: string, exceptSpaceId?: string): SpaceBooking | null =>
-    spaceBookings.find(booking =>
-      booking.booking_date === day
-      && booking.session_id === null
-      && booking.profile_id === profileId
-      && booking.space_id !== exceptSpaceId
-    ) ?? null;
+    wholeDayHeldOn(spaceBookings, profileId, day, exceptSpaceId);
 
   const pickSeat = (seat: SpaceSeat, room: Space) => {
     const state = states.get(room.id);
@@ -215,7 +211,7 @@ export default function SpacesPage() {
       alert(`You already hold a seat in ${room.name} on ${formatDate(day)}.`);
       return;
     }
-    if (!isAdmin && wholeDayHeldBy(currentUser.id, room.id)) {
+    if (wholeDayHeldBy(currentUser.id, room.id)) {
       alert(
         `A whole-day space takes one seat per day and you already hold one in ${wholeDaySeat?.space.name || 'another workspace'} `
         + `on ${formatDate(day)} — release it first.`
@@ -392,6 +388,13 @@ export default function SpacesPage() {
   };
 
   const draftSession = draft?.state.sessions.find(entry => entry.session.id === draft.sessionId) ?? null;
+  /** The whole-day booking the chosen attendee already holds elsewhere — the dialog cannot save past it. */
+  const draftWholeDayConflict = draft && draft.type.booking_mode === 'whole_day'
+    ? wholeDayHeldOn(spaceBookings, draft.attendeeId, day, draft.space.id)
+    : null;
+  const draftWholeDayRoom = draftWholeDayConflict
+    ? spaces.find(space => space.id === draftWholeDayConflict.space_id)?.name || 'another workspace'
+    : null;
   const draftSeatTaken = Boolean(
     draft?.seatId && draftSession?.bookings.some(booking => booking.seat_id === draft.seatId)
   );
@@ -631,7 +634,7 @@ export default function SpacesPage() {
                             variant="secondary"
                             disabled
                             className="w-full"
-                            title={`You already hold a whole-day seat in ${wholeDaySeat.space.name} on ${formatDate(day)}`}
+                            title={`One whole-day seat per day — you already hold one in ${wholeDaySeat.space.name} on ${formatDate(day)}`}
                           >
                             One seat per day
                           </Button>
@@ -641,7 +644,8 @@ export default function SpacesPage() {
                           </Button>
                         ) : (
                           <Button size="sm" variant="primary" className="w-full" onClick={() => openDraft(space, state)}>
-                            <CalendarPlus className="w-3.5 h-3.5" /> Book seat
+                            <CalendarPlus className="w-3.5 h-3.5" />
+                            {wholeDaySeat ? 'Book for someone' : 'Book seat'}
                           </Button>
                         )}
                       </>
@@ -840,12 +844,16 @@ export default function SpacesPage() {
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] pt-3">
-              <span className={`text-[11px] ${draftSeatTaken || windowError ? 'font-medium text-rose-600' : 'text-[var(--ink-4)]'}`}>
+              <span className={`text-[11px] ${
+                draftSeatTaken || windowError || draftWholeDayConflict ? 'font-medium text-rose-600' : 'text-[var(--ink-4)]'
+              }`}>
                 {draftSeatTaken
                   ? 'That chair is taken for this session — pick another one on the plan.'
-                  : windowError
-                    ? windowError
-                    : `${draftSession ? draftSession.seatsFree : draft.state.seatsFree} of ${draft.space.capacity} seats free ${draftSession ? 'in this session' : `on ${formatDate(day)}`}.`}
+                  : draftWholeDayConflict
+                    ? `${draft.attendeeId === currentUser.id ? 'You' : personName(profiles.find(profile => profile.id === draft.attendeeId))} already hold${draft.attendeeId === currentUser.id ? '' : 's'} a whole-day seat in ${draftWholeDayRoom} — one whole-day seat per day.`
+                    : windowError
+                      ? windowError
+                      : `${draftSession ? draftSession.seatsFree : draft.state.seatsFree} of ${draft.space.capacity} seats free ${draftSession ? 'in this session' : `on ${formatDate(day)}`}.`}
               </span>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setDraft(null)}>Cancel</Button>
@@ -853,7 +861,7 @@ export default function SpacesPage() {
                   size="sm"
                   variant="primary"
                   onClick={() => void submit()}
-                  disabled={saving || draftSeatTaken || Boolean(windowError)}
+                  disabled={saving || draftSeatTaken || Boolean(windowError) || Boolean(draftWholeDayConflict)}
                 >
                   {saving
                     ? 'Booking…'

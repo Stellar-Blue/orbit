@@ -473,6 +473,12 @@ export const MOCK_SPACES: Space[] = [
     screen_wall: 'n',
   },
   {
+    // A second whole-day workspace, so the demo shows that a person holds one such seat per day.
+    id: 'spc-focus', name: 'Focus desks · Floor 2', type_id: 'spt-desks', capacity: 2, location: 'Floor 2',
+    notes: 'Quiet two-desk corner', active: true, floor_id: 'flr-2',
+    pos_x: -5, pos_z: 3.5, room_width: 5, room_depth: 3.5, room_height: 2.6, rotation: 0,
+  },
+  {
     id: 'spc-pod-1', name: 'Phone pod 1', type_id: 'spt-pod', capacity: 1, location: 'Floor 2',
     notes: 'Single-occupancy calls', active: true, floor_id: 'flr-2',
     pos_x: 8.5, pos_z: 4, room_width: 2.2, room_depth: 2.2, room_height: 2.6, rotation: 0,

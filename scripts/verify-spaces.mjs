@@ -12,6 +12,7 @@ import {
   defaultSessionWindow,
   heldWholeDaySpace,
   overlappingSession,
+  wholeDayHeldOn,
   seatHolders,
   seatsLabel,
   sessionEnded,
@@ -320,6 +321,38 @@ assert(
 assert(
   heldWholeDaySpace(new Map([['sp-1', deskState([seat('b1', 'a')])]])) === null,
   'Nobody else\'s desk counts as your whole-day seat'
+);
+
+// --- The rule every booking path shares: one whole-day seat per person per date ---------------
+const deskBooking = { ...seat('b1', 'me'), space_id: 'sp-1' };
+const otherBooking = { ...seat('b2', 'me'), space_id: 'sp-2' };
+const sessionBooking = { ...seat('b3', 'me'), space_id: 'sp-1', session_id: 'ss-1' };
+const colleagueBooking = { ...seat('b4', 'someone-else'), space_id: 'sp-2' };
+
+assert(
+  wholeDayHeldOn([deskBooking], 'me', '2026-11-10', 'sp-2')?.id === 'b1',
+  'A whole-day seat in another workspace is found, so a second one is refused',
+  'sp-1'
+);
+assert(
+  wholeDayHeldOn([deskBooking], 'me', '2026-11-10', 'sp-1') === null,
+  'The seat in the room being booked does not count against itself'
+);
+assert(
+  wholeDayHeldOn([deskBooking], 'me', '2026-11-11') === null,
+  'Yesterday\'s desk does not block today'
+);
+assert(
+  wholeDayHeldOn([sessionBooking], 'me', '2026-11-10', 'sp-2') === null,
+  'A meeting-room session is not a whole-day seat'
+);
+assert(
+  wholeDayHeldOn([colleagueBooking], 'me', '2026-11-10', 'sp-1') === null,
+  'A colleague\'s desk is not yours'
+);
+assert(
+  wholeDayHeldOn([otherBooking, deskBooking], 'me', '2026-11-10', 'sp-3')?.id === 'b2',
+  'Two whole-day seats are still one rule: the first one held is reported'
 );
 
 console.log('\n================================================================');

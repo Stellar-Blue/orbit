@@ -44,7 +44,7 @@ import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig,
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
-import { clockLabel, validateSessionWindow } from './spaces';
+import { clockLabel, validateSessionWindow, wholeDayHeldOn } from './spaces';
 import { clampSeatToRoom, seatGrid } from './office-layout';
 
 /**
@@ -5810,6 +5810,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }): Promise<{ ok: boolean; error?: string; seatId?: string | null }> => {
     const supabase = getSupabaseBrowserClient();
     try {
+      // One whole-day seat per person per day: checked here so no screen can book a second one, and
+      // again by the database, which stays the final word when two devices book at once.
+      if (input.mode === 'whole_day') {
+        const held = wholeDayHeldOn(spaceBookings, input.profileId, input.date, input.space.id);
+        if (held) {
+          const room = spaces.find(space => space.id === held.space_id)?.name || 'another workspace';
+          return {
+            ok: false,
+            error: `A whole-day space takes one seat per day — ${input.profileId === currentUser?.id ? 'you already hold one' : 'that person already holds one'} in ${room} on this date. Release it first.`,
+          };
+        }
+      }
+
       let sessionId: string | null = null;
       if (input.mode === 'time_range') {
         if (input.session?.id) {

@@ -273,6 +273,25 @@ export function seatHolders(bookings: SpaceBooking[]): string[] {
 }
 
 /**
+ * The whole-day booking a person already holds on a date, outside one room. A whole-day space fills
+ * the person's whole day, so this is the rule every booking path shares: the screen explains it and
+ * the database enforces it with a unique index.
+ */
+export function wholeDayHeldOn(
+  bookings: SpaceBooking[],
+  profileId: string,
+  date: string,
+  exceptSpaceId?: string
+): SpaceBooking | null {
+  return bookings.find(booking =>
+    booking.profile_id === profileId
+    && booking.booking_date === date
+    && booking.session_id === null
+    && booking.space_id !== exceptSpaceId
+  ) ?? null;
+}
+
+/**
  * The whole-day seat a person already holds on the day, if any. A whole-day space fills the whole
  * day, so once one is held no other whole-day space can take a second — the database says the same
  * with a unique index, this is what the screen explains the rule with.
