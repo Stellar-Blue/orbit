@@ -537,6 +537,15 @@ export interface Contract {
   owner_profile?: Profile;
   product?: string;
   parent_contract_id?: string;
+  /** Our position on the deal: prime, subcontractor under another vendor, or intercompany resale. */
+  supply_role?: 'prime' | 'subcontractor' | 'intercompany';
+  /** Ultimate client the work serves when we are not prime (e.g. VEB under Uni Systems). Never invoiced. */
+  end_customer_id?: string | null;
+  end_customer?: Counterparty;
+  /** The prime contractor's own contract / PO number (flow-down reference). */
+  prime_contract_ref?: string | null;
+  /** Share of the billed amount the prime contractor retains, in percent. */
+  prime_fee_pct?: number | null;
   notes?: string;
   /** Legacy single attachment (pre multi-document dossier); `contract_documents` is the source of truth. */
   document_name?: string;

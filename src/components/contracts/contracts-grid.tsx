@@ -8,6 +8,7 @@ import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } 
 import { formatDate } from '@/lib/date';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation, getContractNoticeStatus } from '@/lib/pricing-engine';
+import { contractEndCustomerName, isSubcontract, primeFeePct } from '@/lib/subcontracts';
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, Trash2, Search } from 'lucide-react';
 
@@ -29,6 +30,12 @@ interface ContractRow {
   cpTierColor: string;
   reference: string;
   uuid: string;
+  /** Prime / Subcontract / Intercompany — the "Supply" column. */
+  supply: string;
+  /** End customer the work serves (blank for direct deals). */
+  endCustomer: string;
+  /** Share of the billed amount the prime contractor retains. */
+  primeFee: number;
   direction: string;
   product: string;
   status: string;
@@ -103,6 +110,9 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         cpTierColor: c.counterparty?.tier?.color || '#94a3b8',
         reference: c.reference,
         uuid: c.id,
+        supply: isSubcontract(c) ? (c.supply_role === 'intercompany' ? 'Intercompany' : 'Subcontract') : 'Prime',
+        endCustomer: isSubcontract(c) ? contractEndCustomerName(c) : '',
+        primeFee: primeFeePct(c),
         direction: c.direction,
         product: c.product || c.type || '—',
         status: c.status,
@@ -152,6 +162,38 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
         ...excelSetFilter(), pinned: 'left',
         cellRenderer: (p: ICellRendererParams<ContractRow, string>) => (
           <span className="ui-num font-medium text-[var(--accent-ink)]">{p.value}</span>
+        )
+      },
+      {
+        headerName: 'Supply', field: 'supply', width: 190, sortable: true,
+        ...excelSetFilter(['Prime', 'Subcontract', 'Intercompany']),
+        cellRenderer: (p: ICellRendererParams<ContractRow, string>) => {
+          if (!p.data || p.value === 'Prime') {
+            return <span className="ui-meta">Prime</span>;
+          }
+          // The counterparty column already names the payer, so the width goes to the end customer.
+          return (
+            <span
+              className="flex items-center gap-1 min-w-0"
+              title={`${p.value} · billed by ${p.data.counterparty}${p.data.endCustomer ? ` · for ${p.data.endCustomer}` : ' · end customer not set'}`}
+            >
+              <Badge variant={p.value === 'Intercompany' ? 'info' : 'warning'}>
+                {p.value === 'Intercompany' ? 'INT' : 'SUB'}
+              </Badge>
+              <span className="text-[11px] font-semibold text-[var(--ink-2)] truncate">
+                {p.data.endCustomer || 'no end customer'}
+              </span>
+            </span>
+          );
+        }
+      },
+      {
+        headerName: 'Prime Fee', field: 'primeFee', width: 104, sortable: true, filter: 'agNumberColumnFilter',
+        valueFormatter: (p) => (Number(p.value) > 0 ? `${Number(p.value).toFixed(2)}%` : '—'),
+        cellRenderer: (p: ICellRendererParams<ContractRow, number>) => (
+          Number(p.value) > 0
+            ? <span className="ui-num text-[12px] font-semibold text-rose-700">{Number(p.value).toFixed(2)}%</span>
+            : <span className="ui-meta">—</span>
         )
       },
       {

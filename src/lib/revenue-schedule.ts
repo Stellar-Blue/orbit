@@ -28,6 +28,10 @@ export interface RevenueScheduleRow {
   contractId: string;
   contract: Contract;
   counterparty: string;
+  /** End customer the work serves — the counterparty itself for direct deals, the real client for subcontracts. */
+  endCustomer: string;
+  /** Our position on the deal; subcontract rows say who holds the end client. */
+  supply: 'prime' | 'subcontractor' | 'intercompany';
   reference: string;
   /** Contract product, used as the second line under the master agreement. */
   product: string;
@@ -390,6 +394,10 @@ export function buildRevenueSchedule(
 
   ordered.forEach(contract => {
     const counterparty = contract.counterparty?.legal_name || 'Unassigned counterparty';
+    const subcontracted = contract.supply_role === 'subcontractor' || contract.supply_role === 'intercompany';
+    // Direct deals serve their own counterparty; subcontracts serve the end customer under the prime.
+    const endCustomer = subcontracted ? contract.end_customer?.legal_name || counterparty : counterparty;
+    const supply: RevenueScheduleRow['supply'] = subcontracted ? (contract.supply_role as 'subcontractor' | 'intercompany') : 'prime';
     const window = contractEffectiveWindow(contract);
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
@@ -411,6 +419,8 @@ export function buildRevenueSchedule(
       contractId: contract.id,
       contract,
       counterparty,
+      endCustomer,
+      supply,
       reference: contract.reference,
       product: contract.product || contract.type || '',
       months: charges,
@@ -436,6 +446,8 @@ export function buildRevenueSchedule(
         contractId: contract.id,
         contract,
         counterparty,
+        endCustomer,
+        supply,
         reference: contract.reference,
         product: contract.product || contract.type || '',
         projects: projectSchedules.map(entry => entry.project),
@@ -515,7 +527,11 @@ export function scheduleExportTable(schedule: RevenueSchedule): ScheduleExportTa
   const years = groupMonthsByYear(schedule.months);
   const toRow = (row: RevenueScheduleRow): ScheduleExportRow => ({
     identity: [
-      row.counterparty,
+      // A subcontract exports under its payer plus the client it really serves, so the workbook
+      // never loses the distinction between the entity that pays us and the one we deliver for.
+      row.supply !== 'prime' && row.endCustomer && row.endCustomer !== row.counterparty
+        ? `${row.counterparty} (for ${row.endCustomer})`
+        : row.counterparty,
       row.reference,
       STREAM_LABELS[row.kind] ?? row.kind,
       row.kind === 'project'

@@ -713,6 +713,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return rows.map(cnt => ({
       ...cnt,
       counterparty: counterparties.find(c => c.id === cnt.counterparty_id),
+      end_customer: cnt.end_customer_id ? counterparties.find(c => c.id === cnt.end_customer_id) : undefined,
       owner_profile: people.find(p => p.id === cnt.owner_profile_id),
       lines: lines.filter(l => l.contract_id === cnt.id),
       groups: groups.filter(g => g.contract_id === cnt.id),
@@ -3091,7 +3092,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addContract = async (cnt: Omit<Contract, 'id'>) => {
     const newCnt: Contract = { ...cnt, id: generateUUID() };
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, lines, groups, schedule, notice_deadline, ...cleanCnt } = newCnt as any;
+    const { counterparty, end_customer, owner_profile, lines, groups, schedule, notice_deadline, ...cleanCnt } = newCnt as any;
     try {
       const { error, data } = await supabase.from('contracts').insert(cleanCnt).select().single();
       if (error) {
@@ -3132,7 +3133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateContract = async (updated: Contract) => {
     const supabase = getSupabaseBrowserClient();
-    const { counterparty, owner_profile, lines, groups, schedule: _ignoredSchedule, notice_deadline, ...cleanCnt } = updated as any;
+    const { counterparty, end_customer, owner_profile, lines, groups, schedule: _ignoredSchedule, notice_deadline, ...cleanCnt } = updated as any;
     try {
       const { error, data } = await supabase.from('contracts').update(cleanCnt).eq('id', updated.id).select().single();
       if (error) {

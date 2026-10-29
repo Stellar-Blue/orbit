@@ -8,6 +8,7 @@ import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-
 import { formatDate } from '@/lib/date';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
+import { contractEndCustomerName, isSubcontract } from '@/lib/subcontracts';
 import { Badge } from '@/components/ui/primitives';
 import { Layers, Trash2, Search } from 'lucide-react';
 
@@ -15,6 +16,8 @@ interface RevenueRow {
   contract: Contract;
   reference: string;
   entity: string;
+  /** Set for subcontracts: the client the work really serves. */
+  endCustomer: string;
   tier: string;
   tierClass: string;
   type: string;
@@ -60,6 +63,7 @@ export const RevenueGrid: React.FC<RevenueGridProps> = ({
         contract: c,
         reference: c.reference,
         entity: c.counterparty?.legal_name || 'Client Entity',
+        endCustomer: isSubcontract(c) ? contractEndCustomerName(c) : '',
         tier: val.tierInfo.label,
         tierClass: val.tierInfo.badgeClass,
         type: c.direction === 'revenue' ? 'Revenue' : 'Spend',
@@ -81,6 +85,9 @@ export const RevenueGrid: React.FC<RevenueGridProps> = ({
         <div>
           <div className="font-extrabold text-slate-900">{p.value}</div>
           <div className="text-xs text-slate-500 font-normal">{p.data?.entity}</div>
+          {p.data?.endCustomer && (
+            <div className="text-[10px] font-semibold text-amber-700">for {p.data.endCustomer}</div>
+          )}
         </div>
       )
     },

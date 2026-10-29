@@ -14,6 +14,7 @@ import {
 import { orbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project, Receipt } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
+import { isSubcontract, primeFeeAmount } from '@/lib/subcontracts';
 import { buildRevenueSchedule, groupMonthsByYear, scheduleExportTable, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
@@ -40,7 +41,7 @@ import Link from 'next/link';
 import { Modal, Badge } from '@/components/ui/primitives';
 import { formatMoney } from '@/lib/currency';
 import { formatDate } from '@/lib/date';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote, Download } from 'lucide-react';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote, Download, Building2, Rows3 } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -175,11 +176,15 @@ function quickFilterText(data?: RevenueScheduleRow): string {
   if (!data) return '';
   return [
     data.counterparty,
+    data.endCustomer,
     data.reference,
     data.product,
     ...(data.projects ?? []).flatMap(project => [project.code || '', project.name]),
   ].join(' ');
 }
+
+/** How the schedule's rows are grouped: by payer, by the client the work serves, or not at all. */
+type ScheduleGrouping = 'counterparty' | 'endCustomer' | 'flat';
 
 interface YearStore {
   getYear: () => number;
@@ -443,7 +448,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [groupByCounterparty, setGroupByCounterparty] = useState(HAS_AG_GRID_LICENSE);
+  const [groupBy, setGroupBy] = useState<ScheduleGrouping>(HAS_AG_GRID_LICENSE ? 'counterparty' : 'flat');
+  const isGrouped = groupBy !== 'flat';
   /** Recognition = money spread over the service months; cashflow = money on the months it is billed. */
   const [scheduleBasis, setScheduleBasis] = useState<ScheduleBasis>('recognition');
   const [pendingSuggestions, setPendingSuggestions] = useState<Record<string, true>>({});
@@ -467,6 +473,9 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   );
   // Invoiced months are read inside AG Grid callbacks, so the map lives in a ref: refreshing the
   // cells (below) picks up new invoices without rebuilding the column definitions and losing scroll.
+  // The end-customer column only earns its width once a subcontract is on the schedule.
+  const hasSubcontracts = useMemo(() => schedule.rows.some(row => row.supply !== 'prime'), [schedule.rows]);
+
   const invoiceCoverage = useMemo(
     () => buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems, projects, receipts),
     [invoices, contracts, catalogModules, catalogItems, projects, receipts]
@@ -578,7 +587,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
   /** Generated first column when grouping: expand/collapse + the counterparty, then its sublabel. */
   const autoGroupColumnDef = useMemo<ColDef<RevenueScheduleRow>>(() => ({
-    headerName: 'Counterparty',
+    headerName: groupBy === 'endCustomer' ? 'End customer' : 'Counterparty',
     pinned: 'left',
     width: 220,
     minWidth: 180,
@@ -591,7 +600,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       suppressCount: true,
       innerRenderer: CounterpartyStreamRenderer,
     },
-  }), []);
+  }), [groupBy]);
 
   const portfolioMRR = useMemo(
     () => contracts.reduce((total, contract) => {
@@ -611,16 +620,37 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     [contracts, catalogModules, catalogItems]
   );
 
+  // Subcontracts are billed gross and the prime keeps a fee; MRR stays gross, the header states
+  // what actually lands with us once those fees are taken off.
+  const primeFees = useMemo(
+    () => contracts.reduce((total, contract) => {
+      if (!isSubcontract(contract)) return total;
+      const valuation = calculateContractValuation(
+        contract.lines || [],
+        contract.discount_pct || 0,
+        contract.term_years || 1,
+        contract.service_start_date || contract.starts_on,
+        catalogModules,
+        catalogItems,
+        contract.value || 0,
+        contract.billing_cadence,
+        contract.groups || []
+      );
+      return total + primeFeeAmount(contract, valuation.netMonthlyMRR);
+    }, 0),
+    [contracts, catalogModules, catalogItems]
+  );
+
   const reflectYear = useCallback((year: number) => {
     if (year === yearStore.getYear()) return;
     yearStore.setYear(year);
     gridApiRef.current?.refreshCells({ columns: ['year-total'], force: true });
     // Group rows hold the year total in their aggregated data, so it must be recomputed too.
-    if (groupByCounterparty) {
+    if (isGrouped) {
       gridApiRef.current?.refreshClientSideRowModel('aggregate');
       setSelectionVersion(version => version + 1);
     }
-  }, [yearStore, groupByCounterparty]);
+  }, [yearStore, isGrouped]);
 
   // Escape leaves the maximised card, unless a dossier modal (z-50) is on top and owns the key.
   useEffect(() => {
@@ -641,8 +671,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     if (years.includes(current)) return;
     yearStore.setYear(Math.min(Math.max(current, years[0]), years[years.length - 1]));
     gridApiRef.current?.refreshCells({ columns: ['year-total'], force: true });
-    if (groupByCounterparty) gridApiRef.current?.refreshClientSideRowModel('aggregate');
-  }, [years, yearStore, groupByCounterparty]);
+    if (isGrouped) gridApiRef.current?.refreshClientSideRowModel('aggregate');
+  }, [years, yearStore, isGrouped]);
 
   const scrollToCurrentYear = useCallback((api: GridApi<RevenueScheduleRow>) => {
     if (years.length === 0) return;
@@ -932,8 +962,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         headerName: 'Counterparty',
         colId: 'counterparty',
         field: 'counterparty',
-        rowGroup: groupByCounterparty,
-        hide: groupByCounterparty,
+        rowGroup: groupBy === 'counterparty',
+        hide: groupBy === 'counterparty',
         pinned: 'left',
         width: 200,
         minWidth: 160,
@@ -941,7 +971,41 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         sortable: false,
         cellClass: 'cursor-pointer',
         getQuickFilterText: params => quickFilterText(params.data),
-        cellRenderer: CounterpartyStreamRenderer,
+        cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) =>
+          // Grouped by end customer the group column already carries the portfolio label.
+          params.node?.rowPinned && groupBy !== 'flat' ? null : <CounterpartyStreamRenderer {...params} />,
+      },
+      {
+        headerName: 'End customer',
+        colId: 'end-customer',
+        field: 'endCustomer',
+        // Hidden while it *is* the group column (the name would repeat) or when nothing is subcontracted.
+        hide: !hasSubcontracts || groupBy === 'endCustomer',
+        pinned: 'left',
+        width: 170,
+        minWidth: 140,
+        suppressMovable: true,
+        sortable: false,
+        getQuickFilterText: params => quickFilterText(params.data),
+        cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
+          if (params.node?.rowPinned || !params.data) return null;
+          if (params.data.supply === 'prime') return <span className="ui-meta">—</span>;
+          return (
+            <span className="text-[10px] font-semibold text-amber-700 truncate" title={`End customer: ${params.data.endCustomer}`}>
+              for {params.data.endCustomer}
+            </span>
+          );
+        },
+      },
+      {
+        // Grouping needs its own column: the schedule reads the same value, but only one of the two
+        // may be visible at a time or the customer name repeats on every row.
+        headerName: 'End customer',
+        colId: 'end-customer-group',
+        field: 'endCustomer',
+        rowGroup: groupBy === 'endCustomer',
+        hide: true,
+        suppressColumnsToolPanel: true,
       },
       {
         headerName: 'Master Agreement',
@@ -967,7 +1031,17 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           const hasBudget = rowProjects.some(project => (Number(project.budget_value) || 0) > 0);
           return (
             <div className="leading-[1.15]" title="Double-click to open the contract dossier">
-              <div className="text-[11px] font-extrabold text-slate-900 font-mono truncate">{params.data.reference}</div>
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-[11px] font-extrabold text-slate-900 font-mono truncate">{params.data.reference}</span>
+                {params.data.supply !== 'prime' && (
+                  <span
+                    className="shrink-0 rounded-[2px] bg-amber-100 px-1 text-[8px] font-black uppercase tracking-[0.04em] text-amber-900"
+                    title={`${params.data.supply === 'intercompany' ? 'Intercompany resale' : 'Subcontract'} · billed by ${params.data.counterparty} · for ${params.data.endCustomer}`}
+                  >
+                    Sub
+                  </span>
+                )}
+              </div>
               <div
                 className={`text-[9px] font-semibold ${!isContractRow && !hasBudget ? 'text-amber-600' : 'text-slate-500'}`}
                 title={
@@ -1023,7 +1097,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         valueFormatter: params => formatTotal(params.value),
       },
     ];
-  }, [yearGroups, currentMonthKey, yearStore, groupByCounterparty]);
+  }, [yearGroups, currentMonthKey, yearStore, groupBy, hasSubcontracts]);
 
   const pinnedBottomRowData = useMemo(
     () => [{ id: '__portfolio-total__', months: schedule.monthTotals }],
@@ -1062,6 +1136,14 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           <div className="text-right">
             <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Portfolio MRR</span>
             <span className="text-sm font-mono font-black text-emerald-700">{formatTotal(portfolioMRR)}</span>
+            {primeFees > 0 && (
+              <span
+                className="block text-[9px] font-semibold text-rose-700"
+                title="Portfolio MRR minus the share subcontracted work pays the prime contractor"
+              >
+                {formatTotal(portfolioMRR - primeFees)} net of prime fees
+              </span>
+            )}
           </div>
           <div className="text-right">
             <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">This month</span>
@@ -1122,23 +1204,32 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             </button>
           </div>
           {HAS_AG_GRID_LICENSE && (
-            <button
-              type="button"
-              onClick={() => {
-                setGroupByCounterparty(value => !value);
-                setSelectionVersion(version => version + 1);
-              }}
-              title={groupByCounterparty ? 'Show a flat list instead of counterparty groups' : 'Group the schedule by counterparty'}
-              aria-pressed={groupByCounterparty}
-              className={`h-7 px-2.5 inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border text-[12px] font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                groupByCounterparty
-                  ? 'border-[color-mix(in_srgb,var(--accent)_40%,white)] bg-[var(--accent-soft)] text-[var(--accent-ink)]'
-                  : 'border-[var(--line-strong)] bg-white text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--surface-muted)]'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              {groupByCounterparty ? 'Grouped by counterparty' : 'Group by counterparty'}
-            </button>
+            <div className="ui-segmented shrink-0" role="group" aria-label="Schedule grouping">
+              <button
+                type="button"
+                onClick={() => { setGroupBy('counterparty'); setSelectionVersion(version => version + 1); }}
+                title="Group the schedule by the counterparty that pays us"
+                aria-pressed={groupBy === 'counterparty'}
+              >
+                <Users className="w-3 h-3" /> Counterparty
+              </button>
+              <button
+                type="button"
+                onClick={() => { setGroupBy('endCustomer'); setSelectionVersion(version => version + 1); }}
+                title="Group by the client the work really serves — subcontracts sit under the end customer, not the prime"
+                aria-pressed={groupBy === 'endCustomer'}
+              >
+                <Building2 className="w-3 h-3" /> End customer
+              </button>
+              <button
+                type="button"
+                onClick={() => { setGroupBy('flat'); setSelectionVersion(version => version + 1); }}
+                title="One flat list, no groups"
+                aria-pressed={groupBy === 'flat'}
+              >
+                <Rows3 className="w-3 h-3" /> Flat
+              </button>
+            </div>
           )}
         </div>
         <button

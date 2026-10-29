@@ -23,6 +23,7 @@ import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment, type BillingPeriodItem } from '@/lib/billing-periods';
 import { invoiceLinksContract } from '@/lib/invoice-links';
+import { SUPPLY_ROLES, contractEndCustomerName, isSubcontract, primeContractRef, primeFeeAmount, primeFeeLabel, netAfterPrimeFee, type SupplyRole } from '@/lib/subcontracts';
 import { DatePicker } from '@/components/ui/date-picker';
 
 const ContractsGrid = dynamic(() => import('@/components/contracts/contracts-grid').then(m => m.ContractsGrid), { ssr: false });
@@ -227,6 +228,10 @@ export default function ContractsRegistryPage() {
   const [newDocUrl, setNewDocUrl] = useState<string>('');
   const [isUploadingDoc, setIsUploadingDoc] = useState<boolean>(false);
   const [newCounterpartyId, setNewCounterpartyId] = useState<string>('');
+  const [newSupplyRole, setNewSupplyRole] = useState<SupplyRole>('prime');
+  const [newEndCustomerId, setNewEndCustomerId] = useState<string>('');
+  const [newPrimeRef, setNewPrimeRef] = useState<string>('');
+  const [newPrimeFee, setNewPrimeFee] = useState<string>('0');
   const [cpError, setCpError] = useState<string>('');
 
   const uploadToSupabaseStorage = async (file: File, refPrefix: string): Promise<string | null> => {
@@ -491,6 +496,11 @@ export default function ContractsRegistryPage() {
       direction: newDirection,
       reference: newRef,
       type: newType,
+      supply_role: newSupplyRole,
+      end_customer_id: newSupplyRole === 'prime' ? null : newEndCustomerId || null,
+      end_customer: newSupplyRole === 'prime' ? undefined : counterparties.find(c => c.id === newEndCustomerId),
+      prime_contract_ref: newSupplyRole === 'prime' ? null : newPrimeRef.trim() || null,
+      prime_fee_pct: newSupplyRole === 'prime' ? 0 : Number(newPrimeFee) || 0,
       status: 'active',
       starts_on: newStarts,
       ends_on: newEnds || undefined,
@@ -548,7 +558,17 @@ export default function ContractsRegistryPage() {
             </button>
           </div>
           {isAdmin && (
-            <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setNewSupplyRole('prime');
+                setNewEndCustomerId('');
+                setNewPrimeRef('');
+                setNewPrimeFee('0');
+                setIsCreateOpen(true);
+              }}
+            >
               <Plus className="w-3.5 h-3.5" /> New contract
             </Button>
           )}
@@ -698,6 +718,11 @@ export default function ContractsRegistryPage() {
                     <span className="ui-meta">
                       Weighted ARR <strong className="ui-num font-semibold text-[var(--ink-2)]">€{dossierVal.weightedARR.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>
                     </span>
+                    {isSubcontract(selectedContract) && (
+                      <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-semibold border border-amber-300 bg-amber-50 text-amber-900">
+                        Subcontract · for {contractEndCustomerName(selectedContract) || 'end customer unset'}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-5 text-[12px]">
@@ -705,6 +730,15 @@ export default function ContractsRegistryPage() {
                         <span className="ui-label mr-1.5">Net ARR</span>
                         <strong className="ui-num font-semibold text-emerald-700">€{dossierVal.netARR.toLocaleString()}/yr</strong>
                       </div>
+                      {primeFeeLabel(selectedContract) && (
+                        <div title={`The prime contractor retains ${primeFeeLabel(selectedContract)} of what we bill`}>
+                          <span className="ui-label mr-1.5">Prime fee</span>
+                          <strong className="ui-num font-semibold text-rose-700">
+                            −€{primeFeeAmount(selectedContract, dossierVal.netARR).toLocaleString()}/yr
+                          </strong>
+                          <span className="ui-meta ml-1">({primeFeeLabel(selectedContract)} → €{netAfterPrimeFee(selectedContract, dossierVal.netARR).toLocaleString()} to us)</span>
+                        </div>
+                      )}
                       {dossierVal.oneTimeValue > 0 && (
                         <div>
                           <span className="ui-label mr-1.5">One-off</span>
@@ -1014,6 +1048,18 @@ export default function ContractsRegistryPage() {
                     </Badge>
                   </div>
                   <div className="text-[17px] font-semibold text-[var(--ink)] leading-snug">{selectedContract.counterparty?.legal_name || 'Designated entity'}</div>
+                  {isSubcontract(selectedContract) && (
+                    <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/70 px-2.5 py-2 space-y-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-900">
+                        {selectedContract.supply_role === 'intercompany' ? 'Intercompany resale' : 'Subcontract'} · we are not the prime
+                      </p>
+                      <p className="text-[12px] text-amber-900">
+                        End customer: <strong className="font-semibold">{contractEndCustomerName(selectedContract) || 'not set'}</strong>
+                        {primeContractRef(selectedContract) ? ` · their ref ${primeContractRef(selectedContract)}` : ''}
+                        {primeFeeLabel(selectedContract) ? ` · prime fee ${primeFeeLabel(selectedContract)}` : ''}
+                      </p>
+                    </div>
+                  )}
                   <div className="pt-2.5 border-t border-[var(--line)] flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
                     <div><span className="ui-label mr-1.5">VAT</span><strong className="ui-num font-medium text-[var(--ink-2)]">{selectedContract.counterparty?.afm || 'Not set'}</strong></div>
                     <div><span className="ui-label mr-1.5">Country</span><strong className="font-medium text-[var(--ink-2)]">{selectedContract.counterparty?.country || 'Greece'}</strong></div>
@@ -1196,6 +1242,67 @@ export default function ContractsRegistryPage() {
                     </select>
                   </div>
                   <div>
+                    <label className="ui-label block mb-1.5">Our Position on the Deal</label>
+                    <select
+                      value={selectedContract.supply_role || 'prime'}
+                      onChange={e => {
+                        const role = e.target.value as SupplyRole;
+                        setSelectedContract({
+                          ...selectedContract,
+                          supply_role: role,
+                          // Prime deals carry no end customer or fee; clearing them keeps the numbers honest.
+                          end_customer_id: role === 'prime' ? null : selectedContract.end_customer_id,
+                          end_customer: role === 'prime' ? undefined : selectedContract.end_customer,
+                          prime_fee_pct: role === 'prime' ? 0 : selectedContract.prime_fee_pct,
+                        });
+                      }}
+                      className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    >
+                      {SUPPLY_ROLES.map(role => (
+                        <option key={role.value} value={role.value}>{role.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {isSubcontract(selectedContract) && (
+                    <>
+                      <div>
+                        <label className="ui-label block mb-1.5">End Customer (never invoiced)</label>
+                        <CounterpartyPicker
+                          value={selectedContract.end_customer_id || ''}
+                          onChange={id => setSelectedContract({
+                            ...selectedContract,
+                            end_customer_id: id || null,
+                            end_customer: counterparties.find(c => c.id === id),
+                          })}
+                          allowClear={true}
+                          placeholder="Search the end customer…"
+                        />
+                      </div>
+                      <div>
+                        <label className="ui-label block mb-1.5">Prime&apos;s Contract / PO Ref</label>
+                        <input
+                          type="text"
+                          value={selectedContract.prime_contract_ref || ''}
+                          onChange={e => setSelectedContract({ ...selectedContract, prime_contract_ref: e.target.value })}
+                          placeholder="The reference quoted on our invoices"
+                          className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="ui-label block mb-1.5">Prime Fee (%)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="0.01"
+                          value={Number(selectedContract.prime_fee_pct) || 0}
+                          onChange={e => setSelectedContract({ ...selectedContract, prime_fee_pct: Number(e.target.value) || 0 })}
+                          className="w-full h-9 px-3 bg-white border border-[var(--line-strong)] rounded-[var(--radius-control)] text-[13px] text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none font-mono"
+                        />
+                      </div>
+                    </>
+                  )}
+                  <div>
                     <label className="ui-label block mb-1.5">Effective Start Date</label>
                     <DatePicker value={selectedContract.service_start_date || selectedContract.starts_on} onChange={next => setSelectedContract({ ...selectedContract, starts_on: next, service_start_date: next })} className="w-full h-9 px-3 text-[13px]" />
                   </div>
@@ -1304,6 +1411,60 @@ export default function ContractsRegistryPage() {
               allowClear={true}
             />
           </div>
+
+          <div>
+            <label className="block font-semibold uppercase text-slate-500 mb-1">Our Position on the Deal</label>
+            <select
+              value={newSupplyRole}
+              onChange={e => setNewSupplyRole(e.target.value as SupplyRole)}
+              className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
+            >
+              {SUPPLY_ROLES.map(role => (
+                <option key={role.value} value={role.value}>{role.label}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {SUPPLY_ROLES.find(role => role.value === newSupplyRole)?.hint}
+            </p>
+          </div>
+
+          {newSupplyRole !== 'prime' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50/60">
+              <div className="sm:col-span-2">
+                <label className="block font-semibold uppercase text-slate-500 mb-1.5">
+                  End Customer <span className="normal-case font-normal text-slate-500">(who the work really serves — never invoiced)</span>
+                </label>
+                <CounterpartyPicker
+                  value={newEndCustomerId}
+                  onChange={setNewEndCustomerId}
+                  allowClear={true}
+                  placeholder="Search the end customer (e.g. VEB)…"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold uppercase text-slate-500 mb-1">Prime&apos;s Contract / PO Ref</label>
+                <input
+                  type="text"
+                  value={newPrimeRef}
+                  onChange={e => setNewPrimeRef(e.target.value)}
+                  placeholder="Their reference we work under"
+                  className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold uppercase text-slate-500 mb-1">Prime Fee (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  value={newPrimeFee}
+                  onChange={e => setNewPrimeFee(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 font-mono"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

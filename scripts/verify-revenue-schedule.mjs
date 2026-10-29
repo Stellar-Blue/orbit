@@ -34,6 +34,14 @@ import {
   invoiceVarianceTone,
 } from '@/lib/invoice-coverage';
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
+import {
+  contractEndCustomerName,
+  isSubcontract,
+  netAfterPrimeFee,
+  primeFeeAmount,
+  primeFeeLabel,
+  supplyRoleOf,
+} from '@/lib/subcontracts';
 import { scheduleExportTable } from '@/lib/revenue-schedule';
 import { buildDraftInvoicePayload, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
 import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
@@ -1284,6 +1292,79 @@ assert(
     vatRateForTreatment(undefined) === '24%' && vatPercentFromRate('0% (reverse charge)') === 0 &&
     vatPercentFromRate('24') === 24,
   'VAT treatment and stored rate strings normalise to a percentage'
+);
+
+// --- Subcontracts ------------------------------------------------------------
+// We deliver under another company's contract: the payer stays the counterparty, the client the work
+// really serves is the end customer, and the prime keeps a fee.
+const primeContract = contract({ id: 'cnt-prime', reference: 'SB-DIRECT-2025', counterparty_id: 'cp-veb' });
+const subContract = contract({
+  id: 'cnt-sub',
+  reference: 'UNISYSTEMS-VEB-ATLAS-2024',
+  counterparty_id: 'cp-uni',
+  counterparty: { id: 'cp-uni', legal_name: 'Uni Systems' },
+  supply_role: 'subcontractor',
+  end_customer_id: 'cp-veb',
+  end_customer: { id: 'cp-veb', legal_name: 'VEB' },
+  prime_contract_ref: 'UNS-2024-778',
+  prime_fee_pct: 10,
+  lines: [monthlyLine],
+});
+
+assert(
+  supplyRoleOf(primeContract) === 'prime' && !isSubcontract(primeContract) &&
+    supplyRoleOf(subContract) === 'subcontractor' && isSubcontract(subContract),
+  'A contract without a supply role reads as prime; a subcontract says so',
+  `${supplyRoleOf(primeContract)} / ${supplyRoleOf(subContract)}`
+);
+assert(
+  contractEndCustomerName(subContract) === 'VEB' && contractEndCustomerName(primeContract) === 'DEPA Commercial S.A.',
+  'The end customer is the real client for a subcontract and the counterparty for a direct deal',
+  `${contractEndCustomerName(subContract)} / ${contractEndCustomerName(primeContract)}`
+);
+assert(
+  primeFeeAmount(subContract, 1000) === 100 && netAfterPrimeFee(subContract, 1000) === 900 &&
+    primeFeeLabel(subContract) === '10%',
+  'The prime fee is a share of what we bill, and the net is what reaches us',
+  `${primeFeeAmount(subContract, 1000)} / ${netAfterPrimeFee(subContract, 1000)}`
+);
+assert(
+  primeFeeAmount(primeContract, 1000) === 0 && netAfterPrimeFee(primeContract, 1000) === 1000 &&
+    primeFeeAmount({ ...subContract, prime_fee_pct: 140 }, 1000) === 1000,
+  'Direct deals pay no fee, and a fee above 100% is clamped'
+);
+
+const subSchedule = buildRevenueSchedule([subContract, primeContract], []);
+const subRows = subSchedule.rows.filter(row => row.contractId === 'cnt-sub');
+const primeRows = subSchedule.rows.filter(row => row.contractId === 'cnt-prime');
+assert(
+  subRows.length === 1 && subRows[0].supply === 'subcontractor' && subRows[0].counterparty === 'Uni Systems' &&
+    subRows[0].endCustomer === 'VEB',
+  'A subcontract row carries both the payer and the client the work serves',
+  JSON.stringify({ supply: subRows[0]?.supply, counterparty: subRows[0]?.counterparty, endCustomer: subRows[0]?.endCustomer })
+);
+assert(
+  primeRows[0]?.supply === 'prime' && primeRows[0].endCustomer === 'DEPA Commercial S.A.',
+  'A direct deal groups under its own counterparty',
+  `${primeRows[0]?.supply} · ${primeRows[0]?.endCustomer}`
+);
+
+const subExport = scheduleExportTable(buildRevenueSchedule(
+  [contract({
+    supply_role: 'subcontractor',
+    end_customer: { id: 'cp-veb', legal_name: 'VEB' },
+    counterparty: { id: 'cp-uni', legal_name: 'Uni Systems' },
+    lines: [monthlyLine],
+    starts_on: '2025-11-01',
+    ends_on: '2025-12-31',
+    service_start_date: '2025-11-01',
+  })],
+  []
+));
+assert(
+  subExport.rows[0].identity[0] === 'Uni Systems (for VEB)',
+  'A subcontract exports under its payer plus the client it serves',
+  subExport.rows[0].identity[0]
 );
 
 // --- Excel export ------------------------------------------------------------
