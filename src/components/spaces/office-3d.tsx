@@ -11,23 +11,28 @@ import {
 } from '@/lib/office-layout';
 
 /**
- * The office, in three.js.
+ * The office, in three.js — a small isometric model of the floor.
  *
- * One canvas serves both audiences: employees orbit the floor and click a chair to book it, admins
+ * One canvas serves both audiences: employees orbit the model and click a chair to book it, admins
  * get corner handles and draggable chairs. Geometry is in metres; a room's group sits at its centre
  * and `layoutShell` re-places its four walls around that centre, so a corner drag reshapes the room
- * while the chairs inside stay put. Walls are deliberately knee-high: the plan is read from above.
+ * while the furniture inside stays put.
+ *
+ * The dollhouse look comes from three choices: an orthographic camera (no perspective distortion),
+ * full-height white walls, and hiding the walls that face the camera so every room is cut open
+ * towards the viewer, exactly like an architectural model.
  */
 
-const FLOOR_TOP = 0.09;
-/** Knee-high walls: a room reads as a room without hiding the chairs behind it. */
-const WALL_HEIGHT = 0.95;
-const WALL_THICKNESS = 0.075;
-/** The slight platform every room stands on, so rooms read as separate places on the slab. */
+const FLOOR_TOP = 0.12;
+const WALL_HEIGHT = 2.4;
+const WALL_THICKNESS = 0.18;
+/** The paper-thin platform each room stands on, so a room reads as its own place on the slab. */
 const PLATFORM_HEIGHT = 0.05;
 const SEAT_BASE = PLATFORM_HEIGHT;
-const CHAIR_SEAT = 0.48;
+const CHAIR_SEAT = 0.5;
 const CLICK_TOLERANCE_PX = 5;
+/** Camera direction of the default isometric view. */
+const VIEW_DIRECTION = new THREE.Vector3(1, 1.12, 1).normalize();
 
 export type Office3DMode = 'viewer' | 'editor';
 
@@ -69,7 +74,7 @@ interface DragState {
 interface SceneState {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
+  camera: THREE.OrthographicCamera;
   controls: OrbitControls;
   content: THREE.Group;
   pickables: THREE.Object3D[];
@@ -80,17 +85,32 @@ interface SceneState {
 }
 
 const COLORS = {
-  free: '#2f6fa3',
-  taken: '#9ca8b8',
-  mine: '#15803d',
-  selected: '#e08a00',
-  floor: '#e4e9f1',
-  slab: '#b7c2d1',
-  grid: '#c8d0dc',
-  wall: '#ffffff',
-  leg: '#8d98a8',
-  wood: '#e0c39a',
+  // The whole model lives in warm neutrals; the only strong hues are the seat states.
+  free: '#7fa8c9',
+  taken: '#b3a898',
+  mine: '#7cab8b',
+  selected: '#d99a4e',
+  floor: '#e9e1d3',
+  slab: '#e4dccb',
+  grid: '#ded5c4',
+  wall: '#3a342d',
+  wallTop: '#4d453c',
+  wallInner: '#efeae1',
+  leg: '#3f3931',
+  desk: '#c9a97b',
+  screen: '#2b2721',
+  paper: '#fbf8f3',
 };
+
+/** A room floor: the type colour warmed into the palette instead of a pastel block. */
+const WARM_FLOOR = new THREE.Color('#f8f3ea');
+
+function roomFloor(color: THREE.Color): THREE.Color {
+  const hsl = { h: 0, s: 0, l: 0 };
+  color.getHSL(hsl);
+  const tinted = new THREE.Color().setHSL(hsl.h, Math.min(hsl.s * 0.5, 0.3), 0.94);
+  return tinted.lerp(WARM_FLOOR, 0.5);
+}
 
 const material = (color: THREE.ColorRepresentation, options: THREE.MeshStandardMaterialParameters = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0.04, ...options });
@@ -99,71 +119,135 @@ const material = (color: THREE.ColorRepresentation, options: THREE.MeshStandardM
 const rounded = (width: number, height: number, depth: number, radius: number) =>
   new RoundedBoxGeometry(width, height, depth, 2, radius);
 
-/** A desk in front of a chair in a whole-day area: warm top, four slim legs. */
+/** A desk with a monitor and a keyboard, sitting in front of its chair. */
 function buildDesk(): THREE.Group {
   const desk = new THREE.Group();
-  const depth = -0.48;
-  const top = new THREE.Mesh(
-    rounded(1.0, 0.045, 0.56, 0.02),
-    material(COLORS.wood, { roughness: 0.7 })
-  );
-  top.position.set(0, 0.72, depth);
+  const z = -0.52;
+  const metal = material(COLORS.leg, { metalness: 0.2, roughness: 0.5 });
+
+  const top = new THREE.Mesh(rounded(1.12, 0.055, 0.62, 0.025), material(COLORS.desk, { roughness: 0.72 }));
+  top.position.set(0, 0.74, z);
   top.castShadow = true;
   top.receiveShadow = true;
   desk.add(top);
 
-  const legGeometry = new THREE.CylinderGeometry(0.018, 0.018, 0.7, 8);
-  const legMaterial = material(COLORS.leg, { metalness: 0.5, roughness: 0.4 });
-  [-0.45, 0.45].forEach(x => {
+  const legGeometry = new THREE.CylinderGeometry(0.019, 0.019, 0.72, 8);
+  [-0.5, 0.5].forEach(x => {
     [-0.24, 0.24].forEach(offset => {
-      const leg = new THREE.Mesh(legGeometry, legMaterial);
-      leg.position.set(x, 0.35, depth + offset);
+      const leg = new THREE.Mesh(legGeometry, metal);
+      leg.position.set(x, 0.36, z + offset);
       leg.castShadow = true;
       desk.add(leg);
     });
   });
 
+  const foot = new THREE.Mesh(rounded(0.26, 0.02, 0.16, 0.008), metal);
+  foot.position.set(0, 0.78, z - 0.12);
+  desk.add(foot);
+
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 8), metal);
+  stand.position.set(0, 0.88, z - 0.12);
+  desk.add(stand);
+
+  const screen = new THREE.Mesh(rounded(0.62, 0.36, 0.035, 0.014), material(COLORS.screen, { roughness: 0.45 }));
+  screen.position.set(0, 1.14, z - 0.12);
+  screen.castShadow = true;
+  desk.add(screen);
+
+  const keyboard = new THREE.Mesh(rounded(0.34, 0.014, 0.13, 0.008), material(COLORS.paper, { roughness: 0.6 }));
+  keyboard.position.set(0, 0.78, z + 0.2);
+  desk.add(keyboard);
+
   return desk;
 }
 
-/** A room's name plate, drawn on a canvas so no font file has to be downloaded. */
+/** A soft elliptical shadow, drawn by the shader so no texture has to be sampled. */
+function softShadow(size: number, depth: number, opacity: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, depth),
+    new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uOpacity: { value: opacity },
+        uColor: { value: new THREE.Color('#0f172a') },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform float uOpacity;
+        uniform vec3 uColor;
+        void main() {
+          float d = length(vUv - vec2(0.5)) * 2.0;
+          float alpha = pow(1.0 - smoothstep(0.0, 1.0, d), 1.5) * uOpacity;
+          if (alpha < 0.002) discard;
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `,
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+}
+
+/** A screen on a room's back wall, for the rooms people meet in. */
+function buildWallScreen(width: number): THREE.Group {
+  const frame = new THREE.Group();
+  const bezel = new THREE.Mesh(rounded(width + 0.08, 0.94, 0.05, 0.02), material(COLORS.paper, { roughness: 0.7 }));
+  frame.add(bezel);
+  const panel = new THREE.Mesh(rounded(width, 0.86, 0.02, 0.012), material(COLORS.screen, { roughness: 0.3 }));
+  panel.position.z = 0.03;
+  frame.add(panel);
+  return frame;
+}
+
+/** A room's name plate: a soft white pill with dark slate text, drawn without a font loader. */
 function labelSprite(text: string, color: string): THREE.Sprite {
   const scale = 4;
-  const font = `600 ${13 * scale}px "IBM Plex Sans", system-ui, sans-serif`;
+  const font = `600 ${12 * scale}px "IBM Plex Sans", system-ui, sans-serif`;
   const canvas = document.createElement('canvas');
   const measure = canvas.getContext('2d');
   if (measure) measure.font = font;
-  const pad = 18 * scale;
+  const pad = 16 * scale;
   const width = Math.ceil((measure?.measureText(text).width || 120) + pad * 2);
-  const height = 38 * scale;
+  const height = 34 * scale;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.font = font;
-    ctx.shadowColor = 'rgba(15,23,42,0.16)';
-    ctx.shadowBlur = 8 * scale;
-    ctx.shadowOffsetY = 2 * scale;
-    ctx.fillStyle = 'rgba(255,255,255,0.97)';
+    ctx.shadowColor = 'rgba(23,35,54,0.18)';
+    ctx.shadowBlur = 10 * scale;
+    ctx.shadowOffsetY = 3 * scale;
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
     ctx.beginPath();
-    ctx.roundRect(2 * scale, 2 * scale, width - 4 * scale, height - 6 * scale, 9 * scale);
+    ctx.roundRect(2 * scale, 2 * scale, width - 4 * scale, height - 6 * scale, 8 * scale);
     ctx.fill();
     ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = 1.5 * scale;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(14 * scale, height / 2 - scale, 3.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = color;
-    ctx.textAlign = 'center';
+    ctx.beginPath();
+    ctx.arc(14 * scale, height / 2 - scale, 3.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#334155';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, width / 2, height / 2 - scale);
+    ctx.fillText(text, 24 * scale, height / 2 - scale);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
-  const sprite = new THREE.Sprite(material);
-  const worldHeight = 0.72;
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  const worldHeight = 0.9;
   sprite.scale.set(worldHeight * (width / height), worldHeight, 1);
   return sprite;
 }
@@ -201,9 +285,8 @@ function highlightSeat(state: SceneState, seatId: string | null): void {
 }
 
 /**
- * Place the four walls, their rims and the floor patch of a room inside its shell. Called when the
- * room is built and again on every corner drag, so the walls follow the corner without rebuilding
- * the scene.
+ * Place the four walls, the floor and the handles of a room inside its shell. Called when the room
+ * is built and again on every corner drag, so the walls follow the corner without a scene rebuild.
  */
 function layoutShell(group: THREE.Group, width: number, depth: number): void {
   const shell = shellOf(group);
@@ -227,37 +310,31 @@ function layoutShell(group: THREE.Group, width: number, depth: number): void {
       child.position.set(...wall.pos);
       return;
     }
-    if (child.name.startsWith('rim:')) {
+    if (child.name.startsWith('cap:')) {
       const wall = walls[child.name.slice(4)];
       if (!wall) return;
-      // The rim is the coloured line on top of the wall — the room's only strong colour.
-      child.scale.set(wall.size[0] + 0.02, 0.035, wall.size[2] + 0.02);
-      child.position.set(wall.pos[0], top + WALL_HEIGHT + 0.016, wall.pos[2]);
+      // A hairline along the top of each wall: the cut edge of the model.
+      child.scale.set(wall.size[0], 0.03, wall.size[2]);
+      child.position.set(wall.pos[0], top + WALL_HEIGHT, wall.pos[2]);
       return;
     }
     if (child.name === 'platform') {
       child.scale.set(width, 1, depth);
       return;
     }
-    if (child.name.startsWith('skirt:')) {
-      const side = child.name.slice(6);
-      const inner = WALL_THICKNESS + 0.01;
-      const band = 0.045;
-      if (side === 'n' || side === 's') {
-        child.scale.set(width - inner * 2, band, 0.012);
-        child.position.set(0, PLATFORM_HEIGHT + band / 2, (side === 'n' ? -1 : 1) * (halfD - inner) - (side === 'n' ? band / 2 : -band / 2));
-      } else {
-        child.scale.set(0.012, band, depth - inner * 2);
-        child.position.set((side === 'w' ? -1 : 1) * (halfW - inner) - (side === 'w' ? band / 2 : -band / 2), PLATFORM_HEIGHT + band / 2, 0);
-      }
+    if (child.name.startsWith('screen:')) {
+      const side = child.name.slice(7);
+      if (side === 'n') child.position.set(0, 1.5, -halfD + t + 0.03);
+      else child.position.set(-halfW + t + 0.03, 1.5, 0);
       return;
     }
     if (child.name === 'label') {
-      child.position.set(0, top + WALL_HEIGHT + 0.45, -halfD);
+      child.position.set(0, top + WALL_HEIGHT + 0.42, halfD * 0.1);
       return;
     }
     if (child.name === 'hit') {
-      child.scale.set(width, 2.4, depth);
+      child.scale.set(width, WALL_HEIGHT, depth);
+      child.position.y = WALL_HEIGHT / 2;
     }
   });
 
@@ -266,9 +343,29 @@ function layoutShell(group: THREE.Group, width: number, depth: number): void {
     const corner = child.name.split(':')[1] as RoomCorner;
     child.position.set(
       (corner === 'nw' || corner === 'sw' ? -1 : 1) * halfW,
-      0.22,
+      0.24,
       (corner === 'nw' || corner === 'ne' ? -1 : 1) * halfD
     );
+  });
+}
+
+/** Hide the walls standing between the camera and a room, so every room is cut open to the viewer. */
+function cutAwayWalls(state: SceneState): void {
+  const { x: cameraX, z: cameraZ } = state.camera.position;
+  state.roomGroups.forEach(group => {
+    const shell = shellOf(group);
+    if (!shell) return;
+    const dx = cameraX - group.position.x;
+    const dz = cameraZ - group.position.z;
+    shell.children.forEach(child => {
+      const index = child.name.indexOf(':');
+      if (index < 0) return;
+      const prefix = child.name.slice(0, index);
+      if (prefix !== 'wall' && prefix !== 'cap' && prefix !== 'screen') return;
+      const side = child.name.slice(index + 1);
+      const facing = side === 'n' ? -dz : side === 's' ? dz : side === 'w' ? -dx : dx;
+      child.visible = facing <= 0;
+    });
   });
 }
 
@@ -345,44 +442,48 @@ export const Office3D: React.FC<Office3DProps> = ({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 0.94;
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(renderer);
     const environment = pmrem.fromScene(new RoomEnvironment(), 0.04);
     scene.environment = environment.texture;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = 0.2;
 
-    const camera = new THREE.PerspectiveCamera(36, mount.clientWidth / mount.clientHeight, 0.1, 400);
-    camera.position.set(0, 17, 21);
+    // Orthographic: the model keeps its proportions wherever you stand, like a rendered plan.
+    const camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 400);
+    camera.position.copy(VIEW_DIRECTION).multiplyScalar(90);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.12;
-    controls.minDistance = 5;
-    controls.maxDistance = 70;
-    controls.maxPolarAngle = Math.PI / 2.15;
+    controls.dampingFactor = 0.1;
+    controls.minZoom = 0.35;
+    controls.maxZoom = 6;
+    controls.maxPolarAngle = Math.PI / 2.2;
+    controls.screenSpacePanning = true;
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xc2cddd, 0.45));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc9d4e4, 0.3));
     scene.add(new THREE.AmbientLight(0xffffff, 0.06));
-    // One shadow-casting key light, framed on the floor, is what gives the model its depth.
-    const sun = new THREE.DirectionalLight(0xfff6ea, 2.1);
-    sun.position.set(14, 24, 12);
+    // One big, soft key light is what gives the model its depth and its gentle shadows.
+    const sun = new THREE.DirectionalLight(0xfff8ef, 2.6);
+    sun.position.set(14, 24, 11);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.radius = 3;
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.02;
+    sun.shadow.radius = 2;
+    sun.shadow.bias = -0.0002;
+    sun.shadow.normalBias = 0.008;
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 90;
-    sun.shadow.camera.left = -20;
-    sun.shadow.camera.right = 20;
-    sun.shadow.camera.top = 20;
-    sun.shadow.camera.bottom = -20;
+    sun.shadow.camera.far = 110;
+    sun.shadow.camera.left = -16;
+    sun.shadow.camera.right = 16;
+    sun.shadow.camera.top = 16;
+    sun.shadow.camera.bottom = -16;
+    // The ortho shadow camera keeps its old projection until it is told otherwise.
+    sun.shadow.camera.updateProjectionMatrix();
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xdce8ff, 0.32);
-    fill.position.set(-16, 12, -14);
+    const fill = new THREE.DirectionalLight(0xe8f0ff, 0.18);
+    fill.position.set(-18, 14, -16);
     scene.add(fill);
 
     const content = new THREE.Group();
@@ -396,10 +497,16 @@ export const Office3D: React.FC<Office3DProps> = ({
 
     const resize = () => {
       if (!mount.clientWidth || !mount.clientHeight) return;
-      camera.aspect = mount.clientWidth / mount.clientHeight;
+      const aspect = mount.clientWidth / mount.clientHeight;
+      const halfHeight = 10;
+      camera.top = halfHeight;
+      camera.bottom = -halfHeight;
+      camera.left = -halfHeight * aspect;
+      camera.right = halfHeight * aspect;
       camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
     };
+    resize();
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
 
@@ -407,6 +514,7 @@ export const Office3D: React.FC<Office3DProps> = ({
     const animate = () => {
       frame = requestAnimationFrame(animate);
       controls.update();
+      cutAwayWalls(state);
       renderer.render(scene, camera);
     };
     animate();
@@ -595,20 +703,47 @@ export const Office3D: React.FC<Office3DProps> = ({
     // Built once: data changes are applied by the rebuild effect below.
   }, [groundPoint, pick]);
 
-  // Frame the camera on the floor: close enough that the chairs read, wide enough that nothing clips.
+  // Frame the model: measure how big the floor and its walls project, then set the zoom to fit.
   useEffect(() => {
     const state = stateRef.current;
     if (!state) return;
-    const { camera } = state;
-    const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
-    const halfWidth = Math.tan(halfFov) * Math.max(camera.aspect, 0.2);
-    // A 45° view foreshortens depth, so the slab needs less room than its real size suggests.
-    const fitDepth = (floor.depth * 0.68 + 1) / 2 / Math.tan(halfFov);
-    const fitWidth = (floor.width + 1.5) / 2 / halfWidth;
-    const distance = Math.max(fitDepth, fitWidth) * 1.08;
-    camera.position.set(0, distance * 0.78, distance * 0.63);
-    state.controls.target.set(0, 0, 0);
-    state.controls.update();
+    const { camera, controls } = state;
+    camera.position.copy(VIEW_DIRECTION).multiplyScalar(90);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+
+    const corners: THREE.Vector3[] = [];
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+      corners.push(new THREE.Vector3((sx * floor.width) / 2, 0, (sz * floor.depth) / 2));
+      corners.push(new THREE.Vector3((sx * floor.width) / 2, WALL_HEIGHT + 0.9, (sz * floor.depth) / 2));
+    });
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    corners.forEach(corner => {
+      const view = corner.clone().applyMatrix4(camera.matrixWorldInverse);
+      minX = Math.min(minX, view.x);
+      maxX = Math.max(maxX, view.x);
+      minY = Math.min(minY, view.y);
+      maxY = Math.max(maxY, view.y);
+    });
+
+    // Recentre on what the model actually covers, then zoom so it fills the canvas.
+    const rightAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const upAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    const shift = rightAxis.multiplyScalar((minX + maxX) / 2).add(upAxis.multiplyScalar((minY + maxY) / 2));
+    camera.position.add(shift);
+    controls.target.copy(shift);
+    camera.lookAt(controls.target);
+    camera.updateMatrixWorld();
+
+    const halfW = Math.max((maxX - minX) / 2, 0.001);
+    const halfH = Math.max((maxY - minY) / 2, 0.001);
+    camera.zoom = Math.min(camera.right / halfW, camera.top / halfH) * 0.98;
+    camera.updateProjectionMatrix();
+    controls.update();
   }, [floor.id, floor.width, floor.depth, ready]);
 
   // ---- content rebuild -----------------------------------------------------
@@ -626,40 +761,23 @@ export const Office3D: React.FC<Office3DProps> = ({
     const halfW = floor.width / 2;
     const halfD = floor.depth / 2;
 
-    // The slab: a soft-edged base plate with the plan's walking surface on top.
+    // The base plate: a white slab with a soft shadow under it, like a model on a table.
+    const shadowPlate = softShadow(floor.width * 1.4, floor.depth * 1.55, 0.5);
+    shadowPlate.position.y = FLOOR_TOP - 0.45;
+    state.content.add(shadowPlate);
+
     const slab = new THREE.Mesh(
-      rounded(floor.width, 0.26, floor.depth, 0.12),
+      rounded(floor.width, 0.3, floor.depth, 0.1),
       material(COLORS.slab, { roughness: 0.95 })
     );
-    slab.position.y = FLOOR_TOP - 0.13;
+    slab.position.y = FLOOR_TOP - 0.15;
+    // The slab must not cast: its own surface sits millimetres above it and would shadow the lot.
+    slab.castShadow = false;
     slab.receiveShadow = true;
     state.content.add(slab);
 
-    // A soft blob under the slab, so the plan sits on the card instead of floating in it.
-    const contact = document.createElement('canvas');
-    contact.width = 256;
-    contact.height = 256;
-    const contactCtx = contact.getContext('2d');
-    if (contactCtx) {
-      const gradient = contactCtx.createRadialGradient(128, 128, 40, 128, 128, 128);
-      gradient.addColorStop(0, 'rgba(23,35,54,0.22)');
-      gradient.addColorStop(0.62, 'rgba(23,35,54,0.10)');
-      gradient.addColorStop(1, 'rgba(23,35,54,0)');
-      contactCtx.fillStyle = gradient;
-      contactCtx.fillRect(0, 0, 256, 256);
-    }
-    const contactTexture = new THREE.CanvasTexture(contact);
-    contactTexture.colorSpace = THREE.SRGBColorSpace;
-    const shadowPlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(floor.width * 1.22, floor.depth * 1.3),
-      new THREE.MeshBasicMaterial({ map: contactTexture, transparent: true, depthWrite: false })
-    );
-    shadowPlate.rotation.x = -Math.PI / 2;
-    shadowPlate.position.y = FLOOR_TOP - 0.3;
-    state.content.add(shadowPlate);
-
     const surface = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.max(floor.width - 0.12, 1), Math.max(floor.depth - 0.12, 1)),
+      new THREE.PlaneGeometry(Math.max(floor.width - 0.1, 1), Math.max(floor.depth - 0.1, 1)),
       material(COLORS.floor, { roughness: 0.98 })
     );
     surface.rotation.x = -Math.PI / 2;
@@ -667,7 +785,7 @@ export const Office3D: React.FC<Office3DProps> = ({
     surface.receiveShadow = true;
     state.content.add(surface);
 
-    // A one-metre grid drawn to the slab's own size, so it never spills past the edge.
+    // A one-metre grid, drawn to the slab's own size so it never spills past the edge.
     const gridPoints: number[] = [];
     for (let x = -halfW + 1; x < halfW - 0.05; x += 1) gridPoints.push(x, 0, -halfD, x, 0, halfD);
     for (let z = -halfD + 1; z < halfD - 0.05; z += 1) gridPoints.push(-halfW, 0, z, halfW, 0, z);
@@ -675,9 +793,9 @@ export const Office3D: React.FC<Office3DProps> = ({
     gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(gridPoints, 3));
     const grid = new THREE.LineSegments(
       gridGeometry,
-      new THREE.LineBasicMaterial({ color: COLORS.grid, transparent: true, opacity: 0.5 })
+      new THREE.LineBasicMaterial({ color: COLORS.grid, transparent: true, opacity: 0.9 })
     );
-    grid.position.y = FLOOR_TOP + 0.003;
+    grid.position.y = FLOOR_TOP + 0.002;
     state.content.add(grid);
 
     const taken = new Set(takenSeatIds);
@@ -693,37 +811,36 @@ export const Office3D: React.FC<Office3DProps> = ({
       const shell = new THREE.Group();
       shell.name = 'shell';
 
-      // Platform and tinted floor: the room's footprint on the slab.
+      // The room's own floor: a soft pastel version of the type colour, with a tile grid on top.
       const platform = new THREE.Mesh(
-        rounded(1, PLATFORM_HEIGHT, 1, 0.02),
-        material(typeColor.clone().lerp(new THREE.Color('#ffffff'), 0.94), { roughness: 0.96 })
+        rounded(1, PLATFORM_HEIGHT, 1, 0.015),
+        material(roomFloor(typeColor), { roughness: 0.96 })
       );
       platform.name = 'platform';
       platform.position.y = PLATFORM_HEIGHT / 2;
       platform.receiveShadow = true;
       shell.add(platform);
 
-      // A painted band along the inside of the walls: colour without fogging the floor.
+      // Charcoal walls outside, warm plaster inside — the dollhouse look of a floor plan.
+      const outer = material(COLORS.wall, { roughness: 0.88 });
+      const inner = material(COLORS.wallInner, { roughness: 0.95 });
+      const top = material(COLORS.wallTop, { roughness: 0.85 });
+      const wallMaterials: Record<'n' | 's' | 'w' | 'e', THREE.Material[]> = {
+        n: [outer, outer, top, outer, inner, outer],
+        s: [outer, outer, top, outer, outer, inner],
+        w: [inner, outer, top, outer, outer, outer],
+        e: [outer, inner, top, outer, outer, outer],
+      };
       (['n', 's', 'w', 'e'] as const).forEach(side => {
-        const skirt = new THREE.Mesh(
-          new THREE.BoxGeometry(1, 1, 1),
-          new THREE.MeshBasicMaterial({ color: typeColor, transparent: true, opacity: 0.55 })
-        );
-        skirt.name = `skirt:${side}`;
-        shell.add(skirt);
-      });
-
-      // Four low walls, each capped with the room type's colour.
-      (['n', 's', 'w', 'e'] as const).forEach(side => {
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(COLORS.wall, { roughness: 0.9 }));
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), wallMaterials[side]);
         wall.name = `wall:${side}`;
         wall.castShadow = true;
         wall.receiveShadow = true;
         shell.add(wall);
 
-        const rim = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(typeColor, { roughness: 0.55 }));
-        rim.name = `rim:${side}`;
-        shell.add(rim);
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(COLORS.wallTop, { roughness: 0.8 }));
+        cap.name = `cap:${side}`;
+        shell.add(cap);
       });
 
       const label = labelSprite(room.name, color);
@@ -737,74 +854,86 @@ export const Office3D: React.FC<Office3DProps> = ({
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
       );
       hitBox.name = 'hit';
-      hitBox.position.y = 1.2;
       hitBox.userData = { kind: 'room', roomId: room.id, label: room.name };
       shell.add(hitBox);
 
       group.add(shell);
 
+      const kind = kindRef.current?.(room) ?? null;
+      if (kind === 'time_range' && width >= 3.4) {
+        const screen = buildWallScreen(Math.min(width * 0.45, 1.6));
+        screen.name = 'screen:n';
+        shell.add(screen);
+      }
+
       const roomSeats = seats.filter(seat => seat.space_id === room.id && seat.active);
-      const withDesks = kindRef.current?.(room) === 'whole_day' && roomSeats.length > 2;
+      const withDesks = kind === 'whole_day' && roomSeats.length > 2;
 
-      roomSeats
-        .forEach((seat, index) => {
-          const isMine = mine.has(seat.id);
-          const isTaken = taken.has(seat.id);
-          const isSelected = selectedSeatId === seat.id;
-          const seatColor = isSelected ? COLORS.selected : isMine ? COLORS.mine : isTaken ? COLORS.taken : COLORS.free;
-          const seatGroup = new THREE.Group();
-          seatGroup.name = `seat:${seat.id}`;
-          seatGroup.position.set(Number(seat.x) || 0, SEAT_BASE, Number(seat.z) || 0);
-          seatGroup.rotation.y = ((Number(seat.rotation) || 0) * Math.PI) / 180;
-          const label = `${seat.label || `Seat ${index + 1}`} · ${room.name}${isMine ? ' (yours)' : isTaken ? ' (taken)' : ''}`;
-          const data = { kind: 'seat', roomId: room.id, seatId: seat.id, label };
+      roomSeats.forEach((seat, index) => {
+        const isMine = mine.has(seat.id);
+        const isTaken = taken.has(seat.id);
+        const isSelected = selectedSeatId === seat.id;
+        const seatColor = isSelected ? COLORS.selected : isMine ? COLORS.mine : isTaken ? COLORS.taken : COLORS.free;
+        const seatGroup = new THREE.Group();
+        seatGroup.name = `seat:${seat.id}`;
+        seatGroup.position.set(Number(seat.x) || 0, SEAT_BASE, Number(seat.z) || 0);
+        seatGroup.rotation.y = ((Number(seat.rotation) || 0) * Math.PI) / 180;
+        const label = `${seat.label || `Seat ${index + 1}`} · ${room.name}${isMine ? ' (yours)' : isTaken ? ' (taken)' : ''}`;
+        const data = { kind: 'seat', roomId: room.id, seatId: seat.id, label };
 
-          const fabric = material(seatColor, { roughness: 0.5 });
-          const cushion = new THREE.Mesh(rounded(CHAIR_SEAT, 0.12, CHAIR_SEAT * 0.96, 0.05), fabric);
-          cushion.position.y = 0.42;
-          cushion.castShadow = true;
-          cushion.receiveShadow = true;
-          seatGroup.add(cushion);
+        // One chair: a soft square seat, a slim back and four thin legs — nothing else.
+        const fabric = material(seatColor, { roughness: 0.6 });
+        const frame = material(COLORS.leg, { roughness: 0.45, metalness: 0.25 });
 
-          const back = new THREE.Mesh(rounded(CHAIR_SEAT * 0.96, 0.26, 0.09, 0.045), fabric);
-          back.position.set(0, 0.57, CHAIR_SEAT * 0.42);
-          back.rotation.x = THREE.MathUtils.degToRad(-10);
-          back.castShadow = true;
-          seatGroup.add(back);
+        const cushion = new THREE.Mesh(rounded(CHAIR_SEAT, 0.1, CHAIR_SEAT * 0.94, 0.045), fabric);
+        cushion.position.y = 0.45;
+        cushion.castShadow = true;
+        cushion.receiveShadow = true;
+        seatGroup.add(cushion);
 
-          const post = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.028, 0.038, 0.36, 12),
-            material(COLORS.leg, { metalness: 0.55, roughness: 0.35 })
-          );
-          post.position.y = 0.19;
-          seatGroup.add(post);
+        const back = new THREE.Mesh(rounded(CHAIR_SEAT * 0.94, 0.3, 0.075, 0.04), fabric);
+        back.position.set(0, 0.61, CHAIR_SEAT * 0.4);
+        back.rotation.x = THREE.MathUtils.degToRad(9);
+        back.castShadow = true;
+        seatGroup.add(back);
 
-          const base = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.13, 0.15, 0.03, 24),
-            material(COLORS.leg, { metalness: 0.5, roughness: 0.4 })
-          );
-          base.position.y = 0.015;
-          base.castShadow = true;
-          seatGroup.add(base);
-
-          if (isSelected) {
-            const ring = new THREE.Mesh(
-              new THREE.RingGeometry(CHAIR_SEAT * 0.62, CHAIR_SEAT * 0.74, 28),
-              new THREE.MeshBasicMaterial({ color: COLORS.selected, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
-            );
-            ring.rotation.x = -Math.PI / 2;
-            ring.position.y = 0.004;
-            seatGroup.add(ring);
-          }
-
-          if (withDesks) seatGroup.add(buildDesk());
-
-          seatGroup.traverse(child => {
-            child.userData = data;
+        const legGeometry = new THREE.CylinderGeometry(0.016, 0.016, 0.41, 8);
+        [-1, 1].forEach(sx => {
+          [-1, 1].forEach(sz => {
+            const leg = new THREE.Mesh(legGeometry, frame);
+            leg.position.set(sx * CHAIR_SEAT * 0.36, 0.205, sz * CHAIR_SEAT * 0.34);
+            leg.castShadow = true;
+            seatGroup.add(leg);
           });
-
-          group.add(seatGroup);
         });
+
+        if (isSelected) {
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(CHAIR_SEAT * 0.64, CHAIR_SEAT * 0.78, 28),
+            new THREE.MeshBasicMaterial({ color: COLORS.selected, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+          );
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.y = 0.004;
+          seatGroup.add(ring);
+        }
+
+        const chairBlob = softShadow(1.3, 1.3, 0.8);
+        chairBlob.position.set(-0.12, 0.004, -0.12);
+        seatGroup.add(chairBlob);
+
+        if (withDesks) {
+          seatGroup.add(buildDesk());
+          const deskBlob = softShadow(2.0, 1.45, 0.7);
+          deskBlob.position.set(-0.15, 0.005, -0.62);
+          seatGroup.add(deskBlob);
+        }
+
+        seatGroup.traverse(child => {
+          child.userData = data;
+        });
+
+        group.add(seatGroup);
+      });
 
       if (mode === 'editor' && selectedRoomId === room.id) {
         (['nw', 'ne', 'sw', 'se'] as RoomCorner[]).forEach(corner => {
@@ -826,6 +955,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       state.roomGroups.set(room.id, group);
       state.pickables.push(group);
     });
+
   }, [ready, rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode, floor.width, floor.depth, floor.id]);
 
   return (

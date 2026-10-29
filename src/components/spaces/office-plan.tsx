@@ -31,9 +31,9 @@ export interface OfficePlanProps {
 }
 
 const LEGEND = [
-  { label: 'Free', color: '#2f6fa3' },
-  { label: 'Taken', color: '#9ca8b8' },
-  { label: 'Your seat', color: '#15803d' },
+  { label: 'Free', color: '#7fa8c9' },
+  { label: 'Taken', color: '#b3a898' },
+  { label: 'Your seat', color: '#7cab8b' },
 ];
 
 /**
@@ -41,7 +41,7 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, typesById, takenSeatIds, mySeatIds, onPickSeat, height = 420,
+  floor, rooms, seats, typesById, takenSeatIds, mySeatIds, onPickSeat, height = 540,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -68,7 +68,7 @@ export function OfficePlan({
       }
     >
       <div
-        className="relative overflow-hidden rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface-sunken)]"
+        className="relative overflow-hidden rounded-[var(--radius-card)] border border-[var(--line)] bg-[#f8f4ec]"
         style={{ height }}
       >
         <Office3D
