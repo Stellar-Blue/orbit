@@ -8,7 +8,7 @@ import { roleLabel } from '@/lib/profile-role';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
-  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock, BarChart3
+  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock, BarChart3, DoorOpen
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -46,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
   // Company Section
   const companyItems = [
     { label: 'People Directory', path: '/people', icon: <Users className="w-4 h-4 mr-2.5 text-blue-500" />, show: canSeeScreen('people'), adminOnly: false },
+    { label: 'Spaces & Rooms', path: '/spaces', icon: <DoorOpen className="w-4 h-4 mr-2.5 text-fuchsia-500" />, show: canSeeScreen('spaces'), adminOnly: false },
     { label: 'Leave Control Center', path: '/company-leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-amber-500" />, show: isAdmin, adminOnly: true },
     { label: 'Contracts', path: '/contracts', icon: <FileText className="w-4 h-4 mr-2.5 text-indigo-500" />, show: isAdmin, adminOnly: true },
     { label: 'Invoices', path: '/invoices', icon: <Receipt className="w-4 h-4 mr-2.5 text-teal-600" />, show: isAdmin, adminOnly: true },

@@ -57,6 +57,12 @@ export default function CompanySettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
+    // A deep link wins over the last tab visited.
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested && ['remote', 'teams', 'leaves', 'coverage', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'general'].includes(requested)) {
+      setSelectedTab(requested as typeof selectedTab);
+      return;
+    }
     if (savedTab && ['remote', 'teams', 'leaves', 'coverage', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'general'].includes(savedTab)) {
       setSelectedTab(savedTab);
     }

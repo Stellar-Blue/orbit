@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { getSupabaseBrowserClient, setDemoDataMode, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { 
@@ -14,9 +14,11 @@ import {
   EmployeeContract,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
-  CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest
+  CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest,
+  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat, SpaceDesk
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
+import type { AvatarConfig } from './avatar';
 import { toHiddenScreenKeys } from './screens';
 import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
 import { isDemoMode, exitDemoMode } from './demo-mode';
@@ -25,6 +27,7 @@ import {
   MOCK_LEAVE_TYPES, MOCK_ENTITLEMENTS, MOCK_MANDATORY_LEAVES,
   MOCK_PUBLIC_HOLIDAYS, MOCK_REMOTE_PATTERNS,
   MOCK_COUNTERPARTIES, MOCK_CONTRACTS,
+  MOCK_SPACE_TYPES, MOCK_SPACES, MOCK_OFFICE_FLOORS,
 } from './mock-data';
 import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount, publishedClosureIds, mandatoryRowDeducts, splitAcrossYears } from './leave-days';
 import {
@@ -41,6 +44,8 @@ import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig,
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
+import { clockLabel, validateSessionWindow, wholeDayHeldOn } from './spaces';
+import { clampSeatToRoom, seatGrid } from './office-layout';
 
 /**
  * Every `profiles` column `authenticated` may read. `phone` is column-revoked (migration
@@ -52,7 +57,7 @@ import { notifySuccess } from './validation-modal';
 const PROFILE_COLUMNS = [
   'id', 'auth_user_id', 'first_name', 'last_name', 'name_el', 'work_email', 'title',
   'team_id', 'manager_id', 'employment_type', 'start_date', 'end_date', 'status', 'photo_url',
-  'work_schedule', 'created_at', 'onboarding_completed_at', 'seniority_level',
+  'avatar_config', 'work_schedule', 'created_at', 'onboarding_completed_at', 'seniority_level',
   'contracted_weekly_hours', 'slack_required',
 ].join(',');
 
@@ -180,6 +185,48 @@ interface AppState {
   addReceipt: (receipt: Omit<Receipt, 'id' | 'created_at' | 'counterparty' | 'invoice'>) => Promise<Receipt | null>;
   updateReceipt: (id: string, updates: Partial<Receipt>) => Promise<boolean>;
   deleteReceipt: (id: string) => Promise<boolean>;
+  /** Admin-configurable room kinds (whole-day seats vs. timed sessions). */
+  spaceTypes: SpaceType[];
+  spaces: Space[];
+  spaceSessions: SpaceSession[];
+  spaceBookings: SpaceBooking[];
+  officeFloors: OfficeFloor[];
+  spaceSeats: SpaceSeat[];
+  spaceDesks: SpaceDesk[];
+  /** Saves the slab and answers with its id, so the editor can select the floor it just made. */
+  saveOfficeFloor: (input: { id?: string; name: string; width: number; depth: number }) => Promise<string | null>;
+  /** Deletes a floor; its rooms stay in Orbit but come off the plan. */
+  deleteOfficeFloor: (id: string) => Promise<boolean>;
+  saveOfficeLayout: (input: {
+    rooms: Array<{
+      id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
+      capacity?: number; floor_id?: string | null;
+      room_shape?: 'rect' | 'l'; notch_width?: number; notch_depth?: number;
+      notch_corner?: 'nw' | 'ne' | 'sw' | 'se'; screen_wall?: 'none' | 'n' | 's' | 'w' | 'e';
+    }>;
+    seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
+    desks: Array<{
+      id: string; space_id: string; label?: string | null; description?: string | null;
+      x: number; z: number; width: number; depth: number; rotation?: number;
+      has_monitor?: boolean; active?: boolean;
+    }>;
+  }) => Promise<boolean>;
+  saveSpaceType: (input: { id?: string; name: string; booking_mode: SpaceBookingMode; color?: string; sort_order?: number; active?: boolean }) => Promise<boolean>;
+  deleteSpaceType: (id: string) => Promise<boolean>;
+  saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean }) => Promise<boolean>;
+  deleteSpace: (id: string) => Promise<boolean>;
+  bookSpaceSeat: (input: {
+    space: Space;
+    mode: SpaceBookingMode;
+    date: string;
+    profileId: string;
+    note?: string;
+    seatId?: string | null;
+    seatIds?: string[];
+    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
+  }) => Promise<{ ok: boolean; error?: string; seatId?: string | null }>;
+  cancelSpaceBooking: (id: string) => Promise<boolean>;
+  refreshSpaces: () => Promise<void>;
   budgets: Budget[];
   budgetCategories: BudgetCategory[];
   budgetLines: BudgetLine[];
@@ -205,7 +252,10 @@ interface AppState {
   updateProfile: (profile: Profile) => void;
   /** Self-service edits. `title` is intentionally absent: the legacy job title is replaced by the
    *  effective-dated Role & Seniority assignment, which only admins set. */
-  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'phone'>> & { photo_url?: string | null }) => Promise<boolean>;
+  updateMyProfile: (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'phone'>> & {
+    photo_url?: string | null;
+    avatar_config?: AvatarConfig | null;
+  }) => Promise<boolean>;
   employeeIntegrations: EmployeeIntegration[];
   addProfile: (profile: Profile) => Promise<boolean>;
   deleteProfile: (profileId: string) => Promise<boolean>;
@@ -438,6 +488,25 @@ const generateUUID = (): string => {
   });
 };
 
+/**
+ * Two demo meeting windows around the current clock: one already over, one still ahead. Both stay
+ * inside the day, so the demo always shows an "Ended" row and a joinable one.
+ */
+const demoSessionWindows = (now: Date): { earlier: { startsAt: string; endsAt: string }; later: { startsAt: string; endsAt: string } } => {
+  const MINUTES = 60;
+  const lastStart = 24 * 60 - MINUTES;
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const clamp = (value: number) => Math.max(0, Math.min(lastStart, value));
+  const label = (total: number) =>
+    `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`;
+  const earlierStart = clamp(minutesNow - 120);
+  const laterStart = clamp(Math.max(minutesNow + 90, earlierStart + MINUTES));
+  return {
+    earlier: { startsAt: label(earlierStart), endsAt: label(earlierStart + MINUTES) },
+    later: { startsAt: label(laterStart), endsAt: label(laterStart + MINUTES) },
+  };
+};
+
 const signInvoiceDocuments = async (
   supabase: ReturnType<typeof getSupabaseBrowserClient>,
   rows: InvoiceDocument[]
@@ -570,6 +639,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [spaceTypes, setSpaceTypes] = useState<SpaceType[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spaceSessions, setSpaceSessions] = useState<SpaceSession[]>([]);
+  const [spaceBookings, setSpaceBookings] = useState<SpaceBooking[]>([]);
+  const [officeFloors, setOfficeFloors] = useState<OfficeFloor[]>([]);
+  const [spaceSeats, setSpaceSeats] = useState<SpaceSeat[]>([]);
+  const [spaceDesks, setSpaceDesks] = useState<SpaceDesk[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -798,6 +874,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     rawRef.current.contracts = MOCK_CONTRACTS;
     setCounterparties(MOCK_COUNTERPARTIES);
     setContracts(MOCK_CONTRACTS);
+
+    // Spaces: today's sample seats, so the booking screen has something to show in the demo.
+    const demoToday = athensTodayStr();
+    setSpaceTypes(MOCK_SPACE_TYPES);
+    setSpaces(MOCK_SPACES);
+    setOfficeFloors(MOCK_OFFICE_FLOORS);
+    const demoSeats = MOCK_SPACES.flatMap(space =>
+      seatGrid(space, space.capacity).map((position, index) => ({
+        id: `${space.id}-s${index + 1}`,
+        space_id: space.id,
+        label: `S${index + 1}`,
+        x: position.x,
+        z: position.z,
+        rotation: 0,
+        active: true,
+      })).map(seat => ({ ...seat, ...clampSeatToRoom(space, seat.x, seat.z) }))
+    );
+    setSpaceSeats(demoSeats);
+    // A desk in front of every chair of a whole-day area, exactly like the seeded floor plan.
+    const wholeDayRooms = new Set(
+      MOCK_SPACES
+        .filter(space => MOCK_SPACE_TYPES.find(type => type.id === space.type_id)?.booking_mode === 'whole_day')
+        .map(space => space.id)
+    );
+    setSpaceDesks(
+      demoSeats
+        .filter(seat => wholeDayRooms.has(seat.space_id))
+        .map((seat, index) => ({
+          id: `${seat.id}-desk`,
+          space_id: seat.space_id,
+          label: `Desk ${index + 1}`,
+          description: null,
+          x: seat.x,
+          z: seat.z - 0.74,
+          width: 1.2,
+          depth: 0.62,
+          rotation: 0,
+          has_monitor: true,
+          active: true,
+        }))
+    );
+    // Two sessions in the same room, so the demo shows a day of back-to-back meetings. They sit
+    // around the current clock, so whichever hour the demo is opened at one is over and one is ahead.
+    const demoTimes = demoSessionWindows(new Date());
+    setSpaceSessions([{
+      id: 'sps-conf-a-today',
+      space_id: 'spc-conf-a',
+      session_date: demoToday,
+      starts_at: demoTimes.earlier.startsAt,
+      ends_at: demoTimes.earlier.endsAt,
+      title: 'Weekly sync',
+      created_by: 'prof-nikos',
+      created_at: `${demoToday}T07:00:00Z`,
+    }, {
+      id: 'sps-conf-a-later',
+      space_id: 'spc-conf-a',
+      session_date: demoToday,
+      starts_at: demoTimes.later.startsAt,
+      ends_at: demoTimes.later.endsAt,
+      title: 'Design review',
+      created_by: 'prof-eleni',
+      created_at: `${demoToday}T07:05:00Z`,
+    }]);
+    setSpaceBookings([
+      { id: 'spb-1', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s1', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:10:00Z` },
+      { id: 'spb-2', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s2', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:20:00Z` },
+      { id: 'spb-3', space_id: 'spc-desks', session_id: null, seat_id: 'spc-desks-s3', profile_id: 'prof-eleni', booking_date: demoToday, created_at: `${demoToday}T07:30:00Z` },
+      { id: 'spb-4', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', seat_id: 'spc-conf-a-s1', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:40:00Z` },
+      { id: 'spb-5', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', seat_id: 'spc-conf-a-s2', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:45:00Z` },
+      { id: 'spb-6', space_id: 'spc-conf-a', session_id: 'sps-conf-a-later', seat_id: 'spc-conf-a-s3', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:50:00Z` },
+    ].map(booking => ({
+      ...booking,
+      profile: demoProfiles.find(profile => profile.id === booking.profile_id),
+    })));
 
     setHiddenScreens([]);
     setIntegrationSettings(DEFAULT_SLACK_SETTINGS);
@@ -1155,6 +1305,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })) as RemotePolicy[]);
   }
 
+  /** Spaces, their types, the sessions opened for them and every seat taken. */
+  async function loadSpacesSlice() {
+    const [typeRows, spaceRows, sessionRows, bookingRows, floorRows, seatRows, deskRows] = await Promise.all([
+      fetchRows('space_types', 'all', { order: ['sort_order'] }),
+      fetchRows('spaces', 'all', { order: ['name'] }),
+      fetchRows('space_sessions', 'all', { order: ['session_date'] }),
+      fetchRows('space_bookings', 'all', { order: ['booking_date'] }),
+      fetchRows('office_floors', 'all', { order: ['sort_order'] }),
+      fetchRows('space_seats', 'all'),
+      fetchRows('space_desks', 'all'),
+    ]);
+    setSpaceTypes(typeRows as SpaceType[]);
+    setSpaces(spaceRows as Space[]);
+    setOfficeFloors(floorRows as OfficeFloor[]);
+    setSpaceSeats(seatRows as SpaceSeat[]);
+    setSpaceDesks(deskRows as SpaceDesk[]);
+    setSpaceSessions(sessionRows as SpaceSession[]);
+    setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
+      ...booking,
+      profile: rawRef.current.profiles.find(profile => profile.id === booking.profile_id),
+    })));
+  }
+
   const SLICE_LOADERS: Record<DataSliceKey, () => Promise<void>> = {
     leave: loadLeaveSlice,
     remoteDays: loadRemoteDaysSlice,
@@ -1169,6 +1342,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     people: loadPeopleSlice,
     integrations: loadIntegrationsSlice,
     policies: loadPoliciesSlice,
+    spaces: loadSpacesSlice,
   };
 
   /** Public on-demand entry point for surfaces outside the route's slice list. */
@@ -1411,7 +1585,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & { photo_url?: string | null }): Promise<boolean> => {
+  const updateMyProfile = async (edits: Partial<Pick<Profile, 'first_name' | 'last_name' | 'name_el' | 'title' | 'phone'>> & {
+    photo_url?: string | null;
+    avatar_config?: AvatarConfig | null;
+  }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
       const { error } = await supabase.from('profiles').update(edits).eq('id', currentUser.id);
@@ -5283,6 +5460,514 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  /* ---------------------------------------------------------------------------
+   * Spaces & seat booking. Capacity is decided by the database trigger, so a booking can fail
+   * with a readable message ("This session is already full (8 of 8 seats)") — callers show it.
+   * ------------------------------------------------------------------------- */
+
+  const refreshSpaces = useCallback(async (): Promise<void> => {
+    // The demo answers every query with an empty set; refetching would wipe the sample bookings.
+    if (isDemoMode()) return;
+    try {
+      const [sessionRows, bookingRows, floorRows, seatRows, deskRows] = await Promise.all([
+        fetchRows('space_sessions', 'all'),
+        fetchRows('space_bookings', 'all'),
+        fetchRows('office_floors', 'all', { order: ['sort_order'] }),
+        fetchRows('space_seats', 'all'),
+        fetchRows('space_desks', 'all'),
+      ]);
+      setSpaceSessions(sessionRows as SpaceSession[]);
+      setOfficeFloors(floorRows as OfficeFloor[]);
+      setSpaceSeats(seatRows as SpaceSeat[]);
+      setSpaceDesks(deskRows as SpaceDesk[]);
+      setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
+        ...booking,
+        profile: profiles.find(profile => profile.id === booking.profile_id),
+      })));
+    } catch (e) {
+      console.error('refreshSpaces error:', e);
+    }
+  }, [profiles]);
+
+  const saveSpaceType = async (input: {
+    id?: string;
+    name: string;
+    booking_mode: SpaceBookingMode;
+    color?: string;
+    sort_order?: number;
+    active?: boolean;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const row = {
+      name: input.name.trim(),
+      booking_mode: input.booking_mode,
+      color: input.color || '#2f6fa3',
+      sort_order: input.sort_order ?? 100,
+      active: input.active ?? true,
+    };
+    const { data, error } = input.id
+      ? await supabase.from('space_types').update(row).eq('id', input.id).select().single()
+      : await supabase.from('space_types').insert([row]).select().single();
+    if (error) {
+      alert(`Could not save the room type: ${error.message}`);
+      return false;
+    }
+    setSpaceTypes(prev => {
+      const saved = data as SpaceType;
+      const next = input.id ? prev.map(type => type.id === saved.id ? saved : type) : [...prev, saved];
+      return next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    });
+    return true;
+  };
+
+  const deleteSpaceType = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.from('space_types').delete().eq('id', id);
+    if (error) {
+      alert(error.code === '23503'
+        ? 'This type still has rooms. Move or delete those rooms first.'
+        : `Could not delete the room type: ${error.message}`);
+      return false;
+    }
+    setSpaceTypes(prev => prev.filter(type => type.id !== id));
+    return true;
+  };
+
+  const saveSpace = async (input: {
+    id?: string;
+    name: string;
+    type_id: string;
+    capacity: number;
+    location?: string | null;
+    notes?: string | null;
+    active?: boolean;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const row = {
+      name: input.name.trim(),
+      type_id: input.type_id,
+      capacity: Math.max(1, Math.round(Number(input.capacity) || 1)),
+      location: input.location?.trim() || null,
+      notes: input.notes?.trim() || null,
+      active: input.active ?? true,
+    };
+    const { data, error } = input.id
+      ? await supabase.from('spaces').update(row).eq('id', input.id).select().single()
+      : await supabase.from('spaces').insert([{ ...row, created_by: currentUser?.id || null }]).select().single();
+    if (error) {
+      alert(error.code === '23505'
+        ? `A room called "${row.name}" already exists.`
+        : `Could not save the room: ${error.message}`);
+      return false;
+    }
+    const saved = data as Space;
+    setSpaces(prev => {
+      const next = input.id ? prev.map(space => space.id === saved.id ? saved : space) : [...prev, saved];
+      return next.sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return true;
+  };
+
+  const deleteSpace = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.from('spaces').delete().eq('id', id);
+    if (error) {
+      alert(`Could not delete the room: ${error.message}`);
+      return false;
+    }
+    setSpaces(prev => prev.filter(space => space.id !== id));
+    setSpaceBookings(prev => prev.filter(booking => booking.space_id !== id));
+    setSpaceSessions(prev => prev.filter(session => session.space_id !== id));
+    return true;
+  };
+
+  /**
+   * Persists the 3D floor plan: room rectangles and the complete seat set. Rooms are updated one by
+   * one (few rows), seats are upserted and any that disappeared from the plan are deleted.
+   */
+  /** Create or rename a floor and set its size. Only the plan depends on it, so nothing else moves. */
+  const saveOfficeFloor = async (input: {
+    id?: string; name: string; width: number; depth: number;
+  }): Promise<string | null> => {
+    const supabase = getSupabaseBrowserClient();
+    const row = {
+      name: input.name.trim(),
+      width: Math.max(4, Number(input.width) || 24),
+      depth: Math.max(4, Number(input.depth) || 16),
+    };
+    if (!row.name) {
+      alert('A floor needs a name.');
+      return null;
+    }
+    try {
+      if (input.id) {
+        const { error } = await supabase.from('office_floors').update(row).eq('id', input.id);
+        if (error) {
+          alert(`Could not save the floor: ${error.message}`);
+          return null;
+        }
+        setOfficeFloors(prev => prev.map(floor => (floor.id === input.id ? { ...floor, ...row } : floor)));
+        void refreshSpaces();
+        return input.id;
+      }
+
+      const sortOrder = officeFloors.reduce((max, floor) => Math.max(max, floor.sort_order), 0) + 10;
+      const { data, error } = await supabase
+        .from('office_floors')
+        .insert([{ ...row, sort_order: sortOrder }])
+        .select()
+        .single();
+      if (error) {
+        alert(`Could not add the floor: ${error.message}`);
+        return null;
+      }
+      const saved = (data || {}) as Partial<OfficeFloor>;
+      const floorId = saved.id || generateUUID();
+      setOfficeFloors(prev => [...prev, {
+        id: floorId,
+        ...row,
+        sort_order: sortOrder,
+        active: true,
+      } as OfficeFloor]);
+      void refreshSpaces();
+      return floorId;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('saveOfficeFloor exception:', e);
+      alert(`Could not save the floor: ${message}`);
+      return null;
+    }
+  };
+
+  /**
+   * Removes a floor. Rooms keep existing — `spaces.floor_id` is ON DELETE SET NULL — so they simply
+   * drop off the plan and wait to be placed again, which is why this needs no room cleanup here.
+   */
+  const deleteOfficeFloor = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { error } = await supabase.from('office_floors').delete().eq('id', id);
+      if (error) {
+        alert(`Could not delete the floor: ${error.message}`);
+        return false;
+      }
+      setOfficeFloors(prev => prev.filter(floor => floor.id !== id));
+      setSpaces(prev => prev.map(space => (
+        space.floor_id === id ? { ...space, floor_id: null } : space
+      )));
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('deleteOfficeFloor exception:', e);
+      alert(`Could not delete the floor: ${message}`);
+      return false;
+    }
+  };
+
+  const saveOfficeLayout = async (input: {
+    rooms: Array<{
+      id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
+      capacity?: number; floor_id?: string | null;
+      room_shape?: 'rect' | 'l'; notch_width?: number; notch_depth?: number;
+      notch_corner?: 'nw' | 'ne' | 'sw' | 'se'; screen_wall?: 'none' | 'n' | 's' | 'w' | 'e';
+    }>;
+    seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
+    desks: Array<{
+      id: string; space_id: string; label?: string | null; description?: string | null;
+      x: number; z: number; width: number; depth: number; rotation?: number;
+      has_monitor?: boolean; active?: boolean;
+    }>;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      for (const room of input.rooms) {
+        const { error } = await supabase.from('spaces').update({
+          pos_x: room.pos_x,
+          pos_z: room.pos_z,
+          room_width: room.room_width,
+          room_depth: room.room_depth,
+          ...(room.capacity === undefined ? {} : { capacity: room.capacity }),
+          ...(room.floor_id === undefined ? {} : { floor_id: room.floor_id }),
+          ...(room.room_shape === undefined ? {} : { room_shape: room.room_shape }),
+          ...(room.notch_width === undefined ? {} : { notch_width: room.notch_width }),
+          ...(room.notch_depth === undefined ? {} : { notch_depth: room.notch_depth }),
+          ...(room.notch_corner === undefined ? {} : { notch_corner: room.notch_corner }),
+          ...(room.screen_wall === undefined ? {} : { screen_wall: room.screen_wall }),
+        }).eq('id', room.id);
+        if (error) {
+          alert(`Could not save the room layout: ${error.message}`);
+          return false;
+        }
+      }
+
+      const rows = input.seats.map(seat => ({
+        id: seat.id,
+        space_id: seat.space_id,
+        label: seat.label ?? null,
+        x: seat.x,
+        z: seat.z,
+        rotation: seat.rotation ?? 0,
+        active: seat.active ?? true,
+      }));
+      if (rows.length > 0) {
+        const { error } = await supabase.from('space_seats').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          alert(`Could not save the seats: ${error.message}`);
+          return false;
+        }
+      }
+
+      // Only prune inside the rooms being saved: another floor's chairs are not in this payload.
+      const kept = new Set(rows.map(row => row.id));
+      const savedRoomIds = new Set(input.rooms.map(room => room.id));
+      const removed = spaceSeats
+        .filter(seat => savedRoomIds.has(seat.space_id) && !kept.has(seat.id))
+        .map(seat => seat.id);
+      if (removed.length > 0) {
+        const { error } = await supabase.from('space_seats').delete().in('id', removed);
+        if (error) {
+          alert(`Could not remove the old seats: ${error.message}`);
+          return false;
+        }
+      }
+
+      const deskRows = input.desks.map(desk => ({
+        id: desk.id,
+        space_id: desk.space_id,
+        label: desk.label ?? null,
+        description: desk.description ?? null,
+        x: desk.x,
+        z: desk.z,
+        width: desk.width,
+        depth: desk.depth,
+        rotation: desk.rotation ?? 0,
+        has_monitor: desk.has_monitor ?? true,
+        active: desk.active ?? true,
+      }));
+      if (deskRows.length > 0) {
+        const { error } = await supabase.from('space_desks').upsert(deskRows, { onConflict: 'id' });
+        if (error) {
+          alert(`Could not save the desks: ${error.message}`);
+          return false;
+        }
+      }
+
+      const keptDesks = new Set(deskRows.map(row => row.id));
+      const removedDesks = spaceDesks
+        .filter(desk => savedRoomIds.has(desk.space_id) && !keptDesks.has(desk.id))
+        .map(desk => desk.id);
+      if (removedDesks.length > 0) {
+        const { error } = await supabase.from('space_desks').delete().in('id', removedDesks);
+        if (error) {
+          alert(`Could not remove the old desks: ${error.message}`);
+          return false;
+        }
+      }
+
+      setSpaces(prev => prev.map(space => {
+        const room = input.rooms.find(entry => entry.id === space.id);
+        return room ? { ...space, ...room } : space;
+      }));
+      setSpaceSeats(prev => {
+        const next = prev.filter(seat => kept.has(seat.id));
+        const byId = new Map(next.map(seat => [seat.id, seat]));
+        rows.forEach(row => byId.set(row.id, { ...(byId.get(row.id) || {}), ...row } as SpaceSeat));
+        return [...byId.values()];
+      });
+      setSpaceDesks(prev => {
+        const next = prev.filter(desk => keptDesks.has(desk.id));
+        const byId = new Map(next.map(desk => [desk.id, desk]));
+        deskRows.forEach(row => byId.set(row.id, { ...(byId.get(row.id) || {}), ...row } as SpaceDesk));
+        return [...byId.values()];
+      });
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('saveOfficeLayout exception:', e);
+      alert(`Could not save the floor plan: ${message}`);
+      return false;
+    }
+  };
+
+  /**
+   * Books one seat. For a timed space the first booking of the day opens the session with the
+   * window the person picked; everyone after that joins the session that already exists.
+   */
+  const bookSpaceSeat = async (input: {
+    space: Space;
+    mode: SpaceBookingMode;
+    date: string;
+    profileId: string;
+    note?: string;
+    /** The chair picked on the floor plan; optional, the room's capacity still governs. */
+    seatId?: string | null;
+    /** Chairs the room may hand out in turn, tried in order when one is taken by a faster colleague. */
+    seatIds?: string[];
+    /** `id` joins a session that already exists; without it the window opens a new session. */
+    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
+  }): Promise<{ ok: boolean; error?: string; seatId?: string | null }> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      // One whole-day seat per person per day: checked here so no screen can book a second one, and
+      // again by the database, which stays the final word when two devices book at once.
+      if (input.mode === 'whole_day') {
+        const held = wholeDayHeldOn(spaceBookings, input.profileId, input.date, input.space.id);
+        if (held) {
+          const room = spaces.find(space => space.id === held.space_id)?.name || 'another workspace';
+          return {
+            ok: false,
+            error: `A whole-day space takes one seat per day — ${input.profileId === currentUser?.id ? 'you already hold one' : 'that person already holds one'} in ${room} on this date. Release it first.`,
+          };
+        }
+      }
+
+      let sessionId: string | null = null;
+      if (input.mode === 'time_range') {
+        if (input.session?.id) {
+          sessionId = input.session.id;
+        } else {
+          if (!input.session) return { ok: false, error: 'Choose the session this seat belongs to.' };
+          const invalid = validateSessionWindow(input.session.startsAt, input.session.endsAt);
+          if (invalid) return { ok: false, error: invalid };
+          const startsAt = clockLabel(input.session.startsAt);
+          const endsAt = clockLabel(input.session.endsAt);
+          const sameWindow = (entry: SpaceSession) =>
+            entry.space_id === input.space.id &&
+            entry.session_date === input.date &&
+            clockLabel(entry.starts_at) === startsAt &&
+            clockLabel(entry.ends_at) === endsAt;
+
+          let session = spaceSessions.find(sameWindow);
+          if (!session) {
+            const { data: existing, error: lookupError } = await supabase
+              .from('space_sessions').select('*')
+              .eq('space_id', input.space.id).eq('session_date', input.date).eq('starts_at', startsAt);
+            if (lookupError) return { ok: false, error: lookupError.message };
+            session = ((existing || []) as SpaceSession[]).find(sameWindow);
+          }
+          if (!session) {
+            const { data: created, error: sessionError } = await supabase.from('space_sessions').insert([{
+              space_id: input.space.id,
+              session_date: input.date,
+              starts_at: startsAt,
+              ends_at: endsAt,
+              title: input.session.title?.trim() || null,
+              // The session belongs to whoever is booking, even when an admin books for a colleague.
+              created_by: currentUser?.id || null,
+            }]).select().single();
+            if (sessionError) {
+              // Someone opened the same window a moment earlier — join theirs instead of failing.
+              if (sessionError.code === '23505') {
+                const { data: raced } = await supabase
+                  .from('space_sessions').select('*')
+                  .eq('space_id', input.space.id).eq('session_date', input.date).eq('starts_at', startsAt);
+                const racedSession = ((raced || []) as SpaceSession[]).find(sameWindow);
+                if (!racedSession?.id) return { ok: false, error: sessionError.message };
+                session = racedSession;
+              } else {
+                // An overlapping window raises the trigger's own readable message.
+                return { ok: false, error: sessionError.message };
+              }
+            } else {
+              // Build the row locally as well: the demo workspace answers writes without a body, and
+              // the card must show the window it just opened either way.
+              session = {
+                ...(created as SpaceSession | null),
+                id: (created as SpaceSession | null)?.id || generateUUID(),
+                space_id: input.space.id,
+                session_date: input.date,
+                starts_at: startsAt,
+                ends_at: endsAt,
+                title: input.session.title?.trim() || null,
+                created_at: new Date().toISOString(),
+              } as SpaceSession;
+              setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
+            }
+          }
+          sessionId = session.id;
+        }
+      }
+
+      // A chair the room hands out is only a suggestion: when two people join the same session at the
+      // same moment, the one who loses the race simply takes the next free chair.
+      const candidates = input.seatId ? [input.seatId] : (input.seatIds?.length ? input.seatIds : [null]);
+      let booking: SpaceBooking | null = null;
+      let error: { code?: string; message: string } | null = null;
+      let seatId: string | null = candidates[0] ?? null;
+      for (const candidate of candidates) {
+        seatId = candidate ?? null;
+        const attempt = await supabase.from('space_bookings').insert([{
+          space_id: input.space.id,
+          session_id: sessionId,
+          profile_id: input.profileId,
+          booking_date: input.date,
+          seat_id: candidate || null,
+          note: input.note?.trim() || null,
+          created_by: currentUser?.id || null,
+        }]).select().single();
+        booking = (attempt.data || null) as SpaceBooking | null;
+        error = attempt.error;
+        // Only a clash on that very chair is worth another try.
+        if (!error || error.code !== '23505' || !error.message.includes('seat_session_idx')) break;
+      }
+      if (error) {
+        // A unique index fires before the trigger gets a word in, so name the rule that was broken.
+        const message = error.code === '23505'
+          ? error.message.includes('one_seat_day')
+            ? 'A whole-day space takes one seat per day — that person already holds one on this date.'
+            : error.message.includes('one_seat_session')
+              ? 'That person already holds a seat in this session.'
+              : 'That chair was taken a moment ago — try again.'
+          : error.message;
+        return { ok: false, error: message };
+      }
+
+      // The row is appended locally first: the demo workspace answers with no body, and a real
+      // booking should appear on the card without waiting for the refetch below.
+      const saved = (booking || {}) as Partial<SpaceBooking>;
+      setSpaceBookings(prev => [...prev, {
+        id: saved.id || generateUUID(),
+        space_id: input.space.id,
+        session_id: sessionId,
+        profile_id: input.profileId,
+        booking_date: input.date,
+        seat_id: seatId,
+        note: input.note?.trim() || null,
+        created_at: saved.created_at || new Date().toISOString(),
+        profile: profiles.find(profile => profile.id === input.profileId),
+      }]);
+      void refreshSpaces();
+      return { ok: true, seatId };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('bookSpaceSeat exception:', e);
+      return { ok: false, error: message };
+    }
+  };
+
+  /** Releases a seat. The last seat leaving closes the session (database trigger). */
+  const cancelSpaceBooking = async (id: string): Promise<boolean> => {
+    const previous = spaceBookings;
+    setSpaceBookings(prev => prev.filter(booking => booking.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('space_bookings').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase cancel space booking error:', error.message);
+        setSpaceBookings(previous);
+        return false;
+      }
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      console.error('cancelSpaceBooking exception:', e);
+      setSpaceBookings(previous);
+      return false;
+    }
+  };
+
   const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
     const previousInvoices = invoices;
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
@@ -5817,6 +6502,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshInvoicesRef.current = refreshInvoices;
   }, [refreshInvoices]);
 
+  const refreshSpacesRef = useRef(refreshSpaces);
+  useEffect(() => {
+    refreshSpacesRef.current = refreshSpaces;
+  }, [refreshSpaces]);
+
   /* ---------------------------------------------------------------------------
    * Live data sync — Supabase Realtime, i.e. this stack's equivalent of a SignalR hub.
    *
@@ -6084,6 +6774,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .forEach(table => on(table, () => refreshInvoicesRef.current()));
     ['budgets', 'budget_lines', 'budget_categories', 'recurring_commitments']
       .forEach(table => on(table, reloadLiveBudget));
+    ['space_types', 'spaces', 'space_sessions', 'space_bookings']
+      .forEach(table => on(table, () => { void refreshSpacesRef.current(); }));
     on('company_profile', reloadLiveCompanyProfile);
     on('leave_policy', reloadLiveLeavePolicy);
     on('remote_amendments', reloadLiveRemoteRequests);
@@ -6411,6 +7103,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addReceipt,
       updateReceipt,
       deleteReceipt,
+      spaceTypes,
+      spaces,
+      spaceSessions,
+      spaceBookings,
+      officeFloors,
+      spaceSeats,
+      spaceDesks,
+      saveOfficeFloor,
+      deleteOfficeFloor,
+      saveOfficeLayout,
+      saveSpaceType,
+      deleteSpaceType,
+      saveSpace,
+      deleteSpace,
+      bookSpaceSeat,
+      cancelSpaceBooking,
+      refreshSpaces,
       updateInvoiceStatus,
       linkInvoiceToContract,
       recordInvoicePayment,

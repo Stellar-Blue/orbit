@@ -16,7 +16,7 @@ import {
   Users, Calendar as CalendarIcon, DollarSign, AlertTriangle,
   Clock, MapPin, Sparkles, Plus,
   CalendarDays, ChevronLeft, ChevronRight, Search, Globe,
-  ShieldCheck, Building2, Info, X, RefreshCw
+  ShieldCheck, Info, X, RefreshCw
 } from 'lucide-react';
 import { Profile, LeaveRequest, PublicHoliday, MandatoryLeave, LeaveType } from '@/lib/types';
 import { getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
@@ -896,13 +896,13 @@ export default function DashboardPage() {
                     <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
                       <td className="min-w-[200px] w-[220px] sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-b border-r border-slate-200/80 p-2.5 transition-colors text-left font-sans shadow-2xs">
                         <div className="flex items-center space-x-2.5">
-                          {(p as any).avatar_url ? (
-                            <img src={(p as any).avatar_url} alt={p.first_name} className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0" />
-                          ) : (
-                            <div className="w-7 h-7 rounded-full bg-cyan-100/80 text-cyan-800 border border-cyan-200/60 font-bold text-[11px] flex items-center justify-center shrink-0 tracking-tighter">
-                              {p.first_name[0]}{p.last_name[0]}
-                            </div>
-                          )}
+                          <ProfileAvatar
+                            photoUrl={p.photo_url}
+                            firstName={p.first_name}
+                            lastName={p.last_name}
+                            size="sm"
+                            className="border border-slate-200"
+                          />
                           <div className="truncate">
                             <span className="text-xs font-bold text-slate-800 tracking-tight block truncate">
                               {p.first_name} {p.last_name}
@@ -1093,7 +1093,10 @@ export default function DashboardPage() {
                     {selectedDay.leaves.map((l, idx) => (
                       <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-slate-800">{l.profile.first_name} {l.profile.last_name}</span>
+                          <span className="flex min-w-0 items-center gap-2 font-extrabold text-slate-800">
+                            <ProfileAvatar photoUrl={l.profile.photo_url} firstName={l.profile.first_name} lastName={l.profile.last_name} size="sm" />
+                            <span className="truncate">{l.profile.first_name} {l.profile.last_name}</span>
+                          </span>
                           <span className="text-[10px] text-slate-500 font-mono font-bold">{l.profile.team?.name || 'Staff'}</span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1129,9 +1132,12 @@ export default function DashboardPage() {
                     {selectedDay.remotes.map((r, idx) => (
                       <div key={idx} className="p-3 rounded-xl bg-cyan-50/50 border border-cyan-200/60 space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="font-extrabold text-slate-800 flex items-center">
-                            {r.mode === 'remote_abroad' ? <Globe className="w-3.5 h-3.5 mr-1 text-blue-600" /> : <MapPin className="w-3.5 h-3.5 mr-1 text-cyan-600" />}
-                            {r.profile.first_name} {r.profile.last_name}
+                          <span className="flex min-w-0 items-center gap-2 font-extrabold text-slate-800">
+                            <ProfileAvatar photoUrl={r.profile.photo_url} firstName={r.profile.first_name} lastName={r.profile.last_name} size="sm" />
+                            <span className="flex min-w-0 items-center truncate">
+                              {r.mode === 'remote_abroad' ? <Globe className="w-3.5 h-3.5 mr-1 shrink-0 text-blue-600" /> : <MapPin className="w-3.5 h-3.5 mr-1 shrink-0 text-cyan-600" />}
+                              <span className="truncate">{r.profile.first_name} {r.profile.last_name}</span>
+                            </span>
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono font-bold">{r.profile.team?.name || 'Staff'}</span>
                         </div>
@@ -1164,8 +1170,8 @@ export default function DashboardPage() {
                 ) : (
                   <div className="flex flex-wrap gap-2 pt-1">
                     {selectedDay.inOffice.map((o, idx) => (
-                      <div key={idx} className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold flex items-center">
-                        <Building2 className="w-3 h-3 mr-1 text-slate-500" />
+                      <div key={idx} className="flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 py-0.5 pl-0.5 pr-3 text-slate-700 text-xs font-bold">
+                        <ProfileAvatar photoUrl={o.profile.photo_url} firstName={o.profile.first_name} lastName={o.profile.last_name} size="xs" />
                         <span>{o.profile.first_name} {o.profile.last_name}</span>
                       </div>
                     ))}

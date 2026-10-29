@@ -1,3 +1,5 @@
+import type { AvatarConfig } from '@/lib/avatar';
+
 export type EmploymentType = 'full_time' | 'part_time' | 'contractor' | 'intern';
 export type UserRole = 'employee' | 'admin';
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'cancellation_requested' | 'in_progress' | 'taken' | 'expired';
@@ -61,6 +63,8 @@ export interface Profile {
   end_date?: string;
   status: 'active' | 'on_leave' | 'departed';
   photo_url?: string | null;
+  /** The choices behind a made avatar (see `src/lib/avatar.ts`); null when the photo is an upload. */
+  avatar_config?: AvatarConfig | null;
   work_schedule: string[];
   role: UserRole; // joined from user_roles
   contracted_weekly_hours?: number | null;
@@ -558,6 +562,139 @@ export interface Contract {
   lines?: ContractLine[];
   groups?: ContractLineGroup[];
   schedule?: ContractSchedule[];
+}
+
+/** How a space type is booked: one seat for the whole day, or seats inside a timed session. */
+export type SpaceBookingMode = 'whole_day' | 'time_range';
+
+/** Admin-configurable room kind (desk area, conference room, pod…). */
+export interface SpaceType {
+  id: string;
+  name: string;
+  booking_mode: SpaceBookingMode;
+  color: string;
+  sort_order: number;
+  active: boolean;
+  created_at?: string;
+  spaces?: Space[];
+}
+
+/** A declarable, bookable room. `capacity` is how many seats it holds. */
+export interface Space {
+  id: string;
+  name: string;
+  type_id: string;
+  capacity: number;
+  location?: string | null;
+  notes?: string | null;
+  active: boolean;
+  created_by?: string | null;
+  created_at?: string;
+  /** Floor-plan geometry, in metres. Rooms without a floor are only listed, never drawn. */
+  floor_id?: string | null;
+  pos_x?: number;
+  pos_z?: number;
+  room_width?: number;
+  room_depth?: number;
+  room_height?: number;
+  rotation?: number;
+  /** Wall a meeting room's screen hangs on; `none` draws no screen. */
+  screen_wall?: ScreenWall;
+  /** Footprint: a plain rectangle, or an L cut out of one corner. */
+  room_shape?: RoomShape;
+  /** Size of the missing corner of an L-shaped room, in metres. */
+  notch_width?: number;
+  notch_depth?: number;
+  notch_corner?: RoomCornerName;
+  space_type?: SpaceType;
+  sessions?: SpaceSession[];
+  seats?: SpaceSeat[];
+  desks?: SpaceDesk[];
+}
+
+/** A floor (or office) the 3D plan draws; rooms hang off exactly one floor. */
+export interface OfficeFloor {
+  id: string;
+  name: string;
+  /** Floor slab size in metres. */
+  width: number;
+  depth: number;
+  sort_order: number;
+  active: boolean;
+  created_at?: string;
+}
+
+/** A room is a rectangle, or an L with one corner cut away. */
+export type RoomShape = 'rect' | 'l';
+
+/** Which corner of the bounding box an L-shaped room is missing. */
+export type RoomCornerName = 'nw' | 'ne' | 'sw' | 'se';
+
+/** The wall a room's screen hangs on. */
+export type ScreenWall = 'none' | 'n' | 's' | 'w' | 'e';
+
+/** A desk drawn inside a room. Furniture only — seats are booked, desks are not. */
+export interface SpaceDesk {
+  id: string;
+  space_id: string;
+  label?: string | null;
+  description?: string | null;
+  /** Centre of the desk, metres from the room centre: X east, Z south. */
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  rotation: number;
+  /** Draw a screen and keyboard on the desk. Shared tables usually have neither. */
+  has_monitor?: boolean;
+  active: boolean;
+  created_at?: string;
+}
+
+/** A chair drawn inside a room. Optional on a booking; one seat per room per day. */
+export interface SpaceSeat {
+  id: string;
+  space_id: string;
+  label?: string | null;
+  /** Metres from the room centre: X east, Z south. */
+  x: number;
+  z: number;
+  rotation: number;
+  active: boolean;
+  created_at?: string;
+}
+
+/** The window the first booker defined for a time-range space on one day. */
+export interface SpaceSession {
+  id: string;
+  space_id: string;
+  session_date: string;
+  /** `HH:MM:SS` from Postgres. */
+  starts_at: string;
+  ends_at: string;
+  title?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  space?: Space;
+  bookings?: SpaceBooking[];
+}
+
+/** One seat held by one person in one space on one date. */
+export interface SpaceBooking {
+  id: string;
+  space_id: string;
+  session_id?: string | null;
+  profile_id: string;
+  booking_date: string;
+  /** The chair taken, when the person picked one on the floor plan. */
+  seat_id?: string | null;
+  note?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  profile?: Profile;
+  space?: Space;
+  session?: SpaceSession;
+  seat?: SpaceSeat;
 }
 
 export interface CatalogModule {

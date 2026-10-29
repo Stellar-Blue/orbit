@@ -3,12 +3,27 @@
 import React, { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ShieldCheck, AlertCircle, Loader2, Zap, Lock, Sparkles } from "lucide-react";
+import { ShieldCheck, AlertCircle, Loader2, Zap, Lock, Sparkles, KeyRound } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 
+/**
+ * Temporary credential sign-in for preview deployments.
+ *
+ * Only rendered when `NEXT_PUBLIC_PREVIEW_LOGIN=true`, which is set on the Vercel Preview
+ * environment alone — production builds never inline it, so the form cannot appear there. It exists
+ * because Microsoft Entra rejects the `*.vercel.app` redirect URI until the app registration allows
+ * it; the credential is a Supabase email+password login, so the session, role and RLS are real.
+ */
+const PREVIEW_LOGIN = process.env.NEXT_PUBLIC_PREVIEW_LOGIN === 'true';
+const PREVIEW_LOGIN_DOMAIN = process.env.NEXT_PUBLIC_PREVIEW_LOGIN_DOMAIN || 'stellarblue.eu';
+
 function LoginContent() {
   const [isLoading, setIsLoading] = useState(false);
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
   const searchParams = useSearchParams();
   const { isDevMode, companyProfile } = useAuth();
 
@@ -64,6 +79,34 @@ function LoginContent() {
     } catch (err) {
       console.error("Login initialization exception:", err);
       setIsLoading(false);
+    }
+  };
+
+  const handlePasswordLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (isPasswordLoading) return;
+    if (!identifier.trim() || !password) {
+      setCredentialError("Enter the preview username and password.");
+      return;
+    }
+    setIsPasswordLoading(true);
+    setCredentialError(null);
+    try {
+      // A bare username is expanded to the company domain, so the temp credential reads as a
+      // username/password pair rather than an email.
+      const email = identifier.includes("@") ? identifier.trim() : `${identifier.trim()}@${PREVIEW_LOGIN_DOMAIN}`;
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setCredentialError(error.message);
+        setIsPasswordLoading(false);
+        return;
+      }
+      const nextTarget = searchParams ? searchParams.get("next") : null;
+      window.location.assign(nextTarget || "/");
+    } catch (error) {
+      setCredentialError(error instanceof Error ? error.message : "Sign-in failed.");
+      setIsPasswordLoading(false);
     }
   };
 
@@ -138,6 +181,50 @@ function LoginContent() {
             </>
           )}
         </button>
+
+        {/* Temporary preview credentials — preview deployments only (see PREVIEW_LOGIN). */}
+        {PREVIEW_LOGIN && (
+          <form onSubmit={handlePasswordLogin} className="mt-6 space-y-3 border-t border-slate-150 pt-6">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center font-semibold text-[#2f6fa3]">
+                <KeyRound className="mr-1 h-3.5 w-3.5" />
+                Temporary preview access
+              </span>
+              <span className="font-sans text-[10px] text-slate-400">Not Entra ID</span>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
+                placeholder="Username or email"
+                autoComplete="username"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[#2f6fa3] focus:ring-2 focus:ring-[#2f6fa3]/15"
+              />
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Password"
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[#2f6fa3] focus:ring-2 focus:ring-[#2f6fa3]/15"
+              />
+            </div>
+            {credentialError && (
+              <p className="flex items-start gap-1.5 text-[11px] font-medium text-rose-700">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{credentialError}</span>
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={isPasswordLoading}
+              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[#2f6fa3]/25 bg-[#2f6fa3]/10 px-4 py-2.5 text-xs font-semibold text-[#2f6fa3] transition duration-200 hover:bg-[#2f6fa3]/20 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
+            >
+              {isPasswordLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>Sign in with preview credentials</span>}
+            </button>
+          </form>
+        )}
 
         {/* Local Dev Mode Bypass (Only displayed during local development) */}
         {isDevMode && (
