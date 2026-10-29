@@ -8,6 +8,7 @@
 
 import {
   BOOKING_MODE_LABELS,
+  canDeleteSession,
   clockLabel,
   defaultSessionWindow,
   heldWholeDaySpace,
@@ -353,6 +354,25 @@ assert(
 assert(
   wholeDayHeldOn([otherBooking, deskBooking], 'me', '2026-11-10', 'sp-3')?.id === 'b2',
   'Two whole-day seats are still one rule: the first one held is reported'
+);
+
+// --- Taking a session back ---------------------------------------------------
+assert(
+  canDeleteSession({ created_by: 'me' }, 'me', false),
+  'The person who opened a session can delete it'
+);
+assert(
+  canDeleteSession({ created_by: 'someone-else' }, 'me', true),
+  'An administrator can delete any session'
+);
+assert(
+  !canDeleteSession({ created_by: 'someone-else' }, 'me', false),
+  'A colleague\'s session is out of reach',
+  'only its creator or an admin may remove it'
+);
+assert(
+  !canDeleteSession({ created_by: null }, null, false),
+  'A session without an owner is left to administrators'
 );
 
 console.log('\n================================================================');

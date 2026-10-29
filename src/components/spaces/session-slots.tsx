@@ -1,10 +1,10 @@
 "use client";
 
 import React from 'react';
-import { Clock, Plus, Users, X } from 'lucide-react';
+import { Clock, Plus, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/primitives';
 import { clockLabel, seatHolders, seatsLabel, type SpaceDayState, type SpaceSessionState } from '@/lib/spaces';
-import type { Space, SpaceBooking } from '@/lib/types';
+import type { Space, SpaceBooking, SpaceSession } from '@/lib/types';
 
 export interface SessionSlotsProps {
   space: Space;
@@ -15,13 +15,16 @@ export interface SessionSlotsProps {
   onLeave: (booking: SpaceBooking) => void;
   /** Opens the booking dialog with a blank window so the first seat creates the session. */
   onOpen: () => void;
+  /** Whether this viewer may remove the session (the person who opened it, or an admin). */
+  canDelete?: (session: SpaceSession) => boolean;
+  onDelete?: (session: SpaceSession) => void;
 }
 
 /**
  * The day's sessions of one timed room. A conference room holds several meetings in a day, each with
  * its own window and its own seats, so the card lists them instead of showing a single state.
  */
-export function SessionSlots({ space, state, disabled, onJoin, onLeave, onOpen }: SessionSlotsProps) {
+export function SessionSlots({ space, state, disabled, onJoin, onLeave, onOpen, canDelete, onDelete }: SessionSlotsProps) {
   if (state.sessions.length === 0) {
     return (
       <div className="rounded-[var(--radius-control)] border border-dashed border-[var(--line-strong)] px-2.5 py-2">
@@ -55,7 +58,20 @@ export function SessionSlots({ space, state, disabled, onJoin, onLeave, onOpen }
                     <span className="font-medium text-[var(--ink-2)]"> · {entry.session.title}</span>
                   )}
                 </p>
-                <span className="shrink-0 ui-meta">{seatsLabel(entry, space.capacity)}</span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="ui-meta">{seatsLabel(entry, space.capacity)}</span>
+                  {onDelete && canDelete?.(entry.session) && (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(entry.session)}
+                      className="cursor-pointer rounded p-0.5 text-[var(--ink-4)] transition-colors hover:bg-rose-50 hover:text-rose-700"
+                      title="Delete this session and release its seats"
+                      aria-label={`Delete the ${clockLabel(entry.session.starts_at)} session`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </span>
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate ui-meta" title={holders.join(', ')}>

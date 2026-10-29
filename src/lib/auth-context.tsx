@@ -226,6 +226,8 @@ interface AppState {
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
   }) => Promise<{ ok: boolean; error?: string; seatId?: string | null }>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
+  /** Deletes a whole session; its bookings cascade with it, so the seats are released. */
+  deleteSpaceSession: (id: string) => Promise<boolean>;
   refreshSpaces: () => Promise<void>;
   budgets: Budget[];
   budgetCategories: BudgetCategory[];
@@ -5968,6 +5970,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const deleteSpaceSession = async (id: string): Promise<boolean> => {
+    const previousSessions = spaceSessions;
+    const previousBookings = spaceBookings;
+    // Local first, like releasing a seat: the card must drop the session immediately. Its bookings go
+    // with it, so the chairs of that window stop showing as taken.
+    setSpaceSessions(prev => prev.filter(session => session.id !== id));
+    setSpaceBookings(prev => prev.filter(booking => booking.session_id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('space_sessions').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase delete space session error:', error.message);
+        alert(error.code === '42501'
+          ? 'Only the person who opened the session, or an administrator, can delete it.'
+          : `Could not delete the session: ${error.message}`);
+        setSpaceSessions(previousSessions);
+        setSpaceBookings(previousBookings);
+        return false;
+      }
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      console.error('deleteSpaceSession exception:', e);
+      setSpaceSessions(previousSessions);
+      setSpaceBookings(previousBookings);
+      return false;
+    }
+  };
+
   const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
     const previousInvoices = invoices;
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
@@ -7119,6 +7150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteSpace,
       bookSpaceSeat,
       cancelSpaceBooking,
+      deleteSpaceSession,
       refreshSpaces,
       updateInvoiceStatus,
       linkInvoiceToContract,

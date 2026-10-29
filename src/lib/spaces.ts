@@ -273,6 +273,19 @@ export function seatHolders(bookings: SpaceBooking[]): string[] {
 }
 
 /**
+ * Who may take a session back: the person who opened it, or an administrator. The database says the
+ * same with its delete policy, so the button and the rule cannot disagree.
+ */
+export function canDeleteSession(
+  session: Pick<SpaceSession, 'created_by'>,
+  profileId: string | null | undefined,
+  isAdmin: boolean
+): boolean {
+  if (isAdmin) return true;
+  return Boolean(profileId) && session.created_by === profileId;
+}
+
+/**
  * The whole-day booking a person already holds on a date, outside one room. A whole-day space fills
  * the person's whole day, so this is the rule every booking path shares: the screen explains it and
  * the database enforces it with a unique index.

@@ -16,12 +16,12 @@ import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
 import { SessionSlots } from '@/components/spaces/session-slots';
 import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
 import {
-  BOOKING_MODE_LABELS, clockLabel, heldWholeDaySpace, nextFreeSessionWindow, overlappingSession, seatHolders,
+  BOOKING_MODE_LABELS, canDeleteSession, clockLabel, heldWholeDaySpace, nextFreeSessionWindow, overlappingSession, seatHolders,
   seatsLabel, sessionLabel, spaceDayState, validateSessionWindow, wholeDayHeldOn,
   type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
-import type { Profile, Space, SpaceBooking, SpaceSeat, SpaceType } from '@/lib/types';
+import type { Profile, Space, SpaceBooking, SpaceSeat, SpaceSession, SpaceType } from '@/lib/types';
 import type { SeatPerson } from '@/components/spaces/office-3d';
 
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
@@ -53,7 +53,7 @@ interface BookingDraft {
 export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings,
-    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking,
+    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking, deleteSpaceSession,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -381,6 +381,19 @@ export default function SpacesPage() {
     setDraft(null);
   };
 
+  /** Removing a session takes its bookings with it, so the seats of that window are freed. */
+  const removeSession = async (session: SpaceSession, roomName: string) => {
+    const seats = spaceBookings.filter(booking => booking.session_id === session.id).length;
+    const window = `${clockLabel(session.starts_at)} – ${clockLabel(session.ends_at)}${session.title ? ` (${session.title})` : ''}`;
+    const released = seats > 0 ? ` and release its ${seats} seat${seats === 1 ? '' : 's'}` : '';
+    if (!confirm(`Delete the ${window} session in ${roomName}${released}?`)) return;
+    const ok = await deleteSpaceSession(session.id);
+    if (ok) notifySuccess(`The ${window} session in ${roomName} has been deleted.`, 'Session deleted');
+  };
+
+  /** A session can be taken back by whoever opened it, or by an administrator. */
+  const canDeleteThisSession = (session: SpaceSession) => canDeleteSession(session, currentUser.id, isAdmin);
+
   const leave = async (bookingId: string, label: string) => {
     if (!confirm(`Release this seat in ${label}?`)) return;
     const ok = await cancelSpaceBooking(bookingId);
@@ -596,6 +609,8 @@ export default function SpacesPage() {
                         onJoin={entry => openDraft(space, state, null, entry)}
                         onLeave={booking => void leave(booking.id, space.name)}
                         onOpen={() => openNewSession(space, state)}
+                        canDelete={canDeleteThisSession}
+                        onDelete={session => void removeSession(session, space.name)}
                       />
                     ) : (
                       <>
@@ -708,6 +723,8 @@ export default function SpacesPage() {
           setRoomModalId(null);
           openNewSession(roomModal, roomModalState);
         }}
+        canDelete={canDeleteThisSession}
+        onDelete={session => void removeSession(session, roomModal?.name || 'this room')}
       />
 
       <Modal
