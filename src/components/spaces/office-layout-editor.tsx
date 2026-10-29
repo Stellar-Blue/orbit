@@ -10,9 +10,11 @@ import { notifySuccess } from '@/lib/validation-modal';
 import { useAuth } from '@/lib/auth-context';
 import {
   autoLayoutRooms, clampDeskToRoom, clampSeatToRoom, defaultDeskSize, defaultRoomSize, deskRow,
-  DESK_PRESETS, MIN_DESK_SIZE, roomSize, seatGrid, seatLabel, snap, SNAP_STEP,
+  DESK_PRESETS, MIN_DESK_SIZE, roomNotch, roomSize, seatGrid, seatLabel, snap, SNAP_STEP,
 } from '@/lib/office-layout';
-import type { OfficeFloor, Space, SpaceDesk, SpaceSeat } from '@/lib/types';
+import type {
+  OfficeFloor, RoomCornerName, RoomShape, Space, SpaceDesk, SpaceSeat,
+} from '@/lib/types';
 import type { Office3DProps } from '@/components/spaces/office-3d';
 
 const Office3D = dynamic<Office3DProps>(
@@ -35,6 +37,10 @@ type RoomDraft = {
   room_depth: number;
   capacity: number;
   floor_id: string | null;
+  room_shape: RoomShape;
+  notch_width: number;
+  notch_depth: number;
+  notch_corner: RoomCornerName;
 };
 
 type SeatDraft = {
@@ -75,6 +81,7 @@ const toDeskDraft = (desk: SpaceDesk): DeskDraft => ({
 
 const toRoomDraft = (room: Space, floorId: string): RoomDraft => {
   const { width, depth } = roomSize(room);
+  const notch = roomNotch({ ...room, room_width: width, room_depth: depth });
   return {
     id: room.id,
     pos_x: Number(room.pos_x) || 0,
@@ -83,6 +90,10 @@ const toRoomDraft = (room: Space, floorId: string): RoomDraft => {
     room_depth: depth,
     capacity: room.capacity,
     floor_id: room.floor_id || floorId,
+    room_shape: room.room_shape === 'l' ? 'l' : 'rect',
+    notch_width: notch.width,
+    notch_depth: notch.depth,
+    notch_corner: notch.corner,
   };
 };
 
@@ -285,7 +296,17 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
       const draft = rooms.find(entry => entry.id === room.id);
       return {
         ...room,
-        ...(draft ? { pos_x: draft.pos_x, pos_z: draft.pos_z, room_width: draft.room_width, room_depth: draft.room_depth, capacity: draft.capacity } : {}),
+        ...(draft ? {
+          pos_x: draft.pos_x,
+          pos_z: draft.pos_z,
+          room_width: draft.room_width,
+          room_depth: draft.room_depth,
+          capacity: draft.capacity,
+          room_shape: draft.room_shape,
+          notch_width: draft.notch_width,
+          notch_depth: draft.notch_depth,
+          notch_corner: draft.notch_corner,
+        } : {}),
       };
     }),
     [roomsOnFloor, rooms]
@@ -507,6 +528,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     const draft: RoomDraft = {
       id: room.id, pos_x: position.pos_x, pos_z: position.pos_z,
       room_width: size.width, room_depth: size.depth, capacity: room.capacity, floor_id: floor.id,
+      room_shape: 'rect', notch_width: 0, notch_depth: 0, notch_corner: 'ne',
     };
     setRooms(prev => [...prev, draft]);
     setSeats(prev => {
@@ -529,6 +551,10 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
         room_depth: room.room_depth,
         capacity: room.capacity,
         floor_id: room.floor_id,
+        room_shape: room.room_shape,
+        notch_width: room.notch_width,
+        notch_depth: room.notch_depth,
+        notch_corner: room.notch_corner,
       })),
       desks,
       seats,
@@ -750,6 +776,34 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
         ) : selectedRoom ? (
           <Card title={selectedRoom.name} subtitle={typesById.get(selectedRoom.type_id)?.name || 'Room'}>
             <div className="space-y-2">
+              <div>
+                <label className="ui-label mb-1 block">Shape</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([['rect', 'Rectangle'], ['l', 'L-shaped']] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => updateRoom(selectedRoom.id, {
+                        room_shape: value as RoomShape,
+                        // A first L needs a sensible notch, or it would look untouched.
+                        ...(value === 'l' && !rooms.find(entry => entry.id === selectedRoom.id)?.notch_width
+                          ? {
+                            notch_width: Math.round(Math.max((selectedRoom.room_width ?? 4) * 0.38, 1.5) * 4) / 4,
+                            notch_depth: Math.round(Math.max((selectedRoom.room_depth ?? 3.5) * 0.42, 1.5) * 4) / 4,
+                          }
+                          : {}),
+                      })}
+                      className={`cursor-pointer rounded-[var(--radius-control)] border px-2 py-1 text-[11.5px] font-medium transition-colors ${
+                        (rooms.find(entry => entry.id === selectedRoom.id)?.room_shape || 'rect') === value
+                          ? 'border-[var(--accent)] bg-[var(--surface-muted)] font-semibold text-[var(--ink)]'
+                          : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="ui-label mb-1 block">Width (m)</label>
@@ -768,6 +822,50 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                   />
                 </div>
               </div>
+              {(rooms.find(entry => entry.id === selectedRoom.id)?.room_shape === 'l') && (
+                <div className="space-y-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-muted)] p-2">
+                  <p className="ui-label">Missing corner</p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['nw', 'ne', 'sw', 'se'] as RoomCornerName[]).map(corner => (
+                      <button
+                        key={corner}
+                        type="button"
+                        onClick={() => updateRoom(selectedRoom.id, { notch_corner: corner })}
+                        className={`cursor-pointer rounded-[var(--radius-control)] border px-1 py-1 font-mono text-[11px] uppercase transition-colors ${
+                          (rooms.find(entry => entry.id === selectedRoom.id)?.notch_corner || 'ne') === corner
+                            ? 'border-[var(--accent)] bg-white font-semibold text-[var(--ink)]'
+                            : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
+                        }`}
+                      >
+                        {corner}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="ui-label mb-1 block">Notch width</label>
+                      <input
+                        type="number" step="0.25" min="0" value={rooms.find(entry => entry.id === selectedRoom.id)?.notch_width ?? 0}
+                        onChange={event => updateRoom(selectedRoom.id, { notch_width: Math.max(0, Number(event.target.value) || 0) })}
+                        className="ui-input w-full font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="ui-label mb-1 block">Notch depth</label>
+                      <input
+                        type="number" step="0.25" min="0" value={rooms.find(entry => entry.id === selectedRoom.id)?.notch_depth ?? 0}
+                        onChange={event => updateRoom(selectedRoom.id, { notch_depth: Math.max(0, Number(event.target.value) || 0) })}
+                        className="ui-input w-full font-mono"
+                      />
+                    </div>
+                  </div>
+                  <p className="ui-meta">
+                    The cut is {roomNotch(selectedRoom).width.toFixed(2)} × {roomNotch(selectedRoom).depth.toFixed(2)} m,
+                    leaving at least a metre of room either side.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="ui-label mb-1 block">Capacity</label>
                 <input

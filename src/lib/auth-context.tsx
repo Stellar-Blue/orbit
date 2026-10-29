@@ -44,7 +44,7 @@ import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
 import { validateSessionWindow } from './spaces';
-import { seatGrid } from './office-layout';
+import { clampSeatToRoom, seatGrid } from './office-layout';
 
 /**
  * Every `profiles` column `authenticated` may read. `phone` is column-revoked (migration
@@ -196,6 +196,8 @@ interface AppState {
     rooms: Array<{
       id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
       capacity?: number; floor_id?: string | null;
+      room_shape?: 'rect' | 'l'; notch_width?: number; notch_depth?: number;
+      notch_corner?: 'nw' | 'ne' | 'sw' | 'se';
     }>;
     seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
     desks: Array<{
@@ -858,7 +860,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         z: position.z,
         rotation: 0,
         active: true,
-      }))
+      })).map(seat => ({ ...seat, ...clampSeatToRoom(space, seat.x, seat.z) }))
     );
     setSpaceSeats(demoSeats);
     // A desk in front of every chair of a whole-day area, exactly like the seeded floor plan.
@@ -5541,6 +5543,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     rooms: Array<{
       id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
       capacity?: number; floor_id?: string | null;
+      room_shape?: 'rect' | 'l'; notch_width?: number; notch_depth?: number;
+      notch_corner?: 'nw' | 'ne' | 'sw' | 'se';
     }>;
     seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
     desks: Array<{
@@ -5558,6 +5562,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           room_depth: room.room_depth,
           ...(room.capacity === undefined ? {} : { capacity: room.capacity }),
           ...(room.floor_id === undefined ? {} : { floor_id: room.floor_id }),
+          ...(room.room_shape === undefined ? {} : { room_shape: room.room_shape }),
+          ...(room.notch_width === undefined ? {} : { notch_width: room.notch_width }),
+          ...(room.notch_depth === undefined ? {} : { notch_depth: room.notch_depth }),
+          ...(room.notch_corner === undefined ? {} : { notch_corner: room.notch_corner }),
         }).eq('id', room.id);
         if (error) {
           alert(`Could not save the room layout: ${error.message}`);

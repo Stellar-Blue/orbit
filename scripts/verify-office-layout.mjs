@@ -15,6 +15,7 @@ import {
   SNAP_STEP,
   autoLayoutRooms,
   clampDeskToRoom,
+  clampPointToRoom,
   clampRoomToFloor,
   clampSeatToRoom,
   defaultDeskSize,
@@ -22,7 +23,12 @@ import {
   deskFootprint,
   deskRow,
   freeSeatIds,
+  isInsideRoom,
+  isLShaped,
   resizeFromCorner,
+  roomNotch,
+  roomOutline,
+  roomRects,
   roomSize,
   seatGrid,
   seatLabel,
@@ -179,6 +185,51 @@ assert(deskRow(desks, 0).length === 0, 'Zero places means no desks');
 assert(
   resizeFromCorner({ room_width: 1.4, room_depth: 0.7 }, 0, 0, 'se', { x: -0.7, z: -0.35 }, MIN_DESK_SIZE).room_width === MIN_DESK_SIZE,
   'A desk corner drag stops at the desk minimum, not the room minimum'
+);
+
+// ---- room shapes -------------------------------------------------------------------
+const lRoom = {
+  room_width: 8, room_depth: 6, room_shape: 'l',
+  notch_width: 3, notch_depth: 2, notch_corner: 'ne',
+};
+
+assert(!isLShaped({ room_shape: 'rect' }) && isLShaped(lRoom), 'A room knows whether it is an L');
+assert(roomOutline({ room_width: 8, room_depth: 6 }).length === 4, 'A rectangle is four corners');
+assert(roomOutline(lRoom).length === 6, 'An L adds the two corners of its step');
+assert(
+  roomOutline(lRoom).some(point => point.x === 1 && point.z === -1) &&
+  roomOutline(lRoom).some(point => point.x === 4 && point.z === -1),
+  'The outline steps around the missing corner',
+  roomOutline(lRoom).map(point => `(${point.x},${point.z})`).join(' ')
+);
+assert(
+  roomOutline({ ...lRoom, notch_corner: 'sw' }).some(point => point.x === -4 && point.z === 1),
+  'Mirroring the corner mirrors the step'
+);
+assert(roomRects({ room_width: 8, room_depth: 6 }).length === 1, 'A rectangle is one band');
+assert(roomRects(lRoom).length === 2, 'An L is two bands');
+assert(
+  !isInsideRoom(lRoom, 3.2, -2.6),
+  'A point inside the missing corner is outside the room'
+);
+assert(isInsideRoom(lRoom, -3, -2.6) && isInsideRoom(lRoom, 3.2, 2), 'The two arms of the L are inside');
+
+const pushed = clampPointToRoom(lRoom, 3.2, -2.6, 0.3);
+assert(
+  isInsideRoom(lRoom, pushed.x, pushed.z) && !isInsideRoom(lRoom, 3.2, -2.6),
+  'A chair dragged into the missing corner is pushed back into the room',
+  `→ (${pushed.x}, ${pushed.z})`
+);
+const clampedChair = clampSeatToRoom(lRoom, 3.2, -2.6);
+assert(
+  isInsideRoom(lRoom, clampedChair.x, clampedChair.z),
+  'Seat clamping follows the room shape',
+  `→ (${clampedChair.x}, ${clampedChair.z})`
+);
+assert(
+  roomNotch({ ...lRoom, notch_width: 20, notch_depth: 20 }).width === 7,
+  'A notch can never swallow the whole room',
+  `clamped to ${roomNotch({ ...lRoom, notch_width: 20, notch_depth: 20 }).width} m`
 );
 
 console.log('\n================================================================');

@@ -1,4 +1,4 @@
-import type { OfficeFloor, Space, SpaceDesk, SpaceSeat, SpaceType } from '@/lib/types';
+import type { OfficeFloor, RoomCornerName, Space, SpaceDesk, SpaceSeat, SpaceType } from '@/lib/types';
 
 /**
  * Floor-plan maths shared by the 3D editor, the employee view and the tests.
@@ -16,7 +16,11 @@ export const SEAT_MARGIN = 0.35;
 /** Editor snapping, in metres. */
 export const SNAP_STEP = 0.25;
 
-export type RoomCorner = 'nw' | 'ne' | 'sw' | 'se';
+export type RoomCorner = RoomCornerName;
+
+/** The parts of a room the shape maths needs; furniture clamping accepts a bare partial room too. */
+export type RoomLike = Pick<Space, 'room_width' | 'room_depth'> &
+  Partial<Pick<Space, 'room_shape' | 'notch_width' | 'notch_depth' | 'notch_corner'>>;
 
 export const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -118,6 +122,122 @@ export function resizeFromCorner(
   };
 }
 
+/** Can this room be drawn as an L? A notch must leave at least a metre of room either side. */
+export const MIN_NOTCH_GAP = 1;
+
+export const isLShaped = (room: Pick<Space, 'room_shape'>) => room.room_shape === 'l';
+
+/** The notch clamped to something a room can actually have. */
+export function roomNotch(
+  room: Pick<Space, 'room_width' | 'room_depth' | 'notch_width' | 'notch_depth' | 'notch_corner'>
+): { width: number; depth: number; corner: RoomCornerName } {
+  const { width, depth } = roomSize(room);
+  return {
+    width: Math.min(Math.max(Number(room.notch_width) || 0, 0), Math.max(width - MIN_NOTCH_GAP, 0)),
+    depth: Math.min(Math.max(Number(room.notch_depth) || 0, 0), Math.max(depth - MIN_NOTCH_GAP, 0)),
+    corner: room.notch_corner || 'ne',
+  };
+}
+
+/**
+ * The room's footprint as a polygon in local metres, going round the edge. A rectangle is four
+ * corners; an L-shaped room is six, stepping around the corner it is missing.
+ */
+export function roomOutline(room: RoomLike): Array<{ x: number; z: number }> {
+  const { width, depth } = roomSize(room);
+  const halfW = width / 2;
+  const halfD = depth / 2;
+  if (!isLShaped(room as Pick<Space, 'room_shape'>)) {
+    return [
+      { x: -halfW, z: -halfD },
+      { x: halfW, z: -halfD },
+      { x: halfW, z: halfD },
+      { x: -halfW, z: halfD },
+    ];
+  }
+
+  const notch = roomNotch({ ...room, room_width: width, room_depth: depth });
+  if (notch.width <= 0 || notch.depth <= 0) {
+    return [
+      { x: -halfW, z: -halfD },
+      { x: halfW, z: -halfD },
+      { x: halfW, z: halfD },
+      { x: -halfW, z: halfD },
+    ];
+  }
+
+  // Built for the north-east corner, then mirrored for the other three.
+  const sx = notch.corner === 'ne' || notch.corner === 'se' ? 1 : -1;
+  const sz = notch.corner === 'sw' || notch.corner === 'se' ? 1 : -1;
+  const innerX = halfW - notch.width;
+  const innerZ = halfD - notch.depth;
+  return [
+    { x: sx * -halfW, z: sz * -halfD },
+    { x: sx * innerX, z: sz * -halfD },
+    { x: sx * innerX, z: sz * innerZ },
+    { x: sx * halfW, z: sz * innerZ },
+    { x: sx * halfW, z: sz * halfD },
+    { x: sx * -halfW, z: sz * halfD },
+  ];
+}
+
+/**
+ * A room as one or two rectangles the furniture can live in. An L is the union of the two bands that
+ * survive the notch, which is what clamping and hit-testing need.
+ */
+export function roomRects(room: RoomLike): Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> {
+  const { width, depth } = roomSize(room);
+  const halfW = width / 2;
+  const halfD = depth / 2;
+  const full = { minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD };
+  if (!isLShaped(room as Pick<Space, 'room_shape'>)) return [full];
+
+  const notch = roomNotch({ ...room, room_width: width, room_depth: depth });
+  if (notch.width <= 0 || notch.depth <= 0) return [full];
+
+  const sx = notch.corner === 'ne' || notch.corner === 'se' ? 1 : -1;
+  const sz = notch.corner === 'sw' || notch.corner === 'se' ? 1 : -1;
+  const innerX = halfW - notch.width;
+  const innerZ = halfD - notch.depth;
+
+  return [
+    // The band on the far side of the notch, full width.
+    { minX: -halfW, maxX: halfW, minZ: sz > 0 ? -halfD : -innerZ, maxZ: sz > 0 ? innerZ : halfD },
+    // The band on the far side of the notch, full depth.
+    { minX: sx > 0 ? -halfW : -innerX, maxX: sx > 0 ? innerX : halfW, minZ: -halfD, maxZ: halfD },
+  ];
+}
+
+/** Is this local point inside the room's footprint? */
+export function isInsideRoom(room: RoomLike, x: number, z: number): boolean {
+  return roomRects(room).some(rect => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ);
+}
+
+/**
+ * Push a point into the room, keeping `margin` clear of every wall. For an L it lands in whichever of
+ * the two bands is nearest, which is what a person dragging furniture would expect.
+ */
+export function clampPointToRoom(
+  room: RoomLike,
+  x: number,
+  z: number,
+  marginX: number,
+  marginZ: number = marginX
+): { x: number; z: number } {
+  let best: { x: number; z: number } | null = null;
+  let bestDistance = Infinity;
+  roomRects(room).forEach(rect => {
+    const candidateX = Math.min(Math.max(x, rect.minX + marginX), rect.maxX - marginX);
+    const candidateZ = Math.min(Math.max(z, rect.minZ + marginZ), rect.maxZ - marginZ);
+    const distance = (candidateX - x) ** 2 + (candidateZ - z) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = { x: candidateX, z: candidateZ };
+    }
+  });
+  return best || { x, z };
+}
+
 /** Footprints the editor offers as starting points, in metres. */
 export const DESK_PRESETS = [
   { id: 'single', label: 'Desk', width: 1.4, depth: 0.7 },
@@ -149,19 +269,13 @@ export function deskFootprint(desk: Pick<SpaceDesk, 'width' | 'depth' | 'rotatio
 
 /** Keep a dragged desk inside its room, measured by what the desk actually occupies. */
 export function clampDeskToRoom(
-  room: Pick<Space, 'room_width' | 'room_depth'>,
+  room: RoomLike,
   desk: Pick<SpaceDesk, 'width' | 'depth' | 'rotation'>,
   x: number,
   z: number
 ): { x: number; z: number } {
-  const { width, depth } = roomSize(room);
   const footprint = deskFootprint(desk);
-  const maxX = Math.max(width / 2 - footprint.width / 2 - 0.05, 0);
-  const maxZ = Math.max(depth / 2 - footprint.depth / 2 - 0.05, 0);
-  return {
-    x: Math.min(Math.max(x, -maxX), maxX),
-    z: Math.min(Math.max(z, -maxZ), maxZ),
-  };
+  return clampPointToRoom(room, x, z, footprint.width / 2 + 0.05, footprint.depth / 2 + 0.05);
 }
 
 /**
@@ -199,17 +313,11 @@ export function deskRow(
  * to the grid first, so a chair can be pushed right up to the limit without overshooting it.
  */
 export function clampSeatToRoom(
-  room: Pick<Space, 'room_width' | 'room_depth'>,
+  room: RoomLike,
   x: number,
   z: number
 ): { x: number; z: number } {
-  const { width, depth } = roomSize(room);
-  const maxX = Math.max(width / 2 - SEAT_MARGIN, 0);
-  const maxZ = Math.max(depth / 2 - SEAT_MARGIN, 0);
-  return {
-    x: Math.min(Math.max(x, -maxX), maxX),
-    z: Math.min(Math.max(z, -maxZ), maxZ),
-  };
+  return clampPointToRoom(room, x, z, SEAT_MARGIN);
 }
 
 /**

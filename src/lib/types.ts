@@ -594,6 +594,12 @@ export interface Space {
   room_depth?: number;
   room_height?: number;
   rotation?: number;
+  /** Footprint: a plain rectangle, or an L cut out of one corner. */
+  room_shape?: RoomShape;
+  /** Size of the missing corner of an L-shaped room, in metres. */
+  notch_width?: number;
+  notch_depth?: number;
+  notch_corner?: RoomCornerName;
   space_type?: SpaceType;
   sessions?: SpaceSession[];
   seats?: SpaceSeat[];
@@ -611,6 +617,12 @@ export interface OfficeFloor {
   active: boolean;
   created_at?: string;
 }
+
+/** A room is a rectangle, or an L with one corner cut away. */
+export type RoomShape = 'rect' | 'l';
+
+/** Which corner of the bounding box an L-shaped room is missing. */
+export type RoomCornerName = 'nw' | 'ne' | 'sw' | 'se';
 
 /** A desk drawn inside a room. Furniture only — seats are booked, desks are not. */
 export interface SpaceDesk {

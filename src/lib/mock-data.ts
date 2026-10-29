@@ -468,6 +468,8 @@ export const MOCK_SPACES: Space[] = [
     id: 'spc-conf-a', name: 'Conference room A', type_id: 'spt-conf', capacity: 8, location: 'Floor 2',
     notes: 'Screen + video conference', active: true, floor_id: 'flr-2',
     pos_x: 5, pos_z: -3.5, room_width: 7, room_depth: 5, room_height: 2.6, rotation: 0,
+    // An L, so the demo shows a room that wraps a corner.
+    room_shape: 'l', notch_width: 2.5, notch_depth: 2, notch_corner: 'ne',
   },
   {
     id: 'spc-pod-1', name: 'Phone pod 1', type_id: 'spt-pod', capacity: 1, location: 'Floor 2',

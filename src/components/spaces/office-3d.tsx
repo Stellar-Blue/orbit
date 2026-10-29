@@ -7,7 +7,8 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { OfficeFloor, Space, SpaceDesk, SpaceSeat } from '@/lib/types';
 import {
-  clampDeskToRoom, clampRoomToFloor, clampSeatToRoom, resizeFromCorner, roomSize, snap, type RoomCorner,
+  clampDeskToRoom, clampRoomToFloor, clampSeatToRoom, isLShaped, resizeFromCorner, roomOutline, roomRects,
+  roomSize, snap, type RoomCorner,
 } from '@/lib/office-layout';
 
 /**
@@ -399,42 +400,117 @@ function highlightSeat(state: SceneState, seatId: string | null): void {
   if (seatId) seatGroupOf(state, seatId)?.scale.setScalar(1.1);
 }
 
+/** One straight run of wall, with the side it faces so the camera can cut it away. */
+interface WallSegment {
+  key: number;
+  side: 'n' | 's' | 'w' | 'e';
+  size: [number, number, number];
+  pos: [number, number, number];
+}
+
 /**
- * Place the four walls, the floor and the handles of a room inside its shell. Called when the room
- * is built and again on every corner drag, so the walls follow the corner without a scene rebuild.
+ * The walls of a room as straight runs along its outline. A rectangle gives four, an L gives six; the
+ * runs overlap slightly at the corners so no seam shows.
  */
-function layoutShell(group: THREE.Group, width: number, depth: number): void {
+function wallSegments(outline: Array<{ x: number; z: number }>): WallSegment[] {
+  const t = WALL_THICKNESS;
+  const centreY = PLATFORM_HEIGHT + WALL_HEIGHT / 2;
+  return outline.map((start, index) => {
+    const end = outline[(index + 1) % outline.length];
+    const alongX = Math.abs(end.z - start.z) < 1e-6;
+    const length = alongX ? Math.abs(end.x - start.x) : Math.abs(end.z - start.z);
+    const midX = (start.x + end.x) / 2;
+    const midZ = (start.z + end.z) / 2;
+    if (alongX) {
+      // A run along X faces north when it sits on the lower Z edge.
+      return {
+        key: index,
+        side: (start.z < 0 ? 'n' : 's') as 'n' | 's',
+        size: [length + t, WALL_HEIGHT, t] as [number, number, number],
+        pos: [midX, centreY, midZ] as [number, number, number],
+      };
+    }
+    return {
+      key: index,
+      side: (start.x < 0 ? 'w' : 'e') as 'w' | 'e',
+      size: [t, WALL_HEIGHT, length + t] as [number, number, number],
+      pos: [midX, centreY, midZ] as [number, number, number],
+    };
+  });
+}
+
+/** A flat, filled polygon in the floor plane, used for the room's floor. */
+function outlineShape(outline: Array<{ x: number; z: number }>): THREE.Shape {
+  const shape = new THREE.Shape();
+  outline.forEach((point, index) => {
+    if (index === 0) shape.moveTo(point.x, point.z);
+    else shape.lineTo(point.x, point.z);
+  });
+  shape.closePath();
+  return shape;
+}
+
+/**
+ * Place the walls, the floor and the handles of a room inside its shell. Called when the room is
+ * built and again on every corner drag, so the walls follow the corner without a scene rebuild.
+ *
+ * A shaped room can change footprint while it is dragged, so its floor and hit volume are rebuilt
+ * here — the walls are boxes that simply take new sizes.
+ */
+function layoutShell(group: THREE.Group, room: Space, width: number, depth: number): void {
   const shell = shellOf(group);
   const halfW = width / 2;
   const halfD = depth / 2;
   const t = WALL_THICKNESS;
   const top = PLATFORM_HEIGHT;
-
-  const walls: Record<string, { size: [number, number, number]; pos: [number, number, number] }> = {
-    n: { size: [width, WALL_HEIGHT, t], pos: [0, top + WALL_HEIGHT / 2, -halfD + t / 2] },
-    s: { size: [width, WALL_HEIGHT, t], pos: [0, top + WALL_HEIGHT / 2, halfD - t / 2] },
-    w: { size: [t, WALL_HEIGHT, Math.max(depth - 2 * t, 0.05)], pos: [-halfW + t / 2, top + WALL_HEIGHT / 2, 0] },
-    e: { size: [t, WALL_HEIGHT, Math.max(depth - 2 * t, 0.05)], pos: [halfW - t / 2, top + WALL_HEIGHT / 2, 0] },
-  };
+  const outline = roomOutline({ ...room, room_width: width, room_depth: depth });
+  const walls = wallSegments(outline);
+  const shaped = isLShaped(room) && roomRects({ ...room, room_width: width, room_depth: depth }).length > 1;
 
   shell?.children.forEach(child => {
     if (child.name.startsWith('wall:')) {
-      const wall = walls[child.name.slice(5)];
+      const wall = walls[Number(child.name.slice(5))];
       if (!wall) return;
       child.scale.set(...wall.size);
       child.position.set(...wall.pos);
+      child.userData.side = wall.side;
+      const materials = (shell.userData.wallMaterials as Record<string, THREE.Material[]> | undefined)?.[wall.side];
+      if (materials) (child as THREE.Mesh).material = materials;
       return;
     }
     if (child.name.startsWith('cap:')) {
-      const wall = walls[child.name.slice(4)];
+      const wall = walls[Number(child.name.slice(4))];
       if (!wall) return;
       // A hairline along the top of each wall: the cut edge of the model.
       child.scale.set(wall.size[0], 0.03, wall.size[2]);
       child.position.set(wall.pos[0], top + WALL_HEIGHT, wall.pos[2]);
+      child.userData.side = wall.side;
       return;
     }
-    if (child.name === 'platform') {
-      child.scale.set(width, 1, depth);
+    if (child.name === 'platform' || child.name === 'hit') {
+      if (!shaped) {
+        child.scale.set(width, 1, depth);
+        if (child.name === 'hit') {
+          child.scale.set(width, WALL_HEIGHT, depth);
+          child.position.y = WALL_HEIGHT / 2;
+        }
+        return;
+      }
+      // A stepped footprint gets a fresh extrude from the outline.
+      const mesh = child as THREE.Mesh;
+      const height = child.name === 'hit' ? WALL_HEIGHT : PLATFORM_HEIGHT;
+      mesh.geometry.dispose();
+      mesh.geometry = new THREE.ExtrudeGeometry(outlineShape(outline), { depth: height, bevelEnabled: false });
+      mesh.scale.set(1, 1, 1);
+      mesh.rotation.set(-Math.PI / 2, 0, 0);
+      mesh.position.y = child.name === 'hit' ? 0 : 0;
+      return;
+    }
+    if (child.name === 'floor-line') {
+      const line = child as THREE.Line;
+      line.geometry.dispose();
+      const points = outline.map((point: { x: number; z: number }) => new THREE.Vector3(point.x, top + 0.003, point.z));
+      line.geometry = new THREE.BufferGeometry().setFromPoints([...points, points[0]]);
       return;
     }
     if (child.name.startsWith('screen:')) {
@@ -446,10 +522,6 @@ function layoutShell(group: THREE.Group, width: number, depth: number): void {
     if (child.name === 'label') {
       child.position.set(0, top + WALL_HEIGHT + 0.42, halfD * 0.1);
       return;
-    }
-    if (child.name === 'hit') {
-      child.scale.set(width, WALL_HEIGHT, depth);
-      child.position.y = WALL_HEIGHT / 2;
     }
   });
 
@@ -477,7 +549,9 @@ function cutAwayWalls(state: SceneState): void {
       if (index < 0) return;
       const prefix = child.name.slice(0, index);
       if (prefix !== 'wall' && prefix !== 'cap' && prefix !== 'screen') return;
-      const side = child.name.slice(index + 1);
+      // The side lives on each run: an L-shaped room has more runs than a rectangle has sides.
+      const side = (child.userData as { side?: 'n' | 's' | 'w' | 'e' }).side
+        || (child.name.slice(index + 1) as 'n' | 's' | 'w' | 'e');
       const facing = side === 'n' ? -dz : side === 's' ? dz : side === 'w' ? -dx : dx;
       child.visible = facing <= 0;
     });
@@ -743,7 +817,7 @@ export const Office3D: React.FC<Office3DProps> = ({
           resized.pos_z
         );
         group.position.set(next.x, FLOOR_TOP, next.z);
-        layoutShell(group, resized.room_width, resized.room_depth);
+        layoutShell(group, { ...room, room_width: resized.room_width, room_depth: resized.room_depth }, resized.room_width, resized.room_depth);
         drag.pending = { width: resized.room_width, depth: resized.room_depth, x: next.x, z: next.z };
         return;
       }
@@ -1018,7 +1092,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       shell.name = 'shell';
 
       // The room's own floor: a soft pastel version of the type colour, with a tile grid on top.
-      const platform = new THREE.Mesh(
+      const platform: THREE.Mesh = new THREE.Mesh(
         rounded(1, PLATFORM_HEIGHT, 1, 0.015),
         material(roomFloor(typeColor), { roughness: 0.96 })
       );
@@ -1027,7 +1101,17 @@ export const Office3D: React.FC<Office3DProps> = ({
       platform.receiveShadow = true;
       shell.add(platform);
 
-      // Charcoal walls outside, warm plaster inside — the dollhouse look of a floor plan.
+      // Invisible volume that catches room drags and clicks (reshaped for an L below).
+      const hitBox: THREE.Mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      );
+      hitBox.name = 'hit';
+      hitBox.userData = { kind: 'room', roomId: room.id, label: room.name };
+      shell.add(hitBox);
+
+      // Charcoal walls outside, warm plaster inside — the dollhouse look of a floor plan. A room with
+      // a stepped footprint gets one run of wall per edge of its outline.
       const outer = material(COLORS.wall, { roughness: 0.88 });
       const inner = material(COLORS.wallInner, { roughness: 0.95 });
       const top = material(COLORS.wallTop, { roughness: 0.85 });
@@ -1037,37 +1121,52 @@ export const Office3D: React.FC<Office3DProps> = ({
         w: [inner, outer, top, outer, outer, outer],
         e: [outer, inner, top, outer, outer, outer],
       };
-      (['n', 's', 'w', 'e'] as const).forEach(side => {
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), wallMaterials[side]);
-        wall.name = `wall:${side}`;
+      shell.userData.wallMaterials = wallMaterials;
+      const outline = roomOutline({ ...room, room_width: width, room_depth: depth });
+      outline.forEach((_, index) => {
+        // Each run gets its facing materials in layoutShell, once its side is known.
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), wallMaterials.n);
+        wall.name = `wall:${index}`;
         wall.castShadow = true;
         wall.receiveShadow = true;
         shell.add(wall);
 
         const cap = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(COLORS.wallTop, { roughness: 0.8 }));
-        cap.name = `cap:${side}`;
+        cap.name = `cap:${index}`;
         shell.add(cap);
       });
+
+      // A shaped room needs a shaped floor; the rectangle keeps its rounded corners.
+      if (isLShaped(room) && roomRects(room).length > 1) {
+        platform.geometry.dispose();
+        platform.geometry = new THREE.ExtrudeGeometry(outlineShape(outline), { depth: PLATFORM_HEIGHT, bevelEnabled: false });
+        platform.rotation.set(-Math.PI / 2, 0, 0);
+        platform.position.y = 0;
+        hitBox.geometry.dispose();
+        hitBox.geometry = new THREE.ExtrudeGeometry(outlineShape(outline), { depth: WALL_HEIGHT, bevelEnabled: false });
+        hitBox.rotation.set(-Math.PI / 2, 0, 0);
+
+        // A hairline around the stepped edge, so the shape reads as drawn rather than cut off.
+        const edgePoints = outline.map((point: { x: number; z: number }) => new THREE.Vector3(point.x, PLATFORM_HEIGHT + 0.003, point.z));
+        const edge = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([...edgePoints, edgePoints[0]]),
+          new THREE.LineBasicMaterial({ color: '#d9d0c2' })
+        );
+        edge.name = 'floor-line';
+        shell.add(edge);
+      }
 
       const label = labelSprite(room.name, color);
       label.name = 'label';
       label.userData = { kind: 'room', roomId: room.id, label: room.name };
       shell.add(label);
 
-      // Invisible volume that catches room drags and clicks.
-      const hitBox = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 1, 1),
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
-      );
-      hitBox.name = 'hit';
-      hitBox.userData = { kind: 'room', roomId: room.id, label: room.name };
-      shell.add(hitBox);
-
       group.add(shell);
 
       if (kindRef.current?.(room) === 'time_range' && width >= 3.4) {
         const screen = buildWallScreen(Math.min(width * 0.45, 1.6));
         screen.name = 'screen:n';
+        screen.userData = { ...screen.userData, side: 'n' };
         shell.add(screen);
       }
 
@@ -1201,7 +1300,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       }
 
       // Laid out last: the shell and the corner handles both need their final positions.
-      layoutShell(group, width, depth);
+      layoutShell(group, room, width, depth);
 
       state.content.add(group);
       state.roomGroups.set(room.id, group);
