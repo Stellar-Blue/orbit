@@ -14,6 +14,7 @@ import { SpacesManager } from '@/components/spaces/spaces-manager';
 import { OfficePlan, OfficePlanEmpty } from '@/components/spaces/office-plan';
 import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
 import { SessionSlots } from '@/components/spaces/session-slots';
+import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
 import {
   BOOKING_MODE_LABELS, clockLabel, nextFreeSessionWindow, overlappingSession, seatHolders, seatsLabel, sessionLabel,
   spaceDayState, validateSessionWindow, type SpaceDayState, type SpaceSessionState,
@@ -58,6 +59,8 @@ export default function SpacesPage() {
   const [view, setView] = useState<'book' | 'manage' | 'layout'>('book');
   const [day, setDay] = useState<string>(todayKey());
   const [draft, setDraft] = useState<BookingDraft | null>(null);
+  /** The timed room whose day is open in the sessions dialog. */
+  const [roomModalId, setRoomModalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const today = todayKey();
@@ -161,6 +164,18 @@ export default function SpacesPage() {
       .map(({ room, state }) => `${room.name}: ${sessionLabel(state!.session!)}`);
     return lines.length > 0 ? lines.join(' · ') : null;
   }, [planRooms, states]);
+
+  const roomModal = roomModalId
+    ? activeSpaces.find(space => space.id === roomModalId) ?? null
+    : null;
+  const roomModalState = roomModal ? states.get(roomModal.id) : undefined;
+
+  /** Clicking a meeting room — on the plan or on its name — opens its day, sessions included. */
+  const openRoomSessions = (room: Space) => {
+    const state = states.get(room.id);
+    if (!state || state.mode !== 'time_range') return;
+    setRoomModalId(room.id);
+  };
 
   const pickSeat = (seat: SpaceSeat, room: Space) => {
     if (isPast) {
@@ -430,6 +445,7 @@ export default function SpacesPage() {
           mySeatIds={planSeatMarks.mine}
           sessionNote={planSessionNote}
           onPickSeat={pickSeat}
+          onPickRoom={openRoomSessions}
         />
       ) : (
         spacesByType.length > 0 && <OfficePlanEmpty isAdmin={isAdmin} onConfigure={() => setView('layout')} />
@@ -481,7 +497,18 @@ export default function SpacesPage() {
                   <div key={space.id} className="bg-white border border-[var(--line)] rounded-[var(--radius-card)] p-3.5 space-y-2.5 shadow-[var(--shadow-card)]">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <h3 className="text-[13px] font-semibold text-[var(--ink)] truncate">{space.name}</h3>
+                        <h3 className="text-[13px] font-semibold text-[var(--ink)] truncate">
+                          {timed ? (
+                            <button
+                              type="button"
+                              onClick={() => openRoomSessions(space)}
+                              className="cursor-pointer truncate hover:underline"
+                              title="See the day's sessions"
+                            >
+                              {space.name}
+                            </button>
+                          ) : space.name}
+                        </h3>
                         <p className="ui-meta mt-0.5 flex items-center gap-1">
                           {space.location ? <><MapPin className="w-3 h-3" />{space.location}</> : <span>No location</span>}
                         </p>
@@ -589,6 +616,26 @@ export default function SpacesPage() {
 
         </>
       )}
+
+      <RoomSessionsModal
+        room={roomModal}
+        type={roomModal ? typesById.get(roomModal.type_id) : undefined}
+        state={roomModalState}
+        dayLabel={formatDate(day)}
+        isPast={isPast}
+        onClose={() => setRoomModalId(null)}
+        onJoin={entry => {
+          if (!roomModal || !roomModalState) return;
+          setRoomModalId(null);
+          openDraft(roomModal, roomModalState, null, entry);
+        }}
+        onLeave={booking => void leave(booking.id, roomModal?.name || 'this room')}
+        onNew={() => {
+          if (!roomModal || !roomModalState) return;
+          setRoomModalId(null);
+          openNewSession(roomModal, roomModalState);
+        }}
+      />
 
       <Modal
         isOpen={Boolean(draft)}

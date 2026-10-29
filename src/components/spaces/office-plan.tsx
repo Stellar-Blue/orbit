@@ -30,6 +30,8 @@ export interface OfficePlanProps {
   /** Which session the timed rooms are showing, so the taken chairs are not mistaken for the whole day. */
   sessionNote?: string | null;
   onPickSeat: (seat: SpaceSeat, room: Space) => void;
+  /** Clicking a room itself (its floor, walls or empty space) — timed rooms open their sessions. */
+  onPickRoom?: (room: Space) => void;
   height?: number;
 }
 
@@ -44,7 +46,7 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, sessionNote, onPickSeat, height = 540,
+  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, sessionNote, onPickSeat, onPickRoom, height = 540,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -54,11 +56,17 @@ export function OfficePlan({
     () => (room: Space) => typesById.get(room.type_id)?.booking_mode ?? null,
     [typesById]
   );
+  const handleSelectRoom = useMemo(
+    () => (room: Space | null) => {
+      if (room) onPickRoom?.(room);
+    },
+    [onPickRoom]
+  );
 
   return (
     <Card
       title={`Office plan · ${floor.name}`}
-      subtitle="Click a chair to book it. Drag to orbit, scroll to zoom."
+      subtitle="Click a chair to book it, a meeting room to see its sessions. Drag to orbit, scroll to zoom."
       action={
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {LEGEND.map(entry => (
@@ -85,6 +93,7 @@ export function OfficePlan({
           colorForRoom={colorForRoom}
           kindForRoom={kindForRoom}
           onSelectSeat={onPickSeat}
+          onSelectRoom={handleSelectRoom}
         />
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
