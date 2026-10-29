@@ -282,6 +282,24 @@ export function clampDeskToRoom(
  * A row of desks along one wall — the way a whole-day area is actually furnished. The row squeezes
  * its gaps (then the desks) rather than overflowing a room that is too narrow for it.
  */
+/**
+ * The chair that belongs to a desk: directly in front of it, facing it. A desk turned 90° puts its
+ * chair beside it, and the pair keeps working, which is what makes "workstation" one object.
+ */
+export function chairForDesk(desk: {
+  x: number; z: number; depth: number; rotation?: number;
+}): { x: number; z: number; rotation: number } {
+  const rotation = Number(desk.rotation) || 0;
+  const angle = (rotation * Math.PI) / 180;
+  const gap = Math.max(Number(desk.depth) || 0.7, MIN_DESK_SIZE) / 2 + 0.42;
+  return {
+    // A desk is drawn with its screen at -Z, so the person sits on the +Z side and faces -Z.
+    x: round2(desk.x + Math.sin(angle) * gap),
+    z: round2(desk.z + Math.cos(angle) * gap),
+    rotation: round2(((rotation % 360) + 360) % 360),
+  };
+}
+
 export function deskRow(
   room: Pick<Space, 'room_width' | 'room_depth'>,
   count: number,

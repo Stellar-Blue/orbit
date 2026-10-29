@@ -246,10 +246,10 @@ function buildDesk(): THREE.Group {
 }
 
 /** Shape a desk to its footprint: the top stretches, the legs move to the corners, the props follow. */
-function shapeDesk(desk: THREE.Group, width: number, depth: number): void {
+function shapeDesk(desk: THREE.Group, width: number, depth: number, hasMonitor = true): void {
   const w = Math.max(0.3, width);
   const d = Math.max(0.3, depth);
-  const hasProps = w >= 0.9;
+  const hasProps = hasMonitor && w >= 0.9;
 
   const top = desk.getObjectByName('desk-top');
   if (top) top.scale.set(w, 1, d);
@@ -408,6 +408,9 @@ interface WallSegment {
   pos: [number, number, number];
 }
 
+/** A run is either along X (a north or south wall) or along Z (east or west). */
+const wallIsAlongX = (wall: WallSegment) => wall.size[0] > wall.size[2];
+
 /**
  * The walls of a room as straight runs along its outline. A rectangle gives four, an L gives six; the
  * runs overlap slightly at the corners so no seam shows.
@@ -514,9 +517,22 @@ function layoutShell(group: THREE.Group, room: Space, width: number, depth: numb
       return;
     }
     if (child.name.startsWith('screen:')) {
-      const side = child.name.slice(7);
-      if (side === 'n') child.position.set(0, 1.5, -halfD + t + 0.03);
-      else child.position.set(-halfW + t + 0.03, 1.5, 0);
+      const side = child.name.slice(7) as 'n' | 's' | 'w' | 'e';
+      // Hang it on the longest run of that wall: an L-shaped room has more than one.
+      const candidates = walls.filter(wall => wall.side === side);
+      const run = candidates.sort((a, b) => Math.max(b.size[0], b.size[2]) - Math.max(a.size[0], a.size[2]))[0];
+      if (!run) return;
+      const alongX = wallIsAlongX(run);
+      const length = alongX ? run.size[0] : run.size[2];
+      const inset = t / 2 + 0.03;
+      if (alongX) {
+        child.position.set(run.pos[0], 1.5, run.pos[2] + (side === 'n' ? inset : -inset));
+        child.rotation.y = side === 'n' ? 0 : Math.PI;
+      } else {
+        child.position.set(run.pos[0] + (side === 'w' ? inset : -inset), 1.5, run.pos[2]);
+        child.rotation.y = side === 'w' ? Math.PI / 2 : -Math.PI / 2;
+      }
+      child.scale.setScalar(Math.min(1, length / 3.2));
       return;
     }
     if (child.name === 'label') {
@@ -848,7 +864,7 @@ export const Office3D: React.FC<Office3DProps> = ({
           resized.pos_z
         );
         deskGroup.position.set(placed.x, SEAT_BASE, placed.z);
-        shapeDesk(deskGroup, resized.room_width, resized.room_depth);
+        shapeDesk(deskGroup, resized.room_width, resized.room_depth, desk.has_monitor !== false);
         drag.pending = {
           width: resized.room_width, depth: resized.room_depth, x: placed.x, z: placed.z,
         };
@@ -1163,10 +1179,12 @@ export const Office3D: React.FC<Office3DProps> = ({
 
       group.add(shell);
 
-      if (kindRef.current?.(room) === 'time_range' && width >= 3.4) {
+      // A screen hangs on whichever wall the room points at, and only if one is chosen.
+      const screenWall = room.screen_wall && room.screen_wall !== 'none' ? room.screen_wall : null;
+      if (screenWall && width >= 3.4) {
         const screen = buildWallScreen(Math.min(width * 0.45, 1.6));
-        screen.name = 'screen:n';
-        screen.userData = { ...screen.userData, side: 'n' };
+        screen.name = `screen:${screenWall}`;
+        screen.userData = { ...screen.userData, side: screenWall };
         shell.add(screen);
       }
 
@@ -1245,7 +1263,7 @@ export const Office3D: React.FC<Office3DProps> = ({
           const data = { kind: 'desk', roomId: room.id, deskId: desk.id, label: desk.label || 'Desk' };
 
           deskGroup.add(buildDesk());
-          shapeDesk(deskGroup, deskWidth, deskDepth);
+          shapeDesk(deskGroup, deskWidth, deskDepth, desk.has_monitor !== false);
 
           const deskBlob = softShadow(deskWidth * 1.28, deskDepth * 1.9, 0.62);
           deskBlob.position.set(-0.06, 0.004, -0.06);

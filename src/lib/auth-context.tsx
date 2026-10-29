@@ -192,17 +192,19 @@ interface AppState {
   officeFloors: OfficeFloor[];
   spaceSeats: SpaceSeat[];
   spaceDesks: SpaceDesk[];
+  saveOfficeFloor: (input: { id?: string; name: string; width: number; depth: number }) => Promise<boolean>;
   saveOfficeLayout: (input: {
     rooms: Array<{
       id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
       capacity?: number; floor_id?: string | null;
       room_shape?: 'rect' | 'l'; notch_width?: number; notch_depth?: number;
-      notch_corner?: 'nw' | 'ne' | 'sw' | 'se';
+      notch_corner?: 'nw' | 'ne' | 'sw' | 'se'; screen_wall?: 'none' | 'n' | 's' | 'w' | 'e';
     }>;
     seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
     desks: Array<{
       id: string; space_id: string; label?: string | null; description?: string | null;
-      x: number; z: number; width: number; depth: number; rotation?: number; active?: boolean;
+      x: number; z: number; width: number; depth: number; rotation?: number;
+      has_monitor?: boolean; active?: boolean;
     }>;
   }) => Promise<boolean>;
   saveSpaceType: (input: { id?: string; name: string; booking_mode: SpaceBookingMode; color?: string; sort_order?: number; active?: boolean }) => Promise<boolean>;
@@ -882,6 +884,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           width: 1.2,
           depth: 0.62,
           rotation: 0,
+          has_monitor: true,
           active: true,
         }))
     );
@@ -5539,17 +5542,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Persists the 3D floor plan: room rectangles and the complete seat set. Rooms are updated one by
    * one (few rows), seats are upserted and any that disappeared from the plan are deleted.
    */
+  /** Create or rename a floor and set its size. Only the plan depends on it, so nothing else moves. */
+  const saveOfficeFloor = async (input: {
+    id?: string; name: string; width: number; depth: number;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const row = {
+      name: input.name.trim(),
+      width: Math.max(4, Number(input.width) || 24),
+      depth: Math.max(4, Number(input.depth) || 16),
+    };
+    if (!row.name) {
+      alert('A floor needs a name.');
+      return false;
+    }
+    try {
+      if (input.id) {
+        const { error } = await supabase.from('office_floors').update(row).eq('id', input.id);
+        if (error) {
+          alert(`Could not save the floor: ${error.message}`);
+          return false;
+        }
+        setOfficeFloors(prev => prev.map(floor => (floor.id === input.id ? { ...floor, ...row } : floor)));
+      } else {
+        const sortOrder = officeFloors.reduce((max, floor) => Math.max(max, floor.sort_order), 0) + 10;
+        const { data, error } = await supabase
+          .from('office_floors')
+          .insert([{ ...row, sort_order: sortOrder }])
+          .select()
+          .single();
+        if (error) {
+          alert(`Could not add the floor: ${error.message}`);
+          return false;
+        }
+        const saved = (data || {}) as Partial<OfficeFloor>;
+        setOfficeFloors(prev => [...prev, {
+          id: saved.id || generateUUID(),
+          ...row,
+          sort_order: sortOrder,
+          active: true,
+        } as OfficeFloor]);
+      }
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('saveOfficeFloor exception:', e);
+      alert(`Could not save the floor: ${message}`);
+      return false;
+    }
+  };
+
   const saveOfficeLayout = async (input: {
     rooms: Array<{
       id: string; pos_x: number; pos_z: number; room_width: number; room_depth: number;
       capacity?: number; floor_id?: string | null;
       room_shape?: 'rect' | 'l'; notch_width?: number; notch_depth?: number;
-      notch_corner?: 'nw' | 'ne' | 'sw' | 'se';
+      notch_corner?: 'nw' | 'ne' | 'sw' | 'se'; screen_wall?: 'none' | 'n' | 's' | 'w' | 'e';
     }>;
     seats: Array<{ id: string; space_id: string; label?: string | null; x: number; z: number; rotation?: number; active?: boolean }>;
     desks: Array<{
       id: string; space_id: string; label?: string | null; description?: string | null;
-      x: number; z: number; width: number; depth: number; rotation?: number; active?: boolean;
+      x: number; z: number; width: number; depth: number; rotation?: number;
+      has_monitor?: boolean; active?: boolean;
     }>;
   }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
@@ -5566,6 +5621,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...(room.notch_width === undefined ? {} : { notch_width: room.notch_width }),
           ...(room.notch_depth === undefined ? {} : { notch_depth: room.notch_depth }),
           ...(room.notch_corner === undefined ? {} : { notch_corner: room.notch_corner }),
+          ...(room.screen_wall === undefined ? {} : { screen_wall: room.screen_wall }),
         }).eq('id', room.id);
         if (error) {
           alert(`Could not save the room layout: ${error.message}`);
@@ -5614,6 +5670,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         width: desk.width,
         depth: desk.depth,
         rotation: desk.rotation ?? 0,
+        has_monitor: desk.has_monitor ?? true,
         active: desk.active ?? true,
       }));
       if (deskRows.length > 0) {
@@ -6938,6 +6995,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       officeFloors,
       spaceSeats,
       spaceDesks,
+      saveOfficeFloor,
       saveOfficeLayout,
       saveSpaceType,
       deleteSpaceType,

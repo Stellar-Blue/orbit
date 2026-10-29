@@ -3,17 +3,17 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  Armchair, Building2, LayoutGrid, Plus, Redo2, RotateCcw, Rows3, Save, Trash2, Wand2, RectangleHorizontal,
+  Armchair, Building2, LayoutGrid, Monitor, Plus, Redo2, RotateCcw, Rows3, Save, Trash2, Wand2, RectangleHorizontal,
 } from 'lucide-react';
 import { Badge, Button, Card } from '@/components/ui/primitives';
 import { notifySuccess } from '@/lib/validation-modal';
 import { useAuth } from '@/lib/auth-context';
 import {
-  autoLayoutRooms, clampDeskToRoom, clampSeatToRoom, defaultDeskSize, defaultRoomSize, deskRow,
-  DESK_PRESETS, MIN_DESK_SIZE, roomNotch, roomSize, seatGrid, seatLabel, snap, SNAP_STEP,
+  autoLayoutRooms, chairForDesk, clampDeskToRoom, clampSeatToRoom, defaultDeskSize, defaultRoomSize,
+  deskRow, DESK_PRESETS, MIN_DESK_SIZE, roomNotch, roomSize, seatGrid, seatLabel, snap, SNAP_STEP,
 } from '@/lib/office-layout';
 import type {
-  OfficeFloor, RoomCornerName, RoomShape, Space, SpaceDesk, SpaceSeat,
+  OfficeFloor, RoomCornerName, RoomShape, ScreenWall, Space, SpaceDesk, SpaceSeat,
 } from '@/lib/types';
 import type { Office3DProps } from '@/components/spaces/office-3d';
 
@@ -41,6 +41,7 @@ type RoomDraft = {
   notch_width: number;
   notch_depth: number;
   notch_corner: RoomCornerName;
+  screen_wall: ScreenWall;
 };
 
 type SeatDraft = {
@@ -63,6 +64,7 @@ type DeskDraft = {
   width: number;
   depth: number;
   rotation: number;
+  has_monitor: boolean;
   active: boolean;
 };
 
@@ -76,6 +78,7 @@ const toDeskDraft = (desk: SpaceDesk): DeskDraft => ({
   width: Number(desk.width) || 1.4,
   depth: Number(desk.depth) || 0.7,
   rotation: Number(desk.rotation) || 0,
+  has_monitor: desk.has_monitor !== false,
   active: desk.active,
 });
 
@@ -94,6 +97,7 @@ const toRoomDraft = (room: Space, floorId: string): RoomDraft => {
     notch_width: notch.width,
     notch_depth: notch.depth,
     notch_corner: notch.corner,
+    screen_wall: room.screen_wall || 'none',
   };
 };
 
@@ -146,6 +150,105 @@ function regenerateSeats(room: RoomDraft, existing: SeatDraft[], count: number):
       active: true,
     };
   });
+}
+
+/**
+ * Floor name and slab size. Kept out of the layout draft on purpose: the slab is drawn before any
+ * room, so it is saved on its own rather than with "Save layout".
+ */
+function FloorSettings({ floor, floors }: { floor: OfficeFloor; floors: OfficeFloor[] }) {
+  const { saveOfficeFloor } = useAuth();
+  const [name, setName] = useState(floor.name);
+  const [width, setWidth] = useState(String(floor.width));
+  const [depth, setDepth] = useState(String(floor.depth));
+  const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  const dirtyFloor = name.trim() !== floor.name
+    || Number(width) !== Number(floor.width)
+    || Number(depth) !== Number(floor.depth);
+
+  const submit = async () => {
+    if (saving || !dirtyFloor) return;
+    setSaving(true);
+    const ok = await saveOfficeFloor({ id: floor.id, name, width: Number(width), depth: Number(depth) });
+    setSaving(false);
+    if (ok) notifySuccess('The floor has been updated.', 'Floor saved');
+  };
+
+  const create = async () => {
+    const label = newName.trim();
+    if (!label) return;
+    setSaving(true);
+    const ok = await saveOfficeFloor({ name: label, width: Number(width) || 24, depth: Number(depth) || 16 });
+    setSaving(false);
+    if (ok) {
+      setNewName('');
+      setAdding(false);
+      notifySuccess(`${label} has been added.`, 'Floor added');
+    }
+  };
+
+  return (
+    <Card
+      title="Floor"
+      subtitle={`${floors.length} floor${floors.length === 1 ? '' : 's'} on this plan.`}
+      action={
+        <Button size="sm" variant="ghost" onClick={() => setAdding(value => !value)}>
+          <Plus className="h-3.5 w-3.5" /> Floor
+        </Button>
+      }
+    >
+      <div className="space-y-2">
+        <div>
+          <label className="ui-label mb-1 block">Name</label>
+          <input value={name} onChange={event => setName(event.target.value)} className="ui-input w-full" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="ui-label mb-1 block">Width (m)</label>
+            <input
+              type="number" min="4" step="0.5" value={width}
+              onChange={event => setWidth(event.target.value)}
+              className="ui-input w-full font-mono"
+            />
+          </div>
+          <div>
+            <label className="ui-label mb-1 block">Depth (m)</label>
+            <input
+              type="number" min="4" step="0.5" value={depth}
+              onChange={event => setDepth(event.target.value)}
+              className="ui-input w-full font-mono"
+            />
+          </div>
+        </div>
+        <Button size="sm" variant="primary" className="w-full" onClick={() => void submit()} disabled={saving || !dirtyFloor}>
+          <Save className="h-3.5 w-3.5" /> {saving ? 'Saving…' : dirtyFloor ? 'Save floor' : 'Floor saved'}
+        </Button>
+
+        {adding && (
+          <div className="space-y-2 border-t border-[var(--line)] pt-2">
+            <div>
+              <label className="ui-label mb-1 block">New floor name</label>
+              <input
+                value={newName}
+                onChange={event => setNewName(event.target.value)}
+                placeholder="Floor 3"
+                className="ui-input w-full"
+              />
+            </div>
+            <p className="ui-meta">
+              It starts at {Number(width) || 24} × {Number(depth) || 16} m and no rooms, so add them once it is selected.
+            </p>
+            <Button size="sm" variant="secondary" className="w-full" onClick={() => void create()} disabled={saving || !newName.trim()}>
+              Add floor
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 /** Four quick angles plus a slider, used for chairs and desks alike. */
@@ -407,6 +510,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
       width: size.width,
       depth: size.depth,
       rotation: 0,
+      has_monitor: true,
       active: true,
     };
     setDesks(prev => [...prev, desk]);
@@ -434,10 +538,57 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
       width: position.width,
       depth: position.depth,
       rotation: 0,
+      has_monitor: true,
       active: true,
     }));
     setDesks(prev => [...prev, ...added]);
     setSelectedDeskId(added[0]?.id || null);
+    setSelectedSeatId(null);
+    setSelectedRoomId(room.id);
+    setDirty(true);
+  };
+
+  /**
+   * A workstation is a desk plus the chair that belongs to it. They are still separate rows — the
+   * chair can be booked — but they are placed together, in front of one another.
+   */
+  const addWorkstation = (room: Space) => {
+    const draft = rooms.find(entry => entry.id === room.id);
+    if (!draft) return;
+    const size = defaultDeskSize('single');
+    const existing = desksOfRoom(room.id).length;
+    const chairCount = seats.filter(seat => seat.space_id === room.id).length;
+    const deskZ = -draft.room_depth / 2 + size.depth / 2 + 0.45;
+    const deskPosition = clampDeskToRoom(draft, { ...size, rotation: 0 }, 0, deskZ);
+    const desk: DeskDraft = {
+      id: crypto.randomUUID(),
+      space_id: room.id,
+      label: `Workstation ${existing + 1}`,
+      description: null,
+      x: deskPosition.x,
+      z: deskPosition.z,
+      width: size.width,
+      depth: size.depth,
+      rotation: 0,
+      has_monitor: true,
+      active: true,
+    };
+    const chairSpot = clampSeatToRoom(draft, chairForDesk(desk).x, chairForDesk(desk).z);
+    const seat: SeatDraft = {
+      id: crypto.randomUUID(),
+      space_id: room.id,
+      label: `S${chairCount + 1}`,
+      x: chairSpot.x,
+      z: chairSpot.z,
+      rotation: chairForDesk(desk).rotation,
+      active: true,
+    };
+    setDesks(prev => [...prev, desk]);
+    setSeats(prev => [...prev, seat]);
+    setRooms(prev => prev.map(entry => (
+      entry.id === room.id ? { ...entry, capacity: chairCount + 1 } : entry
+    )));
+    setSelectedDeskId(desk.id);
     setSelectedSeatId(null);
     setSelectedRoomId(room.id);
     setDirty(true);
@@ -528,7 +679,7 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
     const draft: RoomDraft = {
       id: room.id, pos_x: position.pos_x, pos_z: position.pos_z,
       room_width: size.width, room_depth: size.depth, capacity: room.capacity, floor_id: floor.id,
-      room_shape: 'rect', notch_width: 0, notch_depth: 0, notch_corner: 'ne',
+      room_shape: 'rect', notch_width: 0, notch_depth: 0, notch_corner: 'ne', screen_wall: 'none',
     };
     setRooms(prev => [...prev, draft]);
     setSeats(prev => {
@@ -555,8 +706,20 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
         notch_width: room.notch_width,
         notch_depth: room.notch_depth,
         notch_corner: room.notch_corner,
+        screen_wall: room.screen_wall,
       })),
-      desks,
+      desks: desks.map(desk => ({
+        id: desk.id,
+        space_id: desk.space_id,
+        label: desk.label,
+        x: desk.x,
+        z: desk.z,
+        width: desk.width,
+        depth: desk.depth,
+        rotation: desk.rotation,
+        has_monitor: desk.has_monitor,
+        active: desk.active,
+      })),
       seats,
     });
     setSaving(false);
@@ -643,6 +806,8 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
       </Card>
 
       <div className="space-y-3">
+        <FloorSettings floor={floor} floors={floors} />
+
         <Card title="Rooms on this floor" subtitle="Select a room to edit its size, chairs and furniture.">
           {roomsOnFloor.length === 0 && (
             <p className="text-[12px] text-[var(--ink-4)]">Nothing placed yet — add a room below.</p>
@@ -667,7 +832,8 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                       <span className="truncate text-[12px] font-semibold text-[var(--ink)]">{room.name}</span>
                     </span>
                     <span className="shrink-0 font-mono text-[10.5px] text-[var(--ink-4)]">
-                      {seatCountFor(room.id)} chairs · {desksOfRoom(room.id).length} desks
+                      {seatCountFor(room.id)} {seatCountFor(room.id) === 1 ? 'chair' : 'chairs'} ·{' '}
+                      {desksOfRoom(room.id).length} {desksOfRoom(room.id).length === 1 ? 'desk' : 'desks'}
                     </span>
                   </button>
                 </li>
@@ -710,6 +876,16 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                 </div>
               </div>
               <RotationControl value={selectedDesk.rotation} onChange={angle => rotateDesk(selectedDesk, angle)} />
+              <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={selectedDesk.has_monitor}
+                  onChange={event => updateDesk(selectedDesk.id, { has_monitor: event.target.checked })}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+                />
+                <Monitor className="h-3.5 w-3.5 text-[var(--ink-4)]" />
+                <span className="text-[11.5px] font-medium text-[var(--ink-2)]">Monitor</span>
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="ui-label mb-1 block">X (m)</label>
@@ -878,22 +1054,49 @@ function FloorEditor({ floor, floors, onSelectFloor }: FloorEditorProps) {
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" variant="secondary" onClick={() => addSeat(selectedRoom)}>
-                  <Plus className="h-3.5 w-3.5" /> Chair
-                </Button>
                 <Button size="sm" variant="secondary" onClick={() => regenerateRoomSeats(selectedRoom)}>
                   <Redo2 className="h-3.5 w-3.5" /> Re-lay chairs
                 </Button>
+                <Button size="sm" variant="secondary" onClick={() => arrange()}>
+                  <LayoutGrid className="h-3.5 w-3.5" /> Arrange rooms
+                </Button>
+              </div>
+
+              <div>
+                <label className="ui-label mb-1 block">Screen wall</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {(['none', 'n', 'w', 'e', 's'] as ScreenWall[]).map(wall => (
+                    <button
+                      key={wall}
+                      type="button"
+                      onClick={() => updateRoom(selectedRoom.id, { screen_wall: wall })}
+                      title={wall === 'none' ? 'No screen' : `Screen on the ${wall.toUpperCase()} wall`}
+                      className={`cursor-pointer rounded-[var(--radius-control)] border px-1 py-1 font-mono text-[11px] uppercase transition-colors ${
+                        (rooms.find(entry => entry.id === selectedRoom.id)?.screen_wall || 'none') === wall
+                          ? 'border-[var(--accent)] bg-[var(--surface-muted)] font-semibold text-[var(--ink)]'
+                          : 'border-[var(--line)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
+                      }`}
+                    >
+                      {wall === 'none' ? '—' : wall}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="border-t border-[var(--line)] pt-2">
                 <p className="ui-label mb-1.5">Furniture · {desksOfRoom(selectedRoom.id).length} desk{desksOfRoom(selectedRoom.id).length === 1 ? '' : 's'}</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => addDesk(selectedRoom)}>
-                    <RectangleHorizontal className="h-3.5 w-3.5" /> Desk
+                  <Button size="sm" variant="secondary" onClick={() => addWorkstation(selectedRoom)}>
+                    <Armchair className="h-3.5 w-3.5" /> Workstation
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => addDeskRow(selectedRoom)}>
                     <Rows3 className="h-3.5 w-3.5" /> Desk row
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => addDesk(selectedRoom)}>
+                    <RectangleHorizontal className="h-3.5 w-3.5" /> Desk
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => addSeat(selectedRoom)}>
+                    <Plus className="h-3.5 w-3.5" /> Chair
                   </Button>
                 </div>
                 {desksOfRoom(selectedRoom.id).length > 0 && (

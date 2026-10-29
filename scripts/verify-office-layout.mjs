@@ -14,6 +14,7 @@ import {
   SEAT_MARGIN,
   SNAP_STEP,
   autoLayoutRooms,
+  chairForDesk,
   clampDeskToRoom,
   clampPointToRoom,
   clampRoomToFloor,
@@ -230,6 +231,26 @@ assert(
   roomNotch({ ...lRoom, notch_width: 20, notch_depth: 20 }).width === 7,
   'A notch can never swallow the whole room',
   `clamped to ${roomNotch({ ...lRoom, notch_width: 20, notch_depth: 20 }).width} m`
+);
+
+// ---- workstations ------------------------------------------------------------------
+const workstationChair = chairForDesk({ x: 0, z: 0, depth: 0.7, rotation: 0 });
+assert(
+  workstationChair.z > 0 && workstationChair.rotation === 0,
+  'A workstation chair sits on the seating side of its desk, facing it',
+  `chair at (${workstationChair.x}, ${workstationChair.z}) turned ${workstationChair.rotation}°`
+);
+assert(
+  chairForDesk({ x: 0, z: 0, depth: 0.7, rotation: 180 }).z < 0,
+  'A desk turned around puts its chair on the other side'
+);
+assert(
+  Math.abs(chairForDesk({ x: 3, z: 2, depth: 0.7, rotation: 90 }).x - 3) > 0.3,
+  'A desk turned 90° puts its chair beside it, not on top of it'
+);
+assert(
+  Math.abs(chairForDesk({ x: 0, z: 0, depth: 0.7, rotation: 0 }).z) > 0.7 / 2,
+  'The chair never overlaps the desk it belongs to'
 );
 
 console.log('\n================================================================');

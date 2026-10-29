@@ -594,6 +594,8 @@ export interface Space {
   room_depth?: number;
   room_height?: number;
   rotation?: number;
+  /** Wall a meeting room's screen hangs on; `none` draws no screen. */
+  screen_wall?: ScreenWall;
   /** Footprint: a plain rectangle, or an L cut out of one corner. */
   room_shape?: RoomShape;
   /** Size of the missing corner of an L-shaped room, in metres. */
@@ -624,6 +626,9 @@ export type RoomShape = 'rect' | 'l';
 /** Which corner of the bounding box an L-shaped room is missing. */
 export type RoomCornerName = 'nw' | 'ne' | 'sw' | 'se';
 
+/** The wall a room's screen hangs on. */
+export type ScreenWall = 'none' | 'n' | 's' | 'w' | 'e';
+
 /** A desk drawn inside a room. Furniture only — seats are booked, desks are not. */
 export interface SpaceDesk {
   id: string;
@@ -636,6 +641,8 @@ export interface SpaceDesk {
   width: number;
   depth: number;
   rotation: number;
+  /** Draw a screen and keyboard on the desk. Shared tables usually have neither. */
+  has_monitor?: boolean;
   active: boolean;
   created_at?: string;
 }
