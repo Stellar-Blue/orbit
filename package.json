@@ -23,7 +23,8 @@
     "test:deepseek": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-deepseek-extraction.mjs",
     "test:schedule": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-revenue-schedule.mjs",
     "test:notices": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-contract-notices.mjs",
-    "test:dates": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-date-input.mjs"
+    "test:dates": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-date-input.mjs",
+    "test:spaces": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-spaces.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

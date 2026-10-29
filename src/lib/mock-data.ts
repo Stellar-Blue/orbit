@@ -1,7 +1,7 @@
 import { 
   Team, Profile, PaymentType, SalaryRecord, PaymentRecord, 
   LeaveType, LeaveEntitlement, MandatoryLeave, LeaveRequest, 
-  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract 
+  PublicHoliday, RemoteDay, RemotePattern, Counterparty, Contract, Space, SpaceType 
 } from './types';
 
 export const MOCK_TEAMS: Team[] = [
@@ -442,4 +442,20 @@ export const MOCK_CONTRACTS: Contract[] = [
     product: 'Algorithm Partner Feed',
     notes: 'Critical feed for short term intraday trading algorithms.'
   }
+];
+
+// ---------------------------------------------------------------------------
+// Spaces & seat booking (demo workspace)
+// ---------------------------------------------------------------------------
+
+export const MOCK_SPACE_TYPES: SpaceType[] = [
+  { id: 'spt-desks', name: 'Working space', booking_mode: 'whole_day', color: '#2f6fa3', sort_order: 10, active: true },
+  { id: 'spt-conf', name: 'Conference room', booking_mode: 'time_range', color: '#a21caf', sort_order: 20, active: true },
+  { id: 'spt-pod', name: 'Meeting pod', booking_mode: 'time_range', color: '#0d9488', sort_order: 30, active: true },
+];
+
+export const MOCK_SPACES: Space[] = [
+  { id: 'spc-desks', name: 'Desks · Floor 2', type_id: 'spt-desks', capacity: 12, location: 'Floor 2', notes: 'Open desk area', active: true },
+  { id: 'spc-conf-a', name: 'Conference room A', type_id: 'spt-conf', capacity: 8, location: 'Floor 2', notes: 'Screen + video conference', active: true },
+  { id: 'spc-pod-1', name: 'Phone pod 1', type_id: 'spt-pod', capacity: 1, location: 'Floor 2', notes: 'Single-occupancy calls', active: true },
 ];

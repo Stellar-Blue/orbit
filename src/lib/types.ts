@@ -560,6 +560,66 @@ export interface Contract {
   schedule?: ContractSchedule[];
 }
 
+/** How a space type is booked: one seat for the whole day, or seats inside a timed session. */
+export type SpaceBookingMode = 'whole_day' | 'time_range';
+
+/** Admin-configurable room kind (desk area, conference room, pod…). */
+export interface SpaceType {
+  id: string;
+  name: string;
+  booking_mode: SpaceBookingMode;
+  color: string;
+  sort_order: number;
+  active: boolean;
+  created_at?: string;
+  spaces?: Space[];
+}
+
+/** A declarable, bookable room. `capacity` is how many seats it holds. */
+export interface Space {
+  id: string;
+  name: string;
+  type_id: string;
+  capacity: number;
+  location?: string | null;
+  notes?: string | null;
+  active: boolean;
+  created_by?: string | null;
+  created_at?: string;
+  space_type?: SpaceType;
+  sessions?: SpaceSession[];
+}
+
+/** The window the first booker defined for a time-range space on one day. */
+export interface SpaceSession {
+  id: string;
+  space_id: string;
+  session_date: string;
+  /** `HH:MM:SS` from Postgres. */
+  starts_at: string;
+  ends_at: string;
+  title?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  space?: Space;
+  bookings?: SpaceBooking[];
+}
+
+/** One seat held by one person in one space on one date. */
+export interface SpaceBooking {
+  id: string;
+  space_id: string;
+  session_id?: string | null;
+  profile_id: string;
+  booking_date: string;
+  note?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  profile?: Profile;
+  space?: Space;
+  session?: SpaceSession;
+}
+
 export interface CatalogModule {
   id: string;
   name: string;

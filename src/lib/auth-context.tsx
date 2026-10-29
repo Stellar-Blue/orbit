@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { getSupabaseBrowserClient, setDemoDataMode, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { 
@@ -14,7 +14,8 @@ import {
   EmployeeContract,
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
-  CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest
+  CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest,
+  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import { toHiddenScreenKeys } from './screens';
@@ -25,6 +26,7 @@ import {
   MOCK_LEAVE_TYPES, MOCK_ENTITLEMENTS, MOCK_MANDATORY_LEAVES,
   MOCK_PUBLIC_HOLIDAYS, MOCK_REMOTE_PATTERNS,
   MOCK_COUNTERPARTIES, MOCK_CONTRACTS,
+  MOCK_SPACE_TYPES, MOCK_SPACES,
 } from './mock-data';
 import { deductedDaysInYear, countWorkingDays, holidayDates, resolveWorkSchedule, needsWorkingDaysRecount, publishedClosureIds, mandatoryRowDeducts, splitAcrossYears } from './leave-days';
 import {
@@ -41,6 +43,7 @@ import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig,
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
 import { notifySuccess } from './validation-modal';
+import { validateSessionWindow } from './spaces';
 
 /**
  * Every `profiles` column `authenticated` may read. `phone` is column-revoked (migration
@@ -180,6 +183,25 @@ interface AppState {
   addReceipt: (receipt: Omit<Receipt, 'id' | 'created_at' | 'counterparty' | 'invoice'>) => Promise<Receipt | null>;
   updateReceipt: (id: string, updates: Partial<Receipt>) => Promise<boolean>;
   deleteReceipt: (id: string) => Promise<boolean>;
+  /** Admin-configurable room kinds (whole-day seats vs. timed sessions). */
+  spaceTypes: SpaceType[];
+  spaces: Space[];
+  spaceSessions: SpaceSession[];
+  spaceBookings: SpaceBooking[];
+  saveSpaceType: (input: { id?: string; name: string; booking_mode: SpaceBookingMode; color?: string; sort_order?: number; active?: boolean }) => Promise<boolean>;
+  deleteSpaceType: (id: string) => Promise<boolean>;
+  saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean }) => Promise<boolean>;
+  deleteSpace: (id: string) => Promise<boolean>;
+  bookSpaceSeat: (input: {
+    space: Space;
+    mode: SpaceBookingMode;
+    date: string;
+    profileId: string;
+    note?: string;
+    session?: { startsAt: string; endsAt: string; title?: string } | null;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  cancelSpaceBooking: (id: string) => Promise<boolean>;
+  refreshSpaces: () => Promise<void>;
   budgets: Budget[];
   budgetCategories: BudgetCategory[];
   budgetLines: BudgetLine[];
@@ -570,6 +592,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoiceAllocations, setInvoiceAllocations] = useState<InvoiceAllocation[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [spaceTypes, setSpaceTypes] = useState<SpaceType[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spaceSessions, setSpaceSessions] = useState<SpaceSession[]>([]);
+  const [spaceBookings, setSpaceBookings] = useState<SpaceBooking[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -798,6 +824,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     rawRef.current.contracts = MOCK_CONTRACTS;
     setCounterparties(MOCK_COUNTERPARTIES);
     setContracts(MOCK_CONTRACTS);
+
+    // Spaces: today's sample seats, so the booking screen has something to show in the demo.
+    const demoToday = athensTodayStr();
+    setSpaceTypes(MOCK_SPACE_TYPES);
+    setSpaces(MOCK_SPACES);
+    setSpaceSessions([{
+      id: 'sps-conf-a-today',
+      space_id: 'spc-conf-a',
+      session_date: demoToday,
+      starts_at: '10:00:00',
+      ends_at: '11:00:00',
+      title: 'Weekly sync',
+      created_by: 'prof-nikos',
+      created_at: `${demoToday}T07:00:00Z`,
+    }]);
+    setSpaceBookings([
+      { id: 'spb-1', space_id: 'spc-desks', session_id: null, profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:10:00Z` },
+      { id: 'spb-2', space_id: 'spc-desks', session_id: null, profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:20:00Z` },
+      { id: 'spb-3', space_id: 'spc-desks', session_id: null, profile_id: 'prof-eleni', booking_date: demoToday, created_at: `${demoToday}T07:30:00Z` },
+      { id: 'spb-4', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', profile_id: 'prof-nikos', booking_date: demoToday, created_at: `${demoToday}T07:40:00Z` },
+      { id: 'spb-5', space_id: 'spc-conf-a', session_id: 'sps-conf-a-today', profile_id: 'prof-maria', booking_date: demoToday, created_at: `${demoToday}T07:45:00Z` },
+    ].map(booking => ({
+      ...booking,
+      profile: demoProfiles.find(profile => profile.id === booking.profile_id),
+    })));
 
     setHiddenScreens([]);
     setIntegrationSettings(DEFAULT_SLACK_SETTINGS);
@@ -1155,6 +1206,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })) as RemotePolicy[]);
   }
 
+  /** Spaces, their types, the sessions opened for them and every seat taken. */
+  async function loadSpacesSlice() {
+    const [typeRows, spaceRows, sessionRows, bookingRows] = await Promise.all([
+      fetchRows('space_types', 'all', { order: ['sort_order'] }),
+      fetchRows('spaces', 'all', { order: ['name'] }),
+      fetchRows('space_sessions', 'all', { order: ['session_date'] }),
+      fetchRows('space_bookings', 'all', { order: ['booking_date'] }),
+    ]);
+    setSpaceTypes(typeRows as SpaceType[]);
+    setSpaces(spaceRows as Space[]);
+    setSpaceSessions(sessionRows as SpaceSession[]);
+    setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
+      ...booking,
+      profile: rawRef.current.profiles.find(profile => profile.id === booking.profile_id),
+    })));
+  }
+
   const SLICE_LOADERS: Record<DataSliceKey, () => Promise<void>> = {
     leave: loadLeaveSlice,
     remoteDays: loadRemoteDaysSlice,
@@ -1169,6 +1237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     people: loadPeopleSlice,
     integrations: loadIntegrationsSlice,
     policies: loadPoliciesSlice,
+    spaces: loadSpacesSlice,
   };
 
   /** Public on-demand entry point for surfaces outside the route's slice list. */
@@ -5283,6 +5352,245 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  /* ---------------------------------------------------------------------------
+   * Spaces & seat booking. Capacity is decided by the database trigger, so a booking can fail
+   * with a readable message ("This session is already full (8 of 8 seats)") — callers show it.
+   * ------------------------------------------------------------------------- */
+
+  const refreshSpaces = useCallback(async (): Promise<void> => {
+    // The demo answers every query with an empty set; refetching would wipe the sample bookings.
+    if (isDemoMode()) return;
+    try {
+      const [sessionRows, bookingRows] = await Promise.all([
+        fetchRows('space_sessions', 'all'),
+        fetchRows('space_bookings', 'all'),
+      ]);
+      setSpaceSessions(sessionRows as SpaceSession[]);
+      setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
+        ...booking,
+        profile: profiles.find(profile => profile.id === booking.profile_id),
+      })));
+    } catch (e) {
+      console.error('refreshSpaces error:', e);
+    }
+  }, [profiles]);
+
+  const saveSpaceType = async (input: {
+    id?: string;
+    name: string;
+    booking_mode: SpaceBookingMode;
+    color?: string;
+    sort_order?: number;
+    active?: boolean;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const row = {
+      name: input.name.trim(),
+      booking_mode: input.booking_mode,
+      color: input.color || '#2f6fa3',
+      sort_order: input.sort_order ?? 100,
+      active: input.active ?? true,
+    };
+    const { data, error } = input.id
+      ? await supabase.from('space_types').update(row).eq('id', input.id).select().single()
+      : await supabase.from('space_types').insert([row]).select().single();
+    if (error) {
+      alert(`Could not save the room type: ${error.message}`);
+      return false;
+    }
+    setSpaceTypes(prev => {
+      const saved = data as SpaceType;
+      const next = input.id ? prev.map(type => type.id === saved.id ? saved : type) : [...prev, saved];
+      return next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    });
+    return true;
+  };
+
+  const deleteSpaceType = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.from('space_types').delete().eq('id', id);
+    if (error) {
+      alert(error.code === '23503'
+        ? 'This type still has rooms. Move or delete those rooms first.'
+        : `Could not delete the room type: ${error.message}`);
+      return false;
+    }
+    setSpaceTypes(prev => prev.filter(type => type.id !== id));
+    return true;
+  };
+
+  const saveSpace = async (input: {
+    id?: string;
+    name: string;
+    type_id: string;
+    capacity: number;
+    location?: string | null;
+    notes?: string | null;
+    active?: boolean;
+  }): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const row = {
+      name: input.name.trim(),
+      type_id: input.type_id,
+      capacity: Math.max(1, Math.round(Number(input.capacity) || 1)),
+      location: input.location?.trim() || null,
+      notes: input.notes?.trim() || null,
+      active: input.active ?? true,
+    };
+    const { data, error } = input.id
+      ? await supabase.from('spaces').update(row).eq('id', input.id).select().single()
+      : await supabase.from('spaces').insert([{ ...row, created_by: currentUser?.id || null }]).select().single();
+    if (error) {
+      alert(error.code === '23505'
+        ? `A room called "${row.name}" already exists.`
+        : `Could not save the room: ${error.message}`);
+      return false;
+    }
+    const saved = data as Space;
+    setSpaces(prev => {
+      const next = input.id ? prev.map(space => space.id === saved.id ? saved : space) : [...prev, saved];
+      return next.sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return true;
+  };
+
+  const deleteSpace = async (id: string): Promise<boolean> => {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.from('spaces').delete().eq('id', id);
+    if (error) {
+      alert(`Could not delete the room: ${error.message}`);
+      return false;
+    }
+    setSpaces(prev => prev.filter(space => space.id !== id));
+    setSpaceBookings(prev => prev.filter(booking => booking.space_id !== id));
+    setSpaceSessions(prev => prev.filter(session => session.space_id !== id));
+    return true;
+  };
+
+  /**
+   * Books one seat. For a timed space the first booking of the day opens the session with the
+   * window the person picked; everyone after that joins the session that already exists.
+   */
+  const bookSpaceSeat = async (input: {
+    space: Space;
+    mode: SpaceBookingMode;
+    date: string;
+    profileId: string;
+    note?: string;
+    session?: { startsAt: string; endsAt: string; title?: string } | null;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      let sessionId: string | null = null;
+      if (input.mode === 'time_range') {
+        let session = spaceSessions.find(
+          entry => entry.space_id === input.space.id && entry.session_date === input.date
+        );
+        if (!session) {
+          const { data: existing } = await supabase
+            .from('space_sessions').select('*')
+            .eq('space_id', input.space.id).eq('session_date', input.date)
+            .maybeSingle();
+          const fetched = existing as SpaceSession | null;
+          session = fetched?.id ? fetched : undefined;
+        }
+        if (!session) {
+          if (!input.session) return { ok: false, error: 'Choose the time window for this session first.' };
+          const invalid = validateSessionWindow(input.session.startsAt, input.session.endsAt);
+          if (invalid) return { ok: false, error: invalid };
+          const { data: created, error: sessionError } = await supabase.from('space_sessions').insert([{
+            space_id: input.space.id,
+            session_date: input.date,
+            starts_at: input.session.startsAt,
+            ends_at: input.session.endsAt,
+            title: input.session.title?.trim() || null,
+            created_by: input.profileId,
+          }]).select().single();
+          if (sessionError) {
+            // Someone opened the session a moment earlier — join theirs instead of failing.
+            if (sessionError.code === '23505') {
+              const { data: raced } = await supabase
+                .from('space_sessions').select('*')
+                .eq('space_id', input.space.id).eq('session_date', input.date)
+                .maybeSingle();
+              const racedSession = raced as SpaceSession | null;
+              if (!racedSession?.id) return { ok: false, error: sessionError.message };
+              session = racedSession;
+            } else {
+              return { ok: false, error: sessionError.message };
+            }
+          } else {
+            // Build the row locally as well: the demo workspace answers writes without a body, and
+            // the card must show the window it just opened either way.
+            session = {
+              ...(created as SpaceSession | null),
+              id: (created as SpaceSession | null)?.id || generateUUID(),
+              space_id: input.space.id,
+              session_date: input.date,
+              starts_at: input.session.startsAt,
+              ends_at: input.session.endsAt,
+              title: input.session.title?.trim() || null,
+              created_at: new Date().toISOString(),
+            } as SpaceSession;
+            setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
+          }
+        }
+        sessionId = session.id;
+      }
+
+      const { data: booking, error } = await supabase.from('space_bookings').insert([{
+        space_id: input.space.id,
+        session_id: sessionId,
+        profile_id: input.profileId,
+        booking_date: input.date,
+        note: input.note?.trim() || null,
+        created_by: currentUser?.id || null,
+      }]).select().single();
+      if (error) return { ok: false, error: error.message };
+
+      // The row is appended locally first: the demo workspace answers with no body, and a real
+      // booking should appear on the card without waiting for the refetch below.
+      const saved = (booking || {}) as Partial<SpaceBooking>;
+      setSpaceBookings(prev => [...prev, {
+        id: saved.id || generateUUID(),
+        space_id: input.space.id,
+        session_id: sessionId,
+        profile_id: input.profileId,
+        booking_date: input.date,
+        note: input.note?.trim() || null,
+        created_at: saved.created_at || new Date().toISOString(),
+        profile: profiles.find(profile => profile.id === input.profileId),
+      }]);
+      void refreshSpaces();
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('bookSpaceSeat exception:', e);
+      return { ok: false, error: message };
+    }
+  };
+
+  /** Releases a seat. The last seat leaving closes the session (database trigger). */
+  const cancelSpaceBooking = async (id: string): Promise<boolean> => {
+    const previous = spaceBookings;
+    setSpaceBookings(prev => prev.filter(booking => booking.id !== id));
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.from('space_bookings').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase cancel space booking error:', error.message);
+        setSpaceBookings(previous);
+        return false;
+      }
+      void refreshSpaces();
+      return true;
+    } catch (e) {
+      console.error('cancelSpaceBooking exception:', e);
+      setSpaceBookings(previous);
+      return false;
+    }
+  };
+
   const updateInvoiceStatus = async (id: string, status: Invoice['status'], notes?: string): Promise<boolean> => {
     const previousInvoices = invoices;
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status, notes: notes !== undefined ? notes : inv.notes } : inv));
@@ -5817,6 +6125,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshInvoicesRef.current = refreshInvoices;
   }, [refreshInvoices]);
 
+  const refreshSpacesRef = useRef(refreshSpaces);
+  useEffect(() => {
+    refreshSpacesRef.current = refreshSpaces;
+  }, [refreshSpaces]);
+
   /* ---------------------------------------------------------------------------
    * Live data sync — Supabase Realtime, i.e. this stack's equivalent of a SignalR hub.
    *
@@ -6084,6 +6397,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .forEach(table => on(table, () => refreshInvoicesRef.current()));
     ['budgets', 'budget_lines', 'budget_categories', 'recurring_commitments']
       .forEach(table => on(table, reloadLiveBudget));
+    ['space_types', 'spaces', 'space_sessions', 'space_bookings']
+      .forEach(table => on(table, () => { void refreshSpacesRef.current(); }));
     on('company_profile', reloadLiveCompanyProfile);
     on('leave_policy', reloadLiveLeavePolicy);
     on('remote_amendments', reloadLiveRemoteRequests);
@@ -6411,6 +6726,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addReceipt,
       updateReceipt,
       deleteReceipt,
+      spaceTypes,
+      spaces,
+      spaceSessions,
+      spaceBookings,
+      saveSpaceType,
+      deleteSpaceType,
+      saveSpace,
+      deleteSpace,
+      bookSpaceSeat,
+      cancelSpaceBooking,
+      refreshSpaces,
       updateInvoiceStatus,
       linkInvoiceToContract,
       recordInvoicePayment,

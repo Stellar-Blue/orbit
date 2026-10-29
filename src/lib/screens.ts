@@ -35,6 +35,7 @@ export const HIDEABLE_SCREENS: AppScreen[] = [
   { key: 'timesheets', path: '/timesheets', label: 'Timesheets', hint: 'Logging hours and the admin review/setup tabs' },
   { key: 'compensation', path: '/compensation', label: 'Compensation & Payroll', hint: "The employee's own pay ledger" },
   { key: 'people', path: '/people', label: 'People Directory', hint: 'Company-wide employee directory' },
+  { key: 'spaces', path: '/spaces', label: 'Spaces', hint: 'Declaring rooms and booking a seat for the day' },
 ];
 
 /** The screen owning this path, matching nested routes too (`/people/<id>` → People Directory). */

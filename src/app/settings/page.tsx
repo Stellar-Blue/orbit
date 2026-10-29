@@ -7,7 +7,7 @@ import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Settings, Globe, CheckCircle2, AlertTriangle, 
   Building2, Sliders, Calendar, Clock, Save, Info, RefreshCw, Plus, Users, Trash2, Edit2, X, Layers, DollarSign, Tag,
-  Receipt, ChevronRight, MessageSquare, FileText, ShieldCheck
+  Receipt, ChevronRight, MessageSquare, FileText, ShieldCheck, Armchair
 } from 'lucide-react';
 import { PolicyPeriod, RemotePolicy, Team, LeaveType, CatalogModule, CatalogItem } from '@/lib/types';
 import { TieringSettings } from '@/components/settings/tiering-settings';
@@ -21,6 +21,7 @@ import { CarryoverRecalculationCard } from '@/components/settings/carryover-reca
 import { HolidaysCard } from '@/components/settings/holidays';
 import { CoverageRulesCard } from '@/components/settings/coverage-rules';
 import { ScreenVisibilityCard } from '@/components/settings/screen-visibility';
+import { SpacesSettings } from '@/components/settings/spaces-settings';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 
 export default function CompanySettingsPage() {
@@ -37,7 +38,7 @@ export default function CompanySettingsPage() {
   } = useAuth();
   const isAdmin = currentUser.role === 'admin';
 
-  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'coverage' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general'>('remote');
+  const [selectedTab, setSelectedTab] = useState<'remote' | 'teams' | 'leaves' | 'coverage' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'spaces' | 'general'>('remote');
   const [newRoleName, setNewRoleName] = useState('');
   const [newSeniorityName, setNewSeniorityName] = useState('');
   const [selectedRateCardId, setSelectedRateCardId] = useState('');
@@ -48,7 +49,7 @@ export default function CompanySettingsPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
 
-  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'coverage' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'general') => {
+  const handleTabChange = (tab: 'remote' | 'teams' | 'leaves' | 'coverage' | 'roles' | 'seniorities' | 'pricing' | 'timesheets' | 'invoices' | 'tiering' | 'integrations' | 'documents' | 'spaces' | 'general') => {
     setSelectedTab(tab);
     if (typeof window !== 'undefined') localStorage.setItem('orbit_settings_active_tab', tab);
   };
@@ -57,7 +58,13 @@ export default function CompanySettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedTab = localStorage.getItem('orbit_settings_active_tab') as any;
-    if (savedTab && ['remote', 'teams', 'leaves', 'coverage', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'general'].includes(savedTab)) {
+    // A deep link (e.g. from the Spaces screen) wins over the last tab visited.
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested && ['remote', 'teams', 'leaves', 'coverage', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'spaces', 'general'].includes(requested)) {
+      setSelectedTab(requested as typeof selectedTab);
+      return;
+    }
+    if (savedTab && ['remote', 'teams', 'leaves', 'coverage', 'pricing', 'invoices', 'tiering', 'integrations', 'documents', 'spaces', 'general'].includes(savedTab)) {
       setSelectedTab(savedTab);
     }
   }, []);
@@ -1681,6 +1688,9 @@ export default function CompanySettingsPage() {
       {selectedTab === 'documents' && (
         <PaymentDocumentTypesSettings />
       )}
+      {selectedTab === 'spaces' && (
+        <SpacesSettings />
+      )}
       {selectedTab === 'integrations' && (
         <IntegrationsSettings />
       )}
@@ -1949,6 +1959,26 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-100 text-indigo-700 font-black uppercase">Sync</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('spaces')}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all border text-left cursor-pointer ${
+                selectedTab === 'spaces'
+                  ? 'bg-rose-50/70 border-rose-200/80 shadow-xs text-slate-900 font-extrabold'
+                  : 'bg-transparent border-transparent hover:bg-slate-50/80 text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${selectedTab === 'spaces' ? 'bg-rose-600 text-white shadow-xs' : 'bg-rose-50 text-rose-600'}`}>
+                  <Armchair className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs leading-tight">Spaces &amp; Rooms</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">Bookable rooms, capacity &amp; booking mode</div>
+                </div>
+              </div>
+              <span className="px-1.5 py-0.5 text-[10px] rounded bg-rose-100 text-rose-700 font-black uppercase">Rooms</span>
             </button>
 
             <button

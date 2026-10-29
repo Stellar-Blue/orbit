@@ -27,7 +27,8 @@ export type DataSliceKey =
   | 'timesheets'
   | 'people'
   | 'integrations'
-  | 'policies';
+  | 'policies'
+  | 'spaces';
 
 /** Slices that must be loaded before this one, because it joins against their rows. */
 export const SLICE_DEPENDENCIES: Record<DataSliceKey, DataSliceKey[]> = {
@@ -44,6 +45,7 @@ export const SLICE_DEPENDENCIES: Record<DataSliceKey, DataSliceKey[]> = {
   people: [],
   integrations: [],
   policies: [],
+  spaces: [],
 };
 
 /**
@@ -80,6 +82,7 @@ export const SLICE_TABLES: Record<DataSliceKey, string[]> = {
   people: ['employee_contracts'],
   integrations: ['employee_integrations', 'integration_exemptions'],
   policies: ['remote_policies'],
+  spaces: ['space_types', 'spaces', 'space_sessions', 'space_bookings'],
 };
 
 /** Slices each route renders. Nested routes (`/people/<id>`) inherit their parent's list. */
@@ -97,8 +100,9 @@ export function slicesForPath(pathname: string | null | undefined): DataSliceKey
   if (path.startsWith('/contracts')) return ['commercial', 'invoices', 'timesheets'];
   if (path.startsWith('/invoices')) return ['invoices', 'timesheets', 'salary'];
   if (path.startsWith('/reports')) return ['budget', 'salary'];
+  if (path.startsWith('/spaces')) return ['spaces'];
   if (path.startsWith('/timesheets')) return ['timesheets'];
-  if (path.startsWith('/settings')) return ['commercial', 'invoices', 'leave', 'integrations', 'salary', 'policies'];
+  if (path.startsWith('/settings')) return ['commercial', 'invoices', 'leave', 'integrations', 'salary', 'policies', 'spaces'];
   return [];
 }
 

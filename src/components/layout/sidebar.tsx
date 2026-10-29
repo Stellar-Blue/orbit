@@ -8,7 +8,7 @@ import { roleLabel } from '@/lib/profile-role';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
-  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock, BarChart3
+  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock, BarChart3, Armchair
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -39,6 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
     { label: 'My Profile', path: '/profile', icon: <UserRound className="w-4 h-4 mr-2.5 text-emerald-500" />, show: canSeeScreen('profile') },
     { label: 'Leave Management', path: '/leave', icon: <Calendar className="w-4 h-4 mr-2.5 text-amber-500" />, show: !isContractor && canSeeScreen('leave') },
     { label: 'Remote Work Log', path: '/remote', icon: <Globe className="w-4 h-4 mr-2.5 text-cyan-500" />, show: !isContractor && canSeeScreen('remote') },
+    { label: 'Spaces', path: '/spaces', icon: <Armchair className="w-4 h-4 mr-2.5 text-rose-500" />, show: canSeeScreen('spaces') },
     { label: 'Timesheets', path: '/timesheets', icon: <Clock className="w-4 h-4 mr-2.5 text-sky-500" />, show: canSeeScreen('timesheets') },
     { label: 'Compensation & Payroll', path: '/compensation', icon: <DollarSign className="w-4 h-4 mr-2.5 text-emerald-500" />, show: canSeeScreen('compensation') },
   ];
