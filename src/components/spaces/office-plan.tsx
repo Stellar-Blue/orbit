@@ -25,7 +25,7 @@ export interface OfficePlanProps {
   seats: SpaceSeat[];
   typesById: Map<string, SpaceType>;
   takenSeatIds: string[];
-  mySeatId?: string | null;
+  mySeatIds?: string[];
   onPickSeat: (seat: SpaceSeat, room: Space) => void;
   height?: number;
 }
@@ -41,7 +41,7 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, typesById, takenSeatIds, mySeatId, onPickSeat, height = 420,
+  floor, rooms, seats, typesById, takenSeatIds, mySeatIds, onPickSeat, height = 420,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -72,7 +72,7 @@ export function OfficePlan({
           rooms={rooms}
           seats={seats}
           takenSeatIds={takenSeatIds}
-          mySeatId={mySeatId}
+          mySeatIds={mySeatIds}
           mode="viewer"
           colorForRoom={colorForRoom}
           onSelectSeat={onPickSeat}

@@ -133,10 +133,12 @@ export default function SpacesPage() {
     [spaceBookings, day, planRoomIds]
   );
 
-  const mySeatId = useMemo(
-    () => spaceBookings.find(booking => (
-      booking.booking_date === day && booking.profile_id === currentUser.id && Boolean(booking.seat_id)
-    ))?.seat_id || null,
+  const mySeatIds = useMemo(
+    () => spaceBookings
+      .filter(booking => (
+        booking.booking_date === day && booking.profile_id === currentUser.id && Boolean(booking.seat_id)
+      ))
+      .map(booking => booking.seat_id as string),
     [spaceBookings, day, currentUser.id]
   );
 
@@ -336,7 +338,7 @@ export default function SpacesPage() {
           seats={planSeats}
           typesById={typesById}
           takenSeatIds={takenSeatIds}
-          mySeatId={mySeatId}
+          mySeatIds={mySeatIds}
           onPickSeat={pickSeat}
         />
       ) : (

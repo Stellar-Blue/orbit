@@ -29,8 +29,8 @@ export interface Office3DProps {
   seats: SpaceSeat[];
   /** Seat ids already taken on the day being shown. */
   takenSeatIds: string[];
-  /** The viewer's own seat, highlighted green. */
-  mySeatId?: string | null;
+  /** The viewer's own chairs for the day, highlighted green. One per room at most. */
+  mySeatIds?: string[];
   selectedRoomId?: string | null;
   selectedSeatId?: string | null;
   mode: Office3DMode;
@@ -149,7 +149,7 @@ function scaleShell(group: THREE.Group, width: number, depth: number): void {
 }
 
 export const Office3D: React.FC<Office3DProps> = ({
-  floor, rooms, seats, takenSeatIds, mySeatId, selectedRoomId, selectedSeatId, mode,
+  floor, rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode,
   colorForRoom, onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -157,13 +157,13 @@ export const Office3D: React.FC<Office3DProps> = ({
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  const dataRef = useRef({ rooms, seats, takenSeatIds, mySeatId, selectedRoomId, selectedSeatId, mode });
+  const dataRef = useRef({ rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode });
   const callbacksRef = useRef({ onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat });
   const colorRef = useRef(colorForRoom);
   const floorRef = useRef(floor);
 
   useEffect(() => {
-    dataRef.current = { rooms, seats, takenSeatIds, mySeatId, selectedRoomId, selectedSeatId, mode };
+    dataRef.current = { rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode };
     callbacksRef.current = { onSelectRoom, onSelectSeat, onMoveRoom, onResizeRoom, onMoveSeat };
     colorRef.current = colorForRoom;
     floorRef.current = floor;
@@ -492,6 +492,7 @@ export const Office3D: React.FC<Office3DProps> = ({
     state.content.add(grid);
 
     const taken = new Set(takenSeatIds);
+    const mine = new Set(mySeatIds);
 
     rooms.forEach(room => {
       const { width, depth } = roomSize(room);
@@ -552,7 +553,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       seats
         .filter(seat => seat.space_id === room.id && seat.active)
         .forEach((seat, index) => {
-          const isMine = mySeatId === seat.id;
+          const isMine = mine.has(seat.id);
           const isTaken = taken.has(seat.id);
           const isSelected = selectedSeatId === seat.id;
           const seatColor = isSelected ? COLORS.selected : isMine ? COLORS.mine : isTaken ? COLORS.taken : COLORS.free;
@@ -602,7 +603,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       state.roomGroups.set(room.id, group);
       state.pickables.push(group);
     });
-  }, [ready, rooms, seats, takenSeatIds, mySeatId, selectedRoomId, selectedSeatId, mode, floor.width, floor.depth, floor.id]);
+  }, [ready, rooms, seats, takenSeatIds, mySeatIds, selectedRoomId, selectedSeatId, mode, floor.width, floor.depth, floor.id]);
 
   return (
     <div className="relative w-full h-full">
