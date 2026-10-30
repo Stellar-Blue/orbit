@@ -147,7 +147,7 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
                   aria-pressed={hairFilter === filter}
                   className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[12px] capitalize transition-colors ${
                     hairFilter === filter
-                      ? 'border-[var(--ink)] bg-[var(--ink)] text-white'
+                      ? 'border-[var(--ink)] bg-[var(--ink)] text-[var(--canvas)]'
                       : 'border-[var(--line)] text-[var(--ink-3)] hover:bg-[var(--surface-muted)]'
                   }`}
                 >

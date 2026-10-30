@@ -79,13 +79,17 @@ const formatSignedAmount = (value: number) => `${value < 0 ? '−' : '+'}${forma
 const MONTH_CELL_PADDING = { paddingLeft: 2, paddingRight: 6 };
 
 const VARIANCE_TONES: Record<InvoiceVarianceTone, { background: string; color: string }> = {
-  match: { background: 'rgba(21, 128, 61, 0.16)', color: '#14532d' },
-  under: { background: 'rgba(244, 63, 94, 0.16)', color: '#9f1239' },
-  over: { background: 'rgba(245, 158, 11, 0.22)', color: '#92400e' },
+  // Theme tokens: the chip keeps its hue but takes the shade that reads on the active scheme.
+  match: { background: 'color-mix(in srgb, var(--positive) 18%, transparent)', color: 'var(--positive)' },
+  under: { background: 'color-mix(in srgb, var(--danger) 18%, transparent)', color: 'var(--danger)' },
+  over: { background: 'color-mix(in srgb, var(--warning) 22%, transparent)', color: 'var(--warning)' },
 };
 
 /** A draft is not a billing mismatch yet, so it gets one neutral tone whatever the variance. */
-const DRAFT_TONE = { background: 'rgba(100, 116, 139, 0.18)', color: '#334155' };
+const DRAFT_TONE = {
+  background: 'color-mix(in srgb, var(--ink-3) 18%, transparent)',
+  color: 'var(--ink-2)',
+};
 
 function suggestionTooltip(suggestion: InvoiceSuggestion): string {
   return [
@@ -885,7 +889,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                 <span
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: '100%', padding: '0 3px',
-                    borderRadius: 3, background: 'rgba(245, 158, 11, 0.18)', color: '#92400e',
+                    borderRadius: 3, background: 'color-mix(in srgb, var(--warning) 18%, transparent)', color: 'var(--warning)',
                     fontSize: 8, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden',
                   }}
                 >
@@ -942,7 +946,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 2, width: '100%', height: 10, padding: '0 3px',
-                    border: 0, borderRadius: 3, background: 'rgba(47, 111, 163, 0.18)', color: '#1d4e79',
+                    border: 0, borderRadius: 3, background: 'color-mix(in srgb, var(--accent) 18%, transparent)', color: 'var(--accent-ink)',
                     fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
                     overflow: 'hidden', cursor: creating ? 'wait' : 'pointer',
                   }}
@@ -1069,8 +1073,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         colId: `y-${group.year}`,
         marryChildren: true,
         headerStyle: {
-          backgroundColor: '#e8f1fb',
-          color: '#1d4e79',
+          backgroundColor: 'var(--viz-schedule-band)',
+          color: 'var(--accent-ink)',
           fontWeight: '800',
           textAlign: 'center' as const,
         },
@@ -1089,8 +1093,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         type: 'rightAligned',
         headerComponent: YearTotalHeader,
         headerComponentParams: { yearStore },
-        headerStyle: { backgroundColor: '#dbeafe', color: '#1d4e79', fontWeight: '800' },
-        cellStyle: { backgroundColor: '#eef6ff', fontWeight: 800 },
+        headerStyle: { backgroundColor: 'var(--viz-schedule-band-strong)', color: 'var(--accent-ink)', fontWeight: '800' },
+        cellStyle: { backgroundColor: 'var(--viz-schedule-cell)', fontWeight: 800 },
         cellClassRules: { 'font-black': params => params.node?.rowPinned === 'bottom' },
         getQuickFilterText: () => '',
         aggFunc: 'sum',

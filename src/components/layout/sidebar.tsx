@@ -211,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
             className="w-full flex items-center justify-between p-2 rounded-[4px] hover:bg-[var(--surface-muted)] transition-colors border border-transparent hover:border-[var(--line)] text-left cursor-pointer"
           >
             <div className="flex items-center space-x-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-[4px] bg-[var(--ink)] text-white flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-[var(--ink)]">
+              <div className="w-8 h-8 rounded-[4px] bg-[var(--ink)] text-[var(--canvas)] flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-[var(--ink)]">
                 {currentUser.photo_url ? (
                   <img src={currentUser.photo_url} alt="" className="w-full h-full object-cover" />
                 ) : (

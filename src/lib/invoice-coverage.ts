@@ -430,11 +430,24 @@ export function buildInvoiceCoverage(
   return covered;
 }
 
-/** Box colours per invoice state: paid (bold green), issued but unpaid (light magenta), draft (slate). */
+/** Box colours per invoice state: paid (bold green), issued but unpaid (light magenta), draft (slate).
+ *  Values are theme tokens so the boxes invert with the rest of the schedule in dark mode. */
 export const INVOICE_BOX_COLORS = {
-  paid: { line: 'rgba(21, 128, 61, 0.85)', fill: 'rgba(22, 163, 74, 0.28)', marker: '#14532d' },
-  issued: { line: 'rgba(162, 28, 175, 0.55)', fill: 'rgba(217, 70, 239, 0.12)', marker: '#a21caf' },
-  draft: { line: 'rgba(100, 116, 139, 0.7)', fill: 'rgba(100, 116, 139, 0.12)', marker: '#475569' },
+  paid: {
+    line: 'color-mix(in srgb, var(--viz-paid) 85%, transparent)',
+    fill: 'color-mix(in srgb, var(--viz-paid) 30%, transparent)',
+    marker: 'var(--viz-paid)',
+  },
+  issued: {
+    line: 'color-mix(in srgb, var(--viz-issued) 55%, transparent)',
+    fill: 'color-mix(in srgb, var(--viz-issued) 14%, transparent)',
+    marker: 'var(--viz-issued)',
+  },
+  draft: {
+    line: 'color-mix(in srgb, var(--viz-draft) 70%, transparent)',
+    fill: 'color-mix(in srgb, var(--viz-draft) 14%, transparent)',
+    marker: 'var(--viz-draft)',
+  },
 } as const;
 
 /** Colour of the issue-month asterisk, so it always agrees with its box. */

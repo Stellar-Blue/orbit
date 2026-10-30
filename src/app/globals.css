@@ -61,6 +61,19 @@
   --danger: #b42342;
   --danger-soft: #fff1f3;
 
+  /*
+    Data-viz hues for the revenue schedule: invoice boxes, variance chips and the tinted
+    year/total bands. Declared as base hues so the alpha variants are mixed at the point of use,
+    and re-pointed in the dark block below where a 30%-alpha tint needs a lighter base.
+  */
+  --viz-paid: #15803d;
+  --viz-issued: #a21caf;
+  --viz-draft: #475569;
+  /* Bands derive from the accent, so they follow both themes without a second definition. */
+  --viz-schedule-band: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --viz-schedule-band-strong: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  --viz-schedule-cell: color-mix(in srgb, var(--accent) 6%, var(--surface));
+
   --radius-card: 10px;
   --radius-control: 6px;
   --shadow-card: 0 1px 0 rgba(15, 18, 22, 0.05);
@@ -127,6 +140,11 @@
   --warning-soft: #241c10;
   --danger: #f8899f;
   --danger-soft: #28141a;
+
+  /* Invoice boxes: the same hues, lifted so a low-alpha box still reads on Night. */
+  --viz-paid: #4ade9b;
+  --viz-issued: #e879f9;
+  --viz-draft: #94a3b8;
 
   --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.45);
   --shadow-pop: 0 24px 48px -26px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
