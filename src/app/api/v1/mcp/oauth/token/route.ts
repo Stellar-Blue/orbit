@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/server';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+const newToken = (prefix: string) => `${prefix}_${randomBytes(32).toString('base64url')}`;
+
+// RFC 7636 S256: BASE64URL(SHA256(code_verifier)) must equal the stored code_challenge.
+function pkceMatches(verifier: string, challenge: string): boolean {
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return false;
+  const computed = Buffer.from(createHash('sha256').update(verifier).digest('base64url'));
+  const expected = Buffer.from(challenge);
+  return computed.length === expected.length && timingSafeEqual(computed, expected);
+}
 
 /**
  * Orbit MCP OAuth 2.0 Token Exchange Endpoint (§3)
@@ -11,19 +24,19 @@ export async function POST(request: Request) {
     let grant_type = '';
     let code = '';
     let refresh_token = '';
+    let code_verifier = '';
+    let redirect_uri = '';
     let client_id = 'claude_ai';
     let scope = 'invoices.admin';
 
-    let client_secret = '';
 
     // Parse Basic Auth header if present (standard for confidential OAuth clients)
     const authHeader = request.headers.get('authorization') || '';
     if (authHeader.startsWith('Basic ')) {
       try {
         const decoded = Buffer.from(authHeader.replace('Basic ', ''), 'base64').toString('utf-8');
-        const [id, secret] = decoded.split(':');
+        const [id] = decoded.split(':');
         if (id) client_id = id;
-        if (secret) client_secret = secret;
       } catch {
         // Ignore malformed basic auth, fallback to body parameters
       }
@@ -36,15 +49,17 @@ export async function POST(request: Request) {
       grant_type = String(formData.get('grant_type') || '');
       code = String(formData.get('code') || '');
       refresh_token = String(formData.get('refresh_token') || '');
+      code_verifier = String(formData.get('code_verifier') || '');
+      redirect_uri = String(formData.get('redirect_uri') || '');
       if (!client_id || client_id === 'claude_ai') client_id = String(formData.get('client_id') || 'claude_ai');
-      client_secret = client_secret || String(formData.get('client_secret') || '');
     } else {
       const body = await request.json().catch(() => ({}));
       grant_type = body.grant_type;
       code = body.code;
       refresh_token = body.refresh_token;
+      code_verifier = body.code_verifier || '';
+      redirect_uri = body.redirect_uri || '';
       if (!client_id || client_id === 'claude_ai') client_id = body.client_id || 'claude_ai';
-      client_secret = client_secret || body.client_secret || '';
       scope = body.scope || 'invoices.admin';
     }
 
@@ -64,12 +79,18 @@ export async function POST(request: Request) {
         if (new Date(codeRecord.expires_at) < new Date()) {
           return NextResponse.json({ error: 'invalid_grant', error_description: 'Authorization code has expired. Please re-authorize via consent screen.' }, { status: 400 });
         }
+        // Invalidate single-use authorization code before any check, so a failed attempt burns it
+        await supabase.from('mcp_oauth_codes').delete().eq('code', code);
+
+        if (!codeRecord.code_challenge || !pkceMatches(code_verifier, codeRecord.code_challenge)) {
+          return NextResponse.json({ error: 'invalid_grant', error_description: 'PKCE verification failed.' }, { status: 400 });
+        }
+        if (redirect_uri !== codeRecord.redirect_uri) {
+          return NextResponse.json({ error: 'invalid_grant', error_description: 'redirect_uri does not match the authorization request.' }, { status: 400 });
+        }
         userId = codeRecord.user_id;
         client_id = codeRecord.client_id;
         scope = codeRecord.scope;
-        
-        // Invalidate single-use authorization code
-        await supabase.from('mcp_oauth_codes').delete().eq('code', code);
       } else {
         return NextResponse.json({ error: 'invalid_grant', error_description: 'Invalid or unknown OAuth authorization code.' }, { status: 400 });
       }
@@ -84,8 +105,8 @@ export async function POST(request: Request) {
       userId = canonicalId;
 
       // Generate access & refresh tokens (≤ 8h lifetime per §3)
-      const accessToken = `mcp_access_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
-      const refreshToken = `mcp_refresh_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
+      const accessToken = newToken('mcp_access');
+      const refreshToken = newToken('mcp_refresh');
       const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
 
       try {
@@ -120,6 +141,10 @@ export async function POST(request: Request) {
 
       const { data: tokenRecord } = await supabase.from('mcp_oauth_tokens').select('*').eq('refresh_token', refresh_token).single();
       if (tokenRecord) {
+        if (Date.now() - new Date(tokenRecord.created_at).getTime() > REFRESH_TOKEN_TTL_MS) {
+          await supabase.from('mcp_oauth_tokens').delete().eq('refresh_token', refresh_token);
+          return NextResponse.json({ error: 'invalid_grant', error_description: 'Expired or invalid refresh token.' }, { status: 400 });
+        }
         userId = tokenRecord.user_id;
         client_id = tokenRecord.client_id;
         scope = tokenRecord.scope;
@@ -137,8 +162,8 @@ export async function POST(request: Request) {
       }
       userId = canonicalId;
 
-      const newAccessToken = `mcp_access_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
-      const newRefreshToken = `mcp_refresh_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
+      const newAccessToken = newToken('mcp_access');
+      const newRefreshToken = newToken('mcp_refresh');
       const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
 
       try {

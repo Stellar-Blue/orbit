@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient, getSupabaseAdminClient } from '@/lib/supabase/server';
+import { safeNextPath } from '@/lib/redirects';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const errorParam = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
-  const next = searchParams.get('next') ?? '/';
+  const next = safeNextPath(searchParams.get('next'));
 
   if (errorParam || errorDescription) {
     const desc = encodeURIComponent(errorDescription || errorParam || 'Unknown OIDC error');

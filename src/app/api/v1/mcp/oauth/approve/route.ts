@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient, getSupabaseAdminClient } from '@/lib/supabase/server';
 import { McpErrors } from '@/lib/mcp/errors';
+import { isAllowedMcpRedirectUri } from '@/lib/redirects';
+import { randomBytes } from 'crypto';
 
 /**
  * Orbit MCP OAuth 2.0 Authorization Consent Processor (§3)
@@ -9,7 +11,7 @@ import { McpErrors } from '@/lib/mcp/errors';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { client_id, redirect_uri, state, scope = 'invoices.admin' } = body;
+    const { client_id, redirect_uri, state, scope = 'invoices.admin', code_challenge, code_challenge_method } = body;
 
     if (!client_id || !redirect_uri) {
       return NextResponse.json({
@@ -19,12 +21,29 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // There is no client registry, so the redirect allowlist and PKCE are what stop a crafted
+    // authorize link from delivering an admin's code to an attacker.
+    if (!isAllowedMcpRedirectUri(redirect_uri)) {
+      return NextResponse.json({
+        success: false,
+        error: 'invalid_request',
+        error_description: 'redirect_uri is not an allowed MCP client callback.'
+      }, { status: 400 });
+    }
+    if (code_challenge_method !== 'S256' || typeof code_challenge !== 'string' || !/^[A-Za-z0-9_-]{43,128}$/.test(code_challenge)) {
+      return NextResponse.json({
+        success: false,
+        error: 'invalid_request',
+        error_description: 'PKCE is required: code_challenge with code_challenge_method=S256.'
+      }, { status: 400 });
+    }
+
     const supabase = await getSupabaseServerClient();
 
     // Verify user authentication and Admin role enforcement (§3)
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session?.user) {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
       return NextResponse.json({
         success: false,
         error: 'unauthenticated',
@@ -32,8 +51,8 @@ export async function POST(request: Request) {
       }, { status: 401 });
     }
 
-    let authenticatedUserId = session.user.id;
-    let email = session.user.email || '';
+    let authenticatedUserId = user.id;
+    let email = user.email || '';
     let isAdmin = false;
 
     const { data: profile } = await supabase.from('profiles').select('id, work_email').or(`id.eq.${authenticatedUserId},auth_user_id.eq.${authenticatedUserId}`).maybeSingle();
@@ -55,24 +74,28 @@ export async function POST(request: Request) {
     }
 
     // Generate secure short-lived authorization code (10 minutes validity)
-    const code = `orb_code_${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
-    
-    // Store in Supabase mcp_oauth_codes table via admin client
-    try {
-      const adminSupabase = await getSupabaseAdminClient();
-      await adminSupabase.from('mcp_oauth_codes').insert([{
-        code,
-        user_id: authenticatedUserId,
-        client_id,
-        redirect_uri,
-        scope
-      }]);
-    } catch (dbErr) {
-      console.warn('Notice: Unable to persist OAuth code to mcp_oauth_codes (dev environment fallback):', dbErr);
+    const code = `orb_code_${randomBytes(32).toString('base64url')}`;
+
+    const adminSupabase = await getSupabaseAdminClient();
+    const { error: insertError } = await adminSupabase.from('mcp_oauth_codes').insert([{
+      code,
+      user_id: authenticatedUserId,
+      client_id,
+      redirect_uri,
+      scope,
+      code_challenge
+    }]);
+    if (insertError) {
+      console.error('Unable to persist OAuth code to mcp_oauth_codes:', insertError);
+      return NextResponse.json({
+        success: false,
+        error: 'server_error',
+        error_description: 'Could not issue an authorization code.'
+      }, { status: 500 });
     }
 
     // Construct standard OAuth callback URL
-    const callbackUrl = new URL(redirect_uri, request.url);
+    const callbackUrl = new URL(redirect_uri);
     callbackUrl.searchParams.set('code', code);
     if (state) {
       callbackUrl.searchParams.set('state', state);

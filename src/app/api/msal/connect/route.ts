@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { safeNextPath } from '@/lib/redirects';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { msalAuthorizeUrl } from '@/lib/integrations/msal';
 
@@ -20,8 +21,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/profile?msal=no_profile', request.url));
   }
 
-  const next = request.nextUrl.searchParams.get('next') || '/';
-  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+  const safeNext = safeNextPath(request.nextUrl.searchParams.get('next'));
 
   const state = JSON.stringify({ profile_id: profile.id, next: safeNext, nonce: crypto.randomUUID() });
   const stateB64 = Buffer.from(state).toString('base64url');

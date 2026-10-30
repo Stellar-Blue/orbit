@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { ShieldCheck, AlertCircle, Loader2, Zap, Lock, Sparkles, KeyRound } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { safeNextPath } from "@/lib/redirects";
 
 /**
  * Temporary credential sign-in for preview deployments.
@@ -103,7 +104,7 @@ function LoginContent() {
         return;
       }
       const nextTarget = searchParams ? searchParams.get("next") : null;
-      window.location.assign(nextTarget || "/");
+      window.location.assign(safeNextPath(nextTarget));
     } catch (error) {
       setCredentialError(error instanceof Error ? error.message : "Sign-in failed.");
       setIsPasswordLoading(false);
@@ -117,7 +118,7 @@ function LoginContent() {
     // local prototype through, and it is only honoured while DEV_AUTH_MODE is on outside production.
     document.cookie = "orbit_dev_workspace=1; path=/; SameSite=Lax; max-age=28800";
     // Full reload, so the layout re-mounts and the provider re-reads its slices for this identity.
-    window.location.assign(nextTarget || "/");
+    window.location.assign(safeNextPath(nextTarget));
   };
 
   return (

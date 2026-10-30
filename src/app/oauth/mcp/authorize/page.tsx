@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Card, Button, Badge } from "@/components/ui/primitives";
+import { isAllowedMcpRedirectUri } from "@/lib/redirects";
 
 function McpAuthorizeContent() {
   const { currentUser, isDevMode } = useAuth();
@@ -19,6 +20,8 @@ function McpAuthorizeContent() {
   const redirectUri = searchParams ? searchParams.get("redirect_uri") || "https://claude.ai/api/mcp/callback" : "https://claude.ai/api/mcp/callback";
   const stateParam = searchParams ? searchParams.get("state") || "orbit_state_val" : "orbit_state_val";
   const requestedScope = searchParams ? searchParams.get("scope") || "invoices.admin" : "invoices.admin";
+  const codeChallenge = searchParams?.get("code_challenge") || "";
+  const codeChallengeMethod = searchParams?.get("code_challenge_method") || "";
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -39,6 +42,8 @@ function McpAuthorizeContent() {
           redirect_uri: redirectUri,
           state: stateParam,
           scope: requestedScope,
+          code_challenge: codeChallenge,
+          code_challenge_method: codeChallengeMethod,
           userId: currentUser?.id || "00000000-0000-0000-0000-000000000001"
         })
       });
@@ -66,7 +71,7 @@ function McpAuthorizeContent() {
   };
 
   const handleDecline = () => {
-    if (redirectUri && !redirectUri.includes("localhost")) {
+    if (isAllowedMcpRedirectUri(redirectUri) && !redirectUri.includes("localhost")) {
       const rej = new URL(redirectUri);
       rej.searchParams.set("error", "access_denied");
       rej.searchParams.set("error_description", "User declined financial MCP authorization.");
