@@ -170,7 +170,7 @@ export default function MyCompensationPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight flex items-center">
             <DollarSign className="w-6 h-6 mr-3 text-emerald-600" /> My Personal Compensation & Payroll
           </h1>
           <p className="text-slate-500 text-xs mt-1">
@@ -193,7 +193,7 @@ export default function MyCompensationPage() {
             onClick={() => setShowHistoryModal(true)}
             className="bg-white border-slate-200 text-slate-700 font-bold hover:bg-slate-50 shadow-2xs"
           >
-            <History className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> My Compensation History
+            <History className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)]" /> My Compensation History
           </Button>
         </div>
       </div>
@@ -215,7 +215,7 @@ export default function MyCompensationPage() {
                     value={`€${grossSalary.toLocaleString('de-DE', { minimumFractionDigits: 2 })}`}
                     valueClassName="text-white font-extrabold"
                     blurClassName="blur-[12px]"
-                    buttonClassName="bg-white/10 border-white/25 text-slate-200 hover:text-white hover:border-[#2f6fa3]/70"
+                    buttonClassName="bg-white/10 border-white/25 text-slate-200 hover:text-white hover:border-[var(--accent)]/70"
                     suffix={<span className="text-sm font-bold text-slate-300 font-sans">/ month</span>}
                     revealed={salaryReveal.revealed}
                     onToggle={salaryReveal.toggle}
@@ -294,8 +294,8 @@ export default function MyCompensationPage() {
             </div>
 
             <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-950 text-[11px] space-y-1">
-              <span className="font-extrabold flex items-center text-xs text-[#2f6fa3]">
-                <ShieldCheck className="w-4 h-4 mr-1.5 text-[#2f6fa3]" /> RLS Privacy Guaranteed
+              <span className="font-extrabold flex items-center text-xs text-[var(--accent)]">
+                <ShieldCheck className="w-4 h-4 mr-1.5 text-[var(--accent)]" /> RLS Privacy Guaranteed
               </span>
               <p className="leading-relaxed text-slate-700">
                 Under Supabase Row-Level Security, you solely view your own confirmed paid rows. Unfinalized drafts and internal company economics remain totally separate.
@@ -315,8 +315,8 @@ export default function MyCompensationPage() {
       <div className="space-y-4 pt-4 border-t border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center">
-              <FileText className="w-5 h-5 mr-2 text-[#2f6fa3]" /> Confirmed Payment History & Statement Archive
+            <h2 className="text-lg font-semibold text-slate-900 tracking-tight flex items-center">
+              <FileText className="w-5 h-5 mr-2 text-[var(--accent)]" /> Confirmed Payment History & Statement Archive
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Historical log of completed disbursements and official voucher receipts. Only finalized paid rows appear here.
@@ -454,7 +454,7 @@ export default function MyCompensationPage() {
                 {selectedPaymentForDocs.documents?.map(doc => (
                   <div key={doc.id} className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between hover:border-indigo-200 transition-all">
                     <div className="flex items-center space-x-3 truncate max-w-[65%]">
-                      <div className="p-2 bg-indigo-50 text-[#2f6fa3] rounded-lg shrink-0">
+                      <div className="p-2 bg-indigo-50 text-[var(--accent)] rounded-lg shrink-0">
                         {doc.type === 'invoice' ? <FileSpreadsheet className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                       </div>
                       <div className="truncate">
@@ -477,7 +477,7 @@ export default function MyCompensationPage() {
                         onClick={() => handleDownloadDoc(doc)}
                         className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] shadow-2xs transition-colors cursor-pointer"
                       >
-                        <Download className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> Download
+                        <Download className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)]" /> Download
                       </button>
                     </div>
                   </div>

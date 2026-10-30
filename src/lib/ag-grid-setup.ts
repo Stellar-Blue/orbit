@@ -8,6 +8,7 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GridOptions } from 'ag-grid-community';
 import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
 import { OptionsFilter } from '@/lib/ag-grid-options-filter';
+import { useTheme } from '@/lib/theme';
 
 export const AG_GRID_LICENSE_KEY = process.env.NEXT_PUBLIC_AG_GRID_LICENSE_KEY?.trim() || '';
 export const HAS_AG_GRID_LICENSE = !!AG_GRID_LICENSE_KEY;
@@ -20,22 +21,46 @@ if (HAS_AG_GRID_LICENSE) {
 }
 
 // Ledger-grade grid: stencilled header band, hairline rows, tabular figures inherited from the app.
+// Two builds of the same theme so grids can follow the app's light/dark switch.
 export const orbitGridTheme = themeQuartz.withParams({
   backgroundColor: '#ffffff',
-  foregroundColor: '#243040',
-  headerBackgroundColor: '#eef1f4',
-  headerTextColor: '#46525f',
+  foregroundColor: '#3a3f48',
+  headerBackgroundColor: '#f1f3f6',
+  headerTextColor: '#6b717c',
   headerFontWeight: 700,
-  borderColor: '#dde3e8',
-  accentColor: '#2f6fa3',
+  borderColor: '#e6e8ec',
+  accentColor: '#3d87d3',
   oddRowBackgroundColor: '#fbfcfd',
   rowHoverColor: '#eff3f7',
-  selectedRowBackgroundColor: '#e9f1f7',
+  selectedRowBackgroundColor: '#eaf2fb',
   fontSize: 12,
   headerFontSize: 10,
   fontFamily: 'inherit',
   wrapperBorderRadius: 0
 });
+
+export const orbitGridDarkTheme = themeQuartz.withParams({
+  backgroundColor: '#14171c',
+  foregroundColor: '#c9d1dc',
+  headerBackgroundColor: '#1b2028',
+  headerTextColor: '#98a2b0',
+  headerFontWeight: 700,
+  borderColor: '#262b33',
+  accentColor: '#5a9be0',
+  oddRowBackgroundColor: '#171b20',
+  rowHoverColor: '#1f262f',
+  selectedRowBackgroundColor: '#16283c',
+  fontSize: 12,
+  headerFontSize: 10,
+  fontFamily: 'inherit',
+  wrapperBorderRadius: 0
+});
+
+/** The grid theme for the active colour scheme. Call from a client component. */
+export function useOrbitGridTheme() {
+  const { theme } = useTheme();
+  return theme === 'dark' ? orbitGridDarkTheme : orbitGridTheme;
+}
 
 /**
  * Excel-style filters: checkbox list of ALL available values in the column, with search,

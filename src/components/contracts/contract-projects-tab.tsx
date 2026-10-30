@@ -68,7 +68,7 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
   return (
     <div className="space-y-6 pt-3 animate-fadeIn">
       <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 space-y-3">
-        <span className="text-sm font-extrabold text-slate-800 flex items-center"><Plus className="w-4 h-4 mr-2 text-[#2f6fa3]" /> New Project on this Contract</span>
+        <span className="text-sm font-extrabold text-slate-800 flex items-center"><Plus className="w-4 h-4 mr-2 text-[var(--accent)]" /> New Project on this Contract</span>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Project name…" className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm" />
           <input value={code} onChange={e => setCode(e.target.value)} placeholder="Code (optional)" className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
@@ -98,7 +98,7 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
             </div>
           </div>
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer sm:col-span-3">
-            <input type="checkbox" checked={billable} onChange={e => setBillable(e.target.checked)} className="accent-[#2f6fa3]" /> Billable to client (hours and day budgets stay in sync at 8h/day)
+            <input type="checkbox" checked={billable} onChange={e => setBillable(e.target.checked)} className="accent-[var(--accent)]" /> Billable to client (hours and day budgets stay in sync at 8h/day)
           </label>
         </div>
         {createErrors.length > 0 && (
@@ -166,13 +166,13 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#2f6fa3] hover:bg-blue-50 px-2 py-1.5 rounded-lg cursor-pointer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--accent)] hover:bg-blue-50 px-2 py-1.5 rounded-lg cursor-pointer"
                         title="Status, dates, budgets, links and documents"
                       >
                         {expandedId === p.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         {expandedId === p.id ? 'Hide details' : 'Details'}
                       </button>
-                      <button onClick={() => startEdit(p)} className="text-slate-400 hover:text-[#2f6fa3] p-1.5 rounded hover:bg-blue-50 cursor-pointer" title="Rename project"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => startEdit(p)} className="text-slate-400 hover:text-[var(--accent)] p-1.5 rounded hover:bg-blue-50 cursor-pointer" title="Rename project"><Pencil className="w-3.5 h-3.5" /></button>
                       <button onClick={async () => { if (confirm(`Delete project "${p.name}"?`)) await deleteProject(p.id); }} className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-rose-50 cursor-pointer" title="Delete project"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </>

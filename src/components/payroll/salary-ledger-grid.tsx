@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { SalaryRecord, PaymentType, Profile } from '@/lib/types';
@@ -77,6 +77,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
   onBackfill,
   onDelete
 }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls();
   const { quickFilter, setQuickFilter } = gridFilters;
 
@@ -223,7 +224,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
                 variant="outline"
                 disabled={busy}
                 onClick={(e) => { e.stopPropagation(); onBackfill(row.sal); }}
-                className="text-[#2f6fa3] border-[#2f6fa3]/30 hover:bg-[#2f6fa3]/5 cursor-pointer shrink-0"
+                className="text-[var(--accent)] border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 cursor-pointer shrink-0"
               >
                 <Zap className={`w-3.5 h-3.5 mr-1 ${busy ? 'animate-pulse' : ''}`} />
                 {busy ? 'Producing…' : 'Past Payments'}
@@ -262,7 +263,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
             placeholder="Search rates, extras & bonuses across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -274,7 +275,7 @@ export const SalaryLedgerGrid: React.FC<SalaryLedgerGridProps> = ({
       </div>
       <div className="h-[520px]">
         <AgGridReact<LedgerRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

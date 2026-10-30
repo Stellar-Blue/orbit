@@ -40,7 +40,7 @@ export function EmployeeRemoteQuota({ profileId }: { profileId: string }) {
         </span>
       </div>
       <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-        <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="accent-[#2f6fa3]" />
+        <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="accent-[var(--accent)]" />
         Custom remote quota for this employee
       </label>
       {enabled && (
@@ -59,7 +59,7 @@ export function EmployeeRemoteQuota({ profileId }: { profileId: string }) {
             </select>
           </div>
           <label className="flex items-end gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer pb-1">
-            <input type="checkbox" checked={countsLeave} onChange={e => setCountsLeave(e.target.checked)} className="accent-[#2f6fa3]" /> Count leave
+            <input type="checkbox" checked={countsLeave} onChange={e => setCountsLeave(e.target.checked)} className="accent-[var(--accent)]" /> Count leave
           </label>
         </div>
       )}

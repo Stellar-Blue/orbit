@@ -411,7 +411,7 @@ export default function LeaveManagementPage() {
     return (
       <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
         <AlertTriangle className="w-10 h-10 mx-auto text-amber-600" />
-        <h2 className="text-xl font-bold text-slate-800">Module Hidden for Contractors</h2>
+        <h2 className="text-xl font-semibold text-slate-800">Module Hidden for Contractors</h2>
         <p className="text-xs text-slate-600">
           Under Greek labour law and StellarBlue operational policy, independent contractors (μπλοκάκι) do not accrue leave balances or file leave requests.
         </p>
@@ -424,15 +424,15 @@ export default function LeaveManagementPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center">
-            <Calendar className="w-6 h-6 mr-3 text-[#2f6fa3]" /> Personal Leave Management &amp; Quota Balance
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight flex items-center">
+            <Calendar className="w-6 h-6 mr-3 text-[var(--accent)]" /> Personal Leave Management &amp; Quota Balance
           </h1>
           <p className="text-slate-500 text-xs mt-1 font-medium">
             Review your annual leave allowance, explore holiday dates, and click-and-drag directly on the calendar to file new requests.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 shadow-xs cursor-pointer font-black px-4 py-2">
+          <Button variant="primary" size="sm" onClick={() => setIsRequestOpen(true)} className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 shadow-xs cursor-pointer font-black px-4 py-2">
             <Plus className="w-4 h-4 mr-1.5" /> File Leave Request
           </Button>
         </div>
@@ -529,7 +529,7 @@ export default function LeaveManagementPage() {
                     <div className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs flex flex-col justify-between">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-extrabold text-slate-800 flex items-center">
-                          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3] shrink-0" /> No leaves yet
+                          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)] shrink-0" /> No leaves yet
                         </span>
                       </div>
                       <div className="mt-2 pt-2 border-t border-slate-200/80">
@@ -551,7 +551,7 @@ export default function LeaveManagementPage() {
                     type="button"
                     onClick={() => setViewMode('calendar')}
                     className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center transition-all cursor-pointer ${
-                      viewMode === 'calendar' ? 'bg-[#2f6fa3] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      viewMode === 'calendar' ? 'bg-[var(--accent)] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     <Calendar className="w-3.5 h-3.5 mr-1.5" /> Calendar View
@@ -560,7 +560,7 @@ export default function LeaveManagementPage() {
                     type="button"
                     onClick={() => setViewMode('grid')}
                     className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center transition-all cursor-pointer ${
-                      viewMode === 'grid' ? 'bg-[#2f6fa3] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      viewMode === 'grid' ? 'bg-[var(--accent)] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     <Table className="w-3.5 h-3.5 mr-1.5" /> Grid View
@@ -569,7 +569,7 @@ export default function LeaveManagementPage() {
                     type="button"
                     onClick={() => setViewMode('category')}
                     className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center transition-all cursor-pointer ${
-                      viewMode === 'category' ? 'bg-[#2f6fa3] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      viewMode === 'category' ? 'bg-[var(--accent)] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     <LayoutGrid className="w-3.5 h-3.5 mr-1.5" /> Per Category View
@@ -626,7 +626,7 @@ export default function LeaveManagementPage() {
                     </div>
 
                     <div className="flex items-center gap-3.5 text-[11px] font-bold text-slate-600 flex-wrap">
-                      <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-[#2f6fa3] mr-1.5 inline-block shadow-2xs" /> My Leaves</span>
+                      <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-[var(--accent)] mr-1.5 inline-block shadow-2xs" /> My Leaves</span>
                       <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-indigo-700 mr-1.5 inline-block shadow-2xs" /> Mandatory Closure</span>
                       <span className="flex items-center"><span className="w-2.5 h-2.5 rounded-full bg-rose-500 mr-1.5 inline-block shadow-2xs" /> Holiday</span>
                     </div>
@@ -689,11 +689,11 @@ export default function LeaveManagementPage() {
                                     onMouseEnter={() => handleDayMouseEnter(dayStr)}
                                     className={`h-full transition-colors cursor-pointer ${
                                       isSelected
-                                        ? 'bg-[#2f6fa3]/20 ring-2 ring-inset ring-[#2f6fa3] shadow-inner'
+                                        ? 'bg-[var(--accent)]/20 ring-2 ring-inset ring-[var(--accent)] shadow-inner'
                                         : !isCurrentMonth
                                           ? 'bg-slate-50/70 opacity-75'
                                           : isDayToday
-                                            ? 'bg-blue-50/40 ring-2 ring-inset ring-[#2f6fa3]'
+                                            ? 'bg-blue-50/40 ring-2 ring-inset ring-[var(--accent)]'
                                             : isWeekend ? 'bg-slate-50/40 hover:bg-slate-100/70' : 'bg-white hover:bg-slate-50/90'
                                     }`}
                                   />
@@ -718,7 +718,7 @@ export default function LeaveManagementPage() {
                                       <span
                                         className={`text-xs font-mono font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
                                           isDayToday
-                                            ? 'bg-[#2f6fa3] text-white font-black shadow-sm'
+                                            ? 'bg-[var(--accent)] text-white font-black shadow-sm'
                                             : isCurrentMonth
                                               ? (isWeekend ? 'text-rose-600 font-extrabold' : 'text-slate-800 font-extrabold')
                                               : 'text-slate-400'
@@ -828,7 +828,7 @@ export default function LeaveManagementPage() {
                                         style={{ gridColumn: `${startCol} / span ${span}`, backgroundColor: lt?.colour || '#2f6fa3' }}
                                         className={`py-1.5 px-2.5 text-[11px] font-extrabold text-white shadow-xs flex items-center justify-between transition-transform text-left ${
                                           canCancel
-                                            ? 'cursor-pointer hover:scale-[1.01] hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#2f6fa3]'
+                                            ? 'cursor-pointer hover:scale-[1.01] hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--accent)]'
                                             : 'cursor-default'
                                         } ${
                                           isActualStart && isActualEnd ? 'rounded-lg' :
@@ -876,7 +876,7 @@ export default function LeaveManagementPage() {
                 <select
                   value={selectedYear}
                   onChange={e => setSelectedYear(Number(e.target.value))}
-                  className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                  className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
                 >
                   {yearOptions.map(y => (
                     <option key={y} value={y}>{y}</option>
@@ -936,7 +936,7 @@ export default function LeaveManagementPage() {
                             </div>
                             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden flex shadow-inner">
                               <div 
-                                className="bg-[#2f6fa3] h-full transition-all duration-500 rounded-full" 
+                                className="bg-[var(--accent)] h-full transition-all duration-500 rounded-full" 
                                 style={{ width: `${Math.min(100, (poolUsed / (poolTotal || 1)) * 100)}%` }}
                               />
                             </div>
@@ -991,9 +991,9 @@ export default function LeaveManagementPage() {
             />
           </div>
 
-          <div className="p-3.5 rounded-xl bg-[#2f6fa3]/10 border border-[#2f6fa3]/20 flex items-center justify-between text-xs text-slate-800 font-medium">
+          <div className="p-3.5 rounded-xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-between text-xs text-slate-800 font-medium">
             <span>Calculated Working Days (Excludes Weekends & Greek Holidays):</span>
-            <span className="text-lg font-extrabold text-[#2f6fa3] font-mono">{currentWorkingDays} Days</span>
+            <span className="text-lg font-extrabold text-[var(--accent)] font-mono">{currentWorkingDays} Days</span>
           </div>
 
           <div>
@@ -1009,7 +1009,7 @@ export default function LeaveManagementPage() {
 
           <div className="pt-2 flex justify-end space-x-2">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsRequestOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" type="submit" className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90">
+            <Button variant="primary" size="sm" type="submit" className="bg-[var(--accent)] hover:bg-[var(--accent)]/90">
               {isAdmin ? 'Record Approved Admin Entry →' : 'Submit for Approval →'}
             </Button>
           </div>
@@ -1032,7 +1032,7 @@ export default function LeaveManagementPage() {
               <select
                 value={exportTargetYear}
                 onChange={e => setExportTargetYear(Number(e.target.value))}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
               >
                 <option value={2027}>2027</option>
                 <option value={2026}>2026</option>
@@ -1046,7 +1046,7 @@ export default function LeaveManagementPage() {
               <select
                 value={exportPeriod}
                 onChange={e => setExportPeriod(e.target.value as LeaveExportPeriod)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
               >
                 <option value="full_year">🗓️ Whole year ({exportTargetYear})</option>
                 <option value="ytd">⏱️ Year to date (01/01 → today)</option>
@@ -1060,7 +1060,7 @@ export default function LeaveManagementPage() {
                 <select
                   value={exportMonth}
                   onChange={e => setExportMonth(Number(e.target.value))}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
                 >
                   {LEAVE_EXPORT_MONTHS.map((m, i) => (
                     <option key={m} value={i + 1}>{m} {exportTargetYear}</option>
@@ -1074,7 +1074,7 @@ export default function LeaveManagementPage() {
               <select
                 value={exportApprovedOnly ? 'approved' : 'all'}
                 onChange={e => setExportApprovedOnly(e.target.value === 'approved')}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
               >
                 <option value="all">📋 All statuses (incl. pending &amp; rejected)</option>
                 <option value="approved">✅ Approved &amp; deducted leaves only</option>
@@ -1087,7 +1087,7 @@ export default function LeaveManagementPage() {
                 <select
                   value={exportActiveOnly ? 'active' : 'all'}
                   onChange={e => setExportActiveOnly(e.target.value === 'active')}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
                 >
                   <option value="all">👥 All employees (incl. departed)</option>
                   <option value="active">🟢 Active employees only</option>
@@ -1102,7 +1102,7 @@ export default function LeaveManagementPage() {
               <select
                 value={exportScope}
                 onChange={e => setExportScope(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
               >
                 <option value="me">👤 My Personal Leave Report ({currentUser.last_name})</option>
                 <option value="all">🌟 All Employees (Company-Wide &amp; Detailed Ledger)</option>
@@ -1126,7 +1126,7 @@ export default function LeaveManagementPage() {
 
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-slate-600">
             <p className="font-semibold text-slate-800 flex items-center">
-              <FileText className="w-4 h-4 mr-1.5 text-[#2f6fa3] shrink-0" /> Included Report Data
+              <FileText className="w-4 h-4 mr-1.5 text-[var(--accent)] shrink-0" /> Included Report Data
             </p>
             <ul className="list-disc pl-5 space-y-1 text-slate-500 font-medium">
               <li>Total Annual Allowance Quota &amp; Carryover Days</li>

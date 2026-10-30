@@ -82,7 +82,7 @@ export function OfficePlan({
       }
     >
       <div
-        className="relative overflow-hidden rounded-[var(--radius-card)] border border-[var(--line)] bg-[#f8f4ec]"
+        className="relative overflow-hidden rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface-muted)]"
         style={{ height }}
       >
         <Office3D

@@ -7,6 +7,7 @@ import { ShieldCheck, AlertCircle, Loader2, Zap, Lock, Sparkles, KeyRound } from
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { safeNextPath } from "@/lib/redirects";
+import { ThemeToggle } from "@/lib/theme";
 
 /**
  * Temporary credential sign-in for preview deployments.
@@ -131,9 +132,17 @@ function LoginContent() {
       {/* Branding & Header */}
       <div className="mb-8 flex flex-col items-center text-center">
         <div className="mb-4 flex items-center justify-center">
-          <img src={companyProfile?.logo_url || "/logo.png"} alt={companyProfile?.name || "StellarBlue"} className="h-10 object-contain drop-shadow-2xs" />
+          {companyProfile?.logo_url ? (
+            <img src={companyProfile.logo_url} alt={companyProfile.name} className="h-10 object-contain drop-shadow-2xs" />
+          ) : (
+            <>
+              {/* Light version on white, dark version on Night — the logo ships with both. */}
+              <img src="/logo.png" alt="StellarBlue" className="h-10 object-contain drop-shadow-2xs dark:hidden" />
+              <img src="/logo-dark.png" alt="StellarBlue" className="hidden h-10 object-contain dark:block" />
+            </>
+          )}
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-800 md:text-3xl">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-800 md:text-3xl">
           Orbit Workspace
         </h1>
         <p className="mt-2 text-sm text-slate-500">
@@ -187,7 +196,7 @@ function LoginContent() {
         {PREVIEW_LOGIN && (
           <form onSubmit={handlePasswordLogin} className="mt-6 space-y-3 border-t border-slate-150 pt-6">
             <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center font-semibold text-[#2f6fa3]">
+              <span className="flex items-center font-semibold text-[var(--accent)]">
                 <KeyRound className="mr-1 h-3.5 w-3.5" />
                 Temporary preview access
               </span>
@@ -200,7 +209,7 @@ function LoginContent() {
                 onChange={(event) => setIdentifier(event.target.value)}
                 placeholder="Username or email"
                 autoComplete="username"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[#2f6fa3] focus:ring-2 focus:ring-[#2f6fa3]/15"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
               />
               <input
                 type="password"
@@ -208,7 +217,7 @@ function LoginContent() {
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Password"
                 autoComplete="current-password"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[#2f6fa3] focus:ring-2 focus:ring-[#2f6fa3]/15"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
               />
             </div>
             {credentialError && (
@@ -220,7 +229,7 @@ function LoginContent() {
             <button
               type="submit"
               disabled={isPasswordLoading}
-              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[#2f6fa3]/25 bg-[#2f6fa3]/10 px-4 py-2.5 text-xs font-semibold text-[#2f6fa3] transition duration-200 hover:bg-[#2f6fa3]/20 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
+              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-4 py-2.5 text-xs font-semibold text-[var(--accent)] transition duration-200 hover:bg-[var(--accent)]/20 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
             >
               {isPasswordLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>Sign in with preview credentials</span>}
             </button>
@@ -231,8 +240,8 @@ function LoginContent() {
         {isDevMode && (
           <div className="mt-6 pt-6 border-t border-slate-150">
             <div className="mb-3 flex items-center justify-between text-xs">
-              <span className="flex items-center text-[#2f6fa3] font-semibold">
-                <Zap className="h-3.5 w-3.5 mr-1 text-[#2f6fa3] fill-[#2f6fa3]/20" />
+              <span className="flex items-center text-[var(--accent)] font-semibold">
+                <Zap className="h-3.5 w-3.5 mr-1 text-[var(--accent)] fill-[var(--accent)]/20" />
                 Dev Auth Mode Active
               </span>
               <span className="text-[10px] text-slate-400 font-sans">Bypasses OIDC</span>
@@ -240,7 +249,7 @@ function LoginContent() {
             <button
               onClick={handleDevModeEnter}
               disabled={isLoading}
-              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[#2f6fa3]/20 bg-[#2f6fa3]/10 px-4 py-2.5 text-xs font-semibold text-[#2f6fa3] hover:bg-[#2f6fa3]/20 transition duration-200 active:scale-[0.99] cursor-pointer"
+              className="flex w-full items-center justify-center space-x-2 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/10 px-4 py-2.5 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition duration-200 active:scale-[0.99] cursor-pointer"
             >
               <span>Enter Workspace (Mock User Switcher)</span>
             </button>
@@ -260,9 +269,12 @@ function LoginContent() {
 export default function LoginPage() {
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-slate-50 p-6">
+      <div className="absolute right-4 top-4 z-20">
+        <ThemeToggle />
+      </div>
       <Suspense fallback={
         <div className="relative z-10 flex h-64 w-full max-w-md items-center justify-center rounded-2xl border border-slate-200/80 bg-white shadow-xl">
-          <Loader2 className="h-8 w-8 animate-spin text-[#2f6fa3]" />
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--accent)]" />
         </div>
       }>
         <LoginContent />

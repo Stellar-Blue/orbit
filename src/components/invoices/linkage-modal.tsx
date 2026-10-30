@@ -92,7 +92,7 @@ export function LinkageModal({ invoice, onClose }: LinkageModalProps) {
           <select 
             value={selectedContractId} 
             onChange={e => { setSelectedContractId(e.target.value); setSelectedPeriods([]); }}
-            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#2f6fa3] focus:border-transparent"
+            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
           >
             <option value="">-- Select an active contract --</option>
             {availableContracts.map(c => (
@@ -141,7 +141,7 @@ export function LinkageModal({ invoice, onClose }: LinkageModalProps) {
               id="markPaid" 
               checked={markAsPaid} 
               onChange={e => setMarkAsPaid(e.target.checked)}
-              className="w-4 h-4 rounded text-[#2f6fa3] focus:ring-[#2f6fa3]"
+              className="w-4 h-4 rounded text-[var(--accent)] focus:ring-[var(--accent)]"
             />
             <label htmlFor="markPaid" className="text-sm font-bold text-slate-700 cursor-pointer select-none">
               Mark invoice as Paid in Full

@@ -512,7 +512,7 @@ export default function ContractsRegistryPage() {
       invoice_timing: newInvoiceTiming,
       vat_treatment: 'domestic_24',
       owner_profile_id: currentUser.id,
-      product: newDirection === 'revenue' ? 'Atlas ETRM & EMS' : 'Vendor Cloud Retainer',
+      product: newDirection === 'revenue' ? 'ATLAS ETRM & EMS' : 'Vendor Cloud Retainer',
       document_name: newDocName || undefined,
       document_url: newDocUrl || undefined,
       document_uploaded_at: newDocName ? new Date().toISOString() : undefined
@@ -1394,7 +1394,7 @@ export default function ContractsRegistryPage() {
               onChange={e => setNewDirection(e.target.value as ContractDirection)}
               className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800"
             >
-              <option value="revenue">Client Revenue (Atlas ETRM / EMS / Consulting)</option>
+              <option value="revenue">Client Revenue (ATLAS ETRM / EMS / Consulting)</option>
               <option value="cost">Supplier Spend (Cloud / Data Provider / Partnership)</option>
             </select>
           </div>
@@ -1402,7 +1402,7 @@ export default function ContractsRegistryPage() {
           <div>
             <label className="block font-semibold uppercase text-slate-500 mb-1.5 flex items-center justify-between">
               <span>Counterparty (Client / Supplier) <span className="text-red-500">*</span></span>
-              <span className="text-[11px] text-[#2f6fa3] normal-case font-semibold">First-Class Registry Entity</span>
+              <span className="text-[11px] text-[var(--accent)] normal-case font-semibold">First-Class Registry Entity</span>
             </label>
             <CounterpartyPicker
               value={newCounterpartyId}
@@ -1543,7 +1543,7 @@ export default function ContractsRegistryPage() {
               type="file" 
               onChange={handleSelectDocForNew} 
               accept=".pdf,.doc,.docx,.png,.jpg"
-              className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 text-xs font-medium file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#2f6fa3]/10 file:text-[#2f6fa3] hover:file:bg-[#2f6fa3]/20 cursor-pointer"
+              className="w-full bg-white border border-slate-200 rounded p-2 text-slate-800 text-xs font-medium file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[var(--accent)]/10 file:text-[var(--accent)] hover:file:bg-[var(--accent)]/20 cursor-pointer"
             />
             {isUploadingDoc && <p className="text-[11px] text-blue-600 font-bold mt-1 animate-pulse">⏳ Uploading file to Supabase Storage bucket...</p>}
             {newDocName && !isUploadingDoc && <p className="text-[11px] text-emerald-700 font-extrabold mt-1">✓ Storage File Ready: {newDocName}</p>}

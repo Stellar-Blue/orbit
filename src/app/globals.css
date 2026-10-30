@@ -1,62 +1,218 @@
 @import "tailwindcss";
 
 /*
-  Orbit design system — "graphite & steel".
+  Orbit design system — set in the StellarBlue brand.
 
-  An operations console for a contract/finance team: dense ledgers, money that must line up in
-  columns, and states that have to read at a glance. The language is industrial rather than
-  decorative — concrete canvas with a faint blueprint grid, graphite chrome, hairline rules instead
-  of soft shadows, machine-set micro labels, tabular figures everywhere and one steel-blue accent
-  reserved for action and selection. Nothing is rounded for cuteness: corners are 6–10px, badges
-  read like stamped plates, and hierarchy comes from type weight and rules, not colour.
+  Ink and Brand Blue lead; white and light grey build the page. An operations console for a
+  contract/finance team: dense ledgers, money that must line up in columns, and states that have
+  to read at a glance. The language is industrial rather than decorative — light grey canvas with
+  a faint blueprint grid, hairline rules instead of soft shadows, machine-set micro labels,
+  tabular figures everywhere and Brand Blue reserved for action and live signals. Nothing is
+  rounded for cuteness: corners are 6–10px, badges read like stamped plates, and hierarchy comes
+  from type weight and rules, not colour.
+
+  Every colour class in the app resolves through a custom property, so the whole surface can be
+  re-skinned by swapping the token block — that is how dark mode works here. The typographic
+  scale stays deliberately dense (13px base) instead of the brand's 16px web body: these are
+  ledgers, not marketing pages.
 */
+
+/* Dark is opt-in per surface via data-theme on <html>; `dark:` utilities follow the same hook. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
-  --canvas: #eceff3;
+  color-scheme: light;
+
+  /* Page ground, cards and the light grey panels between them. */
+  --canvas: #f7f8fa;
   --surface: #ffffff;
-  --surface-muted: #f4f6f8;
-  --surface-sunken: #e6eaee;
+  --surface-muted: #f1f3f6;
+  --surface-sunken: #eef2f7;
 
-  --ink: #0d1218;
-  --ink-2: #2b3540;
-  --ink-3: #586572;
-  --ink-4: #8894a0;
+  /* Ink for headlines, Text grey for body copy, mute for metadata. */
+  --ink: #16181d;
+  --ink-2: #3a3f48;
+  --ink-3: #6b717c;
+  --ink-4: #8b929d;
 
-  --line: #dde3e8;
-  --line-strong: #c2cbd3;
+  --line: #e6e8ec;
+  --line-strong: #d3d8e0;
 
-  --accent: #2f6fa3;
-  --accent-hover: #265b87;
-  --accent-ink: #1d4a70;
-  --accent-soft: #e9f1f7;
+  /* Brand Blue marks key elements and live signals; Link Blue marks links and pressed states. */
+  --accent: #3d87d3;
+  --accent-hover: #2e74be;
+  --accent-ink: #1f5fa8;
+  --accent-soft: #eaf2fb;
+  --accent-fg: #ffffff;
 
-  /* Chrome: the graphite rail and top bar that frame the workspace. */
-  --steel: #141b23;
-  --steel-2: #1c2530;
-  --steel-line: #2a3643;
+  /* Night: the chrome and the dark panels that frame the workspace. */
+  --steel: #0f1216;
+  --steel-2: #16181d;
+  --steel-line: #2a303a;
 
-  /* Signal: safety orange, only for "look here now". */
+  /* Amber, kept for one highlight at most ("look here now"). */
   --signal: #c2410c;
-  --signal-soft: #fff2e9;
+  --signal-soft: #fff4ec;
 
-  --positive: #047857;
+  --positive: #0b7a50;
   --positive-soft: #ecfdf5;
   --warning: #b45309;
   --warning-soft: #fffbeb;
-  --danger: #be123c;
-  --danger-soft: #fff1f2;
+  --danger: #b42342;
+  --danger-soft: #fff1f3;
 
-  --radius-card: 12px;
+  --radius-card: 10px;
   --radius-control: 6px;
-  --shadow-card: 0 1px 0 rgba(13, 18, 24, 0.05);
-  --shadow-pop: 0 24px 48px -26px rgba(13, 18, 24, 0.45), 0 0 0 1px rgba(13, 18, 24, 0.05);
+  --shadow-card: 0 1px 0 rgba(15, 18, 22, 0.05);
+  --shadow-pop: 0 24px 48px -26px rgba(15, 18, 22, 0.45), 0 0 0 1px rgba(15, 18, 22, 0.05);
 
   --background: var(--canvas);
   --foreground: var(--ink-2);
 
   /* next/font exposes these on <html>; @theme inline does not emit --font-sans, so the body rule
-     needs the real stack to keep IBM Plex everywhere (including AG Grid, which inherits). */
-  --font-body: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-code: var(--font-plex-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+     needs the real stack to keep Inter everywhere (including AG Grid, which inherits). */
+  --font-body: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-code: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /*
+    The components are written against Tailwind's neutral ramp (bg-white, text-slate-500,
+    border-slate-200 …). Repointing that ramp at the brand greys rebrands every screen without
+    rewriting thousands of class names, and gives the dark theme a single switch to flip.
+  */
+  --color-slate-50: #f7f8fa;
+  --color-slate-100: #f1f3f6;
+  --color-slate-200: #e6e8ec;
+  --color-slate-300: #d3d8e0;
+  --color-slate-400: #8b929d;
+  --color-slate-500: #6b717c;
+  --color-slate-600: #565c66;
+  --color-slate-700: #464b54;
+  --color-slate-800: #2f343c;
+  --color-slate-900: #16181d;
+  --color-slate-950: #0f1216;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #0b0d11;
+  --surface: #14171c;
+  --surface-muted: #1b2028;
+  --surface-sunken: #20262f;
+
+  --ink: #f3f5f8;
+  --ink-2: #c9d1dc;
+  --ink-3: #98a2b0;
+  --ink-4: #6f7987;
+
+  --line: #262b33;
+  --line-strong: #3e5878;
+
+  --accent: #5a9be0;
+  --accent-hover: #7cb2e8;
+  --accent-ink: #8fb8e6;
+  --accent-soft: #16283c;
+  --accent-fg: #0b0d11;
+
+  --steel: #0b0d11;
+  --steel-2: #14171c;
+  --steel-line: #262b33;
+
+  --signal: #e79a5f;
+  --signal-soft: #2a1d13;
+
+  --positive: #4ade9b;
+  --positive-soft: #10251c;
+  --warning: #f0b45e;
+  --warning-soft: #241c10;
+  --danger: #f8899f;
+  --danger-soft: #28141a;
+
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 24px 48px -26px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+  /*
+    Backgrounds, rules and the night panels keep their dark identity; only the foreground shades
+    invert. Splitting the ramp this way is what lets `bg-slate-900 text-white` stay a dark banner
+    while `text-slate-900` becomes white text on it.
+  */
+  --color-slate-50: #1b2028;
+  --color-slate-100: #20262f;
+  --color-slate-200: #262b33;
+  --color-slate-300: #333c48;
+  --color-slate-400: #3e4753;
+  --color-slate-500: #49525f;
+  --color-slate-600: #2a323c;
+  --color-slate-700: #2f3a46;
+  --color-slate-800: #232a33;
+  --color-slate-900: #16181d;
+  --color-slate-950: #0f1216;
+
+  /* Status tints: same hue, dropped lightness, so chips sit on Night instead of glowing. */
+  --color-emerald-50: color-mix(in oklab, #10b981 16%, #14171c);
+  --color-emerald-100: color-mix(in oklab, #10b981 24%, #14171c);
+  --color-emerald-200: color-mix(in oklab, #10b981 38%, #14171c);
+  --color-emerald-300: color-mix(in oklab, #10b981 55%, #14171c);
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-emerald-900: #d1fae5;
+
+  --color-rose-50: color-mix(in oklab, #f43f5e 16%, #14171c);
+  --color-rose-100: color-mix(in oklab, #f43f5e 24%, #14171c);
+  --color-rose-200: color-mix(in oklab, #f43f5e 38%, #14171c);
+  --color-rose-300: color-mix(in oklab, #f43f5e 55%, #14171c);
+  --color-rose-700: #fda4af;
+  --color-rose-800: #fecdd3;
+  --color-rose-900: #ffe4e6;
+
+  --color-amber-50: color-mix(in oklab, #f59e0b 16%, #14171c);
+  --color-amber-100: color-mix(in oklab, #f59e0b 24%, #14171c);
+  --color-amber-200: color-mix(in oklab, #f59e0b 38%, #14171c);
+  --color-amber-300: color-mix(in oklab, #f59e0b 55%, #14171c);
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-amber-900: #fef3c7;
+
+  --color-indigo-50: color-mix(in oklab, #6366f1 16%, #14171c);
+  --color-indigo-100: color-mix(in oklab, #6366f1 24%, #14171c);
+  --color-indigo-200: color-mix(in oklab, #6366f1 38%, #14171c);
+  --color-indigo-700: #a5b4fc;
+  --color-indigo-800: #c7d2fe;
+  --color-indigo-900: #e0e7ff;
+
+  --color-blue-50: color-mix(in oklab, #3b82f6 16%, #14171c);
+  --color-blue-100: color-mix(in oklab, #3b82f6 24%, #14171c);
+  --color-blue-200: color-mix(in oklab, #3b82f6 38%, #14171c);
+  --color-blue-300: color-mix(in oklab, #3b82f6 55%, #14171c);
+  --color-blue-700: #93c5fd;
+  --color-blue-800: #bfdbfe;
+  --color-blue-900: #dbeafe;
+
+  --color-purple-50: color-mix(in oklab, #a855f7 16%, #14171c);
+  --color-purple-200: color-mix(in oklab, #a855f7 38%, #14171c);
+  --color-purple-700: #d8b4fe;
+  --color-purple-900: #f3e8ff;
+
+  --color-cyan-50: color-mix(in oklab, #06b6d4 16%, #14171c);
+  --color-cyan-200: color-mix(in oklab, #06b6d4 38%, #14171c);
+  --color-cyan-300: color-mix(in oklab, #06b6d4 55%, #14171c);
+
+  --color-sky-50: color-mix(in oklab, #0ea5e9 16%, #14171c);
+  --color-sky-100: color-mix(in oklab, #0ea5e9 24%, #14171c);
+  --color-sky-200: color-mix(in oklab, #0ea5e9 38%, #14171c);
+
+  --color-violet-50: color-mix(in oklab, #8b5cf6 16%, #14171c);
+  --color-violet-200: color-mix(in oklab, #8b5cf6 38%, #14171c);
+
+  --color-teal-50: color-mix(in oklab, #14b8a6 16%, #14171c);
+  --color-teal-200: color-mix(in oklab, #14b8a6 38%, #14171c);
+
+  --color-fuchsia-50: color-mix(in oklab, #d946ef 16%, #14171c);
+  --color-fuchsia-200: color-mix(in oklab, #d946ef 38%, #14171c);
+  --color-orange-50: color-mix(in oklab, #f97316 16%, #14171c);
+  --color-orange-200: color-mix(in oklab, #f97316 38%, #14171c);
+  --color-red-50: color-mix(in oklab, #ef4444 16%, #14171c);
+  --color-red-200: color-mix(in oklab, #ef4444 38%, #14171c);
 }
 
 @theme inline {
@@ -70,11 +226,11 @@
   --color-ink-4: var(--ink-4);
   --color-line: var(--line);
   --color-stellar: var(--accent);
-  --color-stellar-hover: #265b87;
+  --color-stellar-hover: var(--accent-hover);
   --color-stellar-ink: var(--accent-ink);
   --color-stellar-light: var(--accent-soft);
-  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
 
 html {
@@ -86,13 +242,19 @@ body {
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.5;
-  /* Concrete canvas with a faint blueprint rule every 32px — texture without noise. */
+  /* Light grey ground with a faint blueprint rule every 32px — texture without noise. */
   background-color: var(--canvas);
   background-image:
-    linear-gradient(to right, rgba(13, 18, 24, 0.015) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(13, 18, 24, 0.015) 1px, transparent 1px);
+    linear-gradient(to right, rgba(22, 24, 29, 0.015) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(22, 24, 29, 0.015) 1px, transparent 1px);
   background-size: 32px 32px;
   background-position: -1px -1px;
+}
+
+[data-theme="dark"] body {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
 }
 
 /* Field and column labels: stencilled micro caps, the way a control panel is marked up. */
@@ -123,7 +285,7 @@ body {
 
 .ui-title {
   font-size: clamp(21px, 1.6vw, 26px);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.15;
   color: var(--ink);
@@ -131,7 +293,7 @@ body {
 
 .ui-section-title {
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--ink);
 }
@@ -183,7 +345,7 @@ body {
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
-.ui-segmented > button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.ui-segmented > button:hover { color: var(--ink); background: color-mix(in srgb, var(--surface) 60%, transparent); }
 .ui-segmented > button[aria-pressed="true"] {
   background: var(--surface);
   color: var(--ink);
@@ -264,7 +426,7 @@ body {
   border-bottom: 1px solid var(--line-strong);
 }
 .ag-row {
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, white);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, var(--canvas));
 }
 
 /* AG Grid filter popups (the community OptionsFilter is a React popup; these rules cover the
@@ -286,11 +448,101 @@ body {
 }
 
 .orbit-schedule-current-cell {
-  background-color: #fffaf6;
+  background-color: color-mix(in srgb, var(--signal-soft) 45%, var(--surface));
 }
 
 .ag-row-pinned .orbit-schedule-current-cell {
   background-color: var(--signal-soft);
+}
+
+/*
+  ── Dark theme: the neutral ramp in reverse ────────────────────────────────────────────────
+  The token block above already inverts surfaces, rules and the background shades of the slate
+  ramp. What is left is the foreground half: a class written as `text-slate-800` has to become
+  light, while `bg-slate-900` on the same page has to stay a dark panel. These rules resolve that
+  by overriding the foreground classes directly, and they win over the utility layer because they
+  are unlayered. Variants (`hover:`, `placeholder:`, `disabled:`) are listed alongside the base
+  class so interaction states keep working instead of snapping back to light values.
+*/
+[data-theme="dark"] .text-slate-950,
+[data-theme="dark"] .text-slate-900 {
+  color: #f3f5f8;
+}
+[data-theme="dark"] .text-slate-800 {
+  color: #e4eaf2;
+}
+[data-theme="dark"] .text-slate-700 {
+  color: #c9d1dc;
+}
+[data-theme="dark"] .text-slate-600 {
+  color: #b4bfcc;
+}
+[data-theme="dark"] .text-slate-500 {
+  color: #98a2b0;
+}
+[data-theme="dark"] .text-slate-400 {
+  color: #7f8a98;
+}
+[data-theme="dark"] .text-slate-300 {
+  color: #c9d1dc;
+}
+[data-theme="dark"] .text-slate-200 {
+  color: #dee4ec;
+}
+[data-theme="dark"] .text-slate-100 {
+  color: #eaf0f7;
+}
+
+[data-theme="dark"] .hover\:text-slate-950:hover,
+[data-theme="dark"] .hover\:text-slate-900:hover {
+  color: #ffffff;
+}
+[data-theme="dark"] .hover\:text-slate-800:hover {
+  color: #e4eaf2;
+}
+[data-theme="dark"] .hover\:text-slate-700:hover {
+  color: #c9d1dc;
+}
+[data-theme="dark"] .hover\:text-slate-600:hover {
+  color: #b4bfcc;
+}
+[data-theme="dark"] .hover\:text-slate-300:hover {
+  color: #f3f5f8;
+}
+[data-theme="dark"] .placeholder\:text-slate-500::placeholder,
+[data-theme="dark"] .placeholder\:text-slate-400::placeholder {
+  color: #6f7987;
+}
+[data-theme="dark"] .disabled\:text-slate-600:disabled,
+[data-theme="dark"] .disabled\:text-slate-300:disabled {
+  color: #5a6472;
+}
+
+/* White is the page in light mode and the card itself in dark mode. */
+[data-theme="dark"] .bg-white {
+  background-color: var(--surface);
+}
+[data-theme="dark"] .hover\:bg-white:hover,
+[data-theme="dark"] .focus\:bg-white:focus {
+  background-color: var(--surface-muted);
+}
+[data-theme="dark"] .hover\:bg-white\/60:hover {
+  background-color: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+/* Solid status fills keep white label text, so they keep a deep background in dark mode. */
+[data-theme="dark"] .bg-emerald-700 { background-color: #0e6b4a; }
+[data-theme="dark"] .bg-rose-700 { background-color: #9f1239; }
+[data-theme="dark"] .bg-amber-700 { background-color: #92400e; }
+[data-theme="dark"] .bg-indigo-700 { background-color: #3730a3; }
+[data-theme="dark"] .bg-purple-700 { background-color: #6b21a8; }
+
+/* A filled Brand Blue control takes dark ink in dark mode: white on #5A9BE0 does not read. */
+[data-theme="dark"] .bg-\[var\(--accent\)\] {
+  color: var(--accent-fg);
+}
+[data-theme="dark"] .bg-\[var\(--signal\)\] {
+  color: #191008;
 }
 
 @media (prefers-reduced-motion: reduce) {

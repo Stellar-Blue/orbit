@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { Badge } from '@/components/ui/primitives';
 import { formatDate } from '@/lib/date';
 import { AlertCircle, Clock, CheckCircle, Zap, FileCheck, EyeOff } from 'lucide-react';
@@ -58,6 +58,7 @@ const timingLabel = (timing: string) => {
 const formatDay = (value?: string) => (value ? formatDate(value) : '—');
 
 export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQuickCreate, onDismiss }) => {
+  const gridTheme = useOrbitGridTheme();
   const rowData = useMemo<BillingActionRow[]>(() => {
     return items.map(item => ({
       item,
@@ -196,7 +197,7 @@ export const BillingActionGrid: React.FC<BillingActionGridProps> = ({ items, onQ
   return (
     <div className="h-full w-full min-h-0">
       <AgGridReact<BillingActionRow>
-        theme={orbitGridTheme}
+        theme={gridTheme}
         rowData={rowData}
         columnDefs={columnDefs}
         defaultColDef={{ sortable: true, filter: true, floatingFilter: false, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

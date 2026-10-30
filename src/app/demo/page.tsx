@@ -17,7 +17,7 @@ export default function DemoEntryPage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center gap-3 bg-slate-50 text-slate-500">
-      <Loader2 className="h-8 w-8 animate-spin text-[#2f6fa3]" />
+      <Loader2 className="h-8 w-8 animate-spin text-[var(--accent)]" />
       <p className="text-sm font-semibold">Preparing the Orbit demo workspace…</p>
       <p className="text-xs text-slate-400">Sample data only — no company records are shown.</p>
     </div>

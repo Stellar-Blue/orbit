@@ -103,7 +103,7 @@ export const MonthRangePicker: React.FC<MonthRangePickerProps> = ({ from, to, on
         title="Pick the month range"
         className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-white transition-colors cursor-pointer"
       >
-        <CalendarRange className="w-3.5 h-3.5 text-[#2f6fa3]" />
+        <CalendarRange className="w-3.5 h-3.5 text-[var(--accent)]" />
         <span className="font-mono">{rangeText}</span>
       </button>
 
@@ -139,11 +139,11 @@ export const MonthRangePicker: React.FC<MonthRangePickerProps> = ({ from, to, on
                   aria-pressed={isEdge}
                   className={`h-8 text-[11px] rounded-lg font-bold transition-colors cursor-pointer ${
                     isEdge
-                      ? 'bg-[#2f6fa3] text-white font-black shadow-sm'
+                      ? 'bg-[var(--accent)] text-white font-black shadow-sm'
                       : inRange
-                        ? 'bg-[#2f6fa3]/15 text-[#2f6fa3]'
+                        ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
                         : 'text-slate-700 hover:bg-slate-100'
-                  } ${idx === thisMonth && !isEdge ? 'ring-1 ring-[#2f6fa3]/50' : ''}`}
+                  } ${idx === thisMonth && !isEdge ? 'ring-1 ring-[var(--accent)]/50' : ''}`}
                 >
                   {name}
                 </button>

@@ -582,7 +582,7 @@ export function IntegrationsSettings() {
                   Privacy rule: labels must stay generic — sick leave must be indistinguishable from annual leave to colleagues.
                 </p>
               </div>
-              <Button size="sm" variant="primary" onClick={handleSave} disabled={saving} className="bg-[#2f6fa3] text-white cursor-pointer shrink-0">
+              <Button size="sm" variant="primary" onClick={handleSave} disabled={saving} className="bg-[var(--accent)] text-white cursor-pointer shrink-0">
                 {saving ? 'Saving…' : 'Save Labels'}
               </Button>
             </div>
@@ -608,7 +608,7 @@ export function IntegrationsSettings() {
                 <ShieldCheck className="w-4 h-4 text-indigo-500" />
                 <h4 className="font-bold text-slate-900 text-sm">Who Must Connect Slack</h4>
               </div>
-              <button onClick={() => { loadRequired(); refreshIntegrationState(); }} className="text-[11px] font-bold text-[#2f6fa3] flex items-center gap-1 cursor-pointer">
+              <button onClick={() => { loadRequired(); refreshIntegrationState(); }} className="text-[11px] font-bold text-[var(--accent)] flex items-center gap-1 cursor-pointer">
                 <RefreshCw className="w-3 h-3" /> Refresh
               </button>
             </div>
@@ -691,7 +691,7 @@ export function IntegrationsSettings() {
                         checked={p.slack_required}
                         disabled={savingRequiredId === p.id || bulkSaving}
                         onChange={e => toggleRequired(p.id, e.target.checked)}
-                        className="w-4 h-4 text-[#2f6fa3] rounded cursor-pointer"
+                        className="w-4 h-4 text-[var(--accent)] rounded cursor-pointer"
                       />
                       Required
                     </label>
@@ -721,7 +721,7 @@ export function IntegrationsSettings() {
                   type="checkbox"
                   checked={outlook.enabled}
                   onChange={e => setOutlook(prev => ({ ...prev, enabled: e.target.checked }))}
-                  className="w-4 h-4 text-[#2f6fa3] rounded cursor-pointer"
+                  className="w-4 h-4 text-[var(--accent)] rounded cursor-pointer"
                 />
                 Mirroring {outlook.enabled ? 'enabled' : 'disabled'}
               </label>
@@ -765,7 +765,7 @@ export function IntegrationsSettings() {
               <span className="text-[10px] text-slate-400 font-mono mr-auto">
                 {outlookLoaded ? `Horizon: ${outlook.horizon_days} days · Athens timezone` : 'Loading…'}
               </span>
-              <Button size="sm" variant="primary" onClick={handleSaveOutlook} disabled={savingOutlook} className="bg-[#2f6fa3] text-white cursor-pointer">
+              <Button size="sm" variant="primary" onClick={handleSaveOutlook} disabled={savingOutlook} className="bg-[var(--accent)] text-white cursor-pointer">
                 {savingOutlook ? 'Saving…' : 'Save Outlook Settings'}
               </Button>
             </div>
@@ -783,7 +783,7 @@ export function IntegrationsSettings() {
               </div>
               <a
                 href="/api/msal/admin-consent"
-                className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#2f6fa3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0"
+                className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[var(--accent)] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0"
               >
                 <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Grant admin consent
               </a>
@@ -879,7 +879,7 @@ export function IntegrationsSettings() {
             <AlertTriangle className="w-4 h-4 text-amber-500" />
             <h4 className="font-bold text-slate-900 text-sm">Integration Exceptions</h4>
           </div>
-          <button onClick={() => { refreshIntegrationState(); loadExemptions(); }} className="text-[11px] font-bold text-[#2f6fa3] flex items-center gap-1 cursor-pointer">
+          <button onClick={() => { refreshIntegrationState(); loadExemptions(); }} className="text-[11px] font-bold text-[var(--accent)] flex items-center gap-1 cursor-pointer">
             <RefreshCw className="w-3 h-3" /> Refresh
           </button>
         </div>
@@ -935,7 +935,7 @@ export function IntegrationsSettings() {
           <>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-[#2f6fa3]" />
+                <KeyRound className="w-4 h-4 text-[var(--accent)]" />
                 <h4 className="font-bold text-slate-900 text-sm">AADE myDATA — Automatic Invoice Import</h4>
               </div>
               <Badge variant={mydata.configured ? 'success' : 'warning'} className={mydata.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}>
@@ -1019,7 +1019,7 @@ export function IntegrationsSettings() {
                 <Button size="sm" variant="outline" onClick={handleResetMyData} disabled={resettingMyData || syncingMyData || !mydata.configured} className="text-amber-700 border-amber-300 bg-white cursor-pointer" title="Reset the sync cursor to MARK 0 and fully re-import every AADE document">
                   <RotateCcw className={`w-3.5 h-3.5 mr-1 ${resettingMyData ? 'animate-spin' : ''}`} /> {resettingMyData ? 'Resetting…' : 'Reset & Full Resync'}
                 </Button>
-                <Button size="sm" variant="primary" onClick={handleSaveMyData} disabled={savingMyData || !mydataUsername.trim() || !mydataKey.trim()} className="bg-[#2f6fa3] text-white cursor-pointer">
+                <Button size="sm" variant="primary" onClick={handleSaveMyData} disabled={savingMyData || !mydataUsername.trim() || !mydataKey.trim()} className="bg-[var(--accent)] text-white cursor-pointer">
                   {savingMyData ? 'Saving…' : 'Save Credentials'}
                 </Button>
               </div>

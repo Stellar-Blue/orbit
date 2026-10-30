@@ -124,7 +124,7 @@ export default function ContractNoticeReportPage() {
                     <td className="px-5 py-3 text-right">
                       <Link
                         href={`/contracts/${contract.id}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-[#2f6fa3] hover:text-[#2f6ea9] transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors"
                       >
                         Open dossier <ArrowUpRight className="w-3 h-3" />
                       </Link>
@@ -143,10 +143,10 @@ export default function ContractNoticeReportPage() {
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <Link href="/contracts" className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-[#2f6fa3] transition-colors mb-2">
+          <Link href="/contracts" className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-[var(--accent)] transition-colors mb-2">
             <ArrowLeft className="w-3.5 h-3.5" /> Contract registry
           </Link>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+          <h1 className="text-2xl font-semibold text-slate-800 tracking-tight flex items-center">
             <CalendarClock className="w-6 h-6 mr-3 text-rose-600" /> Action Required — Contract Notice Windows
           </h1>
           <p className="text-slate-500 text-xs mt-1">
@@ -161,7 +161,7 @@ export default function ContractNoticeReportPage() {
             value={query}
             onChange={event => setQuery(event.target.value)}
             placeholder="Search counterparty or contract…"
-            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
       </div>

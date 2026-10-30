@@ -420,7 +420,7 @@ export default function ReportsPage() {
       <div className="p-8 max-w-4xl mx-auto text-center">
         <Card className="p-8 border-red-200 bg-red-50 text-red-900 rounded-2xl">
           <AlertTriangle className="w-12 h-12 text-red-600 mx-auto mb-3" />
-          <h2 className="text-xl font-bold">Admin Authorization Required</h2>
+          <h2 className="text-xl font-semibold">Admin Authorization Required</h2>
           <p className="text-xs text-red-700 mt-2">
             Invoice archives, corporate banking references, and real-time cashflow schedules are restricted to authenticated executive administrators under strict Row-Level Security (RLS).
           </p>
@@ -437,22 +437,22 @@ export default function ReportsPage() {
           onClick={() => setActiveTab('evaluation')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'evaluation'
-              ? 'bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/30 shadow-sm'
+              ? 'bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30 shadow-sm'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <BarChart3 className="w-4 h-4 text-[#2f6fa3]" />
+          <BarChart3 className="w-4 h-4 text-[var(--accent)]" />
           <span>Counterparty Evaluation</span>
         </button>
         <button
           onClick={() => setActiveTab('reconciliation')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'reconciliation'
-              ? 'bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/30 shadow-sm'
+              ? 'bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30 shadow-sm'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4 text-[#2f6fa3]" />
+          <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />
           <span>Expected vs. Actual & Month Close</span>
           {(monthDrift.uninvoicedArAmount > 0 || monthDrift.missingDocumentsCount > 0) && (
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Action needed in current month" />
@@ -726,7 +726,7 @@ export default function ReportsPage() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-[#2f6fa3]" />
+                  <Calendar className="w-4 h-4 text-[var(--accent)]" />
                   <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Period</span>
                 </div>
                 <select

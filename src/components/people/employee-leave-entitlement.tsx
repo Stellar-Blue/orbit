@@ -155,7 +155,7 @@ export function EmployeeLeaveEntitlement({ profileId }: { profileId: string }) {
           placeholder={`${currentYear - 1}, ${currentYear}…`}
           className={`${inputCls} w-28`}
         />
-        <button type="button" onClick={addYear} className="inline-flex items-center text-[10px] font-bold text-[#2f6fa3] hover:underline px-1.5 py-1 cursor-pointer"><Plus className="w-3 h-3 mr-0.5" /> Add year</button>
+        <button type="button" onClick={addYear} className="inline-flex items-center text-[10px] font-bold text-[var(--accent)] hover:underline px-1.5 py-1 cursor-pointer"><Plus className="w-3 h-3 mr-0.5" /> Add year</button>
         {flash && <span className="text-[10px] font-bold text-emerald-700 animate-in fade-in">{flash}</span>}
       </div>
 

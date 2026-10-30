@@ -124,7 +124,7 @@ function MyProfileInner() {
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">My Profile</h1>
+        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">My Profile</h1>
         <p className="text-xs text-slate-500 mt-0.5">Your personal information, photo and integration connections</p>
       </div>
 
@@ -132,7 +132,7 @@ function MyProfileInner() {
         {/* Left: identity card */}
         <Card className="p-6 flex flex-col items-center text-center">
           <div className="relative">
-            <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[#2f6fa3] to-indigo-600 text-white flex items-center justify-center text-3xl font-black shadow-lg shadow-blue-500/20 overflow-hidden">
+            <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[var(--accent)] to-indigo-600 text-white flex items-center justify-center text-3xl font-black shadow-lg shadow-blue-500/20 overflow-hidden">
               {currentUser.photo_url ? (
                 <img src={currentUser.photo_url} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -185,7 +185,7 @@ function MyProfileInner() {
             </label>
           </div>
 
-          <h2 className="text-lg font-black text-slate-900 mt-4">{currentUser.first_name} {currentUser.last_name}</h2>
+          <h2 className="text-lg font-semibold text-slate-900 mt-4">{currentUser.first_name} {currentUser.last_name}</h2>
           <p className="text-sm text-slate-500 font-medium">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</p>
           <div className="flex items-center gap-2 mt-2">
             <Badge variant="info">{currentUser.employment_type.replace('_', ' ').toUpperCase()}</Badge>
@@ -219,7 +219,7 @@ function MyProfileInner() {
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <UserRound className="w-4 h-4 text-[#2f6fa3]" /> Personal Information
+                <UserRound className="w-4 h-4 text-[var(--accent)]" /> Personal Information
               </h3>
               {savedFlash && <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1 flex items-center gap-1"><Check className="w-3 h-3" /> Saved</span>}
             </div>
@@ -243,7 +243,7 @@ function MyProfileInner() {
                   <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+30 ..." className="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800" />
                 </div>
                 <div className="flex items-center gap-2 sm:col-span-2 pt-1">
-                  <Button size="sm" variant="primary" onClick={handleSave} disabled={saving} className="bg-[#2f6fa3] text-white cursor-pointer">
+                  <Button size="sm" variant="primary" onClick={handleSave} disabled={saving} className="bg-[var(--accent)] text-white cursor-pointer">
                     {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
                     {saving ? 'Saving…' : 'Save Changes'}
                   </Button>
@@ -287,7 +287,7 @@ function MyProfileInner() {
               read would strand a connected user with no way to disconnect. */}
           <Card className="p-6">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
-              <MessageSquare className="w-4 h-4 text-[#2f6fa3]" /> Slack Status Mirroring
+              <MessageSquare className="w-4 h-4 text-[var(--accent)]" /> Slack Status Mirroring
             </h3>
             <p className="text-xs text-slate-500 mb-4">
               Orbit mirrors your approved leave and remote days to Slack with self-clearing statuses. Orbit is master; Slack never writes back.
@@ -336,7 +336,7 @@ function MyProfileInner() {
                     </div>
                   </div>
                 </div>
-                <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#2f6fa3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
+                <a href={connectUrl} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[var(--accent)] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
                   {isRevoked ? <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> : <MessageSquare className="w-3.5 h-3.5 mr-1.5" />}
                   {isRevoked ? 'Reconnect Slack' : 'Connect Slack'}
                 </a>
@@ -409,7 +409,7 @@ function MyProfileInner() {
                       </div>
                     </div>
                   </div>
-                  <a href={`/api/msal/connect?next=${encodeURIComponent('/profile')}`} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[#2f6fa3] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
+                  <a href={`/api/msal/connect?next=${encodeURIComponent('/profile')}`} className="inline-flex items-center justify-center px-4 py-2 text-xs font-bold bg-[var(--accent)] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all no-underline shrink-0">
                     <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
                     {m365Integration?.status === 'revoked' ? 'Reconnect Microsoft' : 'Connect Microsoft'}
                   </a>

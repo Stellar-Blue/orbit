@@ -110,7 +110,7 @@ export function AttioSettings() {
               <div className="space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-[#2f6fa3] flex items-center justify-center font-black">
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-[var(--accent)] flex items-center justify-center font-black">
                       <Key className="w-5 h-5" />
                     </div>
                     <div>
@@ -134,7 +134,7 @@ export function AttioSettings() {
                         if (typeof window !== 'undefined') localStorage.setItem('orbit_attio_workspace', e.target.value);
                       }}
                       placeholder="e.g. StellarBlue Workspace"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-[#2f6fa3] focus:ring-2 focus:ring-[#2f6fa3]/10 transition-all text-sm"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/10 transition-all text-sm"
                     />
                   </div>
 
@@ -230,7 +230,7 @@ export function AttioSettings() {
                   }}
                   className="border-slate-300 text-slate-700 hover:bg-slate-50 font-bold px-4 cursor-pointer"
                 >
-                  <RefreshCw className={`w-4 h-4 mr-2 text-[#2f6fa3] ${isTestingApi ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 mr-2 text-[var(--accent)] ${isTestingApi ? 'animate-spin' : ''}`} />
                   {isTestingApi ? "Testing Connection..." : "Test Connection"}
                 </Button>
 
@@ -245,7 +245,7 @@ export function AttioSettings() {
                     }
                     notifySuccess('Attio API credentials saved.');
                   }}
-                  className="bg-[#2f6fa3] hover:bg-blue-600 text-white font-bold px-5 shadow-md shadow-blue-500/20 cursor-pointer"
+                  className="bg-[var(--accent)] hover:bg-blue-600 text-white font-bold px-5 shadow-md shadow-blue-500/20 cursor-pointer"
                 >
                   <Save className="w-4 h-4 mr-1.5" />
                   Save API Credentials
@@ -303,9 +303,9 @@ export function AttioSettings() {
                       Step 2: Subscribed Attio Events
                     </label>
                     <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-mono text-slate-700 space-y-1">
-                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#2f6fa3]" /> <code>company.record.created</code> (Trigger when CRM lead matures)</div>
-                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#2f6fa3]" /> <code>company.record.updated</code> (Trigger on legal name / VAT edits)</div>
-                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#2f6fa3]" /> <code>person.record.created</code> (Map corporate contact representatives)</div>
+                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[var(--accent)]" /> <code>company.record.created</code> (Trigger when CRM lead matures)</div>
+                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[var(--accent)]" /> <code>company.record.updated</code> (Trigger on legal name / VAT edits)</div>
+                      <div className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[var(--accent)]" /> <code>person.record.created</code> (Map corporate contact representatives)</div>
                     </div>
                   </div>
 
@@ -650,7 +650,7 @@ export function AttioSettings() {
           <Card className="p-6 border-slate-200/80 shadow-sm space-y-5 bg-slate-50/50">
             <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
               <h4 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-[#2f6fa3]" />
+                <Sliders className="w-5 h-5 text-[var(--accent)]" />
                 Automated Synchronization Rules & Governance Protocols
               </h4>
               <span className="text-xs font-mono text-slate-500">Protocol: orbit-counterparties-attio-guide</span>
@@ -674,7 +674,7 @@ export function AttioSettings() {
                     }}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2f6fa3]"></div>
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--accent)]"></div>
                 </label>
               </div>
 
@@ -695,7 +695,7 @@ export function AttioSettings() {
                     }}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2f6fa3]"></div>
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--accent)]"></div>
                 </label>
               </div>
             </div>

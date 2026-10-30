@@ -77,7 +77,7 @@ export default function RemoteWorkLogPage() {
     return (
       <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
         <AlertTriangle className="w-10 h-10 mx-auto text-amber-600" />
-        <h2 className="text-xl font-bold text-slate-800">Module Hidden for Contractors</h2>
+        <h2 className="text-xl font-semibold text-slate-800">Module Hidden for Contractors</h2>
         <p className="text-xs text-slate-600">
           Contractors manage their own work location and are excluded from internal employee remote work declarations and ΕΡΓΑΝΗ remote logs.
         </p>
@@ -580,8 +580,8 @@ export default function RemoteWorkLogPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center">
-            <Globe className="w-6 h-6 mr-3 text-[#2f6fa3]" /> Remote Work Schedule & Declarations
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight flex items-center">
+            <Globe className="w-6 h-6 mr-3 text-[var(--accent)]" /> Remote Work Schedule & Declarations
           </h1>
           <p className="text-slate-500 text-xs mt-1">
             Declare remote work schedules, utilize pattern auto-fill templates, and inspect organizational office rosters.
@@ -590,7 +590,7 @@ export default function RemoteWorkLogPage() {
 
         {/* Compact Quota — rides the header's empty space */}
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs text-xs shrink-0">
-          <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[#2f6fa3] shrink-0">
+          <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[var(--accent)] shrink-0">
             <Clock className="w-4 h-4" />
           </div>
           <span className="font-bold uppercase tracking-wider text-slate-700 shrink-0 hidden md:inline">
@@ -627,7 +627,7 @@ export default function RemoteWorkLogPage() {
               <div className="relative group mb-3 inline-block">
                 <button
                   type="button"
-                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-[#2f6fa3]/10 text-slate-500 hover:text-[#2f6fa3] border border-slate-200 flex items-center justify-center cursor-pointer transition-colors"
+                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-[var(--accent)]/10 text-slate-500 hover:text-[var(--accent)] border border-slate-200 flex items-center justify-center cursor-pointer transition-colors"
                   aria-label="Pattern helper info"
                 >
                   <Info className="w-4 h-4" />
@@ -672,7 +672,7 @@ export default function RemoteWorkLogPage() {
                         onClick={() => setPattern({ ...pattern, [day]: 'remote_gr' })}
                         className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer text-[11px] ${
                           pattern[day] === 'remote_gr' 
-                            ? 'bg-[#2f6fa3] text-white shadow-xs font-extrabold' 
+                            ? 'bg-[var(--accent)] text-white shadow-xs font-extrabold' 
                             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
@@ -702,7 +702,7 @@ export default function RemoteWorkLogPage() {
               </span>
               <Button 
                 variant="primary" 
-                className="w-full bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white font-extrabold py-2.5 rounded-xl shadow-xs text-xs flex items-center justify-center"
+                className="w-full bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white font-extrabold py-2.5 rounded-xl shadow-xs text-xs flex items-center justify-center"
                 onClick={() => handleAutoFill('month')}
               >
                 <Zap className="w-4 h-4 mr-1.5 text-amber-300 fill-amber-300" />
@@ -786,7 +786,7 @@ export default function RemoteWorkLogPage() {
                         : day.isWeekend
                           ? 'bg-slate-50 text-slate-400'
                           : day.isToday
-                            ? 'bg-blue-50/30 ring-2 ring-inset ring-[#2f6fa3] cursor-pointer hover:bg-blue-50/50'
+                            ? 'bg-blue-50/30 ring-2 ring-inset ring-[var(--accent)] cursor-pointer hover:bg-blue-50/50'
                             : 'bg-white hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
@@ -805,7 +805,7 @@ export default function RemoteWorkLogPage() {
                       <span
                         className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ml-auto ${
                           day.isToday
-                            ? 'bg-[#2f6fa3] text-white font-extrabold shadow-sm'
+                            ? 'bg-[var(--accent)] text-white font-extrabold shadow-sm'
                             : day.isCurrentMonth
                               ? 'text-slate-800'
                               : 'text-slate-400'
@@ -876,7 +876,7 @@ export default function RemoteWorkLogPage() {
                   </>
                 ) : (
                   <>
-                    <Globe className="w-5 h-5 mr-2 text-[#2f6fa3]" /> Declare Remote Schedule
+                    <Globe className="w-5 h-5 mr-2 text-[var(--accent)]" /> Declare Remote Schedule
                   </>
                 )}
               </h3>
@@ -913,7 +913,7 @@ export default function RemoteWorkLogPage() {
                     type="button"
                     onClick={() => setTargetMode('remote_gr')}
                     className={`p-2.5 rounded-xl font-extrabold border transition-all flex flex-col items-center justify-center text-center ${
-                      targetMode === 'remote_gr' ? 'bg-[#2f6fa3] text-white border-[#2f6fa3] shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      targetMode === 'remote_gr' ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     <span>🏠</span>
@@ -966,7 +966,7 @@ export default function RemoteWorkLogPage() {
                 <Button variant="secondary" type="button" onClick={() => { setActionModalMode(null); setSelectedDateForAction(null); }}>
                   Cancel
                 </Button>
-                <Button variant="primary" type="submit" className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white font-extrabold px-6">
+                <Button variant="primary" type="submit" className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white font-extrabold px-6">
                   {actionModalMode === 'amend' && !isAdmin ? 'Submit Amendment Request →' : 'Save Declaration →'}
                 </Button>
               </div>
@@ -979,7 +979,7 @@ export default function RemoteWorkLogPage() {
       {(myAmendmentRequests.length > 0 || pendingAdminQueue.length > 0) && (
         <div className="space-y-4 pt-6 border-t border-slate-200/80">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center">
+            <h2 className="text-lg font-semibold text-slate-900 tracking-tight flex items-center">
               <FileText className="w-5 h-5 mr-2 text-amber-600" /> Past Record Amendment Requests
             </h2>
             <Badge variant="info">Audit Compliance Queue</Badge>
@@ -1021,7 +1021,7 @@ export default function RemoteWorkLogPage() {
                       <div key={req.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                         <div>
                           <p className="font-extrabold text-slate-900 text-sm">{emp ? `${emp.first_name} ${emp.last_name}` : 'Employee'}</p>
-                          <p className="text-slate-700 mt-0.5">Target Date: <strong className="font-mono">{req.date}</strong> &rarr; Requesting <strong className="text-[#2f6fa3] font-bold">{req.requested_mode.replace('_', ' ').toUpperCase()}</strong></p>
+                          <p className="text-slate-700 mt-0.5">Target Date: <strong className="font-mono">{req.date}</strong> &rarr; Requesting <strong className="text-[var(--accent)] font-bold">{req.requested_mode.replace('_', ' ').toUpperCase()}</strong></p>
                           <p className="text-slate-600 italic mt-1 bg-white p-2 rounded border border-slate-200/80">"{req.reason}"</p>
                         </div>
                         <div className="flex items-center space-x-2 shrink-0">
@@ -1052,8 +1052,8 @@ export default function RemoteWorkLogPage() {
       {(myQuotaRequests.length > 0 || pendingQuotaQueue.length > 0) && (
         <div className="space-y-4 pt-6 border-t border-slate-200/80">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center">
-              <Zap className="w-5 h-5 mr-2 text-[#2f6fa3]" /> Remote Quota Exception Requests
+            <h2 className="text-lg font-semibold text-slate-900 tracking-tight flex items-center">
+              <Zap className="w-5 h-5 mr-2 text-[var(--accent)]" /> Remote Quota Exception Requests
             </h2>
             <Badge variant="info">Approval Queue</Badge>
           </div>
@@ -1108,7 +1108,7 @@ export default function RemoteWorkLogPage() {
                       <div key={req.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                         <div>
                           <p className="font-extrabold text-slate-900 text-sm">{emp ? `${emp.first_name} ${emp.last_name}` : 'Employee'}</p>
-                          <p className="text-slate-700 mt-0.5">Date: <strong className="font-mono">{req.date}</strong> &rarr; Requesting <strong className="text-[#2f6fa3] font-bold">{req.requested_mode.replace('_', ' ').toUpperCase()}</strong></p>
+                          <p className="text-slate-700 mt-0.5">Date: <strong className="font-mono">{req.date}</strong> &rarr; Requesting <strong className="text-[var(--accent)] font-bold">{req.requested_mode.replace('_', ' ').toUpperCase()}</strong></p>
                           {req.period_used != null && req.period_max != null && (
                             <p className="text-slate-500 mt-0.5">Quota at request: <strong className="font-mono">{req.period_used}/{req.period_max}</strong>{req.location && <> &bull; Location: <strong>{req.location}</strong></>}</p>
                           )}

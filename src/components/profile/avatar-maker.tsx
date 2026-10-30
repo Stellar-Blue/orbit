@@ -192,7 +192,7 @@ export function AvatarMaker({ value, personName, onClose, onSave }: AvatarMakerP
           </div>
         </section>
 
-        <div className="order-first flex flex-col items-center justify-center gap-5 bg-[#f1f1ef] px-5 py-6 md:order-none">
+        <div className="order-first flex flex-col items-center justify-center gap-5 bg-[var(--surface-sunken)] px-5 py-6 md:order-none">
           <div className="rounded-full shadow-[0_1px_0_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.06)]">
             <AvatarArt config={config} size={220} className="h-40 w-40 rounded-full md:h-[260px] md:w-[260px]" title={`${personName}'s avatar`} />
           </div>

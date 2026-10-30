@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { Counterparty, Contract, CatalogModule, CatalogItem, Role } from '@/lib/types';
 import { Badge } from '@/components/ui/primitives';
@@ -58,6 +58,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
   getContractCount,
   getContractArr
 }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls(externalFilters);
   const { quickFilter, setQuickFilter } = gridFilters;
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
       headerName: 'Legal / Trade Name', field: 'name', minWidth: 240, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<CpRow, string>) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[#2f6fa3] font-bold text-xs shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[var(--accent)] font-bold text-xs shrink-0">
             {(p.value || '').slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -114,7 +115,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
         <button
           type="button"
           onClick={(e) => copyUuid(p.value || '', e)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#2f6fa3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[var(--accent)] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
           title="Click to copy full UUID"
         >
           <span>{(p.value || '').slice(0, 8)}...{(p.value || '').slice(-4)}</span>
@@ -244,7 +245,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
             placeholder="Search counterparties across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -256,7 +257,7 @@ export const CounterpartiesGrid: React.FC<CounterpartiesGridProps> = ({
       </div>
       <div className="h-[540px]">
         <AgGridReact<CpRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

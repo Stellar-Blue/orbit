@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import { roleLabel } from "@/lib/profile-role";
 import { hiddenScreenForPath } from "@/lib/screens";
 import { exitDemoMode } from "@/lib/demo-mode";
+import { ThemeToggle } from "@/lib/theme";
 import { Menu, Search, Eye, EyeOff, Users, ShieldAlert, Sparkles, LogOut } from "lucide-react";
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -34,7 +35,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
   if (isAuthPage) {
     return (
-      <div className="flex-1 flex flex-col min-h-screen w-full bg-slate-50 selection:bg-[#2f6fa3] selection:text-white">
+      <div className="flex-1 flex flex-col min-h-screen w-full bg-slate-50 selection:bg-[var(--accent)] selection:text-white">
         {children}
       </div>
     );
@@ -44,7 +45,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
     return (
       <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50">
         <div className="flex flex-col items-center justify-center">
-          <div className="w-8 h-8 rounded-full border-4 border-[#2f6fa3] border-t-transparent animate-spin" />
+          <div className="w-8 h-8 rounded-full border-4 border-[var(--accent)] border-t-transparent animate-spin" />
         </div>
       </div>
     );
@@ -56,7 +57,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
       <CommandMenu />
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden w-full max-w-full">
         {isDemo && (
-          <div className="bg-[var(--signal-soft)] text-[#7c2d12] border-b border-[#f2c6a8] px-3 sm:px-4 md:px-5 py-2 text-[11px] sm:text-xs font-medium flex flex-wrap items-center justify-between gap-2">
+          <div className="bg-[var(--signal-soft)] text-[var(--signal)] border-b border-[color-mix(in_srgb,var(--signal)_35%,transparent)] px-3 sm:px-4 md:px-5 py-2 text-[11px] sm:text-xs font-medium flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-[var(--signal)] shrink-0" />
               <span>Demo workspace — sample data only. Nothing you change here is saved.</span>
@@ -64,7 +65,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
             <button
               type="button"
               onClick={() => { exitDemoMode(); window.location.assign('/login'); }}
-              className="flex items-center gap-1.5 rounded-[4px] border border-[#e2b28f] bg-white hover:bg-white/60 px-2.5 py-1 font-semibold text-[#7c2d12] transition-colors cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 rounded-[4px] border border-[color-mix(in_srgb,var(--signal)_40%,transparent)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] px-2.5 py-1 font-semibold text-[var(--signal)] transition-colors cursor-pointer shrink-0"
             >
               <LogOut className="w-3 h-3" /> Exit demo
             </button>
@@ -88,6 +89,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
           </div>
           
           <div className="flex items-center space-x-3 shrink-0">
+            <ThemeToggle />
             {realUserRole === 'admin' && !isViewAsEmployee && (
               <>
                 <button
@@ -152,7 +154,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
         {/* Persistent Admin Employee-Preview Mode Ribbon */}
         {realUserRole === 'admin' && isViewAsEmployee && (
-          <div className="bg-[var(--signal)] text-white px-3 sm:px-4 md:px-5 py-2 text-[11.5px] font-semibold flex flex-wrap items-center justify-between gap-3 border-b border-[#9a3412] animate-in slide-in-from-top duration-200">
+          <div className="bg-[var(--signal)] text-white px-3 sm:px-4 md:px-5 py-2 text-[11.5px] font-semibold flex flex-wrap items-center justify-between gap-3 border-b border-[color-mix(in_srgb,var(--signal)_70%,black)] animate-in slide-in-from-top duration-200">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
               <span>
@@ -200,7 +202,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
           {blockedScreen ? (
             <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
               <ShieldAlert className="w-10 h-10 mx-auto text-slate-400" />
-              <h2 className="text-xl font-bold text-slate-800">{blockedScreen.label} is not available</h2>
+              <h2 className="text-xl font-semibold text-slate-800">{blockedScreen.label} is not available</h2>
               <p className="text-xs text-slate-600 leading-relaxed">
                 An administrator has turned off this screen. If you need it, ask an administrator
                 to switch it back on in Settings &rsaquo; Screen Visibility.

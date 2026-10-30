@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { Contract, CatalogModule, CatalogItem } from '@/lib/types';
@@ -12,7 +12,6 @@ import { contractEndCustomerName, isSubcontract, primeFeePct } from '@/lib/subco
 import { Badge } from '@/components/ui/primitives';
 import { Copy, Check, Trash2, Search } from 'lucide-react';
 
-const gridTheme = orbitGridTheme;
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   draft: 'neutral',
@@ -84,6 +83,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
   onDelete,
   onOpenCounterparty
 }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls(externalFilters);
   const { quickFilter, setQuickFilter } = gridFilters;
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -325,7 +325,7 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
             placeholder="Quick filter across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -359,10 +359,10 @@ export const ContractsGrid: React.FC<ContractsGridProps> = ({
       </div>
       <style jsx global>{`
         .contract-row-urgent {
-          background-color: #fff7f8 !important;
+          background-color: color-mix(in srgb, var(--danger-soft) 60%, var(--surface)) !important;
         }
         .contract-row-urgent:hover {
-          background-color: #ffeff1 !important;
+          background-color: color-mix(in srgb, var(--danger-soft) 85%, var(--surface)) !important;
         }
       `}</style>
     </div>

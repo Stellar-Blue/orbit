@@ -22,7 +22,7 @@ export default function ReconciliationPage() {
     return (
       <div className="p-10 text-center bg-rose-50 border border-rose-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
         <AlertTriangle className="w-10 h-10 mx-auto text-rose-600" />
-        <h2 className="text-xl font-bold text-slate-800">403 Forbidden &mdash; Strictly Admin Restricted</h2>
+        <h2 className="text-xl font-semibold text-slate-800">403 Forbidden &mdash; Strictly Admin Restricted</h2>
         <p className="text-xs text-slate-600">
           ΕΡΓΑΝΗ II portal compliance reconciliation and E11/remote matching is accessible exclusively to Founders and Operations.
         </p>
@@ -49,7 +49,7 @@ export default function ReconciliationPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+          <h1 className="text-2xl font-semibold text-slate-800 tracking-tight flex items-center">
             <ShieldCheck className="w-6 h-6 mr-3 text-rose-600" /> ΕΡΓΑΝΗ II Portal Compliance & Reconciliation
           </h1>
           <p className="text-slate-500 text-xs mt-1">
@@ -57,7 +57,7 @@ export default function ReconciliationPage() {
           </p>
         </div>
         <div>
-          <label className="inline-flex items-center justify-center font-medium rounded-lg transition-all px-4 py-2 text-sm bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white shadow-sm cursor-pointer">
+          <label className="inline-flex items-center justify-center font-medium rounded-lg transition-all px-4 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white shadow-sm cursor-pointer">
             <Upload className="w-4 h-4 mr-2" /> Upload Ministry Excel/CSV Export
             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
           </label>
@@ -82,7 +82,7 @@ export default function ReconciliationPage() {
           title="Reconciliation Engine Status" 
           value="Synchronized"
           subtitle="Last run: Today at 11:30 AM"
-          icon={<CheckCircle className="w-5 h-5 text-[#2f6fa3]" />}
+          icon={<CheckCircle className="w-5 h-5 text-[var(--accent)]" />}
         />
       </div>
 
@@ -96,7 +96,7 @@ export default function ReconciliationPage() {
           </p>
           <div className="pt-2 flex justify-center space-x-3">
             <Button size="sm" variant="secondary" onClick={() => alert('Simulated deep re-index against local state.')} className="cursor-pointer">
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[#2f6fa3]" /> Re-run Reconciliation Check
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)]" /> Re-run Reconciliation Check
             </Button>
           </div>
         </div>

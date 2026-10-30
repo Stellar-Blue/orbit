@@ -67,7 +67,7 @@ export function ValidationHost() {
     error: { bar: 'bg-rose-600', label: 'Attention required', icon: <XCircle className="w-5 h-5" /> },
     warning: { bar: 'bg-amber-500', label: 'Heads up', icon: <AlertTriangle className="w-5 h-5" /> },
     success: { bar: 'bg-emerald-600', label: 'Done', icon: <CheckCircle2 className="w-5 h-5" /> },
-    info: { bar: 'bg-[#2f6fa3]', label: 'Information', icon: <Info className="w-5 h-5" /> },
+    info: { bar: 'bg-[var(--accent)]', label: 'Information', icon: <Info className="w-5 h-5" /> },
   };
   const p = palette[type];
 
@@ -109,7 +109,7 @@ export function ValidationHost() {
               onClick={() => setVisible(false)}
               className={notice.action
                 ? "flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold cursor-pointer transition-colors"
-                : "w-full py-2.5 rounded-xl bg-[#2f6fa3] hover:bg-[#3272B4] text-white text-sm font-bold cursor-pointer transition-colors"}
+                : "w-full py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm font-bold cursor-pointer transition-colors"}
             >
               OK
             </button>

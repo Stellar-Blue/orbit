@@ -43,13 +43,13 @@ const OptionsFilterBody: React.FC<OptionsFilterBodyProps> = ({
           value={search}
           onChange={e => onSearch(e.target.value)}
           placeholder="Search values..."
-          className="w-full bg-white border border-slate-200 rounded-md pl-8 pr-2 py-1 text-xs text-slate-800 focus:outline-none focus:border-[#2f6fa3]"
+          className="w-full bg-white border border-slate-200 rounded-md pl-8 pr-2 py-1 text-xs text-slate-800 focus:outline-none focus:border-[var(--accent)]"
           autoFocus
         />
       </div>
     </div>
     <div className="px-3 py-1.5 border-b border-slate-200 flex items-center gap-1.5 cursor-pointer select-none hover:bg-slate-50" onClick={onToggleAll}>
-      {allSelected ? <CheckSquare className="w-3.5 h-3.5 text-[#2f6fa3]" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
+      {allSelected ? <CheckSquare className="w-3.5 h-3.5 text-[var(--accent)]" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
       <span className="text-[11px] font-bold text-slate-700">Select All</span>
       <span className="ml-auto text-[10px] text-slate-400 font-mono">
         {selected.size > 0 ? `${selected.size} selected` : `${values.length} value${values.length === 1 ? '' : 's'}`}
@@ -71,7 +71,7 @@ const OptionsFilterBody: React.FC<OptionsFilterBodyProps> = ({
               type="checkbox"
               checked={checked}
               onChange={() => onToggle(value)}
-              className="accent-[#2f6fa3] w-3.5 h-3.5 cursor-pointer mt-0.5 shrink-0"
+              className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer mt-0.5 shrink-0"
             />
             <span className={`text-xs break-words flex-1 ${checked ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{value}</span>
             <span className="text-[10px] text-slate-400 font-mono shrink-0 mt-0.5">{count}</span>

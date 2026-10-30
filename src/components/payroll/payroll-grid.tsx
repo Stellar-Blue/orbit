@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { bankReferences, formatBankReferences } from '@/lib/bank-references';
 import { PaymentRecord, Profile, PaymentType } from '@/lib/types';
@@ -91,7 +91,7 @@ const InlineBankRef: React.FC<{ row: PayrollRow; onUpdate: PayrollGridProps['onU
         if (e.key === 'Enter') commit();
         if (e.key === 'Escape') setDraft(null);
       }}
-      className="w-full px-1 py-0.5 border border-[#2f6fa3] rounded text-xs font-mono text-slate-800 focus:outline-none"
+      className="w-full px-1 py-0.5 border border-[var(--accent)] rounded text-xs font-mono text-slate-800 focus:outline-none"
     />
   );
 };
@@ -106,6 +106,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
   onUpdate,
   externalFilters
 }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls(externalFilters);
   const { quickFilter, setQuickFilter } = gridFilters;
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -189,7 +190,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
         <button
           type="button"
           onClick={(e) => copyUuid(p.value || '', e)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[#2f6fa3] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-[var(--accent)] border border-slate-200 rounded font-mono text-[10px] transition-colors cursor-pointer"
           title="Click to copy full Payment UUID"
         >
           <span>{(p.value || '').slice(0, 8)}...{(p.value || '').slice(-4)}</span>
@@ -201,7 +202,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
       headerName: 'Payment Type', field: 'paymentTypeEl', width: 150, sortable: true, ...excelSetFilter(),
       cellRenderer: (p: ICellRendererParams<PayrollRow, string>) => (
         <div>
-          <div className="text-xs text-[#2f6fa3] font-medium">{p.value}</div>
+          <div className="text-xs text-[var(--accent)] font-medium">{p.value}</div>
           <div className="text-[10px] text-slate-400 font-normal">{p.data?.paymentTypeEn}</div>
         </div>
       )
@@ -251,7 +252,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
                 row.missingDoc ? 'bg-amber-100 border-amber-300 text-amber-900 font-bold' : 'bg-slate-100 hover:bg-indigo-50 border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700'
               }`}
             >
-              <Paperclip className="w-3.5 h-3.5 text-[#2f6fa3] shrink-0" />
+              <Paperclip className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
               {row.docCount > 0 ? (
                 <span className="font-bold text-slate-900 flex items-center gap-1">
                   {row.docCount} doc{row.docCount !== 1 ? 's' : ''}
@@ -281,7 +282,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
             placeholder="Search payroll across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -293,7 +294,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
       </div>
       <div className="h-[560px]">
         <AgGridReact<PayrollRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}
@@ -313,7 +314,7 @@ export const PayrollGrid: React.FC<PayrollGridProps> = ({
       </div>
       <style jsx global>{`
         .payroll-row-missing-doc {
-          background-color: #fffbf5 !important;
+          background-color: color-mix(in srgb, var(--warning-soft) 60%, var(--surface)) !important;
         }
       `}</style>
     </div>

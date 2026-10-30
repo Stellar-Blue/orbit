@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { JobRole, Profile, ProfileRoleHistory, SeniorityLevel, Team } from '@/lib/types';
 import { EmployeeIntegration } from '@/lib/integrations/types';
@@ -52,6 +52,7 @@ interface PeopleGridProps {
 }
 
 export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integrations, profileRoleHistory, jobRoles, seniorityLevels, isAdmin = false, externalFilters, onSelect }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls(externalFilters);
   const { quickFilter, setQuickFilter } = gridFilters;
 
@@ -231,7 +232,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); if (p.data) onSelect(p.data.profile); }}
-          className="text-xs font-bold text-[#2f6fa3] hover:underline px-2 py-1 rounded hover:bg-blue-50 cursor-pointer"
+          className="text-xs font-bold text-[var(--accent)] hover:underline px-2 py-1 rounded hover:bg-blue-50 cursor-pointer"
         >
           View Profile →
         </button>
@@ -249,7 +250,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
             placeholder="Search people across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -261,7 +262,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
       </div>
       <div className="h-[520px]">
         <AgGridReact<PeopleRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

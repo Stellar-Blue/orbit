@@ -78,7 +78,7 @@ export function BlurredReveal({
             aria-hidden={!revealed}
             className={cn(
               "font-mono font-bold tracking-wider transition-all",
-              valueClassName ?? "text-[#2f6fa3]",
+              valueClassName ?? "text-[var(--accent)]",
               revealed ? "blur-none opacity-100" : cn("select-none opacity-90", blurClassName ?? "blur-[6px]")
             )}
           >
@@ -96,7 +96,7 @@ export function BlurredReveal({
           title={revealed ? 'Hide' : 'View'}
           aria-pressed={revealed}
           className={cn(
-            "inline-flex items-center px-2 py-0.5 rounded-md border border-slate-200 bg-white text-[10px] font-extrabold uppercase tracking-wide text-slate-500 hover:text-[#2f6fa3] hover:border-[#2f6fa3]/40 cursor-pointer transition-colors",
+            "inline-flex items-center px-2 py-0.5 rounded-md border border-slate-200 bg-white text-[10px] font-extrabold uppercase tracking-wide text-slate-500 hover:text-[var(--accent)] hover:border-[var(--accent)]/40 cursor-pointer transition-colors",
             buttonClassName
           )}
         >

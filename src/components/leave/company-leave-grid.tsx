@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton, type ExternalFilterSource } from '@/components/ui/grid-filter-controls';
 import { formatDate } from '@/lib/date';
 import { LeaveRequest, Profile, LeaveType } from '@/lib/types';
@@ -53,6 +53,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
   onDelete,
   externalFilters
 }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls(externalFilters);
   const { quickFilter, setQuickFilter } = gridFilters;
 
@@ -218,7 +219,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
                 onClick={(e) => { e.stopPropagation(); onEdit(row.req); }}
                 className="text-[11px] font-bold py-1 px-2.5 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-100 cursor-pointer flex items-center"
               >
-                <Edit3 className="w-3.5 h-3.5 mr-1 text-[#2f6fa3]" /> Modify
+                <Edit3 className="w-3.5 h-3.5 mr-1 text-[var(--accent)]" /> Modify
               </button>
             )}
             <button
@@ -245,7 +246,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
             placeholder="Search leave requests across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -257,7 +258,7 @@ export const CompanyLeaveGrid: React.FC<CompanyLeaveGridProps> = ({
       </div>
       <div className="h-[540px]">
         <AgGridReact<LeaveRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

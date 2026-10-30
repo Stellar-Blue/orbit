@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-filter-controls';
 import { formatDate, todayKey } from '@/lib/date';
 import { LeaveRequest, LeaveType } from '@/lib/types';
@@ -30,6 +30,7 @@ interface LeaveGridProps {
 }
 
 export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEffectiveDays, onCancelRequest }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls();
   const { quickFilter, setQuickFilter } = gridFilters;
   const today = todayKey();
@@ -136,7 +137,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
             placeholder="Search leave across all columns..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-400"
+            className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-400"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -148,7 +149,7 @@ export const LeaveGrid: React.FC<LeaveGridProps> = ({ leaves, leaveTypes, getEff
       </div>
       <div className="h-[420px]">
         <AgGridReact<LeaveRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

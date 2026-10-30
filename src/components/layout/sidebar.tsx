@@ -238,7 +238,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
                     <button
                       key={p.id}
                       onClick={() => { switchUser(p.id); setDropdownOpen(false); }}
-                      className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer ${p.id === currentUser.id ? 'bg-[#2f6fa3]/10 text-[#2f6fa3] border border-[#2f6fa3]/20 font-extrabold' : 'text-slate-700 font-medium'}`}
+                      className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer ${p.id === currentUser.id ? 'bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20 font-extrabold' : 'text-slate-700 font-medium'}`}
                     >
                       <div className="truncate pr-2">
                         <div className="font-bold truncate">{p.first_name} {p.last_name}</div>

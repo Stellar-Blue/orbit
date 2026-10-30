@@ -16,7 +16,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 export const Button: React.FC<ButtonProps> = ({ children, className, variant = 'primary', size = 'md', ...props }) => {
   const base = "inline-flex items-center justify-center gap-1.5 font-semibold tracking-[0.005em] rounded-[var(--radius-control)] border transition-colors duration-150 disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap select-none";
   const variants = {
-    primary: "bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white border-[var(--accent-hover)] active:bg-[#1f4d74] shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]",
+    primary: "bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white border-[var(--accent-hover)] active:bg-[var(--accent-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]",
     secondary: "bg-white hover:bg-[var(--surface-muted)] text-[var(--ink-2)] border-[var(--line-strong)] hover:text-[var(--ink)] hover:border-[var(--ink-4)]",
     outline: "bg-transparent hover:bg-white text-[var(--ink-3)] hover:text-[var(--ink)] border-[var(--line-strong)]",
     danger: "bg-rose-700 hover:bg-rose-800 text-white border-rose-800",

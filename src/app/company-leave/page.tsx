@@ -487,7 +487,7 @@ export default function CompanyLeaveManagementPage() {
       <div className="max-w-4xl mx-auto py-12 animate-in fade-in">
         <Card className="p-8 text-center bg-rose-50 border-rose-200 text-rose-900 shadow-sm">
           <ShieldAlert className="w-12 h-12 text-rose-600 mx-auto mb-3" />
-          <h2 className="text-xl font-black mb-2">Access Restricted to Administrators</h2>
+          <h2 className="text-xl font-semibold mb-2">Access Restricted to Administrators</h2>
           <p className="text-xs text-rose-700 max-w-md mx-auto">
             This administrative control center is restricted to StellarBlue Founders and HR Officers. To view your individual leave balance or request time off, please navigate to Personal Leave Management.
           </p>
@@ -512,8 +512,8 @@ export default function CompanyLeaveManagementPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center">
-            <Users className="w-6 h-6 mr-3 text-[#2f6fa3]" /> Company Leave &amp; Approvals Control Center
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight flex items-center">
+            <Users className="w-6 h-6 mr-3 text-[var(--accent)]" /> Company Leave &amp; Approvals Control Center
           </h1>
           <p className="text-slate-500 text-xs mt-1">
             Review employee time-off filings, process cancellation requests, configure mandatory closures, and customize available leave categories.
@@ -550,7 +550,7 @@ export default function CompanyLeaveManagementPage() {
           </Button>
           <Button
             onClick={() => setIsAddEmployeeLeaveOpen(true)}
-            className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 text-white font-extrabold text-xs px-4 py-2 shadow-sm flex items-center gap-2 cursor-pointer"
+            className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white font-extrabold text-xs px-4 py-2 shadow-sm flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Record Employee Leave
           </Button>
@@ -563,7 +563,7 @@ export default function CompanyLeaveManagementPage() {
           onClick={() => setActiveTab('approvals')}
           className={`pb-3 transition-all flex items-center cursor-pointer ${
             activeTab === 'approvals' 
-              ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3]' 
+              ? 'border-b-2 border-[var(--accent)] text-[var(--accent)]' 
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
@@ -580,7 +580,7 @@ export default function CompanyLeaveManagementPage() {
           onClick={() => setActiveTab('categories')}
           className={`pb-3 transition-all flex items-center cursor-pointer ${
             activeTab === 'categories' 
-              ? 'border-b-2 border-[#2f6fa3] text-[#2f6fa3]' 
+              ? 'border-b-2 border-[var(--accent)] text-[var(--accent)]' 
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
@@ -622,7 +622,7 @@ export default function CompanyLeaveManagementPage() {
                 <div className="text-3xl font-black text-slate-900 mt-1 font-mono">{leaveTypes.length}</div>
                 <span className="text-slate-500 text-[11px] block mt-1">Configured absence types active</span>
               </div>
-              <div className="w-12 h-12 rounded-2xl bg-[#2f6fa3]/10 border border-[#2f6fa3]/20 flex items-center justify-center text-[#2f6fa3] shrink-0 shadow-2xs">
+              <div className="w-12 h-12 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] shrink-0 shadow-2xs">
                 <Briefcase className="w-6 h-6" />
               </div>
             </Card>
@@ -661,7 +661,7 @@ export default function CompanyLeaveManagementPage() {
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Search by employee name..."
-                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40 transition-all"
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 transition-all"
                 />
               </div>
             </div>
@@ -796,7 +796,7 @@ export default function CompanyLeaveManagementPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-600">
-                    Dates Horizon: <strong className="text-[#2f6fa3] font-mono">{formatDate(ml.start_date)} &rarr; {formatDate(ml.end_date)}</strong> &bull; Announcement Notes: {ml.note}
+                    Dates Horizon: <strong className="text-[var(--accent)] font-mono">{formatDate(ml.start_date)} &rarr; {formatDate(ml.end_date)}</strong> &bull; Announcement Notes: {ml.note}
                   </p>
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-700 text-xs flex items-center justify-between font-medium">
                     <span>Fan-Out Status: <strong className="text-slate-900 font-extrabold">{fanoutCountFor(ml.id)} employee entr{fanoutCountFor(ml.id) === 1 ? 'y' : 'ies'}</strong> — all full-time and part-time staff eligible for the period (external contractors excluded).</span>
@@ -879,7 +879,7 @@ export default function CompanyLeaveManagementPage() {
                         onClick={() => openEditCategoryModal(lt)}
                         className="text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer flex items-center"
                       >
-                        <Edit3 className="w-3.5 h-3.5 mr-1 text-[#2f6fa3]" /> Edit Category Rules
+                        <Edit3 className="w-3.5 h-3.5 mr-1 text-[var(--accent)]" /> Edit Category Rules
                       </Button>
                       <Button
                         variant="danger"
@@ -966,7 +966,7 @@ export default function CompanyLeaveManagementPage() {
             </div>
             <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
               <Button variant="outline" size="sm" type="button" onClick={() => setEditingLeave(null)}>Cancel</Button>
-              <Button variant="primary" size="sm" type="submit" className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-black">Save Adjustments &rarr;</Button>
+              <Button variant="primary" size="sm" type="submit" className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 font-black">Save Adjustments &rarr;</Button>
             </div>
           </form>
         )}
@@ -1136,7 +1136,7 @@ export default function CompanyLeaveManagementPage() {
                 type="checkbox" 
                 checked={catCountsBalance} 
                 onChange={e => setCatCountsBalance(e.target.checked)} 
-                className="w-4 h-4 rounded text-[#2f6fa3] focus:ring-[#2f6fa3] cursor-pointer" 
+                className="w-4 h-4 rounded text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer" 
               />
               <div>
                 <span className="font-bold text-slate-900 block text-sm">Duct from Annual Holiday Quota</span>
@@ -1149,7 +1149,7 @@ export default function CompanyLeaveManagementPage() {
                 type="checkbox" 
                 checked={catRequiresApp} 
                 onChange={e => setCatRequiresApp(e.target.checked)} 
-                className="w-4 h-4 rounded text-[#2f6fa3] focus:ring-[#2f6fa3] cursor-pointer" 
+                className="w-4 h-4 rounded text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer" 
               />
               <div>
                 <span className="font-bold text-slate-900 block text-sm">Requires Founder / Admin Approval</span>
@@ -1162,7 +1162,7 @@ export default function CompanyLeaveManagementPage() {
                 type="checkbox" 
                 checked={catIsHidden} 
                 onChange={e => setCatIsHidden(e.target.checked)} 
-                className="w-4 h-4 rounded text-[#2f6fa3] focus:ring-[#2f6fa3] cursor-pointer" 
+                className="w-4 h-4 rounded text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer" 
               />
               <div>
                 <span className="font-bold text-slate-900 block text-sm">Hide from New Leave Requests (Archive / Disable)</span>
@@ -1173,7 +1173,7 @@ export default function CompanyLeaveManagementPage() {
 
           <div>
             <label className="block font-extrabold uppercase text-slate-500 mb-1 text-[11px]">
-              Minimum Advance Notice Requirement: <strong className="text-[#2f6fa3] font-mono">{catMinNotice} Days</strong>
+              Minimum Advance Notice Requirement: <strong className="text-[var(--accent)] font-mono">{catMinNotice} Days</strong>
             </label>
             <input 
               type="range" 
@@ -1181,7 +1181,7 @@ export default function CompanyLeaveManagementPage() {
               max="30" 
               value={catMinNotice} 
               onChange={e => setCatMinNotice(Number(e.target.value))} 
-              className="w-full cursor-pointer accent-[#2f6fa3]" 
+              className="w-full cursor-pointer accent-[var(--accent)]" 
             />
             <span className="text-[11px] text-slate-400 block mt-1">
               {catMinNotice === 0 ? "0 Days allows instant and retroactive reporting (e.g. Sick Leave)." : `Employees cannot apply for dates sooner than ${catMinNotice} working days in advance.`}
@@ -1190,7 +1190,7 @@ export default function CompanyLeaveManagementPage() {
 
           <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsCategoryModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" type="submit" className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-black">
+            <Button variant="primary" size="sm" type="submit" className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 font-black">
               {catEditingId ? "Save Category Changes" : "Create Leave Category"} &rarr;
             </Button>
           </div>
@@ -1208,7 +1208,7 @@ export default function CompanyLeaveManagementPage() {
             <select
               value={addEmpId || (profiles[0]?.id || '')}
               onChange={e => setAddEmpId(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
             >
               {profiles.map(p => (
                 <option key={p.id} value={p.id}>
@@ -1223,7 +1223,7 @@ export default function CompanyLeaveManagementPage() {
             <select
               value={addEmpLeaveTypeId || (leaveTypes.find(t => !t.is_hidden)?.id || leaveTypes[0]?.id || '')}
               onChange={e => setAddEmpLeaveTypeId(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
             >
               {leaveTypes.filter(lt => !lt.is_hidden || lt.id === addEmpLeaveTypeId).map(lt => (
                 <option key={lt.id} value={lt.id}>
@@ -1242,9 +1242,9 @@ export default function CompanyLeaveManagementPage() {
             />
           </div>
 
-          <div className="p-3.5 rounded-xl bg-[#2f6fa3]/10 border border-[#2f6fa3]/20 flex items-center justify-between text-xs text-slate-800 font-medium">
+          <div className="p-3.5 rounded-xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-between text-xs text-slate-800 font-medium">
             <span>Calculated Working Days (Excluding Weekends &amp; Greek Holidays):</span>
-            <span className="text-base font-black text-[#2f6fa3] font-mono">{addEmpCalculatedDays} Days</span>
+            <span className="text-base font-black text-[var(--accent)] font-mono">{addEmpCalculatedDays} Days</span>
           </div>
 
           <div>
@@ -1252,7 +1252,7 @@ export default function CompanyLeaveManagementPage() {
             <select
               value={addEmpStatus}
               onChange={e => setAddEmpStatus(e.target.value as any)}
-              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/20"
+              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-800 font-bold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
             >
               <option value="approved">Approved (Active schedule record)</option>
               <option value="taken">Taken (Past historical record)</option>
@@ -1273,7 +1273,7 @@ export default function CompanyLeaveManagementPage() {
 
           <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsAddEmployeeLeaveOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" type="submit" className="bg-[#2f6fa3] hover:bg-[#2f6fa3]/90 font-black cursor-pointer">
+            <Button variant="primary" size="sm" type="submit" className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 font-black cursor-pointer">
               Save Employee Leave Record &rarr;
             </Button>
           </div>
@@ -1296,7 +1296,7 @@ export default function CompanyLeaveManagementPage() {
               <select
                 value={exportYear}
                 onChange={e => setExportYear(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               >
                 {[2024, 2025, 2026, 2027].map(yr => (
                   <option key={yr} value={yr}>{yr} Report Cycle</option>
@@ -1309,7 +1309,7 @@ export default function CompanyLeaveManagementPage() {
               <select
                 value={exportPeriod}
                 onChange={e => setExportPeriod(e.target.value as LeaveExportPeriod)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               >
                 <option value="full_year">🗓️ Whole year ({exportYear})</option>
                 <option value="ytd">⏱️ Year to date (01/01 → today)</option>
@@ -1323,7 +1323,7 @@ export default function CompanyLeaveManagementPage() {
                 <select
                   value={exportMonth}
                   onChange={e => setExportMonth(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
                 >
                   {LEAVE_EXPORT_MONTHS.map((m, i) => (
                     <option key={m} value={i + 1}>{m} {exportYear}</option>
@@ -1337,7 +1337,7 @@ export default function CompanyLeaveManagementPage() {
               <select
                 value={exportApprovedOnly ? 'approved' : 'all'}
                 onChange={e => setExportApprovedOnly(e.target.value === 'approved')}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               >
                 <option value="all">📋 All statuses (incl. pending &amp; rejected)</option>
                 <option value="approved">✅ Approved &amp; deducted leaves only</option>
@@ -1349,7 +1349,7 @@ export default function CompanyLeaveManagementPage() {
               <select
                 value={exportActiveOnly ? 'active' : 'all'}
                 onChange={e => setExportActiveOnly(e.target.value === 'active')}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               >
                 <option value="all">👥 All employees (incl. departed)</option>
                 <option value="active">🟢 Active employees only</option>
@@ -1361,7 +1361,7 @@ export default function CompanyLeaveManagementPage() {
               <select
                 value={exportScope}
                 onChange={e => setExportScope(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]/40"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 font-extrabold text-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
               >
                 <option value="all">🌟 All Employees (Company-Wide &amp; Ledger)</option>
                 {profiles

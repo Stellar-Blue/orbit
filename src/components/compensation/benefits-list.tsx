@@ -21,7 +21,7 @@ export function BenefitsList({ extras, paymentTypes }: { extras: SalaryRecord[];
     <div className="mt-6 pt-5 border-t border-slate-100">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 flex items-center">
-          <Gift className="w-4 h-4 mr-1.5 text-[#2f6fa3]" /> Recurring Monthly Benefits
+          <Gift className="w-4 h-4 mr-1.5 text-[var(--accent)]" /> Recurring Monthly Benefits
         </h3>
         {contractedTotal > 0 && (
           <span className="text-xs font-bold text-slate-600">

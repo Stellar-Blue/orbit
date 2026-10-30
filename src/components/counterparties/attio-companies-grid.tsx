@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, type ICellRendererParams } from 'ag-grid-community';
-import { orbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
+import { useOrbitGridTheme, excelSetFilter, GROUPING_OPTIONS } from '@/lib/ag-grid-setup';
 import { useGridFilterControls, ClearFiltersButton } from '@/components/ui/grid-filter-controls';
 import { Badge } from '@/components/ui/primitives';
 import { Plus, RefreshCw, CheckCircle2, Search } from 'lucide-react';
@@ -50,6 +50,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
   isImported,
   onImport
 }) => {
+  const gridTheme = useOrbitGridTheme();
   const gridFilters = useGridFilterControls();
   const { quickFilter, setQuickFilter } = gridFilters;
 
@@ -146,7 +147,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
               type="button"
               disabled={isImporting}
               onClick={(e) => { e.stopPropagation(); if (p.data) onImport(p.data.comp); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2f6fa3] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all disabled:opacity-60 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 transition-all disabled:opacity-60 cursor-pointer"
             >
               {isImporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               {isImporting ? 'Importing...' : 'Import to Orbit'}
@@ -168,7 +169,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
             placeholder="Search by name, VAT, relationship, country, domain..."
             value={quickFilter}
             onChange={e => setQuickFilter(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#2f6fa3] placeholder:text-slate-500"
+            className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-slate-500"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -180,7 +181,7 @@ export const AttioCompaniesGrid: React.FC<AttioCompaniesGridProps> = ({
       </div>
       <div className="h-[520px]">
         <AgGridReact<AttioCompanyRow>
-          theme={orbitGridTheme}
+          theme={gridTheme}
           rowData={rowData}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 80, enableRowGroup: true, enableValue: true, enablePivot: true }}

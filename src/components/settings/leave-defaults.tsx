@@ -45,11 +45,11 @@ export function LeaveDefaultsCard() {
               type="number" min="0" step="0.5"
               value={pending !== '' ? pending : String(leaveDefaultDays)}
               onChange={e => setPending(e.target.value)}
-              className="w-28 px-3 py-2 border border-slate-300 rounded-xl bg-white text-center font-black text-lg text-slate-900 shadow-2xs focus:ring-2 focus:ring-[#2f6fa3] outline-none"
+              className="w-28 px-3 py-2 border border-slate-300 rounded-xl bg-white text-center font-black text-lg text-slate-900 shadow-2xs focus:ring-2 focus:ring-[var(--accent)] outline-none"
             />
             <span className="absolute -right-8 inset-y-0 flex items-center text-[10px] font-extrabold text-slate-400">days/yr</span>
           </div>
-          <Button variant="primary" size="sm" onClick={save} className="bg-[#2f6fa3] text-white cursor-pointer shrink-0">
+          <Button variant="primary" size="sm" onClick={save} className="bg-[var(--accent)] text-white cursor-pointer shrink-0">
             <Save className="w-3.5 h-3.5 mr-1.5" /> Save Default
           </Button>
         </div>
@@ -156,7 +156,7 @@ export function CarryoverPolicyCard() {
               value={maxDays}
               onChange={e => setMaxDays(e.target.value)}
               placeholder="Uncapped"
-              className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
+              className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
             />
             <p className="text-[11px] text-slate-500 mt-1.5 flex items-center">
               <InfinityIcon className="w-3 h-3 mr-1 text-slate-400 shrink-0" />{capLabel}
@@ -167,7 +167,7 @@ export function CarryoverPolicyCard() {
             <select
               value={expiry}
               onChange={e => setExpiry(e.target.value)}
-              className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-sm font-bold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
+              className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-sm font-bold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
             >
               {EXPIRY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -186,7 +186,7 @@ export function CarryoverPolicyCard() {
               type="number" min="0" max="12"
               value={warningMonths}
               onChange={e => setWarningMonths(e.target.value)}
-              className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2f6fa3]"
+              className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-white text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
             />
             <p className="text-[11px] text-slate-500 mt-1.5">
               Employees see the countdown from this point. 0 = only once it is urgent.
@@ -204,7 +204,7 @@ export function CarryoverPolicyCard() {
                   ? 'Book the leftover days automatically on the last working days before the deadline'
                   : 'Do not book anything — leftover days are simply forfeited'}
               </span>
-              <span className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${autoBook ? 'bg-[#2f6fa3]' : 'bg-slate-300'}`}>
+              <span className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${autoBook ? 'bg-[var(--accent)]' : 'bg-slate-300'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${autoBook ? 'left-[22px]' : 'left-0.5'}`} />
               </span>
             </button>
@@ -215,7 +215,7 @@ export function CarryoverPolicyCard() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <Button variant="primary" size="sm" onClick={save} className="bg-[#2f6fa3] text-white cursor-pointer">
+          <Button variant="primary" size="sm" onClick={save} className="bg-[var(--accent)] text-white cursor-pointer">
             <Save className="w-3.5 h-3.5 mr-1.5" /> Save Policy
           </Button>
           {saved && (

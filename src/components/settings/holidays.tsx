@@ -169,7 +169,7 @@ export function HolidaysCard() {
           <select
             value={year}
             onChange={e => { setYear(Number(e.target.value)); setEditingId(null); }}
-            className="px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-700 focus:ring-2 focus:ring-[#2f6fa3] outline-none cursor-pointer"
+            className="px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-700 focus:ring-2 focus:ring-[var(--accent)] outline-none cursor-pointer"
           >
             {years.map(y => (
               <option key={y} value={y}>
@@ -181,7 +181,7 @@ export function HolidaysCard() {
             variant="primary"
             size="sm"
             onClick={() => (isAdding ? resetAddForm() : setIsAdding(true))}
-            className="bg-[#2f6fa3] text-white cursor-pointer shrink-0"
+            className="bg-[var(--accent)] text-white cursor-pointer shrink-0"
           >
             {isAdding ? <><X className="w-3.5 h-3.5 mr-1.5" /> Cancel</> : <><Plus className="w-3.5 h-3.5 mr-1.5" /> Add Holiday</>}
           </Button>
@@ -208,7 +208,7 @@ export function HolidaysCard() {
               value={newNameEn}
               onChange={e => setNewNameEn(e.target.value)}
               placeholder="e.g. Assumption"
-              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[#2f6fa3] outline-none"
+              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[var(--accent)] outline-none"
             />
           </label>
           <label className="sm:col-span-1 block">
@@ -217,7 +217,7 @@ export function HolidaysCard() {
               value={newNameEl}
               onChange={e => setNewNameEl(e.target.value)}
               placeholder="π.χ. Κοίμηση της Θεοτόκου"
-              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[#2f6fa3] outline-none"
+              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[var(--accent)] outline-none"
             />
           </label>
           <label className="sm:col-span-1 block">
@@ -225,7 +225,7 @@ export function HolidaysCard() {
             <select
               value={newScope}
               onChange={e => setNewScope(e.target.value as PublicHoliday['scope'])}
-              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[#2f6fa3] outline-none cursor-pointer"
+              className="mt-1 w-full px-2 py-2 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-[var(--accent)] outline-none cursor-pointer"
             >
               {SCOPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
@@ -270,21 +270,21 @@ export function HolidaysCard() {
                         <input
                           value={editNameEn}
                           onChange={e => setEditNameEn(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-[#2f6fa3] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none"
+                          className="w-full px-2 py-1.5 border border-[var(--accent)] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <input
                           value={editNameEl}
                           onChange={e => setEditNameEl(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-[#2f6fa3] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none"
+                          className="w-full px-2 py-1.5 border border-[var(--accent)] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <select
                           value={editScope}
                           onChange={e => setEditScope(e.target.value as PublicHoliday['scope'])}
-                          className="w-full px-2 py-1.5 border border-[#2f6fa3] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                          className="w-full px-2 py-1.5 border border-[var(--accent)] rounded-lg bg-white text-xs font-bold text-slate-800 outline-none cursor-pointer"
                         >
                           {SCOPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>

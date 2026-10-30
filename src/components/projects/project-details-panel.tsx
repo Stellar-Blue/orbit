@@ -27,7 +27,7 @@ const LINK_KINDS: Array<{ id: string; label: string }> = [
 const linkIcon = (kind?: string | null) =>
   kind === 'linear' ? <ListChecks className="w-3.5 h-3.5 text-indigo-600" />
   : kind === 'repo' ? <GitBranch className="w-3.5 h-3.5 text-slate-700" />
-  : kind === 'docs' ? <FileText className="w-3.5 h-3.5 text-[#2f6fa3]" />
+  : kind === 'docs' ? <FileText className="w-3.5 h-3.5 text-[var(--accent)]" />
   : <Link2 className="w-3.5 h-3.5 text-slate-400" />;
 
 const euro = (n: number) => `€${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -212,7 +212,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
     if (url) window.open(url, '_blank', 'noopener');
   };
 
-  const field = 'w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-[#2f6fa3]';
+  const field = 'w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-[var(--accent)]';
   const label = 'block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1';
 
   return (
@@ -221,7 +221,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
       <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-[#2f6fa3]" /> Delivery details
+            <Calendar className="w-3.5 h-3.5 text-[var(--accent)]" /> Delivery details
           </span>
           <div className="flex items-center gap-2 text-[10px] font-bold">
             {billing.issued.length > 0 && (
@@ -348,7 +348,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
               ? <span className="text-amber-700 font-semibold">Finished {formatDate(form.actual_end_on)} — after the planned end ({formatDate(form.ends_on)}).</span>
               : 'Planned window and real dates both feed the delivery reports.'}
           </span>
-          <Button variant="primary" size="sm" onClick={save} disabled={saving || errors.length > 0} className="cursor-pointer bg-[#2f6fa3] text-white disabled:opacity-50">
+          <Button variant="primary" size="sm" onClick={save} disabled={saving || errors.length > 0} className="cursor-pointer bg-[var(--accent)] text-white disabled:opacity-50">
             <Save className="w-3.5 h-3.5 mr-1.5" /> {saving ? 'Saving…' : 'Save details'}
           </Button>
         </div>
@@ -357,7 +357,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
       {/* ── Links ────────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2.5">
         <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
-          <Link2 className="w-3.5 h-3.5 text-[#2f6fa3]" /> Links
+          <Link2 className="w-3.5 h-3.5 text-[var(--accent)]" /> Links
           <span className="text-[10px] font-semibold text-slate-400">Linear issues, specs, repositories…</span>
         </span>
         {links.length > 0 && (
@@ -365,7 +365,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
             {links.map(l => (
               <li key={l.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5">
                 {linkIcon(l.kind)}
-                <Link href={l.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-slate-700 hover:text-[#2f6fa3] truncate flex-1">
+                <Link href={l.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-slate-700 hover:text-[var(--accent)] truncate flex-1">
                   {l.title || l.url}
                 </Link>
                 <span className="text-[10px] font-mono text-slate-400 truncate max-w-[240px]">{l.url}</span>
@@ -402,11 +402,11 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
       <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
-            <Paperclip className="w-3.5 h-3.5 text-[#2f6fa3]" /> Documents
+            <Paperclip className="w-3.5 h-3.5 text-[var(--accent)]" /> Documents
             <span className="text-[10px] font-semibold text-slate-400">{documents.length} file{documents.length === 1 ? '' : 's'}</span>
           </span>
           <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-[11px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50 ${uploading ? 'opacity-50' : ''}`}>
-            <Upload className="w-3.5 h-3.5 text-[#2f6fa3]" /> {uploading ? 'Uploading…' : 'Upload file'}
+            <Upload className="w-3.5 h-3.5 text-[var(--accent)]" /> {uploading ? 'Uploading…' : 'Upload file'}
             <input
               type="file"
               className="hidden"
@@ -422,7 +422,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
             {documents.map(d => (
               <li key={d.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5">
                 <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <button onClick={() => openDocument(d)} className="text-xs font-semibold text-slate-700 hover:text-[#2f6fa3] truncate flex-1 text-left cursor-pointer">
+                <button onClick={() => openDocument(d)} className="text-xs font-semibold text-slate-700 hover:text-[var(--accent)] truncate flex-1 text-left cursor-pointer">
                   {d.file_name}
                 </button>
                 <span className="text-[10px] text-slate-400 font-mono">
@@ -453,7 +453,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
                 }`}>
                   {i.status === 'draft' ? 'Draft' : 'Issued'}
                 </span>
-                <Link href={`/invoices?contract=${project.contract_id || ''}`} className="font-mono font-bold text-slate-700 hover:text-[#2f6fa3]">
+                <Link href={`/invoices?contract=${project.contract_id || ''}`} className="font-mono font-bold text-slate-700 hover:text-[var(--accent)]">
                   {i.invoice_number}
                 </Link>
                 <span className="text-slate-400">{i.reference_period || ''}</span>
