@@ -13,7 +13,7 @@ import {
   ArrowUpRight, ArrowDownLeft, Download, Upload, Check, TrendingUp, BarChart3, 
   Sparkles, Save, FileText, Search, Filter, Tag, CheckCircle2, XCircle, FileSpreadsheet, Building2, HelpCircle,
   Terminal, Activity, ShieldCheck, Key, Copy, ExternalLink, Shield, Edit, Trash2, Eye, Users, Share2, RefreshCw, CloudDownload,
-  Zap, EyeOff, RotateCcw, Banknote
+  Zap, EyeOff, RotateCcw, Banknote, ArrowLeft
 } from 'lucide-react';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -195,8 +195,49 @@ export default function InvoicesRegistryPage() {
     setIsRegisterModalOpen(true);
   };
 
+  /** A blank invoice form, on its own screen. */
+  const openNewInvoiceForm = () => {
+    setEditingInvoiceId(null);
+    setNewDirection('outgoing');
+    setNewType('invoice');
+    setNewStatus('sent_received');
+    setNewCpId('');
+    setNewContractId('');
+    setNewContractIds([]);
+    setNewProjectIds([]);
+    setNewLines([]);
+    setNewCatName('');
+    setNewInvNumber('');
+    setNewMark('');
+    setNewIssueDate(new Date().toISOString().split('T')[0]);
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    setNewDueDate(d.toISOString().split('T')[0]);
+    setNewPeriodFrom(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
+    setNewPeriodTo(new Date().toISOString().split('T')[0]);
+    setNewReferencePeriod(new Date().toISOString().slice(0, 7));
+    setNewNet(1000);
+    setNewVatRate('24%');
+    setNewCurrency(DEFAULT_CURRENCY);
+    setNewFxRate(1);
+    setNewNotes('');
+    setNewLinks([]);
+    setDuplicateWarning('');
+    setIsRegisterModalOpen(true);
+  };
+
+  /** Leaves the invoice form for the register. */
+  const closeInvoiceForm = () => {
+    setIsRegisterModalOpen(false);
+    setEditingInvoiceId(null);
+  };
+
   // Sync initial selection from URL ID
   useEffect(() => {
+    if (urlId === 'new' && !isRegisterModalOpen) {
+      openNewInvoiceForm();
+      return;
+    }
     if (urlId && invoices.length > 0 && !editingInvoiceId && !payingInvoice) {
       const target = invoices.find(i => i.id === urlId || i.invoice_number.toLowerCase() === urlId.toLowerCase());
       if (target) {
@@ -205,16 +246,39 @@ export default function InvoicesRegistryPage() {
     }
   }, [urlId, invoices]);
 
-  // Sync address bar when invoice modal is opened or closed
+  // The invoice form is its own screen with its own address — /invoices/{id} to edit, /invoices/new
+  // to register — so Back leaves it. Edits inside it never add history entries.
+  const invoicePath = editingInvoiceId
+    ? `/invoices/${editingInvoiceId}`
+    : isRegisterModalOpen
+      ? '/invoices/new'
+      : payingInvoice
+        ? `/invoices/${payingInvoice.id}`
+        : '/invoices';
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const activeId = editingInvoiceId || payingInvoice?.id;
-    if (activeId) {
-      window.history.pushState(null, '', `/invoices/${activeId}`);
-    } else if (window.location.pathname.startsWith('/invoices/')) {
-      window.history.pushState(null, '', '/invoices');
+    if (window.location.pathname !== invoicePath && (invoicePath !== '/invoices' || window.location.pathname.startsWith('/invoices/'))) {
+      window.history.pushState(null, '', invoicePath);
     }
-  }, [editingInvoiceId, payingInvoice]);
+  }, [invoicePath]);
+
+  useEffect(() => {
+    if (isRegisterModalOpen) window.scrollTo({ top: 0 });
+  }, [isRegisterModalOpen, editingInvoiceId]);
+
+  // Browser Back / Forward move between the register and an invoice form.
+  useEffect(() => {
+    const onPopState = () => {
+      const id = decodeURIComponent(window.location.pathname.match(/^\/invoices\/([^/]+)$/)?.[1] ?? '');
+      setPayingInvoice(null);
+      if (id === 'new') { openNewInvoiceForm(); return; }
+      const target = id ? invoices.find(i => i.id === id) : undefined;
+      if (target) openInvoiceModal(target);
+      else closeInvoiceForm();
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [invoices]);
 
 
 
@@ -589,6 +653,7 @@ export default function InvoicesRegistryPage() {
 
   return (
     <div className="w-full space-y-5 animate-in fade-in duration-150">
+      {!isRegisterModalOpen && (<>
 
       {/* Header — command bar: where you are, then the actions you actually take here. */}
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3 border-b border-[var(--line-strong)] pb-3">
@@ -621,35 +686,7 @@ export default function InvoicesRegistryPage() {
                 Reload
               </Button>
               <Button 
-                onClick={() => {
-                  setEditingInvoiceId(null);
-                  setNewDirection('outgoing');
-                  setNewType('invoice');
-                  setNewStatus('sent_received');
-                  setNewCpId('');
-                  setNewContractId('');
-                  setNewContractIds([]);
-                  setNewProjectIds([]);
-                  setNewLines([]);
-                  setNewCatName('');
-                  setNewInvNumber('');
-                  setNewMark('');
-                  setNewIssueDate(new Date().toISOString().split('T')[0]);
-                  const d = new Date();
-                  d.setDate(d.getDate() + 30);
-                  setNewDueDate(d.toISOString().split('T')[0]);
-                  setNewPeriodFrom(new Date().toISOString().split('T')[0].slice(0, 7) + '-01');
-                  setNewPeriodTo(new Date().toISOString().split('T')[0]);
-                  setNewReferencePeriod(new Date().toISOString().slice(0, 7));
-                  setNewNet(1000);
-                  setNewVatRate('24%');
-                  setNewCurrency(DEFAULT_CURRENCY);
-                  setNewFxRate(1);
-                  setNewNotes('');
-                  setNewLinks([]);
-                  setDuplicateWarning('');
-                  setIsRegisterModalOpen(true);
-                }} 
+                onClick={openNewInvoiceForm} 
                 variant="primary"
                 size="sm"
               >
@@ -910,17 +947,23 @@ export default function InvoicesRegistryPage() {
       )}
 
       {activeTab === 'receipts' && <ReceiptsPanel />}
+      </>)}
 
-      {/* REGISTRATION / EDIT MODAL */}
+      {/* REGISTER / EDIT INVOICE — its own screen; Back returns to the register. */}
       {isRegisterModalOpen && (
-        <Modal
-          isOpen={true}
-          size="full"
-          eyebrow="Corporate tax invoice · common truth"
-          title={editingInvoiceId ? 'Edit invoice' : 'Register invoice'}
-          onClose={() => { setIsRegisterModalOpen(false); setEditingInvoiceId(null); }}
-        >
-          <div className="space-y-4 max-h-[78vh] overflow-y-auto px-1">
+        <section className="space-y-4" aria-label={editingInvoiceId ? 'Edit invoice' : 'Register invoice'}>
+          <div className="border-b border-[var(--line-strong)] pb-3">
+            <button
+              type="button"
+              onClick={closeInvoiceForm}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--ink-3)] hover:text-[var(--accent)] cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> All invoices
+            </button>
+            <p className="ui-eyebrow mt-3">Corporate tax invoice · common truth</p>
+            <h1 className="ui-title mt-1">{editingInvoiceId ? 'Edit invoice' : 'Register invoice'}</h1>
+          </div>
+          <div className="space-y-4">
             {duplicateWarning && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold flex items-center gap-2 animate-bounce">
                 <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
@@ -1367,8 +1410,8 @@ export default function InvoicesRegistryPage() {
 
             </FormSection>
 
-            <div className="sticky bottom-0 -mx-1 px-1 py-3 bg-[var(--surface)] border-t border-[var(--line-strong)] flex items-center justify-end gap-2">
-              <Button onClick={() => setIsRegisterModalOpen(false)} variant="outline" className="px-4 py-2 text-xs font-bold">
+            <div className="sticky bottom-0 z-10 py-3 bg-[var(--surface)] border-t border-[var(--line-strong)] flex items-center justify-end gap-2">
+              <Button onClick={closeInvoiceForm} variant="outline" className="px-4 py-2 text-xs font-bold">
                 Cancel
               </Button>
               <Button
@@ -1468,7 +1511,7 @@ export default function InvoicesRegistryPage() {
               </Button>
             </div>
           </div>
-        </Modal>
+        </section>
       )}
 
       {/* 1-CLICK FAST PATH PAYMENT MODAL */}
