@@ -1,6 +1,6 @@
-import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project, Receipt } from '@/lib/types';
+import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceLine, InvoiceStatus, Project, Receipt } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
-import { invoiceContractIds, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
+import { invoiceContractIds, invoiceLines, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
 import { contractChargeMonths, contractProjectSchedules, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -36,8 +36,15 @@ export interface InvoiceCellCoverage {
   invoiceIds: string[];
   /** Most recent issue date among the covering invoices. */
   issueDate: string;
-  /** Invoice net (EUR) of every invoice covering the box. */
+  /**
+   * Invoiced money (EUR) this row's box accounts for: the matching lines of invoices that have lines,
+   * the whole net of those that do not.
+   */
   invoiceTotal: number;
+  /** Full net (EUR) of each covering invoice, by id — the "of €…" total the badge quotes. */
+  documentNets: Record<string, number>;
+  /** Descriptions of the invoice lines behind the box, for the tooltip. */
+  lines: string[];
   /** Receipt money (EUR) — paid without a tax document — covering the box. */
   receiptTotal: number;
   /** Labels of the receipts covering the box, oldest first. */
@@ -85,6 +92,26 @@ export function invoiceAmountEur(invoice: Invoice): number {
   const net = Number(invoice.net) || 0;
   const rate = Number(invoice.fx_rate) || 1;
   return round2(invoice.currency && invoice.currency !== 'EUR' ? net * rate : net);
+}
+
+/** Total net of the invoices behind the box (each counted once), whatever share of it this row holds. */
+export function documentTotal(coverage: InvoiceCellCoverage): number {
+  return round2(Object.values(coverage.documentNets).reduce((total, net) => total + net, 0));
+}
+
+/** A line's net converted to EUR at its invoice's rate. */
+export function invoiceLineAmountEur(invoice: Invoice, line: InvoiceLine): number {
+  const amount = Number(line.amount) || 0;
+  const rate = Number(invoice.fx_rate) || 1;
+  return round2(invoice.currency && invoice.currency !== 'EUR' ? amount * rate : amount);
+}
+
+/** Months a line bills: its own period, else the invoice's. */
+export function invoiceLineMonths(invoice: Invoice, line: InvoiceLine): string[] {
+  const from = toMonthKey(line.period_from);
+  const to = toMonthKey(line.period_to);
+  if (from || to) return monthKeysBetween(from ?? (to as string), to ?? (from as string));
+  return invoiceCoveredMonths(invoice);
 }
 
 /** Every euro that covers the box: invoices plus receipts paid without a tax document. */
@@ -196,7 +223,8 @@ function paintInvoiceBox(
   invoice: Invoice,
   months: string[],
   ownerId: string,
-  keyFor: (month: string) => string
+  keyFor: (month: string) => string,
+  share: { amount: number; line?: string | null } = { amount: invoiceAmountEur(invoice) }
 ): void {
   if (months.length === 0) return;
   const firstMonth = months[0];
@@ -212,7 +240,9 @@ function paintInvoiceBox(
   const isUnpaid = !isPaid && !isDraft;
   const issueDate = invoice.issue_date || '';
   const label = invoice.invoice_number || invoice.id;
-  const amount = invoiceAmountEur(invoice);
+  const amount = share.amount;
+  const net = invoiceAmountEur(invoice);
+  const lineLabel = share.line?.trim();
 
   months.forEach(month => {
     const key = keyFor(month);
@@ -231,6 +261,8 @@ function paintInvoiceBox(
         invoiceIds: [invoice.id],
         issueDate,
         invoiceTotal: amount,
+        documentNets: { [invoice.id]: net },
+        lines: lineLabel ? [lineLabel] : [],
         receiptTotal: 0,
         receipts: [],
         contractTotal: 0,
@@ -244,6 +276,10 @@ function paintInvoiceBox(
     const latestMarker = markerMonth >= existing.markerMonth ? markerMonth : existing.markerMonth;
     covered.set(key, {
       contractId: ownerId,
+      documentNets: { ...existing.documentNets, [invoice.id]: net },
+      lines: lineLabel && !existing.lines.includes(lineLabel)
+        ? [...existing.lines, lineLabel].slice(-MAX_INVOICE_LABELS)
+        : existing.lines,
       paid: existing.paid && isPaid,
       draft: existing.draft && isDraft,
       unpaid: existing.unpaid || isUnpaid,
@@ -308,6 +344,8 @@ function paintReceiptBox(
         invoiceIds: [],
         issueDate: '',
         invoiceTotal: 0,
+        documentNets: {},
+        lines: [],
         receiptTotal: amount,
         receipts: [label],
         contractTotal: 0,
@@ -441,6 +479,22 @@ export function buildInvoiceCoverage(
   };
 
   ordered.forEach(invoice => {
+    // An invoice with lines says exactly what it bills: each agreement-fee line paints its own
+    // agreement for its own months with its own amount (project lines belong to the change-request
+    // rows), so it is matched against that agreement's charges alone.
+    const lines = invoiceLines(invoice);
+    if (lines.length > 0) {
+      lines.forEach(line => {
+        const contract = line.project_id ? undefined : contractsById.get(String(line.contract_id || ''));
+        if (!contract) return;
+        paintInvoiceBox(covered, invoice, invoiceLineMonths(invoice, line), contract.id, month => invoiceCellKey(contract.id, month), {
+          amount: invoiceLineAmountEur(invoice, line),
+          line: line.description,
+        });
+      });
+      return;
+    }
+
     const months = invoiceCoveredMonths(invoice);
     if (months.length === 0) return;
 
@@ -553,19 +607,21 @@ export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): 
 
 /**
  * Coverage for the change-request rows: an invoice linked to a project paints that project's months.
- * `contractTotal` is left at 0 — the grid fills it with the row's own charges, which it is the only
- * one that knows.
+ * A project line is compared with the project's scheduled share over the line's months (needs
+ * `contracts` to know each project's window). An invoice without lines — or a receipt — is not
+ * compared: a change request is often billed in one lump after its delivery months.
  */
 export function buildProjectInvoiceCoverage(
   invoices: Invoice[],
-  projects: Array<Pick<Project, 'id' | 'contract_id'>>,
-  receipts: Receipt[] = []
+  projects: Project[],
+  receipts: Receipt[] = [],
+  contracts: Contract[] = []
 ): InvoiceCoverageMap {
   const parentByProject = new Map(projects.map(project => [project.id, String(project.contract_id || '')]));
   const outgoing = invoices
     .filter(invoice => invoice.direction === 'outgoing')
     .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
-    .filter(invoice => invoiceProjectIds(invoice).length > 0);
+    .filter(invoice => invoiceProjectIds(invoice).length > 0 || invoiceLines(invoice).some(line => line.project_id));
 
   const drafts = outgoing.filter(invoice => invoice.status === 'draft' && invoice.type !== 'credit_note');
   const issued = outgoing.filter(invoice => invoice.status !== 'draft');
@@ -574,11 +630,26 @@ export function buildProjectInvoiceCoverage(
   );
 
   const covered: InvoiceCoverageMap = new Map();
+  /** Cells holding money that is not compared (invoices without lines, receipts). */
+  const uncompared = new Set<string>();
   ordered.forEach(invoice => {
+    const lines = invoiceLines(invoice);
+    if (lines.length > 0) {
+      lines.forEach(line => {
+        const projectId = String(line.project_id || '');
+        if (!parentByProject.has(projectId)) return;
+        paintInvoiceBox(covered, invoice, invoiceLineMonths(invoice, line), parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month), {
+          amount: invoiceLineAmountEur(invoice, line),
+          line: line.description,
+        });
+      });
+      return;
+    }
     const months = invoiceCoveredMonths(invoice);
     if (months.length === 0) return;
     invoiceProjectIds(invoice).forEach(projectId => {
       paintInvoiceBox(covered, invoice, months, parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month));
+      months.forEach(month => uncompared.add(projectInvoiceCellKey(projectId, month)));
     });
   });
 
@@ -597,7 +668,22 @@ export function buildProjectInvoiceCoverage(
         .filter(projectId => parentByProject.has(projectId))
         .forEach(projectId => {
           paintReceiptBox(covered, receipt, months, parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month));
+          months.forEach(month => uncompared.add(projectInvoiceCellKey(projectId, month)));
         });
     });
+
+  const contractsById = new Map(contracts.map(contract => [contract.id, contract]));
+  const scheduleByProject = new Map<string, Record<string, number>>();
+  contracts.forEach(contract => {
+    contractProjectSchedules(contract, projects).forEach(entry => scheduleByProject.set(entry.project.id, entry.months));
+  });
+  covered.forEach((entry, key) => {
+    const projectId = key.slice(0, key.lastIndexOf(':'));
+    const schedule = scheduleByProject.get(projectId);
+    entry.contractTotal = uncompared.has(key) || !schedule || !contractsById.has(entry.contractId)
+      ? coverageTotal(entry)
+      : round2(monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (schedule[month] || 0), 0));
+    entry.variance = round2(coverageTotal(entry) - entry.contractTotal);
+  });
   return covered;
 }

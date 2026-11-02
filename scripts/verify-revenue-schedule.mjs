@@ -34,6 +34,7 @@ import {
   invoiceMarkerColor,
   invoiceMarkerPosition,
   invoiceVarianceTone,
+  documentTotal,
 } from '@/lib/invoice-coverage';
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
 import {
@@ -909,6 +910,66 @@ assert(
   crOnlyLump.size === 0,
   'A change-request-only invoice still leaves its parent agreement row alone',
   [...crOnlyLump.keys()].join(' ')
+);
+
+// --- Invoice lines -------------------------------------------------------------
+// The same First Imagine draft, now billed line by line: each line paints its own row for its own
+// months and is compared with that row alone, while the badge still knows the invoice total.
+const linedDraft = (lines, overrides = {}) => invoice({
+  id: 'inv-lines', invoice_number: 'FI-LINES', counterparty_id: 'cp-fi', status: 'draft',
+  contract_id: 'cnt-etrm', contract_ids: ['cnt-etrm', 'cnt-trading'], project_ids: ['prj-training'],
+  period_from: '2026-08-01', period_to: '2026-10-31', issue_date: '2026-11-02',
+  net: lines.reduce((total, line) => total + line.amount, 0), lines, ...overrides,
+});
+const etrmLine = { id: 'l-etrm', description: 'ETRM licence Q3', amount: 3000, period_from: '2026-08-01', period_to: '2026-10-31', contract_id: 'cnt-etrm' };
+const tradingLine = { id: 'l-trading', description: 'Trading fee Q3', amount: 13350, period_from: '2026-08-01', period_to: '2026-10-31', contract_id: 'cnt-trading' };
+const trainingLine = { id: 'l-training', description: 'Extra training session', amount: 95, period_from: '2026-10-01', period_to: '2026-10-31', contract_id: 'cnt-trading', project_id: 'prj-training' };
+const linedCoverage = buildInvoiceCoverage([linedDraft([etrmLine, tradingLine, trainingLine])], feeAndCrContracts, [], [], [trainingCr]);
+const linedEtrm = linedCoverage.get('cnt-etrm:2026-08');
+const linedTrading = linedCoverage.get('cnt-trading:2026-10');
+assert(
+  linedEtrm?.invoiceTotal === 3000 && linedEtrm.contractTotal === 3000 && linedEtrm.variance === 0 && documentTotal(linedEtrm) === 16445 &&
+    linedTrading?.invoiceTotal === 13350 && linedTrading.contractTotal === 13350 && linedTrading.variance === 0,
+  'Each line is matched against its own agreement, and the box still knows the invoice total',
+  JSON.stringify({ etrm: linedEtrm, trading: linedTrading })
+);
+const shortLine = buildInvoiceCoverage([linedDraft([{ ...etrmLine, amount: 2500 }, tradingLine])], feeAndCrContracts, [], [], [trainingCr]).get('cnt-etrm:2026-09');
+assert(
+  shortLine?.variance === -500 && invoiceVarianceTone(shortLine) === 'under',
+  'A line below its agreement’s charges is flagged on that row only',
+  JSON.stringify(shortLine)
+);
+const ownPeriods = buildInvoiceCoverage(
+  [linedDraft([etrmLine, { ...tradingLine, amount: 4450, period_from: '2026-11-01', period_to: '2026-11-30' }])],
+  feeAndCrContracts, [], [], [trainingCr]
+);
+assert(
+  ownPeriods.has('cnt-etrm:2026-08') && !ownPeriods.has('cnt-trading:2026-08') && ownPeriods.get('cnt-trading:2026-11')?.variance === 0,
+  'A line paints its own period, not the invoice’s',
+  [...ownPeriods.keys()].join(' ')
+);
+assert(
+  !buildInvoiceCoverage([linedDraft([trainingLine])], feeAndCrContracts, [], [], [trainingCr]).has('cnt-trading:2026-10'),
+  'A change-request line never paints its agreement’s fee row',
+  'project line only'
+);
+const linedProjectBoxes = buildProjectInvoiceCoverage([linedDraft([etrmLine, tradingLine, trainingLine])], [trainingCr], [], feeAndCrContracts);
+const linedTraining = linedProjectBoxes.get(projectInvoiceCellKey('prj-training', '2026-10'));
+assert(
+  linedTraining?.invoiceTotal === 95 && linedTraining.contractTotal === 95 && linedTraining.variance === 0 &&
+    !linedProjectBoxes.has(projectInvoiceCellKey('prj-training', '2026-08')),
+  'A project line paints its change request for the line’s months and matches its scheduled share',
+  JSON.stringify(linedTraining)
+);
+const linedPeriods = getContractBillingPeriods(feeAndCrContracts[1], {
+  today: new Date('2026-12-05T00:00:00'),
+  invoices: [linedDraft([etrmLine, { ...tradingLine, amount: 4450, period_from: '2026-11-01', period_to: '2026-11-30' }])],
+});
+assert(
+  linedPeriods.find(period => period.from === '2026-08-01')?.status === 'unbilled' &&
+    linedPeriods.find(period => period.from === '2026-11-01')?.status !== 'unbilled',
+  'Billing periods count an invoice for an agreement only through its own lines and their periods',
+  JSON.stringify(linedPeriods.map(period => [period.from, period.status]))
 );
 
 // Change-request rows show the invoices their projects are billed by.

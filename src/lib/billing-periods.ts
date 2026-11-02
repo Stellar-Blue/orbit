@@ -17,10 +17,10 @@ import {
   calculateManHoursCharge,
   calculatePeriodAmountsByTiming,
 } from './pricing-engine';
-import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice } from './types';
+import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice, InvoiceLine } from './types';
 import { formatDate } from './date';
 import { netInvoices, type NettableInvoice } from './invoice-netting';
-import { invoiceContractIds } from './invoice-links';
+import { invoiceContractIds, invoiceLines } from './invoice-links';
 
 type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>;
 
@@ -60,6 +60,7 @@ export interface BillingPeriodContract {
 export interface BillingPeriodInvoice extends NettableInvoice {
   id: string;
   contract_id?: string | null;
+  lines?: InvoiceLine[] | null;
   status: string;
   reference_period?: string | null;
   period_from?: string | null;
@@ -151,7 +152,21 @@ export function getContractBillingPeriods(
   todayStart.setHours(0, 0, 0, 0);
 
   // A credit note reverses an invoice instead of paying it: neither may mark a period as billed.
-  const usableInvoices = netInvoices(invoices).active;
+  // An invoice with lines covers this contract only through the lines that bill its own fee, each for
+  // its own period: a line for another agreement or a change request never marks a period here.
+  const usableInvoices = netInvoices(invoices).active.flatMap(inv => {
+    const lines = invoiceLines(inv);
+    if (lines.length === 0) return [inv];
+    return lines
+      .filter(line => line.contract_id === contract.id && !line.project_id)
+      .map(line => ({
+        ...inv,
+        contract_ids: [contract.id],
+        period_from: line.period_from || inv.period_from,
+        period_to: line.period_to || inv.period_to,
+        reference_period: null,
+      }));
+  });
   const cadence = contract.billing_cadence || 'monthly';
   const timing = contract.invoice_timing || 'start_of_period';
   const lines = contract.lines || [];

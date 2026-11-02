@@ -5331,6 +5331,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // The arrays are the source of truth; the single column mirrors their first entry.
         contract_ids: normalizeLinkIds(inv.contract_ids && inv.contract_ids.length > 0 ? inv.contract_ids : [inv.contract_id]),
         project_ids: normalizeLinkIds(inv.project_ids),
+        lines: inv.lines ?? [],
         type: inv.type,
         credits_invoice_id: inv.credits_invoice_id || null,
         invoice_number: inv.invoice_number,

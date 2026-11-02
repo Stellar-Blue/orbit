@@ -18,11 +18,12 @@ import { useOrbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project, Receipt } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { isSubcontract, primeFeeAmount } from '@/lib/subcontracts';
-import { buildRevenueSchedule, explainScheduleCell, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type CellExplanationItem, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, explainScheduleCell, monthKeysBetween, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type CellExplanationItem, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
   coverageTotal,
+  documentTotal,
   invoiceBoxState,
   invoiceCellKey,
   invoiceCellStyle,
@@ -111,7 +112,12 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
     ? 'matches the contract'
     : `variance ${formatSignedAmount(coverage.variance)}`;
   return [
-    coverage.invoices.length > 0 ? `Invoiced ${formatTotal(coverage.invoiceTotal)}` : undefined,
+    coverage.invoices.length > 0
+      ? `Invoiced ${formatTotal(coverage.invoiceTotal)}${
+          documentTotal(coverage) !== coverage.invoiceTotal ? ` of ${formatTotal(documentTotal(coverage))} invoice total` : ''
+        }`
+      : undefined,
+    coverage.lines.length > 0 ? `lines: ${coverage.lines.join(', ')}` : undefined,
     coverage.receipts.length > 0
       ? `Received ${formatTotal(coverage.receiptTotal)} (${coverage.receipts.join(', ')})${
           coverage.invoiceTotal > 0 ? '' : ' without a tax invoice'
@@ -162,16 +168,17 @@ function projectCellCoverage(
     invoiceIds: entries.flatMap(entry => entry.invoiceIds).slice(-3),
     issueDate: entries.map(entry => entry.issueDate).sort().slice(-1)[0],
     invoiceTotal: Math.round(entries.reduce((sum, entry) => sum + entry.invoiceTotal, 0) * 100) / 100,
+    documentNets: Object.assign({}, ...entries.map(entry => entry.documentNets)),
+    lines: entries.flatMap(entry => entry.lines).slice(-3),
     receiptTotal: Math.round(entries.reduce((sum, entry) => sum + entry.receiptTotal, 0) * 100) / 100,
     receipts: entries.flatMap(entry => entry.receipts).slice(-3),
-    contractTotal: 0,
+    // Each project's own comparison: project lines against their scheduled share, anything else
+    // (an invoice without lines, usually raised after delivery) against itself.
+    contractTotal: Math.round(entries.reduce((sum, entry) => sum + entry.contractTotal, 0) * 100) / 100,
     variance: 0,
   };
   merged.markerPosition = invoiceMarkerPosition(merged.markerMonth, merged.firstMonth, merged.lastMonth);
-  // A change-request invoice is usually raised after the delivery months, so comparing it with the
-  // row's charges inside the invoice window would flag a variance that is not a billing error.
-  merged.contractTotal = coverageTotal(merged);
-  merged.variance = 0;
+  merged.variance = Math.round((coverageTotal(merged) - merged.contractTotal) * 100) / 100;
   return merged;
 }
 
@@ -601,8 +608,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
   // Change-request rows show the invoices their projects are billed by.
   const projectCoverage = useMemo(
-    () => buildProjectInvoiceCoverage(invoices, projects, receipts),
-    [invoices, projects, receipts]
+    () => buildProjectInvoiceCoverage(invoices, projects, receipts, contracts),
+    [invoices, projects, receipts, contracts]
   );
   const projectCoverageRef = useRef<InvoiceCoverageMap>(new Map());
   useEffect(() => {
@@ -948,7 +955,10 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         const coverage = data.kind === 'contract'
           ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
           : projectCellCoverage(data, key, projectCoverageRef.current);
-        if (coverage) return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key) };
+        // The badge cell lets its badge run across the rest of the invoice box.
+        if (coverage) {
+          return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key), ...(key === coverage.firstMonth ? { overflow: 'visible', zIndex: 2 } : {}) };
+        }
         if (data.kind !== 'contract') return MONTH_CELL_PADDING;
         const suggestion = suggestionRef.current.get(suggestionCellKey(data.contractId, key));
         return suggestion ? { ...MONTH_CELL_PADDING, ...suggestionCellStyle(suggestion, key) } : MONTH_CELL_PADDING;
@@ -967,6 +977,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
         const tone = coverage ? invoiceVarianceTone(coverage) : null;
         const isDraftBox = Boolean(coverage && invoiceBoxState(coverage) === 'draft');
+        const badgeTone = isDraftBox ? DRAFT_TONE : VARIANCE_TONES[(tone ?? 'match') as InvoiceVarianceTone];
         const showBadge = Boolean(coverage && key === coverage.firstMonth);
         const showMarker = Boolean(coverage && coverage.markerMonth === key);
         const showProjects = Boolean(projectShares && projectShares.length > 0);
@@ -1008,8 +1019,9 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             <span
               style={{
                 display: 'flex', alignItems: 'center', height: 10, lineHeight: '10px',
+                position: 'relative',
                 justifyContent: showBadge
-                  ? (showMarker ? 'space-between' : 'flex-start')
+                  ? 'flex-end'
                   : showAction || showProjects ? 'flex-start' : markerAlign,
               }}
             >
@@ -1036,18 +1048,32 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                     if (data && coverage.invoiceIds.length > 0) openPeekRef.current(data.contract, coverage.invoiceIds);
                   }}
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: isDraftBox ? 4 : 2, padding: '0 3px', borderRadius: 3,
-                    border: 0, fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    // Spans the invoice box, not just its first month, and stays legible over it.
+                    position: 'absolute', left: 0, top: 0, height: 10, zIndex: 1,
+                    maxWidth: monthKeysBetween(coverage.firstMonth, coverage.lastMonth).length * MONTH_WIDTH - 8,
+                    display: 'inline-flex', alignItems: 'center', gap: 3, padding: '0 3px', borderRadius: 3,
+                    border: 0, fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden',
                     cursor: coverage.invoiceIds.length > 0 ? 'pointer' : 'default',
-                    ...(isDraftBox ? DRAFT_TONE : VARIANCE_TONES[tone as InvoiceVarianceTone]),
+                    color: badgeTone.color,
+                    background: `linear-gradient(${badgeTone.background}, ${badgeTone.background}), var(--surface)`,
                   }}
                 >
                   {isDraftBox && <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Draft</span>}
                   {coverage.invoices.length === 0 && coverage.receipts.length > 0 && (
                     <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Paid</span>
                   )}
-                  <span>{formatTotal(coverageTotal(coverage))}</span>
-                  {tone !== 'match' && <span>{formatSignedAmount(coverage.variance)}</span>}
+                  {coverage.invoices.length > 0 && (
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', opacity: 0.85 }}>
+                      {coverage.invoices[0]}{coverage.invoices.length > 1 ? ` +${coverage.invoices.length - 1}` : ''}
+                    </span>
+                  )}
+                  <span style={{ flexShrink: 0 }}>
+                    {formatTotal(coverageTotal(coverage))}
+                    {documentTotal(coverage) + coverage.receiptTotal !== coverageTotal(coverage) && (
+                      <span style={{ opacity: 0.7 }}> / {formatTotal(documentTotal(coverage) + coverage.receiptTotal)}</span>
+                    )}
+                  </span>
+                  {tone !== 'match' && <span style={{ flexShrink: 0 }}>{formatSignedAmount(coverage.variance)}</span>}
                 </button>
               )}
               {coverage && showMarker && coverage.invoiceIds.length > 0 && (

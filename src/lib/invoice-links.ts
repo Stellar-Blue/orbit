@@ -1,4 +1,4 @@
-import type { Project } from '@/lib/types';
+import type { InvoiceLine, Project } from '@/lib/types';
 
 /**
  * Invoice → what it bills.
@@ -87,4 +87,33 @@ export function buildInvoiceLinks(args: {
     ...parentsOf(projectIds, args.projects ?? []),
   ]);
   return { contractIds, projectIds, primaryContractId: contractIds[0] ?? null };
+}
+
+/**
+ * The invoice's lines that bill something: a non-zero amount against a project or an agreement.
+ * An invoice with at least one is matched line by line; one without falls back to its link set.
+ */
+export function invoiceLines(invoice: { lines?: InvoiceLine[] | null }): InvoiceLine[] {
+  return (invoice.lines ?? []).filter(line => (Number(line.amount) || 0) !== 0 && Boolean(line.project_id || line.contract_id));
+}
+
+/** What a set of lines adds up to: the net, the months they span, and the agreements / projects they bill. */
+export function summarizeInvoiceLines(
+  lines: InvoiceLine[],
+  projects: ProjectContractLookup = []
+): { net: number; periodFrom: string | null; periodTo: string | null; contractIds: string[]; projectIds: string[] } {
+  const froms = lines.map(line => line.period_from || '').filter(Boolean).sort();
+  const tos = lines.map(line => line.period_to || '').filter(Boolean).sort();
+  const links = buildInvoiceLinks({
+    contractIds: lines.filter(line => !line.project_id).map(line => line.contract_id),
+    projectIds: lines.map(line => line.project_id),
+    projects,
+  });
+  return {
+    net: Math.round(lines.reduce((total, line) => total + (Number(line.amount) || 0), 0) * 100) / 100,
+    periodFrom: froms[0] ?? null,
+    periodTo: tos[tos.length - 1] ?? null,
+    contractIds: links.contractIds,
+    projectIds: links.projectIds,
+  };
 }

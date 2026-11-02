@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { Invoice, InvoiceDirection, InvoiceType, InvoiceStatus, Contract, Counterparty } from '@/lib/types';
+import { Invoice, InvoiceDirection, InvoiceLine, InvoiceType, InvoiceStatus, Contract, Counterparty } from '@/lib/types';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   Receipt, Plus, AlertTriangle, Clock, Calendar, DollarSign, 
@@ -22,8 +22,9 @@ import { formatDate } from '@/lib/date';
 import { format } from 'date-fns';
 import { calculateContractValuation, calculateInvoiceAmountForPeriod, calculateManHoursCharge, calculateUnbilledProjectCharge } from '@/lib/pricing-engine';
 import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment } from '@/lib/billing-periods';
-import { buildInvoiceLinks, invoiceContractIds, invoiceLinkedContractIds, invoiceProjectIds } from '@/lib/invoice-links';
+import { buildInvoiceLinks, invoiceContractIds, invoiceLinkedContractIds, invoiceProjectIds, summarizeInvoiceLines } from '@/lib/invoice-links';
 import { InvoiceLinkPicker, type InvoiceLinkSelection } from '@/components/invoices/invoice-link-picker';
+import { InvoiceLinesEditor } from '@/components/invoices/invoice-lines-editor';
 import { ReceiptsPanel } from '@/components/invoices/receipts-panel';
 import { INVOICE_CURRENCIES, DEFAULT_CURRENCY, formatMoney } from '@/lib/currency';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -126,6 +127,7 @@ export default function InvoicesRegistryPage() {
   /** An invoice can bill several agreements and projects at once; `newContractId` is the primary. */
   const [newContractIds, setNewContractIds] = useState<string[]>([]);
   const [newProjectIds, setNewProjectIds] = useState<string[]>([]);
+  const [newLines, setNewLines] = useState<InvoiceLine[]>([]);
   const [newCatName, setNewCatName] = useState<string>('');
   const [newInvNumber, setNewInvNumber] = useState<string>('');
   const [newMark, setNewMark] = useState<string>('');
@@ -174,6 +176,7 @@ export default function InvoicesRegistryPage() {
     setNewContractId(inv.contract_id || '');
     setNewContractIds(invoiceContractIds(inv));
     setNewProjectIds(invoiceProjectIds(inv));
+    setNewLines(inv.lines ?? []);
     setNewCatName(inv.category || '');
     setNewInvNumber(inv.invoice_number || '');
     setNewMark(inv.mark || '');
@@ -257,6 +260,24 @@ export default function InvoicesRegistryPage() {
     if (addedContractId) applyContractDefaults(addedContractId);
   };
 
+  // Lines, once there are any, are the invoice: the net is their sum and the period their span.
+  const linesSummary = useMemo(() => summarizeInvoiceLines(newLines, projects || []), [newLines, projects]);
+  const hasLines = newLines.length > 0;
+  const handleLinesChange = (lines: InvoiceLine[]) => {
+    setNewLines(lines);
+    if (lines.length === 0) return;
+    const summary = summarizeInvoiceLines(lines, projects || []);
+    setNewNet(summary.net);
+    if (summary.periodFrom) setNewPeriodFrom(summary.periodFrom);
+    if (summary.periodTo) setNewPeriodTo(summary.periodTo);
+  };
+  /** The saved link set: the picked links plus whatever the lines bill, so filters and exports see both. */
+  const savedLinks = () => buildInvoiceLinks({
+    contractIds: [...newContractIds, ...linesSummary.contractIds],
+    projectIds: [...newProjectIds, ...linesSummary.projectIds],
+    projects: projects || [],
+  });
+
   // Check duplicate invoice numbers on the fly
   const handleNumberChange = (num: string, cpId: string, dir: InvoiceDirection) => {
     setNewInvNumber(num);
@@ -307,6 +328,7 @@ export default function InvoicesRegistryPage() {
     const deepLinks = buildInvoiceLinks({ contractIds: [contractId || ''], projectIds: [projectId || ''], projects });
     setNewContractIds(deepLinks.contractIds);
     setNewProjectIds(deepLinks.projectIds);
+    setNewLines([]);
     setNewCatName('');
     setNewInvNumber('');
     setNewMark('');
@@ -608,6 +630,7 @@ export default function InvoicesRegistryPage() {
                   setNewContractId('');
                   setNewContractIds([]);
                   setNewProjectIds([]);
+                  setNewLines([]);
                   setNewCatName('');
                   setNewInvNumber('');
                   setNewMark('');
@@ -1070,14 +1093,26 @@ export default function InvoicesRegistryPage() {
               </div>
             </div>
 
+            <InvoiceLinesEditor
+              lines={newLines}
+              onChange={handleLinesChange}
+              contracts={(contracts || []).filter(contract => newContractIds.includes(contract.id))}
+              projects={(projects || []).filter(project => newProjectIds.includes(project.id))}
+              currency={newCurrency}
+              defaultPeriod={{ from: newPeriodFrom, to: newPeriodTo }}
+              currentNet={newNet}
+            />
+
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="ui-label block mb-1.5">Net Amount ({newCurrency}) *</label>
                 <input
                   type="number"
                   value={newNet}
+                  disabled={hasLines}
+                  title={hasLines ? 'The sum of the invoice lines' : undefined}
                   onChange={(e) => setNewNet(parseFloat(e.target.value) || 0)}
-                  className="ui-input font-semibold bg-[var(--surface-muted)]"
+                  className="ui-input font-semibold bg-[var(--surface-muted)] disabled:text-[var(--ink-3)] disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -1135,11 +1170,14 @@ export default function InvoicesRegistryPage() {
               </div>
               <div>
                 <label className="ui-label block mb-1.5">Period From</label>
-                <DatePicker value={newPeriodFrom} onChange={next => setNewPeriodFrom(next)} className="w-full" />
+                <DatePicker value={newPeriodFrom} onChange={next => setNewPeriodFrom(next)} disabled={Boolean(linesSummary.periodFrom)} className="w-full" />
               </div>
               <div>
                 <label className="ui-label block mb-1.5">Period To</label>
-                <DatePicker value={newPeriodTo} onChange={next => setNewPeriodTo(next)} className="w-full" />
+                <DatePicker value={newPeriodTo} onChange={next => setNewPeriodTo(next)} disabled={Boolean(linesSummary.periodTo)} className="w-full" />
+                {(linesSummary.periodFrom || linesSummary.periodTo) && (
+                  <span className="text-[10px] text-slate-500 block mt-1 leading-tight">Spans the invoice lines&apos; periods</span>
+                )}
               </div>
             </div>
 
@@ -1350,12 +1388,14 @@ export default function InvoicesRegistryPage() {
                     return;
                   }
                   if (editingInvoiceId) {
+                    const links = savedLinks();
                     const res = await updateInvoice(editingInvoiceId, {
                       direction: newDirection,
                       counterparty_id: newCpId,
-                      contract_id: newContractId || null,
-                      contract_ids: newContractIds,
-                      project_ids: newProjectIds,
+                      contract_id: newContractId || links.primaryContractId || null,
+                      contract_ids: links.contractIds,
+                      project_ids: links.projectIds,
+                      lines: newLines,
                       type: newType,
                       invoice_number: newInvNumber.trim(),
                       mark: newMark.trim() || null,
@@ -1385,12 +1425,14 @@ export default function InvoicesRegistryPage() {
                     }
                     return;
                   }
+                  const links = savedLinks();
                   const res = await addInvoice({
                     direction: newDirection,
                     counterparty_id: newCpId,
-                    contract_id: newContractId || null,
-                    contract_ids: newContractIds,
-                    project_ids: newProjectIds,
+                    contract_id: newContractId || links.primaryContractId || null,
+                    contract_ids: links.contractIds,
+                    project_ids: links.projectIds,
+                    lines: newLines,
                     type: newType,
                     invoice_number: newInvNumber.trim(),
                     mark: newMark.trim() || null,

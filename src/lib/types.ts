@@ -1080,6 +1080,20 @@ export interface InvoiceLink {
   created_by?: string;
 }
 
+/** One billed item on an invoice: its amount, the months it covers, and the agreement fee or project it bills. */
+export interface InvoiceLine {
+  id: string;
+  description?: string | null;
+  /** Net amount in the invoice currency. */
+  amount: number;
+  period_from?: string | null;
+  period_to?: string | null;
+  /** The agreement whose own fee the line bills (a project line keeps its project's agreement here too). */
+  contract_id?: string | null;
+  /** The project (change request) the line bills. */
+  project_id?: string | null;
+}
+
 export interface Invoice {
   id: string;
   direction: InvoiceDirection;
@@ -1090,6 +1104,8 @@ export interface Invoice {
   contract_ids?: string[] | null;
   /** Projects (change requests) the invoice bills, possibly across several agreements. */
   project_ids?: string[] | null;
+  /** Line items; when present they say exactly how much of the net goes to which agreement or project. */
+  lines?: InvoiceLine[] | null;
   contract?: Contract;
   type: InvoiceType;
   credits_invoice_id?: string | null;
