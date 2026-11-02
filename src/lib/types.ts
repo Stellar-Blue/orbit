@@ -706,7 +706,10 @@ export interface SpaceSessionInvite {
 
 /** What one invite attempt did — the stored invitation plus the seat the API managed to book. */
 export interface SessionInviteOutcome extends SpaceSessionInvite {
-  seat?: 'booked' | 'already' | 'full' | 'none' | 'failed';
+  /** `away` means the invitee had leave or remote work that day, so no seat applies. */
+  seat?: 'booked' | 'already' | 'full' | 'away' | 'none' | 'failed';
+  /** Why the seat was not booked, when the API knows. */
+  seat_error?: string;
 }
 
 /** One seat held by one person in one space on one date. */

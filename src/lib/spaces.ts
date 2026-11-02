@@ -1,4 +1,7 @@
-import type { Profile, Space, SpaceBooking, SpaceBookingMode, SpaceSession, SessionInviteOutcome, SpaceType } from '@/lib/types';
+import type {
+  LeaveStatus, Profile, RemoteDay, RemotePattern, Space, SpaceBooking, SpaceBookingMode, SpaceSession,
+  SessionInviteOutcome, SpaceType,
+} from '@/lib/types';
 
 /**
  * Seat-booking rules shared by the booking screen, the admin settings and the tests.
@@ -331,6 +334,79 @@ export function parseInviteEmails(value: string): string[] {
     .filter(email => (seen.has(email) ? false : (seen.add(email), true)));
 }
 
+/**
+ * Leave states that mean the person is away from the office. A rejected or cancelled request does
+ * not count; a pending one does, because the day is already declared.
+ */
+export const AWAY_LEAVE_STATUSES: readonly LeaveStatus[] = [
+  'pending', 'approved', 'in_progress', 'taken', 'cancellation_requested',
+];
+
+export type AbsenceKind = 'leave' | 'remote';
+
+export interface DayAbsence {
+  kind: AbsenceKind;
+  /** Ready to drop into a sentence: `on annual leave`, `working remotely`. */
+  label: string;
+}
+
+/** `Mon` for a date, in UTC so the weekday never shifts with the browser's timezone. */
+const shortWeekday = (date: string): string =>
+  new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+
+/**
+ * Why a person cannot take a seat on a date: they declared leave, or they are remote — either an
+ * explicit day or a recurring pattern. An explicit `office` day overrides a pattern, which is how
+ * the remote screen lets someone come in on a pattern day.
+ *
+ * The database enforces the same rule (`enforce_seat_at_office`), so this is what explains it.
+ */
+export function absenceOnDate(args: {
+  date: string;
+  profileId: string;
+  leaveRequests: {
+    profile_id: string;
+    start_date: string;
+    end_date: string;
+    status: LeaveStatus;
+    leave_type?: { name_en?: string | null; name_el?: string | null } | null;
+  }[];
+  remoteDays: Pick<RemoteDay, 'profile_id' | 'date' | 'mode'>[];
+  remotePatterns: Pick<RemotePattern, 'profile_id' | 'weekday' | 'mode' | 'valid_from' | 'valid_to'>[];
+}): DayAbsence | null {
+  const { date, profileId, leaveRequests, remoteDays, remotePatterns } = args;
+
+  const leave = leaveRequests.find(request =>
+    request.profile_id === profileId
+    && AWAY_LEAVE_STATUSES.includes(request.status)
+    && request.start_date <= date
+    && request.end_date >= date
+  );
+  if (leave) {
+    const name = leave.leave_type?.name_en || leave.leave_type?.name_el || null;
+    return { kind: 'leave', label: name ? `on ${name}` : 'on leave' };
+  }
+
+  const declared = remoteDays.find(day => day.profile_id === profileId && day.date === date);
+  if (declared) {
+    if (declared.mode === 'office') return null;
+    return { kind: 'remote', label: declared.mode === 'remote_abroad' ? 'working from abroad' : 'working remotely' };
+  }
+
+  const weekday = shortWeekday(date);
+  const pattern = remotePatterns.find(rule =>
+    rule.profile_id === profileId
+    && rule.mode !== 'office'
+    && rule.weekday === weekday
+    && rule.valid_from <= date
+    && (!rule.valid_to || rule.valid_to >= date)
+  );
+  if (pattern) {
+    return { kind: 'remote', label: pattern.mode === 'remote_abroad' ? 'working from abroad' : 'working remotely' };
+  }
+  return null;
+}
+
 export interface SessionInviteTarget {
   email: string;
   /** The Orbit user behind the address — those are invited on Slack. External guests are not. */
@@ -388,6 +464,9 @@ export function summarizeInviteDelivery(invites: SessionInviteOutcome[]): Invite
     }
     if (invite.seat === 'full') {
       problems.push({ who, problem: 'invited, but the session is full so no seat was reserved' });
+    }
+    if (invite.seat === 'away') {
+      problems.push({ who, problem: invite.seat_error || 'invited, but away that day so no seat was reserved' });
     }
     if (invite.seat === 'failed') {
       problems.push({ who, problem: 'invited, but the seat could not be booked' });

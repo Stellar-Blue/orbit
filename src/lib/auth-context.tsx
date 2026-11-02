@@ -43,7 +43,8 @@ import { startRealtimeSync } from './realtime-sync';
 import { scoreCounterparty, buildHistoryDeltas, tierLabel, type TierModelConfig, type TierDataContext, type TierModel } from './tiering-engine';
 import { enqueueStatusSync, athensTodayStr } from './integrations/client';
 import { DEFAULT_SLACK_SETTINGS, EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration, type IntegrationExemption, type IntegrationSettings } from './integrations/types';
-import { notifySuccess } from './validation-modal';
+import { notifySuccess, notifyValidation } from './validation-modal';
+import { formatDate } from './date';
 import { clockLabel, validateSessionWindow, wholeDayHeldOn } from './spaces';
 import { clampSeatToRoom, seatGrid } from './office-layout';
 
@@ -1744,9 +1745,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const crossesYearBoundary = (start?: string | null, end?: string | null) =>
     !!start && !!end && start.slice(0, 4) !== end.slice(0, 4);
 
+  /** A seat the person held on a date an absence is about to take away. */
+  interface SeatOnDate { id: string; space_name: string; booking_date: string; }
+
+  /**
+   * The seats a person holds on those dates, read *before* the leave or remote day is written: the
+   * database releases them in the same statement (`release_seats_for_absence`), so asking afterwards
+   * would always come back empty.
+   */
+  const seatsOnDates = async (profileId: string, dates: string[]): Promise<SeatOnDate[]> => {
+    const unique = Array.from(new Set(dates));
+    if (isDemoMode() || unique.length === 0) return [];
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from('space_bookings')
+        .select('id, booking_date, spaces(name)')
+        .eq('profile_id', profileId)
+        .in('booking_date', unique);
+      if (error || !data) return [];
+      return (data as unknown as { id: string; booking_date: string; spaces?: { name?: string } | null }[])
+        .map(row => ({ id: row.id, booking_date: row.booking_date, space_name: row.spaces?.name || 'a room' }));
+    } catch (e) {
+      console.error('seatsOnDates failed:', e);
+      return [];
+    }
+  };
+
+  /**
+   * Says which seats an absence just released. The room is the visible half of the trade-off: the
+   * person cannot hold a chair on a day they are not in the office, so the notice names the rooms
+   * that were freed rather than dropping them silently.
+   */
+  const announceReleasedSeats = (seats: SeatOnDate[], reason: 'leave' | 'remote') => {
+    if (seats.length === 0) return;
+    setSpaceBookings(prev => prev.filter(booking => !seats.some(seat => seat.id === booking.id)));
+    notifyValidation({
+      type: 'info',
+      title: 'Seat released',
+      message: reason === 'remote'
+        ? 'This day is now registered as remote work, so the seat booked for it has been released. Book again if you come to the office instead.'
+        : 'This day is now registered as leave, so the seat booked for it has been released.',
+      items: seats.map(seat => ({ label: formatDate(seat.booking_date), value: seat.space_name })),
+      duration: 0,
+    });
+  };
+
   /** Single-row insert. Every leave write funnels through here so the split logic stays in one place. */
   const insertLeaveRow = async (newReq: LeaveRequest) => {
     const supabase = getSupabaseBrowserClient();
+    // Read the seats before the insert: the leave triggers release them in the same statement.
+    const releasing = await seatsOnDates(newReq.profile_id, expandDateRange(newReq.start_date, newReq.end_date));
     const { leave_type, ...cleanReq } = newReq as any;
     try {
       const { error, data } = await supabase.from('leave_requests').insert(cleanReq).select();
@@ -1757,6 +1806,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const savedReq = (data && data[0]) ? { ...data[0], leave_type: leaveTypes.find(lt => lt.id === data[0].leave_type_id) } : newReq;
       setLeaveRequests(prev => [savedReq, ...prev]);
+      announceReleasedSeats(releasing, 'leave');
       if (savedReq.status === 'approved') {
         // Admin-created approved leave (e.g. admin_entry) mirrors immediately
         syncSlackStatus(savedReq.profile_id, athensTodayStr(), savedReq.id);
@@ -2081,6 +2131,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    // Same as a single row: the seats go with the absence, so read them before the insert.
+    const releasing = await seatsOnDates(req.profile_id, expandDateRange(req.start_date, req.end_date));
     const ids = segments.map(() => generateUUID());
     const rows: LeaveRequest[] = segments.map((seg, i) => ({
       ...req,
@@ -2104,6 +2156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ? data.map(row => ({ ...row, leave_type: leaveTypes.find(lt => lt.id === row.leave_type_id) }))
         : rows;
       setLeaveRequests(prev => [...saved].reverse().concat(prev));
+      announceReleasedSeats(releasing, 'leave');
     } catch (e) {
       console.error('Failed to save year-boundary split leave requests:', e);
     }
@@ -4487,6 +4540,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: day.id || generateUUID()
     };
     const supabase = getSupabaseBrowserClient();
+    // An office day changes nothing; a remote day releases the seat held on it.
+    const releasing = newDay.mode === 'office' ? [] : await seatsOnDates(newDay.profile_id, [newDay.date]);
     try {
       const { error, data } = await supabase.from('remote_days').upsert({
         id: newDay.id,
@@ -4506,6 +4561,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const filtered = prev.filter(d => !(d.profile_id === newDay.profile_id && d.date === newDay.date));
         return [newDay, ...filtered];
       });
+      announceReleasedSeats(releasing, 'remote');
       // Day-scoped mirror: only a change to today flips Slack now. A remote day for another day
       // waits for the morning job on that day (enqueueStatusSync enforces this too).
       if (newDay.date === athensTodayStr()) {
@@ -6070,6 +6126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           profile_id: string | null;
           name: string | null;
           seat: string;
+          seat_error?: string;
           slack_status: 'sent' | 'failed' | 'skipped';
           outlook_status: 'sent' | 'failed' | 'skipped';
           slack_error?: string;
@@ -6087,6 +6144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile_id: invite.profile_id,
         name: invite.name,
         seat: invite.seat as SessionInviteOutcome['seat'],
+        seat_error: invite.seat_error,
         slack_status: invite.slack_status,
         outlook_status: invite.outlook_status,
         slack_error: invite.slack_error ?? null,

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from '@/lib/integrations/types';
 import { syncSessionCalendarInvite } from '@/lib/integrations/outlook';
+import { absenceOnDate, type DayAbsence } from '@/lib/spaces';
 
 /**
  * Server-side session context shared by the invite and edit routes.
@@ -98,6 +99,42 @@ export async function calendarStateOf(
     rows.filter(row => row.outlook_event_id === eventId).map(row => row.email)
   ));
   return { eventId, attendees };
+}
+
+/**
+ * Whether the person is away on a date, read straight from the tables that decide it. The booking
+ * trigger refuses the insert either way; this lets the invite route say "on leave" or "remote"
+ * instead of reporting a generic failure for a seat it should never have asked for.
+ */
+export async function absenceOf(
+  admin: SupabaseClient,
+  profileId: string,
+  date: string
+): Promise<DayAbsence | null> {
+  const [{ data: leaves }, { data: days }, { data: patterns }] = await Promise.all([
+    admin
+      .from('leave_requests')
+      .select('profile_id, start_date, end_date, status')
+      .eq('profile_id', profileId)
+      .lte('start_date', date)
+      .gte('end_date', date),
+    admin
+      .from('remote_days')
+      .select('profile_id, date, mode')
+      .eq('profile_id', profileId)
+      .eq('date', date),
+    admin
+      .from('remote_patterns')
+      .select('profile_id, weekday, mode, valid_from, valid_to')
+      .eq('profile_id', profileId),
+  ]);
+  return absenceOnDate({
+    date,
+    profileId,
+    leaveRequests: leaves || [],
+    remoteDays: days || [],
+    remotePatterns: patterns || [],
+  });
 }
 
 /** Creates, patches or cancels the session's meeting so it always mirrors Orbit. */

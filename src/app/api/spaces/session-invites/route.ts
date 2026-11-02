@@ -3,7 +3,7 @@ import { athensToday, getAdminClient, hasSlackBotToken, slackSendDirectMessage }
 import { cancelSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 import { EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration } from '@/lib/integrations/types';
-import { calendarStateOf, loadSessionContext, sessionWhen, syncSessionCalendar } from '@/lib/spaces-server';
+import { absenceOf, calendarStateOf, loadSessionContext, sessionWhen, syncSessionCalendar } from '@/lib/spaces-server';
 import { normalizeInviteEmail } from '@/lib/spaces';
 import type { SessionInviteStatus } from '@/lib/types';
 
@@ -36,8 +36,9 @@ interface RecipientResult {
   email: string;
   profile_id: string | null;
   name: string | null;
-  /** `booked` | `already` | `full` | `none` for external guests | `failed`. */
-  seat: 'booked' | 'already' | 'full' | 'none' | 'failed';
+  /** `away` = leave/remote that day, `none` = external guest without an Orbit seat. */
+  seat: 'booked' | 'already' | 'full' | 'away' | 'none' | 'failed';
+  seat_error?: string;
   slack_status: SessionInviteStatus;
   outlook_status: SessionInviteStatus;
   slack_error?: string;
@@ -133,20 +134,34 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const { error: seatError } = await admin.from('space_bookings').insert([{
-      space_id: context.spaceId,
-      session_id: context.id,
-      profile_id: profile.id,
-      booking_date: context.sessionDate,
-      created_by: caller.profileId,
-    }]);
-    const seat: RecipientResult['seat'] = !seatError
-      ? 'booked'
-      : seatError.code === '23505'
-        ? 'already'
-        : /full|fully booked/i.test(seatError.message)
-          ? 'full'
-          : 'failed';
+    // The seat is only for a day at the office; the database refuses anything else (SQLSTATE
+    // SB001), and this check lets the report say why instead of a generic failure.
+    const away = await absenceOf(admin, profile.id, context.sessionDate);
+    let seat: RecipientResult['seat'] = 'away';
+    let seatError: string | undefined = away
+      ? `invited, but ${away.label} that day so no seat was reserved`
+      : undefined;
+    if (!away) {
+      const { error: bookingError } = await admin.from('space_bookings').insert([{
+        space_id: context.spaceId,
+        session_id: context.id,
+        profile_id: profile.id,
+        booking_date: context.sessionDate,
+        created_by: caller.profileId,
+      }]);
+      seat = !bookingError
+        ? 'booked'
+        : bookingError.code === '23505'
+          ? 'already'
+          : bookingError.code === 'SB001'
+            ? 'away'
+            : /full|fully booked/i.test(bookingError.message)
+              ? 'full'
+              : 'failed';
+      if (bookingError && seat !== 'already') {
+        seatError = `invited, but the seat was not booked: ${bookingError.message}`;
+      }
+    }
 
     const seatLine = seat === 'booked'
       ? 'A seat is reserved for you.'
@@ -154,7 +169,9 @@ export async function POST(request: NextRequest) {
         ? 'You already hold a seat in this session.'
         : seat === 'full'
           ? 'The room is full, so no seat could be reserved — ask the organiser.'
-          : '';
+          : seat === 'away'
+            ? 'You are away that day, so no seat was reserved for you.'
+            : '';
     const text = [
       `:calendar: *${context.title?.trim() || 'Meeting'}* in *${context.roomName}*`,
       when,
@@ -183,6 +200,7 @@ export async function POST(request: NextRequest) {
       email, profile_id: profile.id, name: personName(profile), seat,
       slack_status: slackStatus, outlook_status: 'skipped',
       ...(slackError ? { slack_error: slackError } : {}),
+      ...(seatError ? { seat_error: seatError } : {}),
     });
   }
 

@@ -7,6 +7,8 @@
  */
 
 import {
+  AWAY_LEAVE_STATUSES,
+  absenceOnDate,
   BOOKING_MODE_LABELS,
   canDeleteSession,
   canEditSession,
@@ -379,6 +381,78 @@ assert(
 assert(
   !canDeleteSession({ created_by: null }, null, false),
   'A session without an owner is left to administrators'
+);
+
+// --- A seat is only for a day at the office ---------------------------------
+const day = '2026-11-12'; // a Thursday
+const leaveOn = (status, start = day, end = day) => ({
+  profile_id: 'me', start_date: start, end_date: end, status, leave_type: { name_en: 'Annual Leave' },
+});
+const absence = (args) => absenceOnDate({
+  date: day,
+  profileId: 'me',
+  leaveRequests: [],
+  remoteDays: [],
+  remotePatterns: [],
+  ...args,
+});
+
+assert(
+  absence({ leaveRequests: [leaveOn('approved')] })?.kind === 'leave',
+  'An approved leave blocks a seat on that day',
+  absence({ leaveRequests: [leaveOn('approved')] })?.label
+);
+assert(
+  absence({ leaveRequests: [leaveOn('pending')] })?.kind === 'leave',
+  'A declared (pending) leave blocks the seat too — the day is already declared'
+);
+assert(
+  absence({ leaveRequests: [leaveOn('rejected')] }) === null
+    && absence({ leaveRequests: [leaveOn('cancelled')] }) === null,
+  'A rejected or cancelled leave does not keep anyone out of the office'
+);
+assert(
+  absence({ leaveRequests: [leaveOn('approved', '2026-11-10', '2026-11-11')] }) === null,
+  'A leave that ends before the day does not block it'
+);
+assert(
+  absence({ leaveRequests: [{ profile_id: 'someone-else', start_date: day, end_date: day, status: 'approved' }] }) === null,
+  'A colleague\'s leave is not yours'
+);
+
+assert(
+  absence({ remoteDays: [{ profile_id: 'me', date: day, mode: 'remote_gr' }] })?.kind === 'remote',
+  'A declared remote day blocks a seat'
+);
+assert(
+  absence({ remoteDays: [{ profile_id: 'me', date: day, mode: 'remote_abroad' }] })?.label === 'working from abroad',
+  'Remote from abroad says so',
+  absence({ remoteDays: [{ profile_id: 'me', date: day, mode: 'remote_abroad' }] })?.label
+);
+const pattern = { profile_id: 'me', weekday: 'Thu', mode: 'remote_gr', valid_from: '2026-01-01' };
+assert(
+  absence({ remotePatterns: [pattern] })?.kind === 'remote',
+  'A recurring remote pattern covers its weekday'
+);
+assert(
+  absence({ remotePatterns: [pattern], remoteDays: [{ profile_id: 'me', date: day, mode: 'office' }] }) === null,
+  'An explicit office day overrides the recurring remote pattern'
+);
+assert(
+  absence({ remotePatterns: [{ ...pattern, valid_from: '2027-01-01' }] }) === null,
+  'A pattern that has not started yet does not block the day'
+);
+assert(
+  absence({ remotePatterns: [{ ...pattern, valid_to: '2026-06-30' }] }) === null,
+  'A pattern that ended does not block the day'
+);
+assert(
+  absence({ remotePatterns: [{ ...pattern, weekday: 'Fri' }] }) === null,
+  'Another weekday\'s pattern leaves the day free'
+);
+assert(
+  absence({}) === null,
+  'A plain day at the office is bookable'
 );
 
 // --- Inviting people to a session -------------------------------------------
