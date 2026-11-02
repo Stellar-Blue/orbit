@@ -54,7 +54,8 @@ export function projectBillingStatus<T extends NettableInvoice & { project_ids?:
  * and days, attachments and links. Documents/links are read and written directly (they belong to this
  * panel), while the scalar fields go through `saveProject`.
  */
-export function ProjectDetailsPanel({ project, onSaved }: { project: Project; onSaved?: (p: Partial<Project>) => void }) {
+/** `showExtras` adds links, documents and the billing list under the always-useful delivery details. */
+export function ProjectDetailsPanel({ project, onSaved, showExtras = true }: { project: Project; onSaved?: (p: Partial<Project>) => void; showExtras?: boolean }) {
   const { currentUser, timeEntries, invoices, saveProject, profiles } = useAuth();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
@@ -354,6 +355,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
         </div>
       </div>
 
+      {showExtras && (<>
       {/* ── Links ────────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2.5">
         <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
@@ -463,6 +465,7 @@ export function ProjectDetailsPanel({ project, onSaved }: { project: Project; on
           </ul>
         )}
       </div>
+      </>)}
     </div>
   );
 }

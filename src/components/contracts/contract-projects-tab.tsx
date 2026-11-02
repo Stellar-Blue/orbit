@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Contract, Project, PROJECT_STATUS_META } from '@/lib/types';
 import { Button } from '@/components/ui/primitives';
@@ -10,6 +10,7 @@ import { ProjectForecastEditor } from '@/components/timesheets/project-forecast-
 import { ProjectDetailsPanel, projectBillingStatus } from '@/components/projects/project-details-panel';
 import { formatDate } from '@/lib/date';
 import { DatePicker } from '@/components/ui/date-picker';
+import { notifySuccess } from '@/lib/validation-modal';
 
 /** Projects linked to one contract: see / create / edit / delete + role-seniority forecast. */
 export function ContractProjectsTab({ contract }: { contract: Contract }) {
@@ -26,8 +27,29 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
   const [editName, setEditName] = useState('');
   const [editStatus, setEditStatus] = useState<Project['status']>('planned');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  /** Project ids on screen when "Create" was pressed; the first id outside it is the new project. */
+  const idsBeforeCreate = useRef<Set<string> | null>(null);
 
   const linked = projects.filter(p => p.contract_id === contract.id && p.status !== 'archived');
+
+  // A new project lands at the end of the list, often below the fold: bring it into view, open it
+  // and flash it so creating one never looks like nothing happened.
+  useEffect(() => {
+    const before = idsBeforeCreate.current;
+    const created = before && linked.find(p => !before.has(p.id));
+    if (!created) return;
+    idsBeforeCreate.current = null;
+    setExpandedId(created.id);
+    setHighlightId(created.id);
+    requestAnimationFrame(() => document.getElementById(`project-${created.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [linked]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
   const createErrors: string[] = [];
   if (plannedStart && plannedEnd && plannedEnd < plannedStart) createErrors.push('Planned end is before the planned start.');
@@ -37,6 +59,7 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
     if (!name.trim()) { alert('Project name required.'); return; }
     if (createErrors.length > 0) { alert(createErrors.join(' ')); return; }
     const hours = budgetHours ? Number(budgetHours) : budgetDays ? Number(budgetDays) * 8 : null;
+    idsBeforeCreate.current = new Set(linked.map(p => p.id));
     const ok = await saveProject({
       name: name.trim(),
       contract_id: contract.id,
@@ -48,7 +71,8 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
       starts_on: plannedStart || null,
       ends_on: plannedEnd || null,
     });
-    if (!ok) { alert('Could not create the project.'); return; }
+    if (!ok) { idsBeforeCreate.current = null; alert('Could not create the project.'); return; }
+    notifySuccess(`"${name.trim()}" was added to ${contract.reference}.`, 'Project created');
     setName(''); setCode(''); setBudgetHours(''); setBudgetDays(''); setPlannedStart(''); setPlannedEnd(''); setNewStatus('planned');
   };
 
@@ -114,7 +138,11 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
       ) : (
         <div className="space-y-4">
           {linked.map(p => (
-            <div key={p.id} className="rounded-2xl bg-white border border-slate-200 shadow-2xs overflow-hidden">
+            <div
+              key={p.id}
+              id={`project-${p.id}`}
+              className={`rounded-2xl bg-white border shadow-2xs overflow-hidden scroll-mt-4 transition-shadow duration-500 ${highlightId === p.id ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/40' : 'border-slate-200'}`}
+            >
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
                 {editingId === p.id ? (
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -167,7 +195,7 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
                       <button
                         onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                         className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--accent)] hover:bg-blue-50 px-2 py-1.5 rounded-lg cursor-pointer"
-                        title="Status, dates, budgets, links and documents"
+                        title="Links, documents, invoices and the role / seniority hours forecast"
                       >
                         {expandedId === p.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         {expandedId === p.id ? 'Hide details' : 'Details'}
@@ -178,19 +206,15 @@ export function ContractProjectsTab({ contract }: { contract: Contract }) {
                   </>
                 )}
               </div>
-              <div className="p-4">
-                {expandedId === p.id && (
-                  <div className="mb-4">
-                    <ProjectDetailsPanel key={p.id} project={p} />
-                  </div>
-                )}
+              <div className="p-4 space-y-4">
+                <ProjectDetailsPanel key={p.id} project={p} showExtras={expandedId === p.id} />
                 <ProjectBillingBar
                   project={p}
                   entries={timeEntries as Array<{ project_id: string; minutes?: number | null; billable?: boolean | null; status?: string | null; billing_rate?: number | null; invoice_id?: string | null }>}
                   invoices={invoices}
                   contractId={contract.id}
                 />
-                <ProjectForecastEditor projectId={p.id} />
+                {expandedId === p.id && <ProjectForecastEditor projectId={p.id} />}
               </div>
             </div>
           ))}
