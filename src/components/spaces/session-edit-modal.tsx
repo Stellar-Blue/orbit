@@ -1,11 +1,15 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import { Clock, Mail, MessageSquare, Trash2, Users } from 'lucide-react';
+import { Armchair, Clock, Mail, MessageSquare, Trash2, Users } from 'lucide-react';
 import { Button, Modal } from '@/components/ui/primitives';
 import { SessionInviteFields } from '@/components/spaces/session-invite-fields';
-import { clockLabel, sessionEnded, summarizeInviteDelivery, type InviteDeliverySummary } from '@/lib/spaces';
-import type { Profile, SessionInviteOutcome, Space, SpaceSession, SpaceSessionInvite } from '@/lib/types';
+import {
+  clockLabel, sessionAttendees, sessionEnded, summarizeInviteDelivery, type InviteDeliverySummary,
+} from '@/lib/spaces';
+import type {
+  Profile, SessionInviteOutcome, Space, SpaceBooking, SpaceSession, SpaceSessionInvite,
+} from '@/lib/types';
 
 type DirectoryPerson = Pick<Profile, 'id' | 'first_name' | 'last_name' | 'work_email' | 'status'>;
 
@@ -17,6 +21,8 @@ export interface SessionEditModalProps {
   people: DirectoryPerson[];
   /** Everyone currently invited to the session. */
   invites: SpaceSessionInvite[];
+  /** The seats taken in the session — the attendees, whether or not they were invited. */
+  bookings: SpaceBooking[];
   onClose: () => void;
   onSave: (changes: {
     startsAt: string;
@@ -46,7 +52,7 @@ const inviteName = (invite: SpaceSessionInvite): string =>
  * session's own values rather than the previous one's.
  */
 export function SessionEditModal({
-  session, space, dayLabel, people, invites, onClose, onSave, onAddInvitees, onRemoveInvitee,
+  session, space, dayLabel, people, invites, bookings, onClose, onSave, onAddInvitees, onRemoveInvitee,
 }: SessionEditModalProps) {
   const [startsAt, setStartsAt] = useState(() => clockLabel(session?.starts_at));
   const [endsAt, setEndsAt] = useState(() => clockLabel(session?.ends_at));
@@ -61,6 +67,11 @@ export function SessionEditModal({
   const [notice, setNotice] = useState<string | null>(null);
 
   const over = session ? sessionEnded(session) : false;
+  const attendees = useMemo(
+    () => sessionAttendees({ bookings, invites }),
+    [bookings, invites]
+  );
+  const seated = attendees.filter(attendee => attendee.seat).length;
 
   const detailsChanged = useMemo(() => {
     if (!session) return false;
@@ -189,33 +200,47 @@ export function SessionEditModal({
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="ui-label">Invited</span>
-            <span className="ui-meta">{invites.length} on this session</span>
+            <span className="ui-label">Attendees</span>
+            <span className="ui-meta">
+              {seated} with a seat · {attendees.length - seated} invited only
+            </span>
           </div>
-          {invites.length > 0 ? (
+          {attendees.length > 0 ? (
             <ul className="divide-y divide-[var(--line)] rounded-[var(--radius-control)] border border-[var(--line)]">
-              {invites.map(invite => (
-                <li key={invite.email} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+              {attendees.map(attendee => (
+                <li key={attendee.key} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
                   <span className="min-w-0">
-                    <span className="block truncate text-[11.5px] font-semibold text-[var(--ink)]">{inviteName(invite)}</span>
-                    <span className="ui-meta block truncate">{invite.email}</span>
+                    <span className="block truncate text-[11.5px] font-semibold text-[var(--ink)]">{attendee.name}</span>
+                    <span className="ui-meta block truncate">{attendee.email || 'no address on file'}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
-                    {invite.profile_id ? (
-                      <MessageSquare className="h-3 w-3 text-[var(--accent)]" aria-label="Invited on Slack" />
-                    ) : (
-                      <Mail className="h-3 w-3 text-[var(--ink-4)]" aria-label="Invited by email" />
+                    {attendee.seat && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--accent-ink)]"
+                        title="Holds a seat in this session"
+                      >
+                        <Armchair className="h-2.5 w-2.5" /> Seat
+                      </span>
                     )}
-                    <button
-                      type="button"
-                      disabled={busy || removing === invite.email}
-                      onClick={() => void remove(invite)}
-                      className="cursor-pointer rounded p-0.5 text-[var(--ink-4)] transition-colors hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
-                      title={`Remove ${inviteName(invite)} from this session`}
-                      aria-label={`Remove ${inviteName(invite)} from this session`}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    {attendee.invite && (
+                      attendee.invite.profile_id ? (
+                        <MessageSquare className="h-3 w-3 text-[var(--accent)]" aria-label="Invited on Slack" />
+                      ) : (
+                        <Mail className="h-3 w-3 text-[var(--ink-4)]" aria-label="Invited by email" />
+                      )
+                    )}
+                    {attendee.invite && (
+                      <button
+                        type="button"
+                        disabled={busy || removing === attendee.invite.email}
+                        onClick={() => void remove(attendee.invite!)}
+                        className="cursor-pointer rounded p-0.5 text-[var(--ink-4)] transition-colors hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+                        title={`Remove ${attendee.name} from this session`}
+                        aria-label={`Remove ${attendee.name} from this session`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
                   </span>
                 </li>
               ))}
@@ -223,7 +248,7 @@ export function SessionEditModal({
           ) : (
             <p className="ui-meta">
               <Users className="mr-1 inline h-3 w-3 -translate-y-px" />
-              Nobody invited yet — add someone below.
+              Nobody booked or invited yet — add someone below.
             </p>
           )}
         </div>

@@ -20,6 +20,7 @@ import {
   overlappingSession,
   parseInviteEmails,
   resolveInviteTargets,
+  sessionAttendees,
   summarizeInviteDelivery,
   wholeDayHeldOn,
   seatHolders,
@@ -526,6 +527,43 @@ assert(
 assert(
   targets[3].profile === undefined,
   'An address outside the directory is an external guest'
+);
+
+// --- Who is actually in the session -----------------------------------------
+const people = sessionAttendees({
+  bookings: [
+    { profile_id: 'p-kostas', profile: { id: 'p-kostas', first_name: 'Kostas', last_name: 'R', work_email: 'kostas@orbit.gr' } },
+    { profile_id: 'p-ana', profile: { id: 'p-ana', first_name: 'Ana', last_name: 'P', work_email: 'ana@orbit.gr' } },
+  ],
+  invites: [
+    { session_id: 'ses-1', email: 'ana@orbit.gr', profile_id: 'p-ana', name: 'Ana P', slack_status: 'sent', outlook_status: 'skipped' },
+    { session_id: 'ses-1', email: 'guest@example.com', profile_id: null, name: null, slack_status: 'skipped', outlook_status: 'sent' },
+  ],
+});
+assert(
+  people.length === 3,
+  'A seat and the invitation that produced it are one attendee, not two',
+  people.map(person => person.name).join(', ')
+);
+const anaRow = people.find(person => person.key === 'p-ana');
+assert(
+  anaRow?.seat === true && Boolean(anaRow?.invite),
+  'An invited colleague who also holds a seat shows both facts on one row'
+);
+const guestRow = people.find(person => person.key === 'guest@example.com');
+assert(
+  guestRow?.seat === false && guestRow?.invite?.email === 'guest@example.com',
+  'An external guest with only an invitation shows as invited, without a seat'
+);
+const kostasRow = people.find(person => person.key === 'p-kostas');
+assert(
+  kostasRow?.seat === true && kostasRow?.invite === undefined,
+  'A colleague who joined by booking a seat shows up even though nobody invited them'
+);
+assert(
+  people[0].seat && people[1].seat && !people[2].seat,
+  'Seat holders are listed before invitation-only guests',
+  people.map(person => `${person.name}${person.seat ? ' (seat)' : ''}`).join(', ')
 );
 
 const delivery = summarizeInviteDelivery([

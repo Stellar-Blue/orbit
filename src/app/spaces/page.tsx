@@ -808,6 +808,7 @@ export default function SpacesPage() {
           dayLabel={formatDate(day)}
           people={profiles}
           invites={spaceSessionInvites.filter(invite => invite.session_id === editTarget.session.id)}
+          bookings={spaceBookings.filter(booking => booking.session_id === editTarget.session.id)}
           onClose={() => setEditTarget(null)}
           onSave={changes => updateSpaceSession({ sessionId: editTarget.session.id, ...changes })}
           onAddInvitees={(emails, includeOutlook) => inviteToSpaceSession({

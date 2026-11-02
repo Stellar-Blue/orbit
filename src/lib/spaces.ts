@@ -1,6 +1,6 @@
 import type {
   LeaveStatus, Profile, RemoteDay, RemotePattern, Space, SpaceBooking, SpaceBookingMode, SpaceSession,
-  SessionInviteOutcome, SpaceType,
+  SpaceSessionInvite, SessionInviteOutcome, SpaceType,
 } from '@/lib/types';
 
 /**
@@ -405,6 +405,66 @@ export function absenceOnDate(args: {
     return { kind: 'remote', label: pattern.mode === 'remote_abroad' ? 'working from abroad' : 'working remotely' };
   }
   return null;
+}
+
+/** One person in a session, whether they hold a seat, were invited, or both. */
+export interface SessionAttendee {
+  /** Identity used to merge a seat with its invitation: the profile, or the guest's address. */
+  key: string;
+  name: string;
+  email: string;
+  /** Holds a seat in this session. */
+  seat: boolean;
+  /** The invitation behind the row, when the organiser sent one — that is what can be withdrawn. */
+  invite?: SpaceSessionInvite;
+}
+
+const inviteNameOf = (invite: SpaceSessionInvite): string =>
+  invite.name
+  || [invite.profile?.first_name, invite.profile?.last_name].filter(Boolean).join(' ').trim()
+  || invite.email;
+
+const profileName = (profile?: Profile | null): string =>
+  [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || profile?.work_email || '';
+
+/**
+ * Everyone in a session, seats and invitations merged into one row per person. An invitee who also
+ * took a seat is the same person twice in the data, and showing them twice is exactly the confusion
+ * the organiser is trying to resolve.
+ */
+export function sessionAttendees(args: {
+  bookings: Pick<SpaceBooking, 'profile_id' | 'profile'>[];
+  invites: SpaceSessionInvite[];
+}): SessionAttendee[] {
+  const rows = new Map<string, SessionAttendee>();
+
+  args.bookings.forEach(booking => {
+    const key = booking.profile_id;
+    const existing = rows.get(key);
+    rows.set(key, {
+      key,
+      name: profileName(booking.profile) || existing?.name || 'Colleague',
+      email: booking.profile?.work_email || existing?.email || '',
+      seat: true,
+      invite: existing?.invite,
+    });
+  });
+
+  args.invites.forEach(invite => {
+    const key = invite.profile_id || invite.email.toLowerCase();
+    const existing = rows.get(key);
+    rows.set(key, {
+      key,
+      name: existing?.name || inviteNameOf(invite) || invite.email,
+      email: existing?.email || invite.email,
+      seat: Boolean(existing?.seat),
+      invite,
+    });
+  });
+
+  return Array.from(rows.values()).sort((a, b) =>
+    Number(b.seat) - Number(a.seat) || a.name.localeCompare(b.name)
+  );
 }
 
 export interface SessionInviteTarget {
