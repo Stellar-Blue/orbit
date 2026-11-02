@@ -572,8 +572,8 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
   // Change-request rows show the invoices their projects are billed by.
   const projectCoverage = useMemo(
-    () => buildProjectInvoiceCoverage(invoices, projects, receipts, contracts),
-    [invoices, projects, receipts, contracts]
+    () => buildProjectInvoiceCoverage(invoices, projects, receipts, contracts, catalogModules, catalogItems),
+    [invoices, projects, receipts, contracts, catalogModules, catalogItems]
   );
   const projectCoverageRef = useRef<InvoiceCoverageMap>(new Map());
   useEffect(() => {

@@ -1,6 +1,6 @@
 import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceLine, InvoiceStatus, Project, Receipt } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
-import { invoiceContractIds, invoiceLines, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
+import { invoiceContractIds, invoiceLines, invoiceLineTargets, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
 import { contractChargeMonths, contractProjectSchedules, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -113,6 +113,77 @@ export function invoiceLineMonths(invoice: Invoice, line: InvoiceLine): string[]
   if (from || to) return monthKeysBetween(from ?? (to as string), to ?? (from as string));
   return invoiceCoveredMonths(invoice);
 }
+
+/** One target's part of an invoice line, in EUR. */
+export interface InvoiceLineShare {
+  kind: 'contract' | 'project';
+  id: string;
+  amount: number;
+}
+
+/**
+ * Splits invoice lines across what each bills, in EUR: in proportion to what every target expects
+ * over the line's months — a change request with nothing scheduled there weighs its budget, as it is
+ * often billed in one lump — and evenly when nothing is expected at all. A one-target line keeps its
+ * whole amount, and the last share absorbs rounding so the shares always add up to the line.
+ */
+export function createInvoiceLineAllocator(
+  contracts: Contract[],
+  projects: Project[],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): (invoice: Invoice, line: InvoiceLine) => { months: string[]; shares: InvoiceLineShare[] } {
+  const contractsById = new Map(contracts.map(contract => [contract.id, contract]));
+  const projectsById = new Map(projects.map(project => [project.id, project]));
+  const charges = new Map<string, Record<string, number>>();
+  const projectMonths = new Map<string, Record<string, number>>();
+  const chargesOf = (contractId: string) => {
+    if (!charges.has(contractId)) {
+      const contract = contractsById.get(contractId);
+      charges.set(contractId, contract ? contractChargeMonths(contract, catalogModules, catalogItems) : {});
+    }
+    return charges.get(contractId)!;
+  };
+  const projectMonthsOf = (projectId: string) => {
+    if (!projectMonths.has(projectId)) {
+      const parent = contractsById.get(String(projectsById.get(projectId)?.contract_id || ''));
+      (parent ? contractProjectSchedules(parent, projects) : []).forEach(entry => projectMonths.set(entry.project.id, entry.months));
+      if (!projectMonths.has(projectId)) projectMonths.set(projectId, {});
+    }
+    return projectMonths.get(projectId)!;
+  };
+  const sumOver = (months: string[], amounts: Record<string, number>) =>
+    months.reduce((total, month) => total + (amounts[month] || 0), 0);
+
+  return (invoice, line) => {
+    const months = invoiceLineMonths(invoice, line);
+    const total = invoiceLineAmountEur(invoice, line);
+    const { contractIds, projectIds } = invoiceLineTargets(line);
+    const targets: Array<Omit<InvoiceLineShare, 'amount'>> = [
+      ...contractIds.map(id => ({ kind: 'contract' as const, id })),
+      ...projectIds.map(id => ({ kind: 'project' as const, id })),
+    ];
+    if (targets.length <= 1) return { months, shares: targets.map(target => ({ ...target, amount: total })) };
+
+    const weights = targets.map(target => target.kind === 'contract'
+      ? sumOver(months, chargesOf(target.id))
+      : sumOver(months, projectMonthsOf(target.id)) || Number(projectsById.get(target.id)?.budget_value) || 0);
+    const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+    let allocated = 0;
+    const shares = targets.map((target, index) => {
+      const amount = index === targets.length - 1
+        ? round2(total - allocated)
+        : round2(weightTotal > 0 ? (total * weights[index]) / weightTotal : total / targets.length);
+      allocated += amount;
+      return { ...target, amount };
+    });
+    return { months, shares };
+  };
+}
+
+/** The tooltip label of a line, saying when it is split across several agreements or projects. */
+const lineLabel = (line: InvoiceLine, shares: number) =>
+  `${line.description?.trim() || 'Invoice line'}${shares > 1 ? ` (split across ${shares})` : ''}`;
 
 /** Every euro that covers the box: invoices plus receipts paid without a tax document. */
 export function coverageTotal(coverage: InvoiceCellCoverage): number {
@@ -478,18 +549,23 @@ export function buildInvoiceCoverage(
     });
   };
 
+  const allocateLine = createInvoiceLineAllocator(contracts, projects, catalogModules, catalogItems);
+
   ordered.forEach(invoice => {
-    // An invoice with lines says exactly what it bills: each agreement-fee line paints its own
-    // agreement for its own months with its own amount (project lines belong to the change-request
-    // rows), so it is matched against that agreement's charges alone.
+    // An invoice with lines says exactly what it bills: each line paints the agreements whose fee it
+    // bills, for its own months, with each agreement's share of the line (project shares belong to
+    // the change-request rows) — so every agreement is matched against its own charges alone.
     const lines = invoiceLines(invoice);
     if (lines.length > 0) {
       lines.forEach(line => {
-        const contract = line.project_id ? undefined : contractsById.get(String(line.contract_id || ''));
-        if (!contract) return;
-        paintInvoiceBox(covered, invoice, invoiceLineMonths(invoice, line), contract.id, month => invoiceCellKey(contract.id, month), {
-          amount: invoiceLineAmountEur(invoice, line),
-          line: line.description,
+        const { months, shares } = allocateLine(invoice, line);
+        shares.forEach(share => {
+          const contract = share.kind === 'contract' ? contractsById.get(share.id) : undefined;
+          if (!contract) return;
+          paintInvoiceBox(covered, invoice, months, contract.id, month => invoiceCellKey(contract.id, month), {
+            amount: share.amount,
+            line: lineLabel(line, shares.length),
+          });
         });
       });
       return;
@@ -615,13 +691,16 @@ export function buildProjectInvoiceCoverage(
   invoices: Invoice[],
   projects: Project[],
   receipts: Receipt[] = [],
-  contracts: Contract[] = []
+  contracts: Contract[] = [],
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
 ): InvoiceCoverageMap {
   const parentByProject = new Map(projects.map(project => [project.id, String(project.contract_id || '')]));
+  const allocateLine = createInvoiceLineAllocator(contracts, projects, catalogModules, catalogItems);
   const outgoing = invoices
     .filter(invoice => invoice.direction === 'outgoing')
     .filter(invoice => !INACTIVE_STATUSES.has(invoice.status))
-    .filter(invoice => invoiceProjectIds(invoice).length > 0 || invoiceLines(invoice).some(line => line.project_id));
+    .filter(invoice => invoiceProjectIds(invoice).length > 0 || invoiceLines(invoice).some(line => invoiceLineTargets(line).projectIds.length > 0));
 
   const drafts = outgoing.filter(invoice => invoice.status === 'draft' && invoice.type !== 'credit_note');
   const issued = outgoing.filter(invoice => invoice.status !== 'draft');
@@ -636,11 +715,13 @@ export function buildProjectInvoiceCoverage(
     const lines = invoiceLines(invoice);
     if (lines.length > 0) {
       lines.forEach(line => {
-        const projectId = String(line.project_id || '');
-        if (!parentByProject.has(projectId)) return;
-        paintInvoiceBox(covered, invoice, invoiceLineMonths(invoice, line), parentByProject.get(projectId) ?? '', month => projectInvoiceCellKey(projectId, month), {
-          amount: invoiceLineAmountEur(invoice, line),
-          line: line.description,
+        const { months, shares } = allocateLine(invoice, line);
+        shares.forEach(share => {
+          if (share.kind !== 'project' || !parentByProject.has(share.id)) return;
+          paintInvoiceBox(covered, invoice, months, parentByProject.get(share.id) ?? '', month => projectInvoiceCellKey(share.id, month), {
+            amount: share.amount,
+            line: lineLabel(line, shares.length),
+          });
         });
       });
       return;

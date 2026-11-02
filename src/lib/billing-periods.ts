@@ -20,7 +20,7 @@ import {
 import type { CatalogItem, CatalogModule, ContractLine, ContractLineGroup, Invoice, InvoiceLine } from './types';
 import { formatDate } from './date';
 import { netInvoices, type NettableInvoice } from './invoice-netting';
-import { invoiceContractIds, invoiceLines } from './invoice-links';
+import { invoiceContractIds, invoiceLines, invoiceLineTargets } from './invoice-links';
 
 type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'counterparty' | 'contract' | 'documents' | 'payments' | 'allocations'>;
 
@@ -158,7 +158,7 @@ export function getContractBillingPeriods(
     const lines = invoiceLines(inv);
     if (lines.length === 0) return [inv];
     return lines
-      .filter(line => line.contract_id === contract.id && !line.project_id)
+      .filter(line => invoiceLineTargets(line).contractIds.includes(contract.id))
       .map(line => ({
         ...inv,
         contract_ids: [contract.id],

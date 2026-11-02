@@ -962,6 +962,41 @@ assert(
   'A project line paints its change request for the line’s months and matches its scheduled share',
   JSON.stringify(linedTraining)
 );
+// One line can bill several agreements and projects: it is split by what each expects over the
+// line's months, so every row is still matched against its own charges.
+const sharedLine = {
+  id: 'l-shared', description: 'Q3 services', amount: 16445, period_from: '2026-08-01', period_to: '2026-10-31',
+  contract_ids: ['cnt-etrm', 'cnt-trading'], project_ids: ['prj-training'],
+};
+const sharedCoverage = buildInvoiceCoverage([linedDraft([sharedLine])], feeAndCrContracts, [], [], [trainingCr]);
+const sharedEtrm = sharedCoverage.get('cnt-etrm:2026-08');
+const sharedTrading = sharedCoverage.get('cnt-trading:2026-10');
+const sharedTraining = buildProjectInvoiceCoverage([linedDraft([sharedLine])], [trainingCr], [], feeAndCrContracts)
+  .get(projectInvoiceCellKey('prj-training', '2026-10'));
+assert(
+  sharedEtrm?.invoiceTotal === 3000 && sharedEtrm.variance === 0 && documentTotal(sharedEtrm) === 16445 &&
+    sharedTrading?.invoiceTotal === 13350 && sharedTrading.variance === 0 &&
+    sharedTraining?.invoiceTotal === 95 && sharedTraining.variance === 0 &&
+    sharedEtrm.lines.some(label => label.includes('split across 3')),
+  'A line billing two agreements and a project splits by what each expects and matches on every row',
+  JSON.stringify({ etrm: sharedEtrm?.invoiceTotal, trading: sharedTrading?.invoiceTotal, training: sharedTraining?.invoiceTotal, lines: sharedEtrm?.lines })
+);
+const shortShared = buildInvoiceCoverage([linedDraft([{ ...sharedLine, amount: 16000 }])], feeAndCrContracts, [], [], [trainingCr]);
+const shortEtrm = shortShared.get('cnt-etrm:2026-08');
+const shortTrading = shortShared.get('cnt-trading:2026-08');
+assert(
+  invoiceVarianceTone(shortEtrm) === 'under' && invoiceVarianceTone(shortTrading) === 'under' &&
+    Math.abs((shortEtrm.invoiceTotal + shortTrading.invoiceTotal) - (16000 - Math.round(16000 * 95 / 16445 * 100) / 100)) < 0.02,
+  'A short shared line spreads the shortfall over the rows it bills',
+  JSON.stringify({ etrm: shortEtrm, trading: shortTrading })
+);
+const sharedPeriods = getContractBillingPeriods(feeAndCrContracts[0], { today: new Date('2026-12-05T00:00:00'), invoices: [linedDraft([sharedLine])] });
+assert(
+  ['2026-08-01', '2026-09-01', '2026-10-01'].every(from => sharedPeriods.find(period => period.from === from)?.status !== 'unbilled'),
+  'A shared line marks the billing periods of every agreement it bills',
+  JSON.stringify(sharedPeriods.map(period => [period.from, period.status]))
+);
+
 const linedPeriods = getContractBillingPeriods(feeAndCrContracts[1], {
   today: new Date('2026-12-05T00:00:00'),
   invoices: [linedDraft([etrmLine, { ...tradingLine, amount: 4450, period_from: '2026-11-01', period_to: '2026-11-30' }])],

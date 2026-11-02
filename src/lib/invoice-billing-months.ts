@@ -1,5 +1,5 @@
-import type { Invoice } from '@/lib/types';
-import { invoiceLines } from '@/lib/invoice-links';
+import type { Invoice, InvoiceLine } from '@/lib/types';
+import { invoiceLines, invoiceLineTargets } from '@/lib/invoice-links';
 import { toMonthKey } from '@/lib/revenue-schedule';
 
 /**
@@ -38,19 +38,34 @@ function toEur(amount: unknown, invoice: Invoice): number {
   return round2(invoice.currency && invoice.currency !== 'EUR' ? value * rate : value);
 }
 
-/** The billed windows of an invoice for one agreement, one per line (or one for the whole invoice). */
-export function invoiceBillSegments(invoice: Invoice, contractId: string): BillSegment[] {
+/**
+ * The billed windows of an invoice for one agreement, one per line (or one for the whole invoice).
+ * A line billing several agreements or projects counts with this agreement's share: `shareOf` gives
+ * it in EUR when the caller can split by what each target expects (see createInvoiceLineAllocator);
+ * without it the line is split evenly across its targets.
+ */
+export function invoiceBillSegments(
+  invoice: Invoice,
+  contractId: string,
+  shareOf?: (line: InvoiceLine) => number
+): BillSegment[] {
   const itemised = invoiceLines(invoice);
 
   // An itemised invoice bills through its lines alone: one that bills only change requests covers
   // none of this agreement's own months, whatever its invoice-level period says.
   if (itemised.length > 0) {
-    const lines = itemised.filter(line => !line.project_id && line.contract_id === contractId);
+    const lines = itemised.filter(line => invoiceLineTargets(line).contractIds.includes(contractId));
     return lines.flatMap(line => {
       const from = toMonthKey(line.period_from) || toMonthKey(invoice.period_from);
       if (!from) return [];
       const to = toMonthKey(line.period_to) || toMonthKey(invoice.period_to) || from;
-      return [{ from, to: to >= from ? to : from, amount: toEur(line.amount, invoice) }];
+      const targets = invoiceLineTargets(line);
+      // ponytail: even split when the caller cannot price the other targets (the MCP tool loads one
+      // agreement); pass shareOf from createInvoiceLineAllocator to split by what each expects.
+      const amount = shareOf
+        ? shareOf(line)
+        : round2(toEur(line.amount, invoice) / (targets.contractIds.length + targets.projectIds.length));
+      return [{ from, to: to >= from ? to : from, amount }];
     });
   }
 
@@ -63,9 +78,14 @@ export function invoiceBillSegments(invoice: Invoice, contractId: string): BillS
   return [{ from, to: to >= from ? to : from, amount: toEur(invoice.net, invoice) }];
 }
 
-export function invoiceBillsMonth(invoice: Invoice, contractId: string, month: string): InvoiceMonthBill {
+export function invoiceBillsMonth(
+  invoice: Invoice,
+  contractId: string,
+  month: string,
+  shareOf?: (line: InvoiceLine) => number
+): InvoiceMonthBill {
   if (!month) return { covers: false, amount: 0 };
-  const covering = invoiceBillSegments(invoice, contractId).filter(segment => segment.from <= month && segment.to >= month);
+  const covering = invoiceBillSegments(invoice, contractId, shareOf).filter(segment => segment.from <= month && segment.to >= month);
   if (covering.length === 0) return { covers: false, amount: 0 };
   return {
     covers: true,

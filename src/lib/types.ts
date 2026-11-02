@@ -1088,9 +1088,12 @@ export interface InvoiceLine {
   amount: number;
   period_from?: string | null;
   period_to?: string | null;
-  /** The agreement whose own fee the line bills (a project line keeps its project's agreement here too). */
+  /** Agreements whose own fee the line bills — a line can bill several, with projects alongside. */
+  contract_ids?: string[] | null;
+  /** Projects (change requests) the line bills. */
+  project_ids?: string[] | null;
+  /** Lines saved before a line could bill several things: one agreement fee, or one project. */
   contract_id?: string | null;
-  /** The project (change request) the line bills. */
   project_id?: string | null;
 }
 

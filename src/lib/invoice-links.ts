@@ -94,7 +94,21 @@ export function buildInvoiceLinks(args: {
  * An invoice with at least one is matched line by line; one without falls back to its link set.
  */
 export function invoiceLines(invoice: { lines?: InvoiceLine[] | null }): InvoiceLine[] {
-  return (invoice.lines ?? []).filter(line => (Number(line.amount) || 0) !== 0 && Boolean(line.project_id || line.contract_id));
+  return (invoice.lines ?? []).filter(line => {
+    const targets = invoiceLineTargets(line);
+    return (Number(line.amount) || 0) !== 0 && targets.contractIds.length + targets.projectIds.length > 0;
+  });
+}
+
+/** What a line bills: the agreements whose own fee it covers, and the projects it covers. */
+export function invoiceLineTargets(line: InvoiceLine): { contractIds: string[]; projectIds: string[] } {
+  const contractIds = normalizeLinkIds(line.contract_ids);
+  const projectIds = normalizeLinkIds(line.project_ids);
+  if (contractIds.length > 0 || projectIds.length > 0) return { contractIds, projectIds };
+  // A line saved before lines could bill several things names one target; a project line also
+  // carried its agreement in contract_id, which is not a fee it bills.
+  if (line.project_id) return { contractIds: [], projectIds: normalizeLinkIds([line.project_id]) };
+  return { contractIds: normalizeLinkIds([line.contract_id]), projectIds: [] };
 }
 
 /** What a set of lines adds up to: the net, the months they span, and the agreements / projects they bill. */
@@ -105,8 +119,8 @@ export function summarizeInvoiceLines(
   const froms = lines.map(line => line.period_from || '').filter(Boolean).sort();
   const tos = lines.map(line => line.period_to || '').filter(Boolean).sort();
   const links = buildInvoiceLinks({
-    contractIds: lines.filter(line => !line.project_id).map(line => line.contract_id),
-    projectIds: lines.map(line => line.project_id),
+    contractIds: lines.flatMap(line => invoiceLineTargets(line).contractIds),
+    projectIds: lines.flatMap(line => invoiceLineTargets(line).projectIds),
     projects,
   });
   return {

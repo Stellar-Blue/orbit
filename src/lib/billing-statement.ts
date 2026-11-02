@@ -66,7 +66,7 @@ export function buildBillingStatement(args: {
   const { scope, contracts, projects, invoices, receipts = [], catalogModules = [], catalogItems = [] } = args;
   const schedule = buildRevenueSchedule(scope, projects, catalogModules, catalogItems);
   const coverage = buildInvoiceCoverage(invoices, contracts, catalogModules, catalogItems, projects, receipts);
-  const projectCoverage = buildProjectInvoiceCoverage(invoices, projects, receipts, contracts);
+  const projectCoverage = buildProjectInvoiceCoverage(invoices, projects, receipts, contracts, catalogModules, catalogItems);
   const suggestions = pendingInvoiceSuggestions(
     buildInvoiceSuggestions(scope, { catalogModules, catalogItems, invoices, draftInvoiceIds: args.draftInvoiceIds, today: args.today }),
     (contractId, month) => coverage.has(invoiceCellKey(contractId, month))

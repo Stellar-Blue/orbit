@@ -192,6 +192,19 @@ assert(
   })
 );
 
+// A line can bill several agreements (and projects) at once. This tool loads one agreement, so it
+// splits such a line evenly unless the caller hands it each target's share.
+const sharedLine = invoice({
+  lines: [{ id: 'l-shared', description: 'Q2 services', amount: 900, period_from: '2026-04-01', period_to: '2026-06-30', contract_ids: [CONTRACT, OTHER], project_ids: ['prj-1'] }],
+});
+assert(
+  invoiceBillsMonth(sharedLine, CONTRACT, '2026-04').amount === 300 &&
+    invoiceBillsMonth(sharedLine, OTHER, '2026-05').covers &&
+    invoiceBillsMonth(sharedLine, CONTRACT, '2026-04', () => 450).amount === 450,
+  'A line billing several targets counts with this agreement\'s share',
+  JSON.stringify({ even: invoiceBillsMonth(sharedLine, CONTRACT, '2026-04'), priced: invoiceBillsMonth(sharedLine, CONTRACT, '2026-04', () => 450) })
+);
+
 console.log('\n================================================================');
 console.log(`${passed} passed · ${failed} failed`);
 console.log('================================================================');
