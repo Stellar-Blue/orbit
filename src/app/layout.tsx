@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { AppLayoutWrapper } from "@/components/layout/app-layout-wrapper";
 import { ValidationHost } from "@/lib/validation-modal";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 // The brand pair: Inter for every piece of UI text, JetBrains Mono for codes, ids and figures.
 // Variable axis: the UI leans on the whole weight range (400 body → 900 figures).
@@ -60,6 +61,8 @@ export default function RootLayout({
             </AppLayoutWrapper>
           </AuthProvider>
           <ValidationHost />
+          {/* Real-user Web Vitals; a no-op outside a Vercel deployment. */}
+          <SpeedInsights />
         </ThemeProvider>
       </body>
     </html>
