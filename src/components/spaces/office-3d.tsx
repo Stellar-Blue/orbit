@@ -458,7 +458,9 @@ function buildWallScreen(width: number): THREE.Group {
  * `placeRoomLabel` — instead of hovering over the furniture in the middle of the room.
  */
 function namePlate(text: string, color: string): THREE.Mesh {
-  const scale = 4;
+  // Six times the pixels: the plate is read close up when a room is zoomed into as well as from the
+  // overview, so the texture has to hold up at both.
+  const scale = 6;
   const font = `600 ${12 * scale}px "IBM Plex Sans", system-ui, sans-serif`;
   const canvas = document.createElement('canvas');
   const measure = canvas.getContext('2d');
@@ -517,16 +519,25 @@ function placeRoomLabel(shell: THREE.Group, position: THREE.Vector3, camera: THR
   const dx = camera.x - position.x;
   const dz = camera.z - position.z;
   const onZAxis = Math.abs(dz) >= Math.abs(dx);
-  const side = onZAxis ? (dz > 0 ? 'n' : 's') : (dx > 0 ? 'w' : 'e');
-  const wallLength = onZAxis ? size.width : size.depth;
 
-  const wantedHeight = 0.44;
-  const width = Math.min(wantedHeight * aspect, Math.max(wallLength - 0.5, 0.6));
+  // Both far walls stand when the camera looks in from a corner, so the screen keeps its wall and
+  // the name goes on the other one rather than on top of it.
+  const facing = onZAxis ? (dz > 0 ? 'n' : 's') : (dx > 0 ? 'w' : 'e');
+  const other = onZAxis ? (dx > 0 ? 'w' : 'e') : (dz > 0 ? 'n' : 's');
+  const screenWall = (shell.userData.screenWall as string | undefined) || 'none';
+  const hasScreen = screenWall !== 'none' && size.width >= 3.4;
+  const side = hasScreen && screenWall === facing ? other : facing;
+
+  const wallLength = side === 'n' || side === 's' ? size.width : size.depth;
+
+  // Big enough to read from the overview, capped so it never runs past the ends of its wall.
+  const wantedHeight = 0.9;
+  const width = Math.min(wantedHeight * aspect, Math.max(wallLength - 0.4, 0.6));
   const height = Math.min(wantedHeight, width / aspect);
   label.scale.set(width, height, 1);
 
-  // Just under the cut edge of the wall, above the screen that may hang on the same run.
-  const y = PLATFORM_HEIGHT + WALL_HEIGHT - height / 2 - 0.06;
+  // Hangs from the cut edge of the wall, clear of the chairs and their avatars below.
+  const y = PLATFORM_HEIGHT + WALL_HEIGHT - height / 2 - 0.04;
   if (side === 'n') {
     label.position.set(0, y, -halfD + inset);
     label.rotation.y = 0;
@@ -1497,8 +1508,9 @@ export const Office3D: React.FC<Office3DProps> = ({
       label.name = 'label';
       label.userData = { ...label.userData, kind: 'room', roomId: room.id, label: room.name };
       shell.add(label);
-      // The per-frame wall mounting needs the room's size; a corner drag refreshes both.
+      // The per-frame wall mounting needs the room's size and which wall carries its screen.
       shell.userData.roomSize = { width, depth };
+      shell.userData.screenWall = room.screen_wall || 'none';
 
       group.add(shell);
 
