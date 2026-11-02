@@ -452,8 +452,12 @@ function buildWallScreen(width: number): THREE.Group {
   return frame;
 }
 
-/** A room's name plate: a soft white pill with dark slate text, drawn without a font loader. */
-function labelSprite(text: string, color: string): THREE.Sprite {
+/**
+ * A room's name plate: a soft white plaque with dark slate text, drawn without a font loader.
+ * It is a flat plane rather than a billboard, because it is mounted on a wall — see
+ * `placeRoomLabel` — instead of hovering over the furniture in the middle of the room.
+ */
+function namePlate(text: string, color: string): THREE.Mesh {
   const scale = 4;
   const font = `600 ${12 * scale}px "IBM Plex Sans", system-ui, sans-serif`;
   const canvas = document.createElement('canvas');
@@ -467,18 +471,14 @@ function labelSprite(text: string, color: string): THREE.Sprite {
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.font = font;
-    ctx.shadowColor = 'rgba(23,35,54,0.18)';
-    ctx.shadowBlur = 10 * scale;
-    ctx.shadowOffsetY = 3 * scale;
-    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    ctx.shadowColor = 'rgba(23,35,54,0.14)';
+    ctx.shadowBlur = 8 * scale;
+    ctx.shadowOffsetY = 2 * scale;
+    ctx.fillStyle = 'rgba(255,255,255,0.97)';
     ctx.beginPath();
-    ctx.roundRect(2 * scale, 2 * scale, width - 4 * scale, height - 6 * scale, 8 * scale);
+    ctx.roundRect(2 * scale, 2 * scale, width - 4 * scale, height - 4 * scale, 8 * scale);
     ctx.fill();
     ctx.shadowColor = 'transparent';
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(14 * scale, height / 2 - scale, 3.5 * scale, 0, Math.PI * 2);
-    ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(14 * scale, height / 2 - scale, 3.5 * scale, 0, Math.PI * 2);
@@ -490,11 +490,56 @@ function labelSprite(text: string, color: string): THREE.Sprite {
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
-  const sprite = new THREE.Sprite(spriteMaterial);
-  const worldHeight = 0.9;
-  sprite.scale.set(worldHeight * (width / height), worldHeight, 1);
-  return sprite;
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false })
+  );
+  plate.userData.plateAspect = width / height;
+  return plate;
+}
+
+/**
+ * Hang a room's name plate on the wall the camera can actually see.
+ *
+ * The walls between the camera and a room are cut away every frame, so the plate goes on the far
+ * wall — the one left standing — where it reads like a sign hanging in the room instead of a label
+ * floating over the chairs. It also clears the wall screen, which sits lower on the same wall.
+ */
+function placeRoomLabel(shell: THREE.Group, position: THREE.Vector3, camera: THREE.Vector3): void {
+  const label = shell.children.find(child => child.name === 'label') as THREE.Mesh | undefined;
+  const size = shell.userData.roomSize as { width: number; depth: number } | undefined;
+  if (!label || !size) return;
+
+  const halfW = size.width / 2;
+  const halfD = size.depth / 2;
+  const inset = WALL_THICKNESS / 2 + 0.02;
+  const aspect = Number(label.userData.plateAspect) || 3;
+  const dx = camera.x - position.x;
+  const dz = camera.z - position.z;
+  const onZAxis = Math.abs(dz) >= Math.abs(dx);
+  const side = onZAxis ? (dz > 0 ? 'n' : 's') : (dx > 0 ? 'w' : 'e');
+  const wallLength = onZAxis ? size.width : size.depth;
+
+  const wantedHeight = 0.44;
+  const width = Math.min(wantedHeight * aspect, Math.max(wallLength - 0.5, 0.6));
+  const height = Math.min(wantedHeight, width / aspect);
+  label.scale.set(width, height, 1);
+
+  // Just under the cut edge of the wall, above the screen that may hang on the same run.
+  const y = PLATFORM_HEIGHT + WALL_HEIGHT - height / 2 - 0.06;
+  if (side === 'n') {
+    label.position.set(0, y, -halfD + inset);
+    label.rotation.y = 0;
+  } else if (side === 's') {
+    label.position.set(0, y, halfD - inset);
+    label.rotation.y = Math.PI;
+  } else if (side === 'w') {
+    label.position.set(-halfW + inset, y, 0);
+    label.rotation.y = Math.PI / 2;
+  } else {
+    label.position.set(halfW - inset, y, 0);
+    label.rotation.y = -Math.PI / 2;
+  }
 }
 
 /** Free GPU memory before rebuilding the scene graph. */
@@ -664,11 +709,9 @@ function layoutShell(group: THREE.Group, room: Space, width: number, depth: numb
       child.scale.setScalar(Math.min(1, length / 3.2));
       return;
     }
-    if (child.name === 'label') {
-      child.position.set(0, top + WALL_HEIGHT + 0.42, halfD * 0.1);
-      return;
-    }
   });
+
+  if (shell) shell.userData.roomSize = { width, depth };
 
   group.children.forEach(child => {
     if (!child.name.startsWith('handle:')) return;
@@ -700,6 +743,7 @@ function cutAwayWalls(state: SceneState): void {
       const facing = side === 'n' ? -dz : side === 's' ? dz : side === 'w' ? -dx : dx;
       child.visible = facing <= 0;
     });
+    placeRoomLabel(shell, group.position, state.camera.position);
   });
 }
 
@@ -1449,10 +1493,12 @@ export const Office3D: React.FC<Office3DProps> = ({
         shell.add(edge);
       }
 
-      const label = labelSprite(room.name, color);
+      const label = namePlate(room.name, color);
       label.name = 'label';
-      label.userData = { kind: 'room', roomId: room.id, label: room.name };
+      label.userData = { ...label.userData, kind: 'room', roomId: room.id, label: room.name };
       shell.add(label);
+      // The per-frame wall mounting needs the room's size; a corner drag refreshes both.
+      shell.userData.roomSize = { width, depth };
 
       group.add(shell);
 

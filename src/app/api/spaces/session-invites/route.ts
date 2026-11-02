@@ -45,6 +45,20 @@ interface RecipientResult {
   outlook_error?: string;
 }
 
+/** The chairs of a room still free in a session, in a stable order (oldest drawn first). */
+async function freeChairsFor(
+  admin: ReturnType<typeof getAdminClient>,
+  spaceId: string,
+  sessionId: string
+): Promise<string[]> {
+  const [{ data: seats }, { data: taken }] = await Promise.all([
+    admin.from('space_seats').select('id').eq('space_id', spaceId).eq('active', true).order('created_at'),
+    admin.from('space_bookings').select('seat_id').eq('session_id', sessionId).not('seat_id', 'is', null),
+  ]);
+  const used = new Set((taken || []).map(row => row.seat_id as string));
+  return (seats || []).map(seat => seat.id as string).filter(id => !used.has(id));
+}
+
 const personName = (
   profile?: { first_name?: string | null; last_name?: string | null; work_email?: string | null } | null
 ): string =>
@@ -142,16 +156,32 @@ export async function POST(request: NextRequest) {
       ? `invited, but ${away.label} that day so no seat was reserved`
       : undefined;
     if (!away) {
-      const { error: bookingError } = await admin.from('space_bookings').insert([{
-        space_id: context.spaceId,
-        session_id: context.id,
-        profile_id: profile.id,
-        booking_date: context.sessionDate,
-        created_by: caller.profileId,
-      }]);
+      // A seat needs a chair: the room draws people above the chair they took, so a booking with no
+      // seat would be invisible in the 3D plan. Free chairs are tried in turn, like the booking
+      // dialog does, and a room without drawn chairs still gets the booking.
+      const chairs = await freeChairsFor(admin, context.spaceId, context.id);
+      let bookingError: { code?: string; message: string } | null = null;
+      for (const chair of chairs.length > 0 ? chairs : [null]) {
+        const attempt = await admin.from('space_bookings').insert([{
+          space_id: context.spaceId,
+          session_id: context.id,
+          profile_id: profile.id,
+          booking_date: context.sessionDate,
+          seat_id: chair,
+          created_by: caller.profileId,
+        }]);
+        bookingError = attempt.error;
+        const chairTaken = Boolean(
+          bookingError
+          && chair
+          && (bookingError.code === '23505' || /seat has just been taken/i.test(bookingError.message))
+          && !/one_seat_session|one_seat_day/i.test(bookingError.message)
+        );
+        if (!chairTaken) break;
+      }
       seat = !bookingError
         ? 'booked'
-        : bookingError.code === '23505'
+        : /one_seat_session|one_seat_day/i.test(bookingError.message)
           ? 'already'
           : bookingError.code === 'SB001'
             ? 'away'
