@@ -7,7 +7,8 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useCreateDraftInvoice } from '@/lib/use-create-draft-invoice';
 import { buildBillingStatement, statementSummary, type StatementBlock, type StatementStream } from '@/lib/billing-statement';
-import { coverageTotal, documentTotal, invoiceBoxState, invoiceVarianceTone, type InvoiceBoxState } from '@/lib/invoice-coverage';
+import { coverageTotal, documentTotal, invoiceVarianceTone } from '@/lib/invoice-coverage';
+import { euro, invoiceStateOf, invoiceVerdictOf } from '@/components/contracts/invoice-verdict';
 import { formatDate } from '@/lib/date';
 import { Button } from '@/components/ui/primitives';
 import type { Contract } from '@/lib/types';
@@ -18,22 +19,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** Height of one month on the statement spine; an invoice card is as tall as the months it covers. */
 const MONTH_ROW = 54;
 
-const euro = (value: number) => `€${(Math.round(value * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 const monthName = (key: string) => `${MONTHS[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
-
-/** Same colours as the invoice boxes on the portfolio schedules, so a state reads the same everywhere. */
-const BOX_STATES: Record<InvoiceBoxState, { label: string; color: string }> = {
-  paid: { label: 'Paid', color: 'var(--viz-paid)' },
-  issued: { label: 'Issued, not paid', color: 'var(--viz-issued)' },
-  draft: { label: 'Draft', color: 'var(--viz-draft)' },
-};
-
-function verdictOf(block: Extract<StatementBlock, { kind: 'invoice' }>) {
-  const tone = invoiceVarianceTone(block.coverage);
-  if (tone === 'match') return { text: 'Matches the contract', color: 'var(--positive)', soft: 'var(--positive-soft)' };
-  if (tone === 'under') return { text: `${euro(-block.coverage.variance)} short`, color: 'var(--danger)', soft: 'var(--danger-soft)' };
-  return { text: `${euro(block.coverage.variance)} over`, color: 'var(--warning)', soft: 'var(--warning-soft)' };
-}
 
 function cadenceSentence(contract: Contract): string {
   const start = formatDate(contract.service_start_date || contract.starts_on);
@@ -338,8 +324,8 @@ function InvoiceCard({ block, span, continues }: {
   continues: string;
 }) {
   const { coverage } = block;
-  const state = BOX_STATES[invoiceBoxState(coverage)];
-  const verdict = verdictOf(block);
+  const state = invoiceStateOf(coverage);
+  const verdict = invoiceVerdictOf(coverage);
   const covered = coverageTotal(coverage);
   const whole = documentTotal(coverage) + coverage.receiptTotal;
   const period = block.firstMonth === block.lastMonth ? monthName(block.firstMonth) : `${monthName(block.firstMonth)} – ${monthName(block.lastMonth)}`;

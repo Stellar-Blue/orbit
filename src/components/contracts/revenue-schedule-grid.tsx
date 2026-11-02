@@ -18,7 +18,7 @@ import { useOrbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project, Receipt } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { isSubcontract, primeFeeAmount } from '@/lib/subcontracts';
-import { buildRevenueSchedule, explainScheduleCell, monthKeysBetween, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type CellExplanationItem, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, explainScheduleCell, monthKeysBetween, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type CellExplanationItem, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
@@ -49,6 +49,7 @@ import Link from 'next/link';
 import { Modal, Badge } from '@/components/ui/primitives';
 import { formatMoney } from '@/lib/currency';
 import { formatDate } from '@/lib/date';
+import { ScheduleCellTooltip, type ScheduleCellTooltipValue } from '@/components/contracts/schedule-cell-tooltip';
 import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote, Download, Building2, Rows3, Columns3 } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
@@ -99,15 +100,7 @@ const DRAFT_TONE = {
   color: 'var(--ink-2)',
 };
 
-function suggestionTooltip(suggestion: InvoiceSuggestion): string {
-  return [
-    `Suggested invoice ${formatTotal(suggestion.amount)}`,
-    suggestion.period.label,
-    suggestion.timing === 'end_of_period' ? 'billed in arrears (period end)' : 'billed in advance (period start)',
-    `invoice date ${suggestion.invoiceDate}`,
-  ].join(' · ');
-}
-
+/** The badge's spoken label: the hover card's facts as one line, for screen readers. */
 function coverageTooltip(coverage: InvoiceCellCoverage): string {
   const tone = invoiceVarianceTone(coverage);
   const boxState = invoiceBoxState(coverage);
@@ -150,15 +143,6 @@ const formatVatRate = (rate?: string | null) => {
 
 /** Short badge label for a project: its code when it has one, else its name. */
 const projectBadgeLabel = (project: Project) => project.code?.trim() || project.name;
-
-/** Mouse-over text for a change-request cell: the money and the projects that make it up. */
-function projectCellTooltip(key: string, shares: ProjectMonthShare[]): string {
-  const total = shares.reduce((sum, share) => sum + share.amount, 0);
-  return [
-    `${monthLabel(key)} ${key.slice(0, 4)} · change requests ${formatTotal(total)}`,
-    ...shares.map(share => `${projectBadgeLabel(share.project)} · ${share.project.name} — ${formatTotal(share.amount)}`),
-  ].join('\n');
-}
 
 /** Searchable text for a row: counterparty, agreement, product and every project behind it. */
 function quickFilterText(data?: RevenueScheduleRow): string {
@@ -890,8 +874,46 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   }, [isExporting, schedule, scheduleBasis]);
 
   const columnDefs = useMemo<(ColDef<RevenueScheduleRow> | ColGroupDef<RevenueScheduleRow>)[]>(() => {
+    /** What sits on a month cell: the invoice box, a period still to invoice, the CRs behind it. */
+    const cellContext = (data: RevenueScheduleRow, key: string) => ({
+      coverage: data.kind === 'contract'
+        ? invoiceCoverageRef.current.get(invoiceCellKey(data.streamKey, key))
+        : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key)))),
+      suggestion: data.kind === 'contract' ? suggestionRef.current.get(suggestionCellKey(data.streamKey, key)) : undefined,
+      projectShares: data.kind === 'project' ? data.projectMonths?.[key] : undefined,
+    });
+
+    /** The hover card of a month cell (see ScheduleCellTooltip); nothing on a plain amount. */
+    const tooltipFor = (data: RevenueScheduleRow | undefined, key: string): ScheduleCellTooltipValue | undefined => {
+      if (!data) return undefined;
+      const { coverage, suggestion, projectShares } = cellContext(data, key);
+      if (coverage) {
+        return {
+          kind: 'invoice',
+          reference: data.reference,
+          coverage,
+          projects: data.kind === 'project'
+            ? (data.projects ?? [])
+                .filter(project => projectCoverageRef.current.has(projectInvoiceCellKey(project.id, key)))
+                .map(project => `${projectBadgeLabel(project)}${project.code ? ` ${project.name}` : ''}`)
+            : undefined,
+        };
+      }
+      if (suggestion) return { kind: 'suggestion', suggestion, actionHere: suggestion.actionMonth === key };
+      if (projectShares && projectShares.length > 0) {
+        return {
+          kind: 'projects',
+          month: key,
+          shares: projectShares.map(share => ({ label: projectBadgeLabel(share.project), name: share.project.name, amount: share.amount })),
+        };
+      }
+      return undefined;
+    };
+
     const monthColumn = (key: string): ColDef<RevenueScheduleRow> => ({
       headerName: monthLabel(key),
+      tooltipComponent: ScheduleCellTooltip,
+      tooltipValueGetter: params => tooltipFor(params.data, key),
       colId: `m-${key}`,
       hide: hidden.has(`y-${key.slice(0, 4)}`),
       width: MONTH_WIDTH,
@@ -912,27 +934,16 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       cellStyle: params => {
         const data = params.data;
         if (!data) return MONTH_CELL_PADDING;
-        const coverage = data.kind === 'contract'
-          ? invoiceCoverageRef.current.get(invoiceCellKey(data.streamKey, key))
-          : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key))));
+        const { coverage, suggestion } = cellContext(data, key);
         // The badge cell lets its badge run across the rest of the invoice box.
         if (coverage) {
           return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key), ...(key === coverage.firstMonth ? { overflow: 'visible', zIndex: 2 } : {}) };
         }
-        if (data.kind !== 'contract') return MONTH_CELL_PADDING;
-        const suggestion = suggestionRef.current.get(suggestionCellKey(data.streamKey, key));
         return suggestion ? { ...MONTH_CELL_PADDING, ...suggestionCellStyle(suggestion, key) } : MONTH_CELL_PADDING;
       },
       cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
         const data = params.data;
-        const contractRow = data && data.kind === 'contract' ? data : undefined;
-        const coverage = data
-          ? data.kind === 'contract'
-            ? invoiceCoverageRef.current.get(invoiceCellKey(data.streamKey, key))
-            : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key))))
-          : undefined;
-        const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.streamKey, key)) : undefined;
-        const projectShares = data && data.kind === 'project' ? data.projectMonths?.[key] : undefined;
+        const { coverage, suggestion, projectShares } = data ? cellContext(data, key) : { coverage: undefined, suggestion: undefined, projectShares: undefined };
         const text = formatAmount(Number(params.value) || 0);
 
         const tone = coverage ? invoiceVarianceTone(coverage) : null;
@@ -953,22 +964,6 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         // the cell carries an invoice badge, an issue-date marker, a suggestion action, or nothing.
         return (
           <span
-            title={
-              coverage
-                ? data?.kind === 'project'
-                  ? `${coverageTooltip(coverage)} · ${
-                      (data.projects ?? [])
-                        .filter(project => projectCoverageRef.current.has(projectInvoiceCellKey(project.id, key)))
-                        .map(projectBadgeLabel)
-                        .join(', ')
-                    }`
-                  : coverageTooltip(coverage)
-                : suggestion
-                  ? suggestionTooltip(suggestion)
-                  : projectShares && projectShares.length > 0
-                    ? projectCellTooltip(key, projectShares)
-                    : undefined
-            }
             style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, height: '100%' }}
             // Without a licence there is no grid menu, so a right-click opens the explanation directly.
             onContextMenu={HAS_AG_GRID_LICENSE || !data ? undefined : event => {
@@ -1001,7 +996,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                 <button
                   type="button"
                   data-invoice-peek
-                  title={coverage.invoiceIds.length > 0 ? `${coverageTooltip(coverage)} · click for invoice details` : coverageTooltip(coverage)}
+                  aria-label={coverage.invoiceIds.length > 0 ? `${coverageTooltip(coverage)}. Open the invoice details` : coverageTooltip(coverage)}
                   onMouseDown={event => event.stopPropagation()}
                   onClick={event => {
                     event.stopPropagation();
@@ -1052,7 +1047,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                   type="button"
                   data-invoice-action
                   disabled={creating}
-                  title={`Create a draft invoice for ${suggestion.period.label} · ${formatTotal(suggestion.amount)}`}
+                  aria-label={`Create a draft invoice for ${suggestion.period.label}, ${formatTotal(suggestion.amount)}`}
                   onMouseDown={event => event.stopPropagation()}
                   onClick={event => {
                     event.stopPropagation();
@@ -1501,6 +1496,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             onOpenContract(event.data.contract);
           }}
           suppressCellFocus={true}
+          tooltipShowDelay={250}
           animateRows={false}
         />
       </div>
