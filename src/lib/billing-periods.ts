@@ -277,7 +277,7 @@ export function getContractBillingPeriods(
    */
   const findExistingInvoice = (period: { key: string; label: string; from: string; to: string }) =>
     usableInvoices.find(i => {
-      if (i.contract_id !== contract.id) return false;
+      if (!invoiceContractIds(i).includes(contract.id)) return false;
       if (i.reference_period && i.reference_period.trim() !== '') {
         const ref = i.reference_period.trim().toLowerCase();
         if (ref === period.key.toLowerCase() || ref === period.label.toLowerCase()) return true;

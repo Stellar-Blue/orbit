@@ -1,7 +1,7 @@
 import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceStatus, Project, Receipt } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
-import { invoiceContractIds, invoiceContractTargets, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
-import { contractChargeMonths, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
+import { invoiceContractIds, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
+import { contractChargeMonths, contractProjectSchedules, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
 
 /**
  * Maps outgoing invoices — and receipts, the money that arrived without a tax document — onto the
@@ -321,7 +321,7 @@ export function buildInvoiceCoverage(
   contracts: Contract[],
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
-  projects: Array<Pick<Project, 'id' | 'contract_id'>> = [],
+  projects: Project[] = [],
   receipts: Receipt[] = []
 ): InvoiceCoverageMap {
   const contractsById = new Map(contracts.map(contract => [contract.id, contract]));
@@ -358,14 +358,58 @@ export function buildInvoiceCoverage(
     return charges;
   };
 
+  const projectsById = new Map(projects.map(project => [project.id, project]));
+  const projectMonthsByContract = new Map<string, Map<string, Record<string, number>>>();
+  const projectMonths = (projectId: string): Record<string, number> => {
+    const contract = contractsById.get(String(projectsById.get(projectId)?.contract_id || ''));
+    if (!contract) return {};
+    let schedules = projectMonthsByContract.get(contract.id);
+    if (!schedules) {
+      schedules = new Map(contractProjectSchedules(contract, projects).map(entry => [entry.project.id, entry.months]));
+      projectMonthsByContract.set(contract.id, schedules);
+    }
+    return schedules.get(projectId) ?? {};
+  };
+  const sumOver = (months: string[], amounts: Record<string, number>) =>
+    months.reduce((total, month) => total + (amounts[month] || 0), 0);
+
+  /**
+   * Agreements whose own fees an invoice (or receipt) bills. Contracts linked directly always count.
+   * A linked project's parent agreement is added by the link picker on its own, so the links cannot
+   * say whether its fee is billed as well — the money can: the parents count when `amount` sits
+   * closer to "direct fees + projects + parent fees" than to "direct fees + projects" over the
+   * months. Projects are valued generously (their whole budget when that beats the months' share),
+   * so a change request billed in one lump never pulls its agreement in.
+   */
+  // ponytail: amount heuristic — a budget-less (timesheet) change request billed for about its
+  // agreement's fee can tip it; store an explicit fee / change-request flag on the link if that bites.
+  const feeContractIds = (contractIds: string[], projectIds: string[], months: string[], amount: number): string[] => {
+    const parents = new Set(projectIds.map(projectId => String(projectsById.get(projectId)?.contract_id || '')));
+    const direct = contractIds.filter(id => !parents.has(id));
+    const parentIds = contractIds.filter(id => parents.has(id));
+    if (parentIds.length === 0) return direct;
+
+    const fees = (ids: string[]) => ids.reduce((total, id) => {
+      const contract = contractsById.get(id);
+      return total + (contract ? sumOver(months, chargesFor(contract)) : 0);
+    }, 0);
+    const projectValue = projectIds.reduce(
+      (total, projectId) => total + Math.max(sumOver(months, projectMonths(projectId)), Number(projectsById.get(projectId)?.budget_value) || 0),
+      0
+    );
+    const withoutParents = fees(direct) + projectValue;
+    const withParents = withoutParents + fees(parentIds);
+    return Math.abs(amount - withParents) < Math.abs(amount - withoutParents) ? contractIds : direct;
+  };
+
   ordered.forEach(invoice => {
     const months = invoiceCoveredMonths(invoice);
     if (months.length === 0) return;
 
-    // A change-request invoice paints its project rows and never the parent agreement as well: the
-    // link picker stores both, and painting both shows the same money twice in the schedule.
+    // A change-request invoice paints its project rows; the parent agreement only when the invoice
+    // bills its fee too (see feeContractIds), or the same money would show twice.
     const billedThroughProjects = invoiceProjectIds(invoice).length > 0;
-    const linkedContracts = invoiceContractTargets(invoice, projects)
+    const linkedContracts = feeContractIds(invoiceContractIds(invoice), invoiceProjectIds(invoice), months, invoiceAmountEur(invoice))
       .map(contractId => contractsById.get(contractId))
       .filter((contract): contract is Contract => Boolean(contract));
     // Nothing linked at all: fall back to the counterparty contract the invoice actually mentions
@@ -388,7 +432,6 @@ export function buildInvoiceCoverage(
   // Receipts (intercompany transfers, deposits) are paid money with no tax document; they paint the
   // same boxes so the schedule shows them as settled even though nothing was invoiced.
   const invoicesById = new Map(invoices.map(invoice => [invoice.id, invoice]));
-  const contractIdOfProject = new Map(projects.map(project => [project.id, String(project.contract_id || '')]));
   receipts
     .filter(receipt => receipt.direction !== 'outgoing')
     .forEach(receipt => {
@@ -399,15 +442,14 @@ export function buildInvoiceCoverage(
         ...(receipt.project_ids ?? []),
         ...(linkedInvoice ? invoiceProjectIds(linkedInvoice) : []),
       ]);
-      // Same rule as invoices: money that covers a change request belongs to that row, not to the
-      // agreement the change request sits under.
-      const projectParents = new Set(
-        billedProjectIds.map(projectId => contractIdOfProject.get(projectId)).filter(Boolean)
+      // Same rule as invoices: money that covers a change request belongs to that row, and to the
+      // agreement it sits under only when the amount says its fee was paid too.
+      const contractIds = feeContractIds(
+        normalizeLinkIds([...(receipt.contract_ids ?? []), ...(linkedInvoice ? invoiceContractIds(linkedInvoice) : [])]),
+        billedProjectIds,
+        months,
+        round2(Number(receipt.amount_eur) || 0)
       );
-      const contractIds = normalizeLinkIds([
-        ...(receipt.contract_ids ?? []),
-        ...(linkedInvoice ? invoiceContractIds(linkedInvoice) : []),
-      ]).filter(contractId => !projectParents.has(contractId));
       contractIds
         .map(contractId => contractsById.get(contractId))
         .filter((contract): contract is Contract => Boolean(contract))

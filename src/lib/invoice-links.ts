@@ -51,17 +51,6 @@ const parentsOf = (projectIds: string[], projects: ProjectContractLookup): strin
     .map(projectId => projects.find(project => project.id === projectId)?.contract_id)
     .filter((id): id is string => Boolean(id));
 
-/**
- * Agreements an invoice's money should paint on the revenue schedule: the contracts it names
- * directly, minus the parents of the change requests it bills. A project link already carries its
- * parent agreement (the picker adds it), so keeping both would count the same money twice — the
- * change-request row shows it, the agreement row must not.
- */
-export function invoiceContractTargets(invoice: InvoiceLinks, projects: ProjectContractLookup = []): string[] {
-  const projectParents = new Set(parentsOf(invoiceProjectIds(invoice), projects));
-  return invoiceContractIds(invoice).filter(id => !projectParents.has(id));
-}
-
 /** Every contract the invoice's money belongs to, project links expanded to their parent agreement. */
 export function invoiceLinkedContractIds(invoice: InvoiceLinks, projects: ProjectContractLookup = []): string[] {
   return normalizeLinkIds([...invoiceContractIds(invoice), ...parentsOf(invoiceProjectIds(invoice), projects)]);

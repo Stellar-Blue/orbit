@@ -842,6 +842,43 @@ assert(
   'cnt-2 keeps its box'
 );
 
+// An invoice that bills two agreements' fees plus a change request of the second one: the second
+// agreement is also the project's parent, but the invoice net shows its fee is billed too, so its
+// row is painted (and its period is no longer suggested).
+const feeAndCrContracts = [
+  contract({ id: 'cnt-etrm', counterparty_id: 'cp-fi', reference: 'FI-ETRM', starts_on: '2026-01-01', ends_on: '2026-12-31',
+    lines: [{ id: 'fi-1', contract_id: 'cnt-etrm', name: 'ETRM', unit_price: 1000, quantity: 1, unit_label: 'flat', frequency: 'monthly' }] }),
+  contract({ id: 'cnt-trading', counterparty_id: 'cp-fi', reference: 'FI-TRADING', starts_on: '2026-01-01', ends_on: '2026-12-31',
+    lines: [{ id: 'fi-2', contract_id: 'cnt-trading', name: 'Trading', unit_price: 4450, quantity: 1, unit_label: 'flat', frequency: 'monthly' }] }),
+];
+const trainingCr = { id: 'prj-training', contract_id: 'cnt-trading', name: 'Extra training session', status: 'active', budget_value: 95, starts_on: '2026-10-01', ends_on: '2026-10-31' };
+const feeAndCrDraft = invoice({
+  id: 'inv-fi', invoice_number: 'FIRST-IMAGINE-DRAFT', counterparty_id: 'cp-fi', status: 'draft',
+  contract_id: 'cnt-etrm', contract_ids: ['cnt-etrm', 'cnt-trading'], project_ids: ['prj-training'],
+  period_from: '2026-08-01', period_to: '2026-10-31', issue_date: '2026-11-02', net: 16445,
+});
+const feeAndCrCoverage = buildInvoiceCoverage([feeAndCrDraft], feeAndCrContracts, [], [], [trainingCr]);
+assert(
+  ['2026-08', '2026-09', '2026-10'].every(month => feeAndCrCoverage.has(`cnt-etrm:${month}`) && feeAndCrCoverage.has(`cnt-trading:${month}`)),
+  'An invoice whose net includes a project parent’s fee paints that agreement too',
+  [...feeAndCrCoverage.keys()].join(' ')
+);
+const feeAndCrPeriods = getContractBillingPeriods(feeAndCrContracts[1], { today: new Date('2026-11-05T00:00:00'), invoices: [feeAndCrDraft] });
+assert(
+  ['2026-08-01', '2026-09-01', '2026-10-01'].every(from => feeAndCrPeriods.find(period => period.from === from)?.status !== 'unbilled'),
+  'Billing periods count an invoice for every agreement it links, not just the primary one',
+  JSON.stringify(feeAndCrPeriods.map(period => [period.from, period.status]))
+);
+const crOnlyLump = buildInvoiceCoverage(
+  [invoice({ id: 'inv-cr-lump', counterparty_id: 'cp-fi', contract_id: 'cnt-trading', contract_ids: ['cnt-trading'], project_ids: ['prj-training'], period_from: '2026-08-01', period_to: '2026-10-31', net: 95 })],
+  feeAndCrContracts, [], [], [trainingCr]
+);
+assert(
+  crOnlyLump.size === 0,
+  'A change-request-only invoice still leaves its parent agreement row alone',
+  [...crOnlyLump.keys()].join(' ')
+);
+
 // Change-request rows show the invoices their projects are billed by.
 const crInvoice = invoice({
   id: 'inv-cr',
