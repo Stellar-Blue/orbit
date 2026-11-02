@@ -44,7 +44,7 @@ import Link from 'next/link';
 import { Modal, Badge } from '@/components/ui/primitives';
 import { formatMoney } from '@/lib/currency';
 import { formatDate } from '@/lib/date';
-import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote, Download, Building2, Rows3 } from 'lucide-react';
+import { Search, CalendarClock, TrendingUp, Layers, ArrowRight, ArrowUpRight, Maximize2, Minimize2, Users, AlertTriangle, X, Plus, BarChart3, Banknote, Download, Building2, Rows3, Columns3 } from 'lucide-react';
 
 interface RevenueScheduleGridProps {
   contracts: Contract[];
@@ -188,6 +188,18 @@ function quickFilterText(data?: RevenueScheduleRow): string {
     data.product,
     ...(data.projects ?? []).flatMap(project => [project.code || '', project.name]),
   ].join(' ');
+}
+
+/** Columns a viewer chose to hide (colIds; a year's `y-YYYY` hides its months), kept per browser. */
+const HIDDEN_COLUMNS_KEY = 'orbit-schedule-hidden-columns';
+
+function readHiddenColumns(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HIDDEN_COLUMNS_KEY) || '[]');
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 /** How the schedule's rows are grouped: by payer, by the client the work serves, or not at all. */
@@ -529,6 +541,16 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [peek, setPeek] = useState<{ contract: Contract; invoiceIds: string[] } | null>(null);
   const [explain, setExplain] = useState<{ row: RevenueScheduleRow; month: string } | null>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>(readHiddenColumns);
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
+  const hidden = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(hiddenColumns));
+    } catch {
+      // Storage blocked: the choice still holds for this visit.
+    }
+  }, [hiddenColumns]);
   const currentYear = new Date().getFullYear();
   const yearStore = useMemo(() => createYearStore(currentYear), [currentYear]);
   const visibleYear = useSyncExternalStore(yearStore.subscribe, yearStore.getYear, yearStore.getYear);
@@ -895,6 +917,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     const monthColumn = (key: string): ColDef<RevenueScheduleRow> => ({
       headerName: monthLabel(key),
       colId: `m-${key}`,
+      hide: hidden.has(`y-${key.slice(0, 4)}`),
       width: MONTH_WIDTH,
       minWidth: 64,
       suppressMovable: true,
@@ -1063,7 +1086,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         colId: 'counterparty',
         field: 'counterparty',
         rowGroup: groupBy === 'counterparty',
-        hide: groupBy === 'counterparty',
+        hide: groupBy === 'counterparty' || hidden.has('counterparty'),
         pinned: 'left',
         width: 200,
         minWidth: 160,
@@ -1080,7 +1103,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         colId: 'end-customer',
         field: 'endCustomer',
         // Hidden while it *is* the group column (the name would repeat) or when nothing is subcontracted.
-        hide: !hasSubcontracts || groupBy === 'endCustomer',
+        hide: !hasSubcontracts || groupBy === 'endCustomer' || hidden.has('end-customer'),
         pinned: 'left',
         width: 170,
         minWidth: 140,
@@ -1110,6 +1133,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       {
         headerName: 'Master Agreement',
         colId: 'agreement',
+        hide: hidden.has('agreement'),
         pinned: 'left',
         width: 220,
         minWidth: 180,
@@ -1178,6 +1202,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       {
         headerName: 'Year total',
         colId: 'year-total',
+        hide: hidden.has('year-total'),
         pinned: 'right',
         width: 136,
         minWidth: 120,
@@ -1197,7 +1222,17 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         valueFormatter: params => formatTotal(params.value),
       },
     ];
-  }, [yearGroups, currentMonthKey, yearStore, groupBy, hasSubcontracts]);
+  }, [yearGroups, currentMonthKey, yearStore, groupBy, hasSubcontracts, hidden]);
+
+  /** What the Columns menu offers: the identity columns on screen, each year's months, the total. */
+  const columnOptions = useMemo(() => [
+    ...(groupBy !== 'counterparty' ? [{ id: 'counterparty', label: 'Counterparty' }] : []),
+    ...(hasSubcontracts && groupBy !== 'endCustomer' ? [{ id: 'end-customer', label: 'End customer' }] : []),
+    { id: 'agreement', label: 'Master agreement' },
+    ...years.map(year => ({ id: `y-${year}`, label: `${year} months` })),
+    { id: 'year-total', label: 'Year total' },
+  ], [groupBy, hasSubcontracts, years]);
+  const hiddenOptionCount = columnOptions.filter(option => hidden.has(option.id)).length;
 
   const pinnedBottomRowData = useMemo(
     () => [{ id: '__portfolio-total__', months: schedule.monthTotals }],
@@ -1332,15 +1367,58 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => void exportToExcel()}
-          disabled={isExporting}
-          title="Download this schedule as an Excel workbook"
-          className="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] disabled:opacity-60 disabled:cursor-wait cursor-pointer shrink-0"
-        >
-          <Download className="w-3.5 h-3.5 text-[var(--ink-3)]" /> {isExporting ? 'Exporting…' : 'Excel'}
-        </button>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setColumnsMenuOpen(open => !open)}
+              aria-expanded={columnsMenuOpen}
+              title="Show or hide columns"
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] cursor-pointer"
+            >
+              <Columns3 className="w-3.5 h-3.5 text-[var(--ink-3)]" /> Columns{hiddenOptionCount > 0 ? ` · ${hiddenOptionCount} hidden` : ''}
+            </button>
+            {columnsMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setColumnsMenuOpen(false)} />
+                <div role="group" aria-label="Visible columns" className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl p-2 z-40 space-y-0.5">
+                  <div className="px-2 py-1 text-[10px] uppercase font-extrabold text-slate-400">Visible columns</div>
+                  {columnOptions.map(option => (
+                    <label key={option.id} className="flex items-center gap-2 px-2 py-1 rounded-lg text-xs text-slate-700 hover:bg-slate-100 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!hidden.has(option.id)}
+                        onChange={() => setHiddenColumns(previous => previous.includes(option.id)
+                          ? previous.filter(id => id !== option.id)
+                          : [...previous, option.id])}
+                        className="accent-[var(--accent)] cursor-pointer"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                  {hiddenOptionCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setHiddenColumns([])}
+                      className="w-full text-left px-2 py-1 text-[11px] font-semibold text-[var(--accent)] hover:underline cursor-pointer"
+                    >
+                      Show all
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => void exportToExcel()}
+            disabled={isExporting}
+            title="Download this schedule as an Excel workbook"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white hover:bg-[var(--surface-muted)] text-[12px] font-semibold text-[var(--ink-2)] disabled:opacity-60 disabled:cursor-wait cursor-pointer shrink-0"
+          >
+            <Download className="w-3.5 h-3.5 text-[var(--ink-3)]" /> {isExporting ? 'Exporting…' : 'Excel'}
+          </button>
+        </div>
         {selectionStats ? (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-2.5 py-1 text-[10px] font-bold text-slate-600">
             <span className="uppercase tracking-wider text-[var(--accent)]">Selection</span>
@@ -1418,6 +1496,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           onGridReady={handleGridReady}
           onBodyScroll={handleBodyScroll}
           onGridSizeChanged={event => syncVisibleYear(event.api)}
+          onDisplayedColumnsChanged={event => syncVisibleYear(event.api)}
           onRowDoubleClicked={event => {
             if ((event.event?.target as HTMLElement | null)?.closest('[data-invoice-action], [data-invoice-peek]')) return;
             if (event.node.rowPinned) return;

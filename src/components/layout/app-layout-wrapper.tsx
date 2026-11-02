@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandMenu } from "@/components/layout/command-menu";
@@ -9,7 +9,36 @@ import { roleLabel } from "@/lib/profile-role";
 import { hiddenScreenForPath } from "@/lib/screens";
 import { exitDemoMode } from "@/lib/demo-mode";
 import { ThemeToggle } from "@/lib/theme";
-import { Menu, Search, Eye, EyeOff, Users, ShieldAlert, Sparkles, LogOut } from "lucide-react";
+import { Menu, Search, Eye, EyeOff, Users, ShieldAlert, Sparkles, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+
+// The desktop navigation can shrink to an icon rail for more room. The choice is kept per browser;
+// an in-memory copy keeps the toggle working where storage is blocked.
+const NAV_COLLAPSED_KEY = "orbit-nav-collapsed";
+const NAV_COLLAPSED_EVENT = "orbit-nav-collapsed-change";
+let navCollapsedFallback = false;
+
+function readNavCollapsed(): boolean {
+  try {
+    return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
+  } catch {
+    return navCollapsedFallback;
+  }
+}
+
+function subscribeNavCollapsed(onChange: () => void) {
+  window.addEventListener(NAV_COLLAPSED_EVENT, onChange);
+  return () => window.removeEventListener(NAV_COLLAPSED_EVENT, onChange);
+}
+
+function setNavCollapsed(collapsed: boolean) {
+  navCollapsedFallback = collapsed;
+  try {
+    localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch {
+    // Storage blocked: the in-memory copy still carries the choice for this visit.
+  }
+  window.dispatchEvent(new Event(NAV_COLLAPSED_EVENT));
+}
 
 export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
@@ -25,6 +54,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
     : PAGE_TITLES.find(([prefix]) => pathname?.startsWith(prefix))?.[1] || 'Orbit';
   const isAuthPage = pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navCollapsed = useSyncExternalStore(subscribeNavCollapsed, readNavCollapsed, () => false);
 
   const { currentUser, profiles, isViewAsEmployee, setIsViewAsEmployee, realUserRole, previewProfileId, startPreviewAs, stopPreview, slackIntegration, isLoading, isDemo, companyProfile, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
   const [previewMenuOpen, setPreviewMenuOpen] = useState(false);
@@ -53,7 +83,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
 
   return (
     <>
-      <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+      <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} collapsed={navCollapsed} />
       <CommandMenu />
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden w-full max-w-full">
         {isDemo && (
@@ -80,6 +110,16 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
               aria-label="Open Navigation Menu"
             >
               <Menu className="w-4 h-4 text-[var(--ink)]" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setNavCollapsed(!navCollapsed)}
+              className="hidden md:inline-flex items-center justify-center w-7 h-7 rounded-[4px] text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--surface-muted)] transition-colors shrink-0 cursor-pointer"
+              aria-label={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-expanded={!navCollapsed}
+              title={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+            >
+              {navCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             </button>
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 truncate font-mono text-[10.5px] uppercase tracking-[0.12em]">
               <span className="text-[var(--ink-4)] font-medium truncate">{companyProfile?.name || 'StellarBlue'}</span>

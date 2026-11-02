@@ -15,9 +15,11 @@ import { Badge } from '@/components/ui/primitives';
 interface SidebarProps {
   mobileMenuOpen?: boolean;
   setMobileMenuOpen?: (open: boolean) => void;
+  /** Desktop only: shrink to an icon rail (labels move to tooltips). The mobile drawer is always full. */
+  collapsed?: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen, collapsed = false }) => {
   const pathname = usePathname();
   const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -64,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
     }
   };
 
-  const renderNavItem = (item: { label: string; path: string; icon: React.ReactNode; show: boolean; adminOnly?: boolean }) => {
+  const renderNavItem = (item: { label: string; path: string; icon: React.ReactNode; show: boolean; adminOnly?: boolean }, compact = false) => {
     if (!item.show) return null;
     const active = pathname === item.path;
     return (
@@ -73,29 +75,36 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         href={item.path}
         onClick={handleNavClick}
         aria-current={active ? 'page' : undefined}
-        className={`relative flex items-center h-8 pl-3 pr-2.5 rounded-[4px] text-[12.5px] transition-colors duration-150 group ${
+        aria-label={compact ? item.label : undefined}
+        title={compact ? item.label : undefined}
+        className={`relative flex items-center h-8 rounded-[4px] text-[12.5px] transition-colors duration-150 group ${compact ? 'justify-center' : 'pl-3 pr-2.5'} ${
           active
             ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)] font-semibold'
             : 'text-[var(--ink-2)] font-medium hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]'
         }`}
       >
         {active && <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-[var(--accent)]" />}
-        <span className="shrink-0 opacity-95 group-hover:opacity-100">{item.icon}</span>
-        <span className="flex-1 truncate">{item.label}</span>
+        <span className={`shrink-0 opacity-95 group-hover:opacity-100 ${compact ? '[&>svg]:mr-0' : ''}`}>{item.icon}</span>
+        {!compact && <span className="flex-1 truncate">{item.label}</span>}
       </Link>
     );
   };
 
-  const renderSidebarContent = (isMobile: boolean = false) => (
+  const renderSidebarContent = (isMobile: boolean = false) => {
+    const compact = collapsed && !isMobile;
+    const sectionLabel = (label: string) => compact
+      ? <div aria-hidden className="mx-2 mb-1.5 border-t border-[var(--line)]" />
+      : <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-4)]">{label}</div>;
+    return (
     <>
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
         {/* Brand Header */}
-        <div className="px-3 py-4 border-b border-[var(--line)] flex items-center justify-between shrink-0">
-          <Link href="/" onClick={handleNavClick} className="flex items-center space-x-2.5 group pr-8 md:pr-0">
+        <div className={`py-4 border-b border-[var(--line)] flex items-center shrink-0 ${compact ? 'justify-center px-2' : 'justify-between px-3'}`}>
+          <Link href="/" onClick={handleNavClick} title={compact ? 'Orbit · Home' : undefined} className={`flex items-center group ${compact ? '' : 'space-x-2.5 pr-8 md:pr-0'}`}>
             <div className="w-8 h-8 rounded-[5px] bg-[var(--surface-muted)] border border-[var(--line)] flex items-center justify-center p-1.5 shrink-0">
               <img src={companyProfile?.logo_url || "/icon.png"} alt={`${companyProfile?.name || 'Company'} Icon`} className="w-6 h-6 object-contain" />
             </div>
-            <div className="truncate">
+            <div className={compact ? 'hidden' : 'truncate'}>
               <span className="text-[14px] font-semibold uppercase tracking-[0.16em] text-[var(--ink)] block leading-tight truncate">Orbit</span>
               <span className="block truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-4)]">{companyProfile?.name || 'StellarBlue'}</span>
             </div>
@@ -112,37 +121,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         </div>
 
         {/* Navigation Sections */}
-        <div className="px-2.5 py-3 space-y-5 flex-1">
+        <div className={`py-3 space-y-5 flex-1 ${compact ? 'px-2' : 'px-2.5'}`}>
           {/* 1. Primary Top Section */}
           <nav className="space-y-1">
-            {primaryItems.map(item => renderNavItem(item))}
+            {primaryItems.map(item => renderNavItem(item, compact))}
           </nav>
 
           {/* 2. Personal Section */}
           {personalItems.some(i => i.show) && (
-            <nav className="space-y-1">
-              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-4)]">Personal</div>
-              {personalItems.map(item => renderNavItem(item))}
+            <nav className="space-y-1" aria-label="Personal">
+              {sectionLabel('Personal')}
+              {personalItems.map(item => renderNavItem(item, compact))}
             </nav>
           )}
 
           {/* 3. Company Section */}
           {companyItems.some(i => i.show) && (
-            <nav className="space-y-1">
-              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-4)]">Company</div>
-              {companyItems.map(item => renderNavItem(item))}
+            <nav className="space-y-1" aria-label="Company">
+              {sectionLabel('Company')}
+              {companyItems.map(item => renderNavItem(item, compact))}
             </nav>
           )}
         </div>
 
         {/* Bottom Navigation Item (Settings) */}
         {settingsItem.show && (
-          <div className="px-2.5 pb-2 pt-2 border-t border-[var(--line)] shrink-0">
-            {renderNavItem(settingsItem)}
+          <div className={`pb-2 pt-2 border-t border-[var(--line)] shrink-0 ${compact ? 'px-2' : 'px-2.5'}`}>
+            {renderNavItem(settingsItem, compact)}
           </div>
         )}
 
-        {isContractor && (
+        {isContractor && !compact && (
           <div className="mx-3 mb-3 p-2.5 rounded-[6px] bg-[var(--warning-soft)] border border-amber-300/70 text-[11px] text-[var(--warning)] font-medium flex items-start space-x-2 shrink-0">
             <AlertTriangle className="w-3.5 h-3.5 text-[var(--warning)] shrink-0 mt-0.5" />
             <span>Contractor profile active: Leave & Remote logs auto-hidden.</span>
@@ -150,9 +159,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         )}
       </div>
 
-      {/* Footer / User Profile & Dev Mode Switcher */}
-      <div className="p-3 border-t border-[var(--line)] shrink-0">
-        {realUserRole === 'admin' && previewProfileId && (
+      {/* Footer / User Profile & Dev Mode Switcher. The icon rail keeps only the avatar: the header
+          carries the preview switches and the ribbon the way out of a preview. */}
+      <div className={`border-t border-[var(--line)] shrink-0 ${compact ? 'p-2' : 'p-3'}`}>
+        {!compact && realUserRole === 'admin' && previewProfileId && (
           <div className="mb-3">
             <button
               onClick={stopPreview}
@@ -170,7 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           </div>
         )}
 
-        {realUserRole === 'admin' && !previewProfileId && (
+        {!compact && realUserRole === 'admin' && !previewProfileId && (
           <div className="mb-3">
             <button
               onClick={() => setIsViewAsEmployee(!isViewAsEmployee)}
@@ -196,7 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
           </div>
         )}
 
-        {isDevMode && (
+        {isDevMode && !compact && (
           <div className="mb-3 px-2.5 py-1.5 rounded-[4px] bg-[var(--surface-muted)] border border-[var(--line)] text-[var(--ink-2)] flex items-center justify-between text-[11px]">
             <span className="flex items-center font-semibold truncate">
               <Sliders className="w-3.5 h-3.5 mr-1.5 animate-spin shrink-0" style={{ animationDuration: '8s' }} /> Dev Auth Mode
@@ -208,7 +218,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         <div className="relative">
           <button 
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="w-full flex items-center justify-between p-2 rounded-[4px] hover:bg-[var(--surface-muted)] transition-colors border border-transparent hover:border-[var(--line)] text-left cursor-pointer"
+            title={compact ? `${currentUser.first_name} ${currentUser.last_name}` : undefined}
+            className={`w-full flex items-center rounded-[4px] hover:bg-[var(--surface-muted)] transition-colors border border-transparent hover:border-[var(--line)] text-left cursor-pointer ${compact ? 'justify-center p-1' : 'justify-between p-2'}`}
           >
             <div className="flex items-center space-x-2.5 overflow-hidden">
               <div className="w-8 h-8 rounded-[4px] bg-[var(--ink)] text-[var(--canvas)] flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-[var(--ink)]">
@@ -218,17 +229,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
                   <span>{currentUser.first_name[0]}{currentUser.last_name[0]}</span>
                 )}
               </div>
-              <div className="truncate">
+              <div className={compact ? 'hidden' : 'truncate'}>
                 <p className="text-[12.5px] font-semibold text-[var(--ink)] truncate">{currentUser.first_name} {currentUser.last_name}</p>
                 <p className="text-[10.5px] text-[var(--ink-4)] font-medium truncate">{roleLabel(currentUser, profileRoleHistory, jobRoles, seniorityLevels)}</p>
               </div>
             </div>
-            <ChevronDown className="w-4 h-4 text-[var(--ink-4)] shrink-0 ml-1" />
+            {!compact && <ChevronDown className="w-4 h-4 text-[var(--ink-4)] shrink-0 ml-1" />}
           </button>
           
           {/* Dev Role Switcher & Sign Out Dropdown */}
           {dropdownOpen && (
-            <div className="absolute bottom-14 left-0 w-full bg-white border border-slate-200 rounded-xl shadow-xl p-2 z-50 max-h-80 overflow-y-auto space-y-1">
+            <div className={`absolute bg-white ${compact ? 'bottom-0 left-full ml-2 w-64' : 'bottom-14 left-0 w-full'} border border-slate-200 rounded-xl shadow-xl p-2 z-50 max-h-80 overflow-y-auto space-y-1`}>
               {isDevMode && (
                 <>
                   <div className="px-2 py-1 text-[10px] uppercase font-extrabold text-slate-400 border-b border-slate-100 mb-1">
@@ -262,12 +273,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         </div>
       </div>
     </>
-  );
+    );
+  };
 
   return (
     <>
       {/* Desktop Sticky Sidebar */}
-      <aside className="hidden md:flex w-[232px] bg-white border-r border-[var(--line-strong)] flex-col justify-between h-screen sticky top-0 z-30 select-none shrink-0">
+      <aside className={`hidden md:flex ${collapsed ? 'w-14' : 'w-[232px]'} transition-[width] duration-150 bg-white border-r border-[var(--line-strong)] flex-col justify-between h-screen sticky top-0 z-30 select-none shrink-0`}>
         {renderSidebarContent(false)}
       </aside>
 
