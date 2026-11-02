@@ -33,7 +33,7 @@ export interface OfficePlanProps {
   sessionNote?: string | null;
   /** The day's sessions per meeting room, printed on the table beside each one. */
   sessionBoards?: SessionBoard[];
-  /** Picking a session on a room's table shows its people in the room. */
+  /** Picking a session on a room's card shows its people in the room. */
   onSelectSession?: (room: Space, sessionId: string) => void;
   onPickSeat: (seat: SpaceSeat, room: Space) => void;
   /** Clicking a room itself (its floor, walls or empty space) — timed rooms open their sessions. */
@@ -64,13 +64,6 @@ export function OfficePlan({
     () => (room: Space) => typesById.get(room.type_id)?.booking_mode ?? null,
     [typesById]
   );
-  const handleSelectRoom = useMemo(
-    () => (room: Space | null) => {
-      if (room) onPickRoom?.(room);
-    },
-    [onPickRoom]
-  );
-
   return (
     <Card
       title={`Office plan · ${floor.name}`}
@@ -103,13 +96,13 @@ export function OfficePlan({
           kindForRoom={kindForRoom}
           sessionBoards={sessionBoards}
           onSelectSession={onSelectSession}
+          onOpenRoom={onPickRoom}
           onSelectSeat={onPickSeat}
-          onSelectRoom={handleSelectRoom}
         />
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
         <MousePointerClick className="h-3 w-3 shrink-0" />
-        A black chair is free, a blue-grey one is taken, the green one is yours — a meeting room&apos;s table picks which session its chairs belong to.
+        A black chair is free, a blue-grey one is taken, the green one is yours — a meeting room&apos;s card picks which session its chairs belong to.
         {sessionNote ? <span className="truncate">Showing {sessionNote}</span> : null}
       </p>
     </Card>

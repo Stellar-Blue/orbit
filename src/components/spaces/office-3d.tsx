@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ZoomOut } from 'lucide-react';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { OfficeFloor, Space, SpaceDesk, SpaceSeat } from '@/lib/types';
@@ -88,8 +89,10 @@ export interface Office3DProps {
   kindForRoom?: (room: Space) => 'whole_day' | 'time_range' | null;
   /** The day's sessions per meeting room, printed on the board and clickable. */
   sessionBoards?: SessionBoard[];
-  /** A session was clicked on a room's board — show that one in the room. */
+  /** A session was picked on a room's card — show that one in the room. */
   onSelectSession?: (room: Space, sessionId: string) => void;
+  /** The card's header was clicked — open the room's sessions, the full dialog in the parent. */
+  onOpenRoom?: (room: Space) => void;
   onSelectRoom?: (room: Space | null) => void;
   onSelectSeat?: (seat: SpaceSeat, room: Space) => void;
   onSelectDesk?: (desk: SpaceDesk, room: Space) => void;
@@ -100,7 +103,7 @@ export interface Office3DProps {
   onResizeDesk?: (desk: SpaceDesk, width: number, depth: number) => void;
 }
 
-type PickedKind = 'room' | 'seat' | 'desk' | 'handle' | 'desk-handle' | 'session';
+type PickedKind = 'room' | 'seat' | 'desk' | 'handle' | 'desk-handle';
 
 interface DragState {
   kind: 'room' | 'corner' | 'seat' | 'desk' | 'desk-corner';
@@ -494,190 +497,6 @@ function labelSprite(text: string, color: string): THREE.Sprite {
   return sprite;
 }
 
-/**
- * The schedule table that stands beside a meeting room: four legs, a pale top, and the day's
- * sessions printed on it. Rows are separate planes so each one can be picked; the board sits flat
- * rather than upright because the camera looks down at the model, and a flat list stays readable
- * when the room is viewed from any corner.
- */
-const BOARD = {
-  width: 1.8,
-  depth: 1.2,
-  height: 0.58,
-  padding: 0.075,
-  header: 0.14,
-  row: 0.17,
-  gap: 0.026,
-};
-
-const clampTo = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-function paintTexture(
-  width: number,
-  height: number,
-  draw: (ctx: CanvasRenderingContext2D) => void
-): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (ctx) draw(ctx);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  return texture;
-}
-
-/** Trim with an ellipsis until the text fits, so a long agenda never bleeds out of its row. */
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let cut = text;
-  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxWidth) cut = cut.slice(0, -1);
-  return `${cut.trimEnd()}…`;
-}
-
-function sessionHeadingTexture(text: string, accent: string): THREE.CanvasTexture {
-  const width = 512;
-  const height = 48;
-  return paintTexture(width, height, ctx => {
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = accent;
-    ctx.fillRect(0, height - 4, width * 0.22, 4);
-    ctx.fillStyle = '#4d453c';
-    ctx.font = '700 21px "IBM Plex Sans", system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(fitText(ctx, text.toUpperCase(), width - 8), 2, height / 2 - 2);
-  });
-}
-
-function sessionRowTexture(row: SessionBoardRow, accent: string): THREE.CanvasTexture {
-  const width = 512;
-  const height = 64;
-  return paintTexture(width, height, ctx => {
-    ctx.clearRect(0, 0, width, height);
-    ctx.beginPath();
-    ctx.roundRect(1.5, 1.5, width - 3, height - 3, 13);
-    ctx.fillStyle = row.selected ? '#eaf1f8' : '#fdfbf7';
-    ctx.fill();
-    ctx.lineWidth = row.selected ? 3 : 1.5;
-    ctx.strokeStyle = row.selected ? accent : '#ded5c4';
-    ctx.stroke();
-
-    ctx.globalAlpha = row.ended && !row.selected ? 0.55 : 1;
-    ctx.textBaseline = 'middle';
-    if (row.live) {
-      ctx.fillStyle = '#4f8566';
-      ctx.beginPath();
-      ctx.arc(21, height / 2, 5.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.fillStyle = '#2f3a45';
-    ctx.font = '600 22px "JetBrains Mono", ui-monospace, monospace';
-    ctx.fillText(row.window, 36, height / 2);
-    const timeWidth = ctx.measureText(row.window).width;
-
-    const seats = `${row.seats}/${row.capacity}`;
-    ctx.textAlign = 'right';
-    ctx.font = '600 20px "IBM Plex Sans", system-ui, sans-serif';
-    ctx.fillStyle = row.seats >= row.capacity ? '#b4562f' : '#6b7785';
-    ctx.fillText(seats, width - 16, height / 2);
-    const seatsWidth = ctx.measureText(seats).width;
-
-    ctx.textAlign = 'left';
-    ctx.font = '500 21px "IBM Plex Sans", system-ui, sans-serif';
-    ctx.fillStyle = '#334155';
-    const title = row.title?.trim() || 'Open session';
-    ctx.fillText(fitText(ctx, title, width - 36 - timeWidth - 18 - seatsWidth - 26), 36 + timeWidth + 18, height / 2);
-  });
-}
-
-function buildSessionBoard(board: SessionBoard, accent: string): THREE.Group {
-  const group = new THREE.Group();
-  group.name = `board:${board.roomId}`;
-
-  const shadow = softShadow(BOARD.width * 1.3, BOARD.depth * 1.6, 0.45);
-  shadow.position.y = 0.002;
-  group.add(shadow);
-
-  const top = new THREE.Mesh(rounded(BOARD.width, 0.045, BOARD.depth, 0.02), material(COLORS.paper, { roughness: 0.74 }));
-  top.position.y = BOARD.height;
-  top.castShadow = true;
-  top.receiveShadow = true;
-  group.add(top);
-
-  ([[-1, -1], [1, -1], [-1, 1], [1, 1]] as const).forEach(([sx, sz]) => {
-    const leg = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.026, 0.026, BOARD.height, 12),
-      material(COLORS.leg, { roughness: 0.62 })
-    );
-    leg.position.set(sx * (BOARD.width / 2 - 0.1), BOARD.height / 2 - 0.02, sz * (BOARD.depth / 2 - 0.1));
-    leg.castShadow = true;
-    group.add(leg);
-  });
-
-  // Faces lie flat on the top, printed towards the camera's corner of the model.
-  const faceY = BOARD.height + 0.024;
-  const innerWidth = BOARD.width - BOARD.padding * 2;
-  const heading = new THREE.Mesh(
-    new THREE.PlaneGeometry(innerWidth, BOARD.header),
-    new THREE.MeshBasicMaterial({ map: sessionHeadingTexture(board.heading, accent), transparent: true, depthWrite: false })
-  );
-  heading.rotation.x = -Math.PI / 2;
-  heading.position.set(0, faceY, -(BOARD.depth / 2) + BOARD.padding + BOARD.header / 2);
-  group.add(heading);
-
-  const available = BOARD.depth - BOARD.padding * 2 - BOARD.header;
-  const maxRows = Math.max(1, Math.floor((available + BOARD.gap) / (BOARD.row + BOARD.gap)));
-  board.rows.slice(0, maxRows).forEach((row, index) => {
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(innerWidth, BOARD.row),
-      new THREE.MeshBasicMaterial({ map: sessionRowTexture(row, accent), transparent: true, depthWrite: false })
-    );
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.set(
-      0,
-      faceY,
-      -(BOARD.depth / 2) + BOARD.padding + BOARD.header + BOARD.row / 2 + index * (BOARD.row + BOARD.gap)
-    );
-    plane.name = `session:${row.id}`;
-    plane.userData = {
-      kind: 'session',
-      roomId: board.roomId,
-      sessionId: row.id,
-      label: `${row.window}${row.title?.trim() ? ` · ${row.title.trim()}` : ''}${row.selected ? ' — showing' : ' — click to show'}`,
-    };
-    group.add(plane);
-  });
-
-  const hidden = board.rows.length - maxRows;
-  if (hidden > 0) {
-    const more = new THREE.Mesh(
-      new THREE.PlaneGeometry(innerWidth, BOARD.row * 0.7),
-      new THREE.MeshBasicMaterial({
-        map: paintTexture(512, 44, ctx => {
-          ctx.clearRect(0, 0, 512, 44);
-          ctx.fillStyle = '#8a8074';
-          ctx.font = '600 19px "IBM Plex Sans", system-ui, sans-serif';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(`+${hidden} more session${hidden === 1 ? '' : 's'} that day`, 4, 22);
-        }),
-        transparent: true,
-        depthWrite: false,
-      })
-    );
-    more.rotation.x = -Math.PI / 2;
-    more.position.set(
-      0,
-      faceY,
-      -(BOARD.depth / 2) + BOARD.padding + BOARD.header + maxRows * (BOARD.row + BOARD.gap + BOARD.row / 2) - BOARD.gap / 2
-    );
-    group.add(more);
-  }
-
-  return group;
-}
-
 /** Free GPU memory before rebuilding the scene graph. */
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse(child => {
@@ -887,7 +706,7 @@ function cutAwayWalls(state: SceneState): void {
 export const Office3D: React.FC<Office3DProps> = ({
   floor, rooms, seats, desks = [], takenSeatIds, mySeatIds, seatPeople = [],
   selectedRoomId, selectedSeatId, selectedDeskId, mode,
-  colorForRoom, kindForRoom, sessionBoards = [], onSelectSession,
+  colorForRoom, kindForRoom, sessionBoards = [], onSelectSession, onOpenRoom,
   onSelectRoom, onSelectSeat, onSelectDesk,
   onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
 }) => {
@@ -895,12 +714,26 @@ export const Office3D: React.FC<Office3DProps> = ({
   const stateRef = useRef<SceneState | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  /** The room the camera has flown into, or null for the whole-floor overview. */
+  const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
+  /** The focus that still has a room behind it — a deleted room simply stops being focused. */
+  const activeFocusId = focusedRoomId && rooms.some(room => room.id === focusedRoomId) ? focusedRoomId : null;
+  /** The HTML card that follows each meeting room around the canvas. */
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  /** The overview the camera returns to: set once the floor has been framed. */
+  const overviewRef = useRef<{ target: THREE.Vector3; zoom: number } | null>(null);
+  /** A running camera flight: from where, to where, and since when. */
+  const flightRef = useRef<{
+    fromTarget: THREE.Vector3; toTarget: THREE.Vector3;
+    fromZoom: number; toZoom: number; startedAt: number; duration: number;
+  } | null>(null);
+  const focusRoomRef = useRef<(room: Space | null) => void>(() => {});
 
   const dataRef = useRef({
     rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
   });
   const callbacksRef = useRef({
-    onSelectRoom, onSelectSeat, onSelectDesk, onSelectSession,
+    onSelectRoom, onSelectSeat, onSelectDesk, onSelectSession, onOpenRoom,
     onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
   });
   const colorRef = useRef(colorForRoom);
@@ -912,7 +745,7 @@ export const Office3D: React.FC<Office3DProps> = ({
       rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
     };
     callbacksRef.current = {
-      onSelectRoom, onSelectSeat, onSelectDesk, onSelectSession,
+      onSelectRoom, onSelectSeat, onSelectDesk, onSelectSession, onOpenRoom,
       onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
     };
     colorRef.current = colorForRoom;
@@ -948,18 +781,86 @@ export const Office3D: React.FC<Office3DProps> = ({
     // inside it. Handles are likewise hit "through" the object they belong to. Both are therefore
     // resolved by priority; chairs and desks compete on plain distance, which is what a click means.
     const handle = hits.find(hit => kindOf(hit) === 'desk-handle') || hits.find(hit => kindOf(hit) === 'handle');
-    const board = hits.find(hit => kindOf(hit) === 'session');
     const item = handle || hits.find(hit => kindOf(hit) === 'seat' || kindOf(hit) === 'desk');
-    const match = board || item || hits.find(hit => kindOf(hit) === 'room');
+    const match = item || hits.find(hit => kindOf(hit) === 'room');
     if (!match) return null;
     return {
       data: match.object.userData as {
-        kind: PickedKind; roomId: string; seatId?: string; deskId?: string; sessionId?: string;
+        kind: PickedKind; roomId: string; seatId?: string; deskId?: string;
         corner?: RoomCorner; label?: string;
       },
       point: match.point,
     };
   }, []);
+
+  /** Glides the camera to a target over half a second; the direction never changes. */
+  const flyTo = useCallback((target: THREE.Vector3, zoom: number, duration = 520) => {
+    const state = stateRef.current;
+    if (!state) return;
+    flightRef.current = {
+      fromTarget: state.controls.target.clone(),
+      toTarget: target.clone(),
+      fromZoom: state.camera.zoom,
+      toZoom: zoom,
+      startedAt: performance.now(),
+      duration,
+    };
+  }, []);
+
+  /**
+   * Flies into a room — the camera pans onto it and zooms until it fills the frame — or back out to
+   * the whole floor. With an orthographic camera the "dolly in" is a zoom, so the isometric look of
+   * the model never changes, and `controls.target` carries the pan.
+   */
+  const focusRoom = useCallback((room: Space | null) => {
+    const state = stateRef.current;
+    if (!state) return;
+    if (!room) {
+      setFocusedRoomId(null);
+      const overview = overviewRef.current;
+      if (overview) flyTo(overview.target, overview.zoom);
+      return;
+    }
+    const { camera } = state;
+    const { width, depth } = roomSize(room);
+    const centreX = Number(room.pos_x) || 0;
+    const centreZ = Number(room.pos_z) || 0;
+    const centre = new THREE.Vector3(centreX, FLOOR_TOP, centreZ);
+    const rightAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const upAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+
+    // Measure the room along the camera's own axes, so the fit holds from whichever corner it orbits.
+    let halfW = 0.001;
+    let halfH = 0.001;
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+      [FLOOR_TOP, WALL_HEIGHT + 0.3].forEach(height => {
+        const offset = new THREE.Vector3(
+          centreX + (sx * width) / 2,
+          height,
+          centreZ + (sz * depth) / 2
+        ).sub(centre);
+        halfW = Math.max(halfW, Math.abs(offset.dot(rightAxis)));
+        halfH = Math.max(halfH, Math.abs(offset.dot(upAxis)));
+      });
+    });
+    const zoom = Math.min(camera.right / halfW, camera.top / halfH) * 0.72;
+    setFocusedRoomId(room.id);
+    flyTo(centre, zoom);
+  }, [flyTo]);
+
+  useEffect(() => {
+    focusRoomRef.current = focusRoom;
+  }, [focusRoom]);
+
+  // Escape is the way out of a zoom, exactly like closing a dialog.
+  useEffect(() => {
+    if (!focusedRoomId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') focusRoom(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusedRoomId, focusRoom]);
 
   // ---- scene lifecycle -----------------------------------------------------
   useEffect(() => {
@@ -1042,11 +943,55 @@ export const Office3D: React.FC<Office3DProps> = ({
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
 
+    /** Keep each meeting room's HTML card pinned to the room as the camera moves. */
+    const positionCards = () => {
+      if (cardRefs.current.size === 0) return;
+      const width = mount.clientWidth;
+      const height = mount.clientHeight;
+      cardRefs.current.forEach((element, roomId) => {
+        const room = dataRef.current.rooms.find(entry => entry.id === roomId);
+        if (!room) {
+          element.style.visibility = 'hidden';
+          return;
+        }
+        const size = roomSize(room);
+        const point = new THREE.Vector3(
+          (Number(room.pos_x) || 0) + size.width / 2 + 0.2,
+          FLOOR_TOP + 0.5,
+          (Number(room.pos_z) || 0) + size.depth / 2 + 0.2
+        ).project(camera);
+        const left = ((point.x + 1) / 2) * width;
+        const top = ((1 - point.y) / 2) * height;
+        const cardWidth = element.offsetWidth;
+        const cardHeight = element.offsetHeight;
+        element.style.transform = `translate3d(${Math.round(
+          Math.min(Math.max(left, 10), Math.max(width - cardWidth - 10, 10))
+        )}px, ${Math.round(
+          Math.min(Math.max(top, 10), Math.max(height - cardHeight - 10, 10))
+        )}px, 0)`;
+        element.style.visibility = 'visible';
+      });
+    };
+
     let frame = 0;
     const animate = () => {
       frame = requestAnimationFrame(animate);
+      const flight = flightRef.current;
+      if (flight) {
+        const progress = Math.min(1, (performance.now() - flight.startedAt) / flight.duration);
+        const eased = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        controls.target.lerpVectors(flight.fromTarget, flight.toTarget, eased);
+        camera.zoom = flight.fromZoom + (flight.toZoom - flight.fromZoom) * eased;
+        camera.position.copy(controls.target).addScaledVector(VIEW_DIRECTION, 90);
+        camera.updateProjectionMatrix();
+        camera.lookAt(controls.target);
+        if (progress >= 1) flightRef.current = null;
+      }
       controls.update();
       cutAwayWalls(state);
+      positionCards();
       renderer.render(scene, camera);
     };
     animate();
@@ -1208,7 +1153,6 @@ export const Office3D: React.FC<Office3DProps> = ({
 
       const {
         onSelectRoom: selectRoom, onSelectSeat: selectSeat, onSelectDesk: selectDesk,
-        onSelectSession: selectSession,
         onMoveRoom: moveRoom, onResizeRoom: resizeRoom, onMoveSeat: moveSeat,
         onMoveDesk: moveDesk, onResizeDesk: resizeDesk,
       } = callbacksRef.current;
@@ -1225,15 +1169,11 @@ export const Office3D: React.FC<Office3DProps> = ({
         const hit = pick(current, event.clientX, event.clientY);
         if (!hit) {
           selectRoom?.(null);
+          if (dataRef.current.mode !== 'editor') focusRoomRef.current(null);
           return;
         }
         const room = currentRooms.find(entry => entry.id === hit.data.roomId);
         if (!room) return;
-        // A row of the schedule board picks the session the room shows; the room itself opens its day.
-        if (hit.data.kind === 'session' && hit.data.sessionId) {
-          selectSession?.(room, hit.data.sessionId);
-          return;
-        }
         // A meeting room's chairs carry no booking of their own: the click belongs to the room and
         // opens its sessions instead of grabbing the chair under the pointer.
         if (hit.data.kind === 'seat' && hit.data.seatId && kindRef.current?.(room) !== 'time_range') {
@@ -1247,6 +1187,7 @@ export const Office3D: React.FC<Office3DProps> = ({
           return;
         }
         selectRoom?.(room);
+        if (dataRef.current.mode !== 'editor') focusRoomRef.current(room);
         return;
       }
 
@@ -1367,6 +1308,7 @@ export const Office3D: React.FC<Office3DProps> = ({
     camera.zoom = Math.min(camera.right / halfW, camera.top / halfH) * 0.98;
     camera.updateProjectionMatrix();
     controls.update();
+    overviewRef.current = { target: controls.target.clone(), zoom: camera.zoom };
   }, [floor.id, floor.width, floor.depth, ready]);
 
   // ---- content rebuild -----------------------------------------------------
@@ -1667,41 +1609,99 @@ export const Office3D: React.FC<Office3DProps> = ({
       state.roomGroups.set(room.id, group);
       state.pickables.push(group);
 
-      // Meeting rooms get their schedule table just outside the front edge, clamped to the slab so
-      // it never hangs off the floor. It is a viewer aid: the layout editor draws no extra furniture.
-      const board = mode === 'editor' ? undefined : sessionBoards.find(entry => entry.roomId === room.id);
-      if (board && kindRef.current?.(room) === 'time_range') {
-        const roomX = Number(room.pos_x) || 0;
-        const roomZ = Number(room.pos_z) || 0;
-        // A phone pod gets a smaller table: the board never dwarfs the room it describes.
-        const scale = width < 4 ? 0.72 : 1;
-        const boardWidth = BOARD.width * scale;
-        const boardDepth = BOARD.depth * scale;
-        const boardGroup = buildSessionBoard(board, colorRef.current(room));
-        boardGroup.scale.setScalar(scale);
-        boardGroup.position.set(
-          clampTo(roomX + width / 2 - boardWidth / 2, -halfW + boardWidth / 2 + 0.1, halfW - boardWidth / 2 - 0.1),
-          FLOOR_TOP,
-          clampTo(roomZ + depth / 2 + boardDepth / 2 + 0.18, -halfD + boardDepth / 2 + 0.1, halfD - boardDepth / 2 - 0.1)
-        );
-        state.content.add(boardGroup);
-        state.pickables.push(boardGroup);
-      }
     });
 
-  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode, sessionBoards, floor.width, floor.depth, floor.id]);
+  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode, floor.width, floor.depth, floor.id]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full overflow-hidden">
       <div ref={mountRef} className="w-full h-full" />
+
+      {/* A virtual card beside each meeting room: the day's sessions, readable at a glance. It is
+          HTML pinned to the room's projected position, so it stays crisp while the camera moves. */}
+      {sessionBoards.map(board => {
+        const room = rooms.find(entry => entry.id === board.roomId);
+        if (!room) return null;
+        if (activeFocusId && activeFocusId !== room.id) return null;
+        const focused = activeFocusId === room.id;
+        return (
+          <div
+            key={board.roomId}
+            ref={element => {
+              if (element) cardRefs.current.set(board.roomId, element);
+              else cardRefs.current.delete(board.roomId);
+            }}
+            className={`pointer-events-auto absolute left-0 top-0 z-10 w-[218px] overflow-hidden rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-[var(--surface)] shadow-[var(--shadow-pop)] ${
+              focused ? 'ring-2 ring-[var(--accent)]' : ''
+            }`}
+            style={{ visibility: 'hidden' }}
+          >
+            <button
+              type="button"
+              onClick={() => callbacksRef.current.onOpenRoom?.(room)}
+              className="flex w-full cursor-pointer items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--surface-muted)] px-2 py-1.5 text-left hover:bg-[var(--surface-sunken)]"
+              title={`Open ${room.name}'s sessions`}
+            >
+              <span className="min-w-0 truncate text-[11.5px] font-semibold text-[var(--ink)]">{room.name}</span>
+              <span className="shrink-0 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-4)]">
+                {room.capacity} seats
+              </span>
+            </button>
+            {board.rows.length === 0 ? (
+              <p className="px-2 py-2 text-[10.5px] text-[var(--ink-4)]">No sessions on this day.</p>
+            ) : (
+              <ul className="max-h-[176px] space-y-0.5 overflow-y-auto p-1">
+                {board.rows.map(row => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => callbacksRef.current.onSelectSession?.(room, row.id)}
+                      className={`flex w-full cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-left transition-colors ${
+                        row.selected
+                          ? 'bg-[var(--accent-soft)] ring-1 ring-[var(--accent)]'
+                          : 'hover:bg-[var(--surface-muted)]'
+                      } ${row.ended && !row.selected ? 'opacity-55' : ''}`}
+                      title={`Show ${row.window}${row.title ? ` · ${row.title}` : ''} in the room`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${row.live ? 'bg-emerald-500' : 'bg-[var(--line-strong)]'}`}
+                        title={row.live ? 'Happening now' : undefined}
+                      />
+                      <span className="shrink-0 font-mono text-[10px] font-semibold text-[var(--ink-2)]">{row.window}</span>
+                      <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium text-[var(--ink)]">
+                        {row.title?.trim() || 'Open session'}
+                      </span>
+                      <span className={`shrink-0 text-[9.5px] font-semibold ${row.seats >= row.capacity ? 'text-rose-600' : 'text-[var(--ink-4)]'}`}>
+                        {row.seats}/{row.capacity}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+
       {hover && (
         <div className="pointer-events-none absolute left-3 bottom-3 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white/95 px-2 py-1 text-[11px] font-medium text-[var(--ink-2)] shadow-sm">
           {hover}
         </div>
       )}
-      <div className="pointer-events-none absolute right-3 top-3 rounded-[var(--radius-control)] border border-[var(--line)] bg-white/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-4)]">
-        Drag to orbit · scroll to zoom
-      </div>
+      {activeFocusId ? (
+        <button
+          type="button"
+          onClick={() => focusRoom(null)}
+          className="pointer-events-auto absolute right-3 top-3 z-20 inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white/95 px-2 py-1 text-[11px] font-semibold text-[var(--ink-2)] shadow-sm hover:bg-white"
+          title="Zoom back out to the whole floor (Esc)"
+        >
+          <ZoomOut className="h-3 w-3" /> Overview
+        </button>
+      ) : (
+        <div className="pointer-events-none absolute right-3 top-3 rounded-[var(--radius-control)] border border-[var(--line)] bg-white/85 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-4)]">
+          Click a room to zoom in · drag to orbit
+        </div>
+      )}
     </div>
   );
 };

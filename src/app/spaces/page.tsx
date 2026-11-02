@@ -227,7 +227,7 @@ export default function SpacesPage() {
   const planSessionBoards = useMemo(() => planRooms
     .map(room => {
       const state = states.get(room.id);
-      if (!state || state.mode !== 'time_range' || state.sessions.length === 0) return null;
+      if (!state || state.mode !== 'time_range') return null;
       const shown = planSessions.get(room.id);
       const board: SessionBoard = {
         roomId: room.id,
