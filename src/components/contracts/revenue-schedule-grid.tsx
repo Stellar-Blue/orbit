@@ -23,6 +23,7 @@ import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
   coverageTotal,
+  invoiceBoxState,
   invoiceCellKey,
   invoiceCellStyle,
   invoiceMarkerColor,
@@ -105,6 +106,7 @@ function suggestionTooltip(suggestion: InvoiceSuggestion): string {
 
 function coverageTooltip(coverage: InvoiceCellCoverage): string {
   const tone = invoiceVarianceTone(coverage);
+  const boxState = invoiceBoxState(coverage);
   const comparison = tone === 'match'
     ? 'matches the contract'
     : `variance ${formatSignedAmount(coverage.variance)}`;
@@ -120,7 +122,13 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
     comparison,
     coverage.invoices.join(', '),
     coverage.issueDate ? `issued ${coverage.issueDate}` : undefined,
-    coverage.draft ? 'draft, not issued yet' : coverage.paid ? 'paid' : 'not paid yet',
+    boxState === 'issued'
+      ? 'invoiced, not paid yet'
+      : boxState === 'paid'
+        ? 'paid'
+        : coverage.draft
+          ? 'draft, not issued yet'
+          : 'partly paid, the rest still draft',
   ].filter(Boolean).join(' · ');
 }
 
@@ -145,6 +153,7 @@ function projectCellCoverage(
     contractId: entries[0].contractId,
     paid: entries.every(entry => entry.paid),
     draft: entries.every(entry => entry.draft),
+    unpaid: entries.some(entry => entry.unpaid),
     firstMonth: entries.map(entry => entry.firstMonth).sort()[0],
     lastMonth: entries.map(entry => entry.lastMonth).sort().slice(-1)[0],
     markerMonth: entries.map(entry => entry.markerMonth).sort().slice(-1)[0],
@@ -577,7 +586,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     [invoices, contracts, catalogModules, catalogItems, projects, receipts]
   );
   const draftCoverageCount = useMemo(
-    () => Array.from(invoiceCoverage.values()).filter(entry => entry.draft).length,
+    () => Array.from(invoiceCoverage.values()).filter(entry => invoiceBoxState(entry) === 'draft').length,
     [invoiceCoverage]
   );
   const receiptCoverageCount = useMemo(
@@ -957,6 +966,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         const text = formatAmount(Number(params.value) || 0);
 
         const tone = coverage ? invoiceVarianceTone(coverage) : null;
+        const isDraftBox = Boolean(coverage && invoiceBoxState(coverage) === 'draft');
         const showBadge = Boolean(coverage && key === coverage.firstMonth);
         const showMarker = Boolean(coverage && coverage.markerMonth === key);
         const showProjects = Boolean(projectShares && projectShares.length > 0);
@@ -1026,13 +1036,13 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                     if (data && coverage.invoiceIds.length > 0) openPeekRef.current(data.contract, coverage.invoiceIds);
                   }}
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: coverage.draft ? 4 : 2, padding: '0 3px', borderRadius: 3,
+                    display: 'inline-flex', alignItems: 'center', gap: isDraftBox ? 4 : 2, padding: '0 3px', borderRadius: 3,
                     border: 0, fontSize: 8, fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
                     cursor: coverage.invoiceIds.length > 0 ? 'pointer' : 'default',
-                    ...(coverage.draft ? DRAFT_TONE : VARIANCE_TONES[tone as InvoiceVarianceTone]),
+                    ...(isDraftBox ? DRAFT_TONE : VARIANCE_TONES[tone as InvoiceVarianceTone]),
                   }}
                 >
-                  {coverage.draft && <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Draft</span>}
+                  {isDraftBox && <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Draft</span>}
                   {coverage.invoices.length === 0 && coverage.receipts.length > 0 && (
                     <span style={{ letterSpacing: '0.02em', opacity: 0.8 }}>Paid</span>
                   )}

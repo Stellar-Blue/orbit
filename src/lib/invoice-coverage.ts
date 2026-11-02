@@ -19,6 +19,12 @@ export interface InvoiceCellCoverage {
   paid: boolean;
   /** True while every covering invoice is still a draft — the money is reserved, not yet issued. */
   draft: boolean;
+  /**
+   * True while a covering invoice is issued but unpaid — the only state that says money is owed.
+   * It is tracked on its own because "not paid" is not the same thing: a box that mixes a paid
+   * invoice with a draft one has nothing outstanding, so it stays in the draft state.
+   */
+  unpaid: boolean;
   firstMonth: string;
   lastMonth: string;
   /** Month the invoice was issued; the asterisk is drawn on this cell. */
@@ -47,6 +53,18 @@ export interface InvoiceCellCoverage {
 }
 
 export type InvoiceVarianceTone = 'match' | 'under' | 'over';
+
+/** How a box reads: settled (green), invoiced but unpaid (magenta), or still draft (slate). */
+export type InvoiceBoxState = 'paid' | 'issued' | 'draft';
+
+/**
+ * A box mixing a paid invoice with a draft one owes nothing yet, so it reads as a draft; only an
+ * issued invoice that is actually unpaid turns it into an "invoiced" box.
+ */
+export function invoiceBoxState(coverage: InvoiceCellCoverage): InvoiceBoxState {
+  if (coverage.unpaid) return 'issued';
+  return coverage.paid ? 'paid' : 'draft';
+}
 
 export type InvoiceCoverageMap = Map<string, InvoiceCellCoverage>;
 
@@ -191,6 +209,7 @@ function paintInvoiceBox(
       : issuedMonth;
   const isPaid = invoice.status === 'paid';
   const isDraft = invoice.status === 'draft';
+  const isUnpaid = !isPaid && !isDraft;
   const issueDate = invoice.issue_date || '';
   const label = invoice.invoice_number || invoice.id;
   const amount = invoiceAmountEur(invoice);
@@ -203,6 +222,7 @@ function paintInvoiceBox(
         contractId: ownerId,
         paid: isPaid,
         draft: isDraft,
+        unpaid: isUnpaid,
         firstMonth,
         lastMonth,
         markerMonth,
@@ -226,6 +246,7 @@ function paintInvoiceBox(
       contractId: ownerId,
       paid: existing.paid && isPaid,
       draft: existing.draft && isDraft,
+      unpaid: existing.unpaid || isUnpaid,
       firstMonth: mergedFirst,
       lastMonth: mergedLast,
       markerMonth: latestMarker,
@@ -278,6 +299,7 @@ function paintReceiptBox(
         contractId: ownerId,
         paid: true,
         draft: false,
+        unpaid: false,
         firstMonth,
         lastMonth,
         markerMonth,
@@ -301,6 +323,7 @@ function paintReceiptBox(
       ...existing,
       paid: true,
       draft: false,
+      unpaid: false,
       firstMonth: mergedFirst,
       lastMonth: mergedLast,
       markerMonth: latestMarker,
@@ -317,8 +340,8 @@ function paintReceiptBox(
  * Builds `${contractId}:${month}` → coverage for every month an active outgoing invoice bills,
  * drafts included — a draft is money already reserved for those months, so the schedule shows it
  * separately from an issued bill. Overlapping invoices merge into one box: `paid` is only true when
- * every covering invoice is paid, `draft` only while every one of them is still a draft, and the
- * latest issue date drives the asterisk.
+ * every covering invoice is paid, `draft` only while every one of them is still a draft, `unpaid` as
+ * soon as one issued invoice is unsettled, and the latest issue date drives the asterisk.
  */
 export function buildInvoiceCoverage(
   invoices: Invoice[],
@@ -512,20 +535,12 @@ export const INVOICE_BOX_COLORS = {
 
 /** Colour of the issue-month asterisk, so it always agrees with its box. */
 export function invoiceMarkerColor(coverage: InvoiceCellCoverage): string {
-  return coverage.draft
-    ? INVOICE_BOX_COLORS.draft.marker
-    : coverage.paid
-      ? INVOICE_BOX_COLORS.paid.marker
-      : INVOICE_BOX_COLORS.issued.marker;
+  return INVOICE_BOX_COLORS[invoiceBoxState(coverage)].marker;
 }
 
 /** Inline style painting one cell of the invoice box; contiguous cells share the box outline. */
 export function invoiceCellStyle(coverage: InvoiceCellCoverage, month: string): Record<string, string> {
-  const palette = coverage.draft
-    ? INVOICE_BOX_COLORS.draft
-    : coverage.paid
-      ? INVOICE_BOX_COLORS.paid
-      : INVOICE_BOX_COLORS.issued;
+  const palette = INVOICE_BOX_COLORS[invoiceBoxState(coverage)];
   const line = palette.line;
   const shadows = [`inset 0 2px 0 0 ${line}`, `inset 0 -2px 0 0 ${line}`];
   if (month === coverage.firstMonth) shadows.push(`inset 2px 0 0 0 ${line}`);

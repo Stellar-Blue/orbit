@@ -28,6 +28,7 @@ import {
   receiptCoveredMonths,
   INVOICE_BOX_COLORS,
   invoiceAmountEur,
+  invoiceBoxState,
   invoiceCellStyle,
   invoiceCoveredMonths,
   invoiceMarkerColor,
@@ -622,8 +623,8 @@ assert(
 );
 assert(
   invoiceMarkerColor(january) === INVOICE_BOX_COLORS.issued.marker &&
-    invoiceMarkerColor(january) !== invoiceMarkerColor({ ...january, paid: true }) &&
-    invoiceMarkerColor({ ...january, draft: true }) === INVOICE_BOX_COLORS.draft.marker,
+    invoiceMarkerColor(january) !== invoiceMarkerColor({ ...january, paid: true, unpaid: false }) &&
+    invoiceMarkerColor({ ...january, draft: true, unpaid: false }) === INVOICE_BOX_COLORS.draft.marker,
   'The issue-month marker follows the box state'
 );
 
@@ -652,6 +653,17 @@ const paidPlusDraft = buildInvoiceCoverage(
 assert(
   paidPlusDraft?.draft === false && paidPlusDraft.paid === false,
   'A paid invoice next to a draft is not shown as fully paid'
+);
+// Nothing is owed on that box yet, so it must not wear the "invoiced but unpaid" magenta.
+assert(
+  paidPlusDraft?.unpaid === false && invoiceBoxState(paidPlusDraft) === 'draft' &&
+    invoiceCellStyle(paidPlusDraft, '2025-01').backgroundColor === INVOICE_BOX_COLORS.draft.fill,
+  'A paid invoice overlapping a draft leaves the box in the draft tone, not the issued one',
+  `${invoiceBoxState(paidPlusDraft)} · ${invoiceCellStyle(paidPlusDraft, '2025-01').backgroundColor}`
+);
+assert(
+  mixedDraft?.unpaid === true && invoiceBoxState(mixedDraft) === 'issued',
+  'An issued invoice overlapping a draft keeps the box invoiced-but-unpaid'
 );
 
 assert(
