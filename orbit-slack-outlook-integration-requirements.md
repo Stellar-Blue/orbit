@@ -42,6 +42,18 @@
 - **Later revocation (token invalidated, app uninstalled by the user):** don't hard-lock mid-session — an employee mid-leave-request shouldn't lose work because a token died. Instead: integration row → `revoked`, a persistent non-dismissible banner ("reconnect Slack"), admin exceptions list entry, and the **gate re-arms at their next sign-in**. Deliberately circumventing it (revoke, reconnect-prompt-ignore loops) is thus visible to admins rather than silently effective.
 - **Retro-rollout:** existing alpha users get the same gate at their next sign-in (`onboarding_completed_at` backfilled as NULL for gated types without a connected token).
 
+### 2.2 Conference-room session invitations (direct messages)
+
+Messaging someone is a **bot** action: `users.lookupByEmail` → `conversations.open` → `chat.postMessage` only works with a bot token, which the per-user status mirroring deliberately does not use. The two credentials therefore live side by side — `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` for status mirroring, and `SLACK_BOT_TOKEN` (scopes `chat:write`, `users:read.email`, `im:write`) for invitations.
+
+- **Who may invite:** the person who opened the session, or an administrator — the same rule the delete button uses (`canInviteToSession`), re-checked in `POST /api/spaces/session-invites` before anything reaches Slack or Graph.
+- **Channels:** an address matching an *active* Orbit colleague is messaged on Slack from the bot. When the organiser ticks **Include an Outlook meeting invite**, that colleague is also an attendee of a Graph meeting on the organiser's calendar. An address that is not an Orbit user can only be reached by email, so it **always** gets the calendar invite. A departed colleague has no Slack to message, so their address is treated as external too.
+- **Slack identity:** `employee_integrations.external_user_id` (stored at OAuth time) is used when present, `users.lookupByEmail` otherwise. A colleague who never connected Slack is still reachable only if the bot resolves their address — a failure is recorded per recipient, never swallowed.
+- **Seats:** inviting an Orbit colleague books their seat in the session, so `enforce_space_booking` stays the single source of truth for capacity. A full session still sends the invite and reports "invited without a seat"; the Slack message tells the invitee the same.
+- **One Graph event per batch**, created with the organiser's delegated token when they have connected Microsoft, otherwise the application token. The event id is stored on the invite rows.
+- **Deleting a session** withdraws its Graph meetings first (`DELETE /api/spaces/session-invites?session_id=…`) because the invite rows cascade away with the session.
+- **No bot token configured:** the invitation is still recorded, with `slack_status = 'failed'` and the reason, so the organiser sees why instead of a silent success.
+
 ## 3. Outlook / Microsoft 365 integration
 
 - **Auth:** Microsoft Graph with **application permissions** (`Calendars.ReadWrite`, plus `MailboxSettings.ReadWrite` only if auto-replies enabled), admin-consented once on the StellarBlue tenant — no per-user OAuth needed since everyone lives in the same Entra tenant Orbit already trusts. Mailbox resolution by work email from the profile.
@@ -75,6 +87,9 @@ integration_outbox      id, provider, operation, orbit_kind, orbit_id,
                         attempts, next_retry_at, status, last_error
 integration_settings    provider-level config: labels per leave type, emoji,
                         default templates, feature toggles (auto_reply enabled)
+space_session_invites   id, session_id, invited_by, profile_id (null = external guest),
+                        email, name, slack_status, outlook_status, slack_error,
+                        outlook_error, outlook_event_id, created_at  (see §2.2)
 ```
 
 Slack tokens are the only per-user secrets Orbit holds — encrypted at rest (Supabase Vault / pgsodium), never in logs, revocable from the employee's profile and automatically marked `revoked` on the first `invalid_auth` response.

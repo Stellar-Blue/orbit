@@ -1,4 +1,4 @@
-import type { Space, SpaceBooking, SpaceBookingMode, SpaceSession, SpaceType } from '@/lib/types';
+import type { Profile, Space, SpaceBooking, SpaceBookingMode, SpaceSession, SessionInviteOutcome, SpaceType } from '@/lib/types';
 
 /**
  * Seat-booking rules shared by the booking screen, the admin settings and the tests.
@@ -283,6 +283,106 @@ export function canDeleteSession(
 ): boolean {
   if (isAdmin) return true;
   return Boolean(profileId) && session.created_by === profileId;
+}
+
+/**
+ * Who may invite people to a session: whoever opened it, or an administrator. The API route checks
+ * the same rule before it reaches Slack or Graph.
+ */
+export function canInviteToSession(
+  session: Pick<SpaceSession, 'created_by'>,
+  profileId: string | null | undefined,
+  isAdmin: boolean
+): boolean {
+  return canDeleteSession(session, profileId, isAdmin);
+}
+
+/** A dialect of the HTML5 address rule that also accepts the `+tag` addresses the team uses. */
+const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** One usable address (trimmed, `mailto:` dropped, lowercased), or null when it is not an email. */
+export function normalizeInviteEmail(value: string): string | null {
+  const email = String(value || '').trim().replace(/^mailto:/i, '').toLowerCase();
+  return INVITE_EMAIL_RE.test(email) ? email : null;
+}
+
+/**
+ * Whatever was typed or pasted — commas, semicolons, spaces, newlines — as unique addresses, in the
+ * order they were entered. Invalid fragments are dropped so one typo never blocks the whole batch.
+ */
+export function parseInviteEmails(value: string): string[] {
+  const seen = new Set<string>();
+  return String(value || '')
+    .split(/[\s,;]+/)
+    .map(normalizeInviteEmail)
+    .filter((email): email is string => Boolean(email))
+    .filter(email => (seen.has(email) ? false : (seen.add(email), true)));
+}
+
+export interface SessionInviteTarget {
+  email: string;
+  /** The Orbit user behind the address — those are invited on Slack. External guests are not. */
+  profile?: Pick<Profile, 'id' | 'first_name' | 'last_name' | 'work_email' | 'status'>;
+}
+
+/**
+ * Maps the addresses being invited onto the directory. A match must still be with Orbit: a departed
+ * colleague has no Slack to message, so their address is treated like any other external guest.
+ */
+export function resolveInviteTargets(
+  emails: string[],
+  profiles: Pick<Profile, 'id' | 'first_name' | 'last_name' | 'work_email' | 'status'>[]
+): SessionInviteTarget[] {
+  const byEmail = new Map(
+    profiles
+      .filter(profile => profile.status !== 'departed' && profile.work_email)
+      .map(profile => [profile.work_email.trim().toLowerCase(), profile])
+  );
+  return emails.map(email => ({ email, profile: byEmail.get(email) }));
+}
+
+export interface InviteDeliveryProblem {
+  /** Name or address of the person the problem belongs to. */
+  who: string;
+  problem: string;
+}
+
+export interface InviteDeliverySummary {
+  invited: number;
+  slackSent: number;
+  outlookSent: number;
+  seatsBooked: number;
+  /** One entry per recipient something went wrong for. Empty when everything landed. */
+  problems: InviteDeliveryProblem[];
+}
+
+/** Turns the API's per-recipient result into the sentence the dialog shows afterwards. */
+export function summarizeInviteDelivery(invites: SessionInviteOutcome[]): InviteDeliverySummary {
+  const problems: InviteDeliveryProblem[] = [];
+  let slackSent = 0;
+  let outlookSent = 0;
+  let seatsBooked = 0;
+
+  invites.forEach(invite => {
+    const who = invite.name || invite.email;
+    if (invite.slack_status === 'sent') slackSent += 1;
+    if (invite.outlook_status === 'sent') outlookSent += 1;
+    if (invite.seat === 'booked') seatsBooked += 1;
+    if (invite.slack_status === 'failed') {
+      problems.push({ who, problem: invite.slack_error || 'the Slack message failed' });
+    }
+    if (invite.outlook_status === 'failed') {
+      problems.push({ who, problem: invite.outlook_error || 'the calendar invite failed' });
+    }
+    if (invite.seat === 'full') {
+      problems.push({ who, problem: 'invited, but the session is full so no seat was reserved' });
+    }
+    if (invite.seat === 'failed') {
+      problems.push({ who, problem: 'invited, but the seat could not be booked' });
+    }
+  });
+
+  return { invited: invites.length, slackSent, outlookSent, seatsBooked, problems };
 }
 
 /**

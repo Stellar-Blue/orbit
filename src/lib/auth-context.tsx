@@ -15,7 +15,7 @@ import {
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
   CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest,
-  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat, SpaceDesk
+  Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat, SpaceDesk, SpaceSessionInvite, SessionInviteOutcome
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import type { AvatarConfig } from './avatar';
@@ -190,6 +190,8 @@ interface AppState {
   spaces: Space[];
   spaceSessions: SpaceSession[];
   spaceBookings: SpaceBooking[];
+  /** Everyone invited to a timed session, with what each channel actually delivered. */
+  spaceSessionInvites: SpaceSessionInvite[];
   officeFloors: OfficeFloor[];
   spaceSeats: SpaceSeat[];
   spaceDesks: SpaceDesk[];
@@ -215,6 +217,7 @@ interface AppState {
   deleteSpaceType: (id: string) => Promise<boolean>;
   saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean }) => Promise<boolean>;
   deleteSpace: (id: string) => Promise<boolean>;
+  /** Returns the session that was created or joined — the handle an invite needs next. */
   bookSpaceSeat: (input: {
     space: Space;
     mode: SpaceBookingMode;
@@ -224,10 +227,19 @@ interface AppState {
     seatId?: string | null;
     seatIds?: string[];
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
-  }) => Promise<{ ok: boolean; error?: string; seatId?: string | null }>;
+  }) => Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null }>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
   /** Deletes a whole session; its bookings cascade with it, so the seats are released. */
   deleteSpaceSession: (id: string) => Promise<boolean>;
+  /**
+   * Invites people to a session: Orbit colleagues on Slack, external addresses by Outlook meeting
+   * invite, and a calendar invite for everyone when `includeOutlook` is set.
+   */
+  inviteToSpaceSession: (input: {
+    sessionId: string;
+    emails: string[];
+    includeOutlook: boolean;
+  }) => Promise<{ ok: boolean; error?: string; invites?: SessionInviteOutcome[]; slackConfigured?: boolean }>;
   refreshSpaces: () => Promise<void>;
   budgets: Budget[];
   budgetCategories: BudgetCategory[];
@@ -645,6 +657,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spaceSessions, setSpaceSessions] = useState<SpaceSession[]>([]);
   const [spaceBookings, setSpaceBookings] = useState<SpaceBooking[]>([]);
+  const [spaceSessionInvites, setSpaceSessionInvites] = useState<SpaceSessionInvite[]>([]);
   const [officeFloors, setOfficeFloors] = useState<OfficeFloor[]>([]);
   const [spaceSeats, setSpaceSeats] = useState<SpaceSeat[]>([]);
   const [spaceDesks, setSpaceDesks] = useState<SpaceDesk[]>([]);
@@ -1309,7 +1322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /** Spaces, their types, the sessions opened for them and every seat taken. */
   async function loadSpacesSlice() {
-    const [typeRows, spaceRows, sessionRows, bookingRows, floorRows, seatRows, deskRows] = await Promise.all([
+    const [typeRows, spaceRows, sessionRows, bookingRows, floorRows, seatRows, deskRows, inviteRows] = await Promise.all([
       fetchRows('space_types', 'all', { order: ['sort_order'] }),
       fetchRows('spaces', 'all', { order: ['name'] }),
       fetchRows('space_sessions', 'all', { order: ['session_date'] }),
@@ -1317,6 +1330,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetchRows('office_floors', 'all', { order: ['sort_order'] }),
       fetchRows('space_seats', 'all'),
       fetchRows('space_desks', 'all'),
+      fetchRows('space_session_invites', 'all'),
     ]);
     setSpaceTypes(typeRows as SpaceType[]);
     setSpaces(spaceRows as Space[]);
@@ -1324,6 +1338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSpaceSeats(seatRows as SpaceSeat[]);
     setSpaceDesks(deskRows as SpaceDesk[]);
     setSpaceSessions(sessionRows as SpaceSession[]);
+    setSpaceSessionInvites(inviteRows as SpaceSessionInvite[]);
     setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
       ...booking,
       profile: rawRef.current.profiles.find(profile => profile.id === booking.profile_id),
@@ -5471,17 +5486,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // The demo answers every query with an empty set; refetching would wipe the sample bookings.
     if (isDemoMode()) return;
     try {
-      const [sessionRows, bookingRows, floorRows, seatRows, deskRows] = await Promise.all([
+      const [sessionRows, bookingRows, floorRows, seatRows, deskRows, inviteRows] = await Promise.all([
         fetchRows('space_sessions', 'all'),
         fetchRows('space_bookings', 'all'),
         fetchRows('office_floors', 'all', { order: ['sort_order'] }),
         fetchRows('space_seats', 'all'),
         fetchRows('space_desks', 'all'),
+        fetchRows('space_session_invites', 'all'),
       ]);
       setSpaceSessions(sessionRows as SpaceSession[]);
       setOfficeFloors(floorRows as OfficeFloor[]);
       setSpaceSeats(seatRows as SpaceSeat[]);
       setSpaceDesks(deskRows as SpaceDesk[]);
+      setSpaceSessionInvites(inviteRows as SpaceSessionInvite[]);
       setSpaceBookings((bookingRows as SpaceBooking[]).map(booking => ({
         ...booking,
         profile: profiles.find(profile => profile.id === booking.profile_id),
@@ -5809,7 +5826,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     seatIds?: string[];
     /** `id` joins a session that already exists; without it the window opens a new session. */
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
-  }): Promise<{ ok: boolean; error?: string; seatId?: string | null }> => {
+  }): Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null }> => {
     const supabase = getSupabaseBrowserClient();
     try {
       // One whole-day seat per person per day: checked here so no screen can book a second one, and
@@ -5941,7 +5958,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile: profiles.find(profile => profile.id === input.profileId),
       }]);
       void refreshSpaces();
-      return { ok: true, seatId };
+      return { ok: true, seatId, sessionId };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error('bookSpaceSeat exception:', e);
@@ -5973,11 +5990,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteSpaceSession = async (id: string): Promise<boolean> => {
     const previousSessions = spaceSessions;
     const previousBookings = spaceBookings;
+    const previousInvites = spaceSessionInvites;
     // Local first, like releasing a seat: the card must drop the session immediately. Its bookings go
     // with it, so the chairs of that window stop showing as taken.
     setSpaceSessions(prev => prev.filter(session => session.id !== id));
     setSpaceBookings(prev => prev.filter(booking => booking.session_id !== id));
+    setSpaceSessionInvites(prev => prev.filter(invite => invite.session_id !== id));
     try {
+      // The invite rows cascade away with the session, so the Outlook meetings have to be withdrawn
+      // while the API route can still read the event ids.
+      await fetch(`/api/spaces/session-invites?session_id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+        .catch(() => undefined);
       const supabase = getSupabaseBrowserClient();
       const { error } = await supabase.from('space_sessions').delete().eq('id', id);
       if (error) {
@@ -5987,6 +6010,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : `Could not delete the session: ${error.message}`);
         setSpaceSessions(previousSessions);
         setSpaceBookings(previousBookings);
+        setSpaceSessionInvites(previousInvites);
         return false;
       }
       void refreshSpaces();
@@ -5995,7 +6019,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('deleteSpaceSession exception:', e);
       setSpaceSessions(previousSessions);
       setSpaceBookings(previousBookings);
+      setSpaceSessionInvites(previousInvites);
       return false;
+    }
+  };
+
+  /**
+   * Invites people to a session. The delivery itself lives in the API route — only the server holds
+   * the Slack bot token and the Graph credentials — this keeps the invite rows in the same slice as
+   * the seats, so the room card updates without a page reload.
+   */
+  const inviteToSpaceSession = async (input: {
+    sessionId: string;
+    emails: string[];
+    includeOutlook: boolean;
+  }): Promise<{ ok: boolean; error?: string; invites?: SessionInviteOutcome[]; slackConfigured?: boolean }> => {
+    if (isDemoMode()) {
+      return { ok: false, error: 'Invitations need the real workspace — the demo has no Slack or calendar to send to.' };
+    }
+    if (!input.sessionId) return { ok: false, error: 'Open the session first, then invite people to it.' };
+    try {
+      const response = await fetch('/api/spaces/session-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: input.sessionId,
+          emails: input.emails,
+          include_outlook: input.includeOutlook,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+        invites?: Array<{
+          email: string;
+          profile_id: string | null;
+          name: string | null;
+          seat: string;
+          slack_status: 'sent' | 'failed' | 'skipped';
+          outlook_status: 'sent' | 'failed' | 'skipped';
+          slack_error?: string;
+          outlook_error?: string;
+        }>;
+        slack_configured?: boolean;
+      } | null;
+      if (!response.ok) {
+        return { ok: false, error: payload?.error || 'The invitations could not be sent.' };
+      }
+      const saved: SessionInviteOutcome[] = (payload?.invites || []).map(invite => ({
+        id: `${input.sessionId}:${invite.email}`,
+        session_id: input.sessionId,
+        email: invite.email,
+        profile_id: invite.profile_id,
+        name: invite.name,
+        seat: invite.seat as SessionInviteOutcome['seat'],
+        slack_status: invite.slack_status,
+        outlook_status: invite.outlook_status,
+        slack_error: invite.slack_error ?? null,
+        outlook_error: invite.outlook_error ?? null,
+        created_at: new Date().toISOString(),
+        profile: invite.profile_id
+          ? rawRef.current.profiles.find(profile => profile.id === invite.profile_id)
+          : undefined,
+      }));
+      setSpaceSessionInvites(prev => [
+        ...prev.filter(existing => !saved.some(invite => invite.session_id === existing.session_id && invite.email === existing.email)),
+        ...saved,
+      ]);
+      void refreshSpaces();
+      return { ok: true, invites: saved, slackConfigured: payload?.slack_configured };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('inviteToSpaceSession exception:', e);
+      return { ok: false, error: message };
     }
   };
 
@@ -6805,7 +6900,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .forEach(table => on(table, () => refreshInvoicesRef.current()));
     ['budgets', 'budget_lines', 'budget_categories', 'recurring_commitments']
       .forEach(table => on(table, reloadLiveBudget));
-    ['space_types', 'spaces', 'space_sessions', 'space_bookings']
+    ['space_types', 'spaces', 'space_sessions', 'space_bookings', 'space_session_invites']
       .forEach(table => on(table, () => { void refreshSpacesRef.current(); }));
     on('company_profile', reloadLiveCompanyProfile);
     on('leave_policy', reloadLiveLeavePolicy);
@@ -7138,6 +7233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       spaces,
       spaceSessions,
       spaceBookings,
+      spaceSessionInvites,
       officeFloors,
       spaceSeats,
       spaceDesks,
@@ -7151,6 +7247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       bookSpaceSeat,
       cancelSpaceBooking,
       deleteSpaceSession,
+      inviteToSpaceSession,
       refreshSpaces,
       updateInvoiceStatus,
       linkInvoiceToContract,

@@ -82,13 +82,25 @@ export async function getGraphToken(): Promise<string | null> {
 
 // ---------- Graph event CRUD (application token) ----------
 
+interface GraphAttendee {
+  emailAddress: { address: string; name?: string };
+  type: 'required' | 'optional';
+}
+
 interface GraphEventPayload {
   subject: string;
   start: { dateTime: string; timeZone: string };
   end: { dateTime: string; timeZone: string };
   type: 'allDay' | 'singleInstance';
-  showAs: 'oof' | 'workingElsewhere';
+  showAs: 'oof' | 'workingElsewhere' | 'busy';
   singleValueExtendedProperties?: { id: string; value: string }[];
+  /** Meeting invite fields — only the session invitations use them. */
+  attendees?: GraphAttendee[];
+  body?: { contentType: 'text' | 'html'; content: string };
+  location?: { displayName: string };
+  isReminderOn?: boolean;
+  reminderMinutesBeforeStart?: number;
+  allowNewTimeProposals?: boolean;
   id?: string;
 }
 
@@ -132,8 +144,8 @@ async function graphRequest(
   return { ok: true, event: data };
 }
 
-export async function graphCreateEvent(mailboxEmail: string, payload: GraphEventPayload): Promise<GraphResult> {
-  return graphRequest('POST', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events`, payload);
+export async function graphCreateEvent(mailboxEmail: string, payload: GraphEventPayload, token?: string): Promise<GraphResult> {
+  return graphRequest('POST', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events`, payload, token);
 }
 
 export async function graphPatchEvent(mailboxEmail: string, eventId: string, payload: Partial<GraphEventPayload>): Promise<GraphResult> {
@@ -144,8 +156,8 @@ export async function graphGetEvent(mailboxEmail: string, eventId: string): Prom
   return graphRequest('GET', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`);
 }
 
-export async function graphDeleteEvent(mailboxEmail: string, eventId: string): Promise<GraphResult> {
-  return graphRequest('DELETE', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`);
+export async function graphDeleteEvent(mailboxEmail: string, eventId: string, token?: string): Promise<GraphResult> {
+  return graphRequest('DELETE', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`, undefined, token);
 }
 
 // ---------- Work plan CRUD (delegated token) ----------
@@ -226,6 +238,97 @@ export function buildTimedPayload(ev: DesiredEvent): GraphEventPayload {
     showAs: ev.showAs,
     singleValueExtendedProperties: [{ id: ORBIT_REF_PROP, value: ev.marker }],
   };
+}
+
+// ---------- Session meeting invites ----------
+
+export interface SessionInviteDetails {
+  organizerName: string;
+  roomName: string;
+  roomLocation?: string | null;
+  sessionDate: string;
+  /** `HH:MM:SS` from Postgres, or `HH:MM` from the dialog. */
+  startsAt: string;
+  endsAt: string;
+  title?: string | null;
+  note?: string | null;
+  attendees: string[];
+}
+
+const clock = (value: string): string => String(value || '').slice(0, 5);
+
+const longDate = (dateStr: string): string =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: ATHENS_TIMEZONE, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(new Date(`${dateStr}T12:00:00Z`));
+
+/**
+ * The Outlook side of a session invitation: a real meeting on the organiser's calendar with every
+ * address as a required attendee, so Graph mails the invite and the meeting lands in each calendar.
+ */
+export function buildSessionInvitePayload(details: SessionInviteDetails): GraphEventPayload {
+  const subject = details.title?.trim()
+    ? `${details.title.trim()} · ${details.roomName}`
+    : `Meeting in ${details.roomName}`;
+  const where = details.roomLocation ? `${details.roomName} (${details.roomLocation})` : details.roomName;
+  const note = details.note?.trim();
+  return {
+    subject,
+    body: {
+      contentType: 'text',
+      content: [
+        `${details.organizerName} invited you to a session booked in Orbit.`,
+        '',
+        `Room: ${where}`,
+        `When: ${longDate(details.sessionDate)}, ${clock(details.startsAt)} – ${clock(details.endsAt)}`,
+        ...(note ? ['', note] : []),
+      ].join('\n'),
+    },
+    start: { dateTime: `${details.sessionDate}T${clock(details.startsAt)}:00`, timeZone: ATHENS_TIMEZONE },
+    end: { dateTime: `${details.sessionDate}T${clock(details.endsAt)}:00`, timeZone: ATHENS_TIMEZONE },
+    location: { displayName: where },
+    attendees: details.attendees.map(address => ({ emailAddress: { address }, type: 'required' as const })),
+    type: 'singleInstance',
+    showAs: 'busy',
+    isReminderOn: true,
+    reminderMinutesBeforeStart: 15,
+    allowNewTimeProposals: false,
+  };
+}
+
+/**
+ * Creates the meeting on the organiser's mailbox. The delegated token is preferred so the invite
+ * comes from the person who booked; the application token is the fallback for organisers who never
+ * connected Microsoft, since Graph accepts application `Calendars.ReadWrite` on any tenant mailbox.
+ */
+export async function sendSessionCalendarInvite(args: {
+  admin: SupabaseClient;
+  organizerProfileId: string;
+  organizerEmail: string;
+  details: SessionInviteDetails;
+}): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  if (args.details.attendees.length === 0) return { ok: true };
+  const token = await getDelegatedToken(args.admin, args.organizerProfileId);
+  const result = await graphCreateEvent(
+    args.organizerEmail,
+    buildSessionInvitePayload(args.details),
+    token || undefined
+  );
+  if (!result.ok) return { ok: false, error: result.message || result.code || `http_${result.status}` };
+  const eventId = (result.event as { id?: string } | undefined)?.id;
+  return { ok: true, eventId };
+}
+
+/** Withdraws a meeting invite when the session it belongs to is deleted. */
+export async function cancelSessionCalendarInvite(args: {
+  admin: SupabaseClient;
+  organizerProfileId: string;
+  organizerEmail: string;
+  eventId: string;
+}): Promise<boolean> {
+  const token = await getDelegatedToken(args.admin, args.organizerProfileId);
+  const result = await graphDeleteEvent(args.organizerEmail, args.eventId, token || undefined);
+  return result.ok;
 }
 
 // ---------- Work plan payload builders ----------

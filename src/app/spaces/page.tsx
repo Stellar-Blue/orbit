@@ -9,19 +9,23 @@ import { useAuth } from '@/lib/auth-context';
 import { Badge, Button, Card, Modal } from '@/components/ui/primitives';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/date';
-import { notifySuccess } from '@/lib/validation-modal';
+import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import { SpacesManager } from '@/components/spaces/spaces-manager';
 import { OfficePlan, OfficePlanEmpty } from '@/components/spaces/office-plan';
 import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
 import { SessionSlots } from '@/components/spaces/session-slots';
 import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
+import { SessionInviteFields } from '@/components/spaces/session-invite-fields';
+import { SessionInviteModal } from '@/components/spaces/session-invite-modal';
 import {
-  BOOKING_MODE_LABELS, canDeleteSession, clockLabel, heldWholeDaySpace, nextFreeSessionWindow, overlappingSession, seatHolders,
-  seatsLabel, sessionLabel, spaceDayState, validateSessionWindow, wholeDayHeldOn,
-  type SpaceDayState, type SpaceSessionState,
+  BOOKING_MODE_LABELS, canDeleteSession, canInviteToSession, clockLabel, heldWholeDaySpace, nextFreeSessionWindow,
+  overlappingSession, seatHolders, seatsLabel, sessionLabel, spaceDayState, summarizeInviteDelivery, validateSessionWindow,
+  wholeDayHeldOn, type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
-import type { Profile, Space, SpaceBooking, SpaceSeat, SpaceSession, SpaceType } from '@/lib/types';
+import type {
+  Profile, Space, SpaceBooking, SpaceSeat, SpaceSession, SpaceType,
+} from '@/lib/types';
 import type { SeatPerson } from '@/components/spaces/office-3d';
 
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
@@ -41,6 +45,10 @@ interface BookingDraft {
   endsAt: string;
   title: string;
   note: string;
+  /** Guests invited as part of opening the session — only for a session this dialog creates. */
+  inviteEmails: string[];
+  /** Put the meeting on everyone's Outlook calendar, next to the Slack message. */
+  includeOutlook: boolean;
 }
 
 /**
@@ -52,8 +60,9 @@ interface BookingDraft {
  */
 export default function SpacesPage() {
   const {
-    currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings,
+    currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings, spaceSessionInvites,
     officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking, deleteSpaceSession,
+    inviteToSpaceSession,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -63,6 +72,8 @@ export default function SpacesPage() {
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   /** The timed room whose day is open in the sessions dialog. */
   const [roomModalId, setRoomModalId] = useState<string | null>(null);
+  /** The session whose invite dialog is open, with the room it belongs to. */
+  const [inviteTarget, setInviteTarget] = useState<{ session: SpaceSession; space: Space } | null>(null);
   const [saving, setSaving] = useState(false);
 
   const today = todayKey();
@@ -284,6 +295,8 @@ export default function SpacesPage() {
       endsAt: window.endsAt,
       title: focus?.session.title || '',
       note: '',
+      inviteEmails: [],
+      includeOutlook: false,
     });
   };
 
@@ -304,6 +317,8 @@ export default function SpacesPage() {
       endsAt: window.endsAt,
       title: '',
       note: '',
+      inviteEmails: [],
+      includeOutlook: false,
     });
   };
 
@@ -365,20 +380,62 @@ export default function SpacesPage() {
           : { startsAt: draft.startsAt, endsAt: draft.endsAt, title: draft.title }
         : null,
     });
-    setSaving(false);
     if (!result.ok) {
+      setSaving(false);
       alert(result.error || 'The seat could not be booked.');
       return;
     }
     const chair = result.seatId ? spaceSeats.find(seat => seat.id === result.seatId) : undefined;
+    const seatLine = timed
+      ? `${draft.space.name} booked for ${formatDate(day)}, ${clockLabel(draft.startsAt)} – ${clockLabel(draft.endsAt)}`
+        + `${chair ? ` · ${chairLabelOf(draft.space, chair)}` : ''}.`
+      : `${draft.space.name} booked for ${formatDate(day)}.`;
+    // Opening a session also sends the invitations typed in the same dialog; the session id is the
+    // handle they need, so nothing is delivered if the booking itself failed above.
+    const invited = draft.inviteEmails.length > 0 && result.sessionId
+      ? await inviteToSpaceSession({
+        sessionId: result.sessionId,
+        emails: draft.inviteEmails,
+        includeOutlook: draft.includeOutlook,
+      })
+      : null;
+    const inviteSummary = invited?.ok ? summarizeInviteDelivery(invited.invites || []) : null;
+    const inviteChannels = inviteSummary
+      ? [
+        inviteSummary.slackSent > 0 ? `${inviteSummary.slackSent} on Slack` : '',
+        inviteSummary.outlookSent > 0 ? `${inviteSummary.outlookSent} by Outlook` : '',
+      ].filter(Boolean)
+      : [];
+    const inviteLine = inviteSummary
+      ? ` ${inviteSummary.invited} invitation${inviteSummary.invited === 1 ? '' : 's'} sent`
+        + `${inviteChannels.length > 0 ? ` (${inviteChannels.join(', ')})` : ''}`
+        + `${inviteSummary.seatsBooked > 0 ? ` · ${inviteSummary.seatsBooked} seat${inviteSummary.seatsBooked === 1 ? '' : 's'} reserved` : ''}.`
+      : '';
+    setSaving(false);
+    setDraft(null);
+    if (invited && !invited.ok) {
+      notifyValidation({
+        type: 'warning',
+        title: 'Session opened, invites failed',
+        message: `${seatLine} ${invited.error || 'The invitations could not be sent.'}`,
+        duration: 0,
+      });
+      return;
+    }
+    if (inviteSummary && inviteSummary.problems.length > 0) {
+      notifyValidation({
+        type: 'warning',
+        title: 'Session opened',
+        message: `${seatLine}${inviteLine}`,
+        items: inviteSummary.problems.map(problem => ({ label: problem.who, value: problem.problem })),
+        duration: 0,
+      });
+      return;
+    }
     notifySuccess(
-      timed
-        ? `${draft.space.name} booked for ${formatDate(day)}, ${clockLabel(draft.startsAt)} – ${clockLabel(draft.endsAt)}`
-          + `${chair ? ` · ${chairLabelOf(draft.space, chair)}` : ''}.`
-        : `${draft.space.name} booked for ${formatDate(day)}.`,
+      `${seatLine}${inviteLine}`,
       draft.attendeeId === currentUser.id ? 'Seat booked' : 'Seat booked for a colleague'
     );
-    setDraft(null);
   };
 
   /** Removing a session takes its bookings with it, so the seats of that window are freed. */
@@ -393,6 +450,8 @@ export default function SpacesPage() {
 
   /** A session can be taken back by whoever opened it, or by an administrator. */
   const canDeleteThisSession = (session: SpaceSession) => canDeleteSession(session, currentUser.id, isAdmin);
+  /** Inviting is the same rule: the person who opened the session, or an administrator. */
+  const canInviteThisSession = (session: SpaceSession) => canInviteToSession(session, currentUser.id, isAdmin);
 
   const leave = async (bookingId: string, label: string) => {
     if (!confirm(`Release this seat in ${label}?`)) return;
@@ -611,6 +670,9 @@ export default function SpacesPage() {
                         onOpen={() => openNewSession(space, state)}
                         canDelete={canDeleteThisSession}
                         onDelete={session => void removeSession(session, space.name)}
+                        invites={spaceSessionInvites}
+                        canInvite={canInviteThisSession}
+                        onInvite={session => setInviteTarget({ session, space })}
                       />
                     ) : (
                       <>
@@ -725,6 +787,27 @@ export default function SpacesPage() {
         }}
         canDelete={canDeleteThisSession}
         onDelete={session => void removeSession(session, roomModal?.name || 'this room')}
+        invites={spaceSessionInvites}
+        canInvite={canInviteThisSession}
+        onInvite={session => {
+          if (!roomModal) return;
+          setRoomModalId(null);
+          setInviteTarget({ session, space: roomModal });
+        }}
+      />
+
+      <SessionInviteModal
+        session={inviteTarget?.session || null}
+        space={inviteTarget?.space}
+        dayLabel={formatDate(day)}
+        people={profiles}
+        existing={inviteTarget
+          ? spaceSessionInvites.filter(invite => invite.session_id === inviteTarget.session.id)
+          : []}
+        onClose={() => setInviteTarget(null)}
+        onSend={(emails, includeOutlook) => inviteTarget
+          ? inviteToSpaceSession({ sessionId: inviteTarget.session.id, emails, includeOutlook })
+          : Promise.resolve({ ok: false, error: 'That session is no longer open.' })}
       />
 
       <Modal
@@ -846,6 +929,14 @@ export default function SpacesPage() {
                     className="ui-input w-full"
                   />
                 </div>
+                <SessionInviteFields
+                  emails={draft.inviteEmails}
+                  onEmailsChange={inviteEmails => setDraft({ ...draft, inviteEmails })}
+                  includeOutlook={draft.includeOutlook}
+                  onIncludeOutlookChange={includeOutlook => setDraft({ ...draft, includeOutlook })}
+                  people={profiles}
+                  disabled={saving}
+                />
               </>
             )}
 

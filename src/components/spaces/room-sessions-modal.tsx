@@ -5,7 +5,7 @@ import { Clock, MapPin, Users } from 'lucide-react';
 import { Modal } from '@/components/ui/primitives';
 import { SessionSlots } from '@/components/spaces/session-slots';
 import type { SpaceDayState, SpaceSessionState } from '@/lib/spaces';
-import type { Space, SpaceBooking, SpaceSession, SpaceType } from '@/lib/types';
+import type { Space, SpaceBooking, SpaceSession, SpaceSessionInvite, SpaceType } from '@/lib/types';
 
 export interface RoomSessionsModalProps {
   /** The room to show, or null to keep the dialog closed. */
@@ -21,6 +21,10 @@ export interface RoomSessionsModalProps {
   onNew: () => void;
   canDelete?: (session: SpaceSession) => boolean;
   onDelete?: (session: SpaceSession) => void;
+  /** Everyone invited to the room's sessions on this day. */
+  invites?: SpaceSessionInvite[];
+  canInvite?: (session: SpaceSession) => boolean;
+  onInvite?: (session: SpaceSession) => void;
 }
 
 /**
@@ -30,6 +34,7 @@ export interface RoomSessionsModalProps {
  */
 export function RoomSessionsModal({
   room, type, state, dayLabel, isPast, onClose, onJoin, onLeave, onNew, canDelete, onDelete,
+  invites, canInvite, onInvite,
 }: RoomSessionsModalProps) {
   if (!room || !state) return null;
   return (
@@ -67,6 +72,9 @@ export function RoomSessionsModal({
           onOpen={onNew}
           canDelete={canDelete}
           onDelete={onDelete}
+          invites={invites}
+          canInvite={canInvite}
+          onInvite={onInvite}
         />
 
         {isPast && (

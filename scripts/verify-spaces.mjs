@@ -9,10 +9,15 @@
 import {
   BOOKING_MODE_LABELS,
   canDeleteSession,
+  canInviteToSession,
   clockLabel,
   defaultSessionWindow,
   heldWholeDaySpace,
+  normalizeInviteEmail,
   overlappingSession,
+  parseInviteEmails,
+  resolveInviteTargets,
+  summarizeInviteDelivery,
   wholeDayHeldOn,
   seatHolders,
   seatsLabel,
@@ -373,6 +378,95 @@ assert(
 assert(
   !canDeleteSession({ created_by: null }, null, false),
   'A session without an owner is left to administrators'
+);
+
+// --- Inviting people to a session -------------------------------------------
+// Only the person who opened the session, or an admin, may invite to it.
+assert(
+  canInviteToSession({ created_by: 'me' }, 'me', false),
+  'The person who opened a session can invite people to it'
+);
+assert(
+  canInviteToSession({ created_by: 'someone-else' }, 'me', true),
+  'An administrator can invite people to any session'
+);
+assert(
+  !canInviteToSession({ created_by: 'someone-else' }, 'me', false),
+  'A colleague\'s session cannot be used to message people'
+);
+
+assert(
+  normalizeInviteEmail('  MAILTO:Ana.Papadopoulou@Orbit.GR ') === 'ana.papadopoulou@orbit.gr',
+  'An address is trimmed, un-prefixed and lowercased',
+  normalizeInviteEmail('  MAILTO:Ana.Papadopoulou@Orbit.GR ')
+);
+assert(
+  normalizeInviteEmail('not-an-address') === null && normalizeInviteEmail('ana@orbit') === null,
+  'Addresses without a domain are refused'
+);
+
+const parsedEmails = parseInviteEmails(
+  'ana@orbit.gr, kostas@orbit.gr; ana@orbit.gr\n\nguest@example.com  broken'
+);
+assert(
+  JSON.stringify(parsedEmails) === JSON.stringify(['ana@orbit.gr', 'kostas@orbit.gr', 'guest@example.com']),
+  'Pasted lists are split, deduped and stripped of typos',
+  parsedEmails.join(', ')
+);
+
+const directory = [
+  { id: 'p-ana', first_name: 'Ana', last_name: 'Papadopoulou', work_email: 'Ana@Orbit.gr', status: 'active' },
+  { id: 'p-leave', first_name: 'Eleni', last_name: 'OnLeave', work_email: 'eleni@orbit.gr', status: 'on_leave' },
+  { id: 'p-gone', first_name: 'Gone', last_name: 'Person', work_email: 'gone@orbit.gr', status: 'departed' },
+];
+const targets = resolveInviteTargets(
+  ['ana@orbit.gr', 'eleni@orbit.gr', 'gone@orbit.gr', 'guest@example.com'],
+  directory
+);
+assert(
+  targets[0].profile?.id === 'p-ana',
+  'An active colleague is matched case-insensitively and invited on Slack',
+  targets[0].profile?.work_email
+);
+assert(
+  targets[1].profile?.id === 'p-leave',
+  'A colleague on leave is still an Orbit user with a Slack account'
+);
+assert(
+  targets[2].profile === undefined,
+  'A departed colleague has no Slack to message, so the address is treated as external'
+);
+assert(
+  targets[3].profile === undefined,
+  'An address outside the directory is an external guest'
+);
+
+const delivery = summarizeInviteDelivery([
+  {
+    id: 'i1', session_id: 'ses-1', email: 'ana@orbit.gr', name: 'Ana',
+    slack_status: 'sent', outlook_status: 'sent', seat: 'booked',
+  },
+  {
+    id: 'i2', session_id: 'ses-1', email: 'guest@example.com', name: null,
+    slack_status: 'skipped', outlook_status: 'failed', outlook_error: 'Graph refused', seat: 'none',
+  },
+  {
+    id: 'i3', session_id: 'ses-1', email: 'kostas@orbit.gr', name: 'Kostas',
+    slack_status: 'failed', slack_error: 'Slack: users_not_found', outlook_status: 'skipped', seat: 'full',
+  },
+]);
+assert(
+  delivery.invited === 3 && delivery.slackSent === 1 && delivery.outlookSent === 1 && delivery.seatsBooked === 1,
+  'The invite summary counts each channel and the seats actually reserved',
+  JSON.stringify(delivery)
+);
+assert(
+  delivery.problems.length === 3
+    && delivery.problems.some(problem => problem.problem.includes('Graph refused'))
+    && delivery.problems.some(problem => problem.problem.includes('users_not_found'))
+    && delivery.problems.some(problem => problem.problem.includes('session is full')),
+  'Every failed channel and every unseated invitee is reported against their name',
+  delivery.problems.map(problem => `${problem.who}: ${problem.problem}`).join(' | ')
 );
 
 console.log('\n================================================================');

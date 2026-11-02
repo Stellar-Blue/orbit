@@ -110,6 +110,75 @@ export async function slackSetProfile(token: string, profile: { status_text: str
   });
 }
 
+// ---------- Slack bot (direct messages) ----------
+
+/**
+ * Status mirroring needs a *user* token, but messaging someone needs a *bot* token: a user token can
+ * only edit its owner's profile. Without `SLACK_BOT_TOKEN` the invite screen says so instead of
+ * silently dropping the message, and external guests still get their Outlook invite.
+ */
+export function hasSlackBotToken(): boolean {
+  return Boolean(process.env.SLACK_BOT_TOKEN);
+}
+
+interface SlackBotResult {
+  ok: boolean;
+  error?: string;
+  data?: Record<string, unknown>;
+}
+
+async function slackBotRequest(path: string, params: Record<string, string>): Promise<SlackBotResult> {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) return { ok: false, error: 'bot_token_missing' };
+  const res = await fetch(`${SLACK_API}/${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(params).toString(),
+  });
+  if (res.status === 429) return { ok: false, error: 'rate_limited' };
+  if (!res.ok) return { ok: false, error: `http_${res.status}` };
+  const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+  return { ok: Boolean(data?.ok), error: typeof data?.error === 'string' ? data.error : undefined, data: data ?? undefined };
+}
+
+/** The Slack user id behind an email address, for people who connected Orbit to Slack. */
+export async function slackUserIdByEmail(email: string): Promise<{ ok: boolean; userId?: string; error?: string }> {
+  const result = await slackBotRequest('users.lookupByEmail', { email });
+  const user = result.data?.user as { id?: string } | undefined;
+  return { ok: result.ok, userId: user?.id, error: result.error };
+}
+
+/**
+ * Opens (or reuses) the bot↔user direct-message channel and posts one message.
+ * `userId` skips the email lookup when the connection already stored the Slack identity.
+ */
+export async function slackSendDirectMessage(args: {
+  email: string;
+  userId?: string | null;
+  text: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  let userId = args.userId || null;
+  if (!userId) {
+    const lookup = await slackUserIdByEmail(args.email);
+    if (!lookup.ok || !lookup.userId) return { ok: false, error: lookup.error || 'users_not_found' };
+    userId = lookup.userId;
+  }
+  const opened = await slackBotRequest('conversations.open', { users: userId });
+  const channel = (opened.data?.channel as { id?: string } | undefined)?.id;
+  if (!opened.ok || !channel) return { ok: false, error: opened.error || 'conversations_open_failed' };
+  const posted = await slackBotRequest('chat.postMessage', {
+    channel,
+    text: args.text,
+    unfurl_links: 'false',
+    unfurl_media: 'false',
+  });
+  return { ok: posted.ok, error: posted.error };
+}
+
+
 // ---------- Settings ----------
 
 export async function getSlackSettings(admin: SupabaseClient): Promise<IntegrationSettings> {

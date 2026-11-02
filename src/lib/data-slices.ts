@@ -82,7 +82,7 @@ export const SLICE_TABLES: Record<DataSliceKey, string[]> = {
   people: ['employee_contracts'],
   integrations: ['employee_integrations', 'integration_exemptions'],
   policies: ['remote_policies'],
-  spaces: ['space_types', 'spaces', 'space_sessions', 'space_bookings', 'space_seats', 'space_desks', 'office_floors'],
+  spaces: ['space_types', 'spaces', 'space_sessions', 'space_bookings', 'space_seats', 'space_desks', 'office_floors', 'space_session_invites'],
 };
 
 /** Slices each route renders. Nested routes (`/people/<id>`) inherit their parent's list. */

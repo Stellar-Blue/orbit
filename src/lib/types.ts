@@ -679,6 +679,34 @@ export interface SpaceSession {
   bookings?: SpaceBooking[];
 }
 
+/** How one delivery attempt for an invitation ended. `skipped` means the channel did not apply. */
+export type SessionInviteStatus = 'sent' | 'failed' | 'skipped';
+
+/**
+ * One person invited to a timed session. An Orbit user (`profile_id` set) is reached on Slack; an
+ * external address can only be reached through the Outlook meeting invite, so it is always sent.
+ */
+export interface SpaceSessionInvite {
+  id: string;
+  session_id: string;
+  invited_by?: string | null;
+  profile_id?: string | null;
+  email: string;
+  name?: string | null;
+  slack_status: SessionInviteStatus;
+  outlook_status: SessionInviteStatus;
+  slack_error?: string | null;
+  outlook_error?: string | null;
+  outlook_event_id?: string | null;
+  created_at?: string;
+  profile?: Profile;
+}
+
+/** What one invite attempt did — the stored invitation plus the seat the API managed to book. */
+export interface SessionInviteOutcome extends SpaceSessionInvite {
+  seat?: 'booked' | 'already' | 'full' | 'none' | 'failed';
+}
+
 /** One seat held by one person in one space on one date. */
 export interface SpaceBooking {
   id: string;
