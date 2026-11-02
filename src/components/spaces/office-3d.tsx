@@ -728,6 +728,8 @@ export const Office3D: React.FC<Office3DProps> = ({
     fromZoom: number; toZoom: number; startedAt: number; duration: number;
   } | null>(null);
   const focusRoomRef = useRef<(room: Space | null) => void>(() => {});
+  /** Mirrors the focused room for the render loop, which runs outside React's render cycle. */
+  const focusIdRef = useRef<string | null>(null);
 
   const dataRef = useRef({
     rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
@@ -751,6 +753,7 @@ export const Office3D: React.FC<Office3DProps> = ({
     colorRef.current = colorForRoom;
     kindRef.current = kindForRoom;
     floorRef.current = floor;
+    focusIdRef.current = focusedRoomId;
   });
 
   const groundPoint = useCallback((state: SceneState, clientX: number, clientY: number) => {
@@ -955,10 +958,14 @@ export const Office3D: React.FC<Office3DProps> = ({
           return;
         }
         const size = roomSize(room);
+        // Overview: the card waits in the free space beside the room. Focused: it slides in close,
+        // where it has grown and carries the full session list.
+        const focused = focusIdRef.current === roomId;
+        const outward = focused ? 0.22 : 2.1;
         const point = new THREE.Vector3(
-          (Number(room.pos_x) || 0) + size.width / 2 + 0.2,
+          (Number(room.pos_x) || 0) + size.width / 2 + outward,
           FLOOR_TOP + 0.5,
-          (Number(room.pos_z) || 0) + size.depth / 2 + 0.2
+          (Number(room.pos_z) || 0) + size.depth / 2 + 0.05
         ).project(camera);
         const left = ((point.x + 1) / 2) * width;
         const top = ((1 - point.y) / 2) * height;
@@ -1624,6 +1631,7 @@ export const Office3D: React.FC<Office3DProps> = ({
         if (!room) return null;
         if (activeFocusId && activeFocusId !== room.id) return null;
         const focused = activeFocusId === room.id;
+        const shown = board.rows.find(row => row.selected) ?? board.rows[0];
         return (
           <div
             key={board.roomId}
@@ -1631,53 +1639,86 @@ export const Office3D: React.FC<Office3DProps> = ({
               if (element) cardRefs.current.set(board.roomId, element);
               else cardRefs.current.delete(board.roomId);
             }}
-            className={`pointer-events-auto absolute left-0 top-0 z-10 w-[218px] overflow-hidden rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-[var(--surface)] shadow-[var(--shadow-pop)] ${
-              focused ? 'ring-2 ring-[var(--accent)]' : ''
+            className={`pointer-events-auto absolute left-0 top-0 z-10 overflow-hidden rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-[var(--surface)] shadow-[var(--shadow-pop)] transition-[width,box-shadow] duration-200 ${
+              focused ? 'w-[286px] ring-2 ring-[var(--accent)]' : 'w-[194px]'
             }`}
             style={{ visibility: 'hidden' }}
           >
-            <button
-              type="button"
-              onClick={() => callbacksRef.current.onOpenRoom?.(room)}
-              className="flex w-full cursor-pointer items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--surface-muted)] px-2 py-1.5 text-left hover:bg-[var(--surface-sunken)]"
-              title={`Open ${room.name}'s sessions`}
-            >
-              <span className="min-w-0 truncate text-[11.5px] font-semibold text-[var(--ink)]">{room.name}</span>
-              <span className="shrink-0 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-4)]">
-                {room.capacity} seats
-              </span>
-            </button>
-            {board.rows.length === 0 ? (
-              <p className="px-2 py-2 text-[10.5px] text-[var(--ink-4)]">No sessions on this day.</p>
+            {focused ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => callbacksRef.current.onOpenRoom?.(room)}
+                  className="flex w-full cursor-pointer items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--surface-muted)] px-2.5 py-2 text-left hover:bg-[var(--surface-sunken)]"
+                  title={`Open ${room.name}'s sessions`}
+                >
+                  <span className="min-w-0 truncate text-[12px] font-semibold text-[var(--ink)]">{room.name}</span>
+                  <span className="shrink-0 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-4)]">
+                    {room.capacity} seats
+                  </span>
+                </button>
+                {board.rows.length === 0 ? (
+                  <p className="px-2.5 py-2.5 text-[11px] text-[var(--ink-4)]">No sessions on this day.</p>
+                ) : (
+                  <ul className="max-h-[196px] space-y-0.5 overflow-y-auto p-1.5">
+                    {board.rows.map(row => (
+                      <li key={row.id}>
+                        <button
+                          type="button"
+                          onClick={() => callbacksRef.current.onSelectSession?.(room, row.id)}
+                          className={`flex w-full cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-left transition-colors ${
+                            row.selected
+                              ? 'bg-[var(--accent-soft)] ring-1 ring-[var(--accent)]'
+                              : 'hover:bg-[var(--surface-muted)]'
+                          } ${row.ended && !row.selected ? 'opacity-55' : ''}`}
+                          title={`Show ${row.window}${row.title ? ` · ${row.title}` : ''} in the room`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${row.live ? 'bg-emerald-500' : 'bg-[var(--line-strong)]'}`}
+                            title={row.live ? 'Happening now' : undefined}
+                          />
+                          <span className="shrink-0 font-mono text-[10.5px] font-semibold text-[var(--ink-2)]">{row.window}</span>
+                          <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--ink)]">
+                            {row.title?.trim() || 'Open session'}
+                          </span>
+                          <span className={`shrink-0 text-[9.5px] font-semibold ${row.seats >= row.capacity ? 'text-rose-600' : 'text-[var(--ink-4)]'}`}>
+                            {row.seats}/{row.capacity}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="border-t border-[var(--line)] px-2.5 py-1 text-[9.5px] text-[var(--ink-4)]">
+                  Pick a session to see its people · Esc zooms out
+                </p>
+              </>
             ) : (
-              <ul className="max-h-[176px] space-y-0.5 overflow-y-auto p-1">
-                {board.rows.map(row => (
-                  <li key={row.id}>
-                    <button
-                      type="button"
-                      onClick={() => callbacksRef.current.onSelectSession?.(room, row.id)}
-                      className={`flex w-full cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-left transition-colors ${
-                        row.selected
-                          ? 'bg-[var(--accent-soft)] ring-1 ring-[var(--accent)]'
-                          : 'hover:bg-[var(--surface-muted)]'
-                      } ${row.ended && !row.selected ? 'opacity-55' : ''}`}
-                      title={`Show ${row.window}${row.title ? ` · ${row.title}` : ''} in the room`}
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${row.live ? 'bg-emerald-500' : 'bg-[var(--line-strong)]'}`}
-                        title={row.live ? 'Happening now' : undefined}
-                      />
-                      <span className="shrink-0 font-mono text-[10px] font-semibold text-[var(--ink-2)]">{row.window}</span>
-                      <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium text-[var(--ink)]">
-                        {row.title?.trim() || 'Open session'}
-                      </span>
-                      <span className={`shrink-0 text-[9.5px] font-semibold ${row.seats >= row.capacity ? 'text-rose-600' : 'text-[var(--ink-4)]'}`}>
-                        {row.seats}/{row.capacity}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <button
+                type="button"
+                onClick={() => focusRoom(room)}
+                className="flex w-full cursor-pointer flex-col gap-1 px-2 py-1.5 text-left hover:bg-[var(--surface-muted)]"
+                title={`Zoom into ${room.name}`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[10.5px] font-semibold text-[var(--ink)]">{room.name}</span>
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.05em] text-[var(--ink-4)]">
+                    {board.rows.length || 'no'} session{board.rows.length === 1 ? '' : 's'}
+                  </span>
+                </span>
+                {shown ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${shown.live ? 'bg-emerald-500' : 'bg-[var(--line-strong)]'}`} />
+                    <span className="shrink-0 font-mono text-[9.5px] font-semibold text-[var(--ink-2)]">{shown.window}</span>
+                    <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[var(--ink)]">
+                      {shown.title?.trim() || 'Open session'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-[9.5px] text-[var(--ink-4)]">No sessions on this day</span>
+                )}
+                <span className="text-[9px] font-semibold text-[var(--accent-ink)]">Click to zoom in</span>
+              </button>
             )}
           </div>
         );
