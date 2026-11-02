@@ -169,7 +169,9 @@ export function getContractBillingPeriods(
   );
 
   // Month-by-month schedule — the very engine behind the "Monthly Cash Landing & Revenue Recognition"
-  // panel — split by invoicing timing so advance and arrears lines are invoiced separately.
+  // panel — split by invoicing timing so advance and arrears lines are invoiced separately. A quarterly
+  // or annual line billed in arrears lands on its own cycle's last month, so it is invoiced in the
+  // billing cycle where that cycle closes (an annual fee on a quarterly agreement → its year-end quarter).
   const billableLines = lines.filter(l => (l as { line_kind?: string | null }).line_kind !== 'man_hours');
   const scheduleByMonth = new Map<string, { advance: number; arrears: number }>();
   calculatePeriodAmountsByTiming(
@@ -180,7 +182,8 @@ export function getContractBillingPeriods(
     catalogModules,
     catalogItems,
     groups,
-    timing
+    timing,
+    { arrearsAtCycleEnd: true }
   ).forEach(entry => scheduleByMonth.set(entry.period, { advance: Number(entry.advance) || 0, arrears: Number(entry.arrears) || 0 }));
 
   /**

@@ -127,15 +127,15 @@ export interface TimingSplitAmount {
  * The contract's line-derived charges split by invoicing timing, or null when the contract has no
  * billable lines (legacy / line-less agreements fall back to the total-only path).
  *
- * `arrearsAtCycleEnd` recognises a quarterly / annual charge billed in arrears on its cycle's last
- * service month (the month the invoice is raised) instead of the cycle's first month. Cashflow reads
- * the default split, because its own cycle bucketing already lands arrears money on the period end.
+ * A quarterly / annual charge billed in arrears lands on its own cycle's last service month (the month
+ * its invoice is raised), never its opening month: cashflow's cycle bucketing then bills an annual
+ * arrears line on a quarterly agreement in the quarter its year closes, not the first quarter.
  */
 export function contractChargeMonthsByTiming(
   contract: Contract,
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
-  options: { arrearsAtCycleEnd?: boolean; onCharge?: (charge: LineChargeTrace) => void } = {}
+  options: { onCharge?: (charge: LineChargeTrace) => void } = {}
 ): Record<string, TimingSplitAmount> | null {
   const billableLines = (contract.lines || []).filter(l => l.line_kind !== 'man_hours');
   if (billableLines.length === 0) return null;
@@ -150,7 +150,7 @@ export function contractChargeMonthsByTiming(
     catalogItems,
     contract.groups || [],
     contract.invoice_timing || 'start_of_period',
-    { arrearsAtCycleEnd: options.arrearsAtCycleEnd === true, onCharge: options.onCharge }
+    { arrearsAtCycleEnd: true, onCharge: options.onCharge }
   ).forEach(({ period, advance, arrears }) => {
     const adv = round2(advance);
     const arr = round2(arrears);
@@ -173,7 +173,7 @@ export function contractChargeMonths(
 
   // The price sheet is the source of truth: a persisted schedule is only a projection of it, so it
   // must never win over the current lines (a removed line or a moved term would keep charging).
-  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems, { arrearsAtCycleEnd: true });
+  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems);
   if (split) return totalChargesFromTiming(split);
 
   // Man-hours-only contracts are billed from timesheets (their change requests), never as a fixed value.
@@ -406,8 +406,8 @@ export function buildRevenueSchedule(
     const window = contractEffectiveWindow(contract);
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
-    // Cashflow re-buckets the raw split onto the contract's billing cycles; recognition reads the
-    // monthly stream, where periodic arrears charges already sit on their cycle's last month.
+    // Cashflow re-buckets the timing split onto the contract's billing cycles; recognition reads the
+    // monthly stream. Both see periodic arrears charges on their own cycle's last month.
     const timingSplit = basis === 'cashflow' ? contractChargeMonthsByTiming(contract, catalogModules, catalogItems) : null;
     const charges = timingSplit
       ? resampleTimingToBillingMonths(contract, timingSplit)
@@ -592,7 +592,7 @@ function lineItem(lineCharges: LineChargeTrace[], contract: Contract): CellExpla
   const [first] = lineCharges;
   const amount = round2(lineCharges.reduce((sum, charge) => sum + charge.net, 0));
   const timing = first.timing === 'advance' ? 'billed in advance' : 'billed in arrears';
-  const deferred = first.pricedOn !== first.landsOn ? `, priced on ${monthName(first.pricedOn)} and recognised when its cycle closes` : '';
+  const deferred = first.pricedOn !== first.landsOn ? `, priced on ${monthName(first.pricedOn)} for its cycle closing ${monthName(first.landsOn)}` : '';
   const context = `${FREQUENCY_LABELS[first.line.frequency || ''] || first.line.frequency} charge, ${timing}${deferred}`;
   const identical = lineCharges.every(charge => round2(charge.net) === round2(first.net) && charge.quantity === first.quantity);
 
@@ -695,7 +695,6 @@ export function explainScheduleCell(
 
   const charges: LineChargeTrace[] = [];
   const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems, {
-    arrearsAtCycleEnd: basis === 'recognition',
     onCharge: charge => charges.push(charge),
   });
 

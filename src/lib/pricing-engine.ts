@@ -336,7 +336,8 @@ export function calculatePeriodAmountsByTiming(
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
   groups: Array<Partial<ContractLineGroup>> = [],
-  contractTiming: string = 'start_of_period'
+  contractTiming: string = 'start_of_period',
+  options: { arrearsAtCycleEnd?: boolean } = {}
 ): ContractPeriodTimingAmount[] {
   const monthsCount = Math.max(1, (Number(termYears) || 1) * 12);
   const startObj = new Date(startDate || new Date());
@@ -353,7 +354,8 @@ export function calculatePeriodAmountsByTiming(
     catalogModules,
     catalogItems,
     groups,
-    contractTiming
+    contractTiming,
+    options
   );
 }
 
@@ -387,9 +389,10 @@ export interface LineChargeTrace {
  * the lines that produced it. Explicit periods keep fractional terms from dropping the last month.
  *
  * `arrearsAtCycleEnd` moves a periodic charge billed in arrears (quarterly / annual) from the first
- * month of its cycle to the cycle's last service month — revenue recognition follows the invoice,
- * which is raised at the period end. Cashflow keeps the default so its own cycle bucketing is
- * unaffected. The amount itself is still priced on the cycle's opening month.
+ * month of its cycle to the cycle's last service month — the invoice is raised at the period end.
+ * Revenue, cashflow and invoicing all use it: bucketing the opening month instead would bill an annual
+ * arrears line with the first quarter of a quarterly agreement. The amount itself is still priced on
+ * the cycle's opening month.
  */
 export function calculatePeriodAmountsForPeriodsByTiming(
   lines: Array<Partial<ContractLine>>,

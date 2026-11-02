@@ -44,7 +44,7 @@ import {
   supplyRoleOf,
 } from '@/lib/subcontracts';
 import { scheduleExportTable } from '@/lib/revenue-schedule';
-import { buildDraftInvoicePayload, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
+import { buildDraftInvoicePayload, getContractBillingPeriods, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
 import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
 import {
   buildInvoiceLinks,
@@ -1409,6 +1409,29 @@ assert(
     exportTable.totals.yearTotals[2026] === yearTotalOf(exportSchedule.monthTotals, 2026),
   'The last exported row is the portfolio total',
   JSON.stringify(exportTable.totals.yearTotals)
+);
+
+// --- Annual arrears line under a quarterly cadence ------------------------------
+// A 7,000/year line billed in arrears on a quarterly agreement starting 1 Jun is invoiced when its
+// own year closes (end of May), not at the end of the first quarter (August).
+const annualOnQuarterly = contract({
+  id: 'cnt-aq', reference: 'SB-AQ', service_start_date: '2026-06-01', starts_on: '2026-06-01', ends_on: '2029-05-31',
+  term_years: 3, billing_cadence: 'quarterly', invoice_timing: 'start_of_period',
+  lines: [{ id: 'aq-1', contract_id: 'cnt-aq', name: 'Annual fee', unit_price: 7000, quantity: 1, unit_label: 'flat', frequency: 'annual', invoice_timing: 'end_of_period' }],
+});
+const annualOnQuarterlyCash = buildRevenueSchedule([annualOnQuarterly], [], [], [], { basis: 'cashflow' }).rows[0].months;
+assert(
+  JSON.stringify(annualOnQuarterlyCash) === JSON.stringify({ '2027-05': 7000, '2028-05': 7000, '2029-05': 7000 }),
+  'Cashflow bills an annual arrears line at the end of its own year, not the end of the first quarter',
+  JSON.stringify(annualOnQuarterlyCash)
+);
+const annualOnQuarterlyPeriods = getContractBillingPeriods(annualOnQuarterly, { today: new Date('2027-06-15T00:00:00') });
+const annualOnQuarterlyBilled = annualOnQuarterlyPeriods.filter(period => period.expectedAmount > 0);
+assert(
+  annualOnQuarterlyBilled.length === 1 && annualOnQuarterlyBilled[0].from === '2027-03-01' &&
+    annualOnQuarterlyBilled[0].billingDate === '2027-05-31' && annualOnQuarterlyBilled[0].expectedAmount === 7000,
+  'The invoice for an annual arrears line falls due at the end of May, in the quarter its year closes',
+  JSON.stringify(annualOnQuarterlyBilled.map(period => [period.label, period.billingDate, period.expectedAmount]))
 );
 
 // --- Cell explanations (right-click "How is this calculated?") ----------------
