@@ -18,15 +18,16 @@ import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
 import { SessionInviteFields } from '@/components/spaces/session-invite-fields';
 import { SessionEditModal } from '@/components/spaces/session-edit-modal';
 import {
-  BOOKING_MODE_LABELS, canDeleteSession, canEditSession, clockLabel, heldWholeDaySpace, nextFreeSessionWindow,
-  overlappingSession, seatHolders, seatsLabel, sessionLabel, spaceDayState, summarizeInviteDelivery, validateSessionWindow,
-  wholeDayHeldOn, type SpaceDayState, type SpaceSessionState,
+  BOOKING_MODE_LABELS, canDeleteSession, canEditSession, clockLabel, defaultPlanSession, heldWholeDaySpace,
+  nextFreeSessionWindow, overlappingSession, seatHolders, seatsLabel, sessionLabel, sessionStarted, spaceDayState,
+  summarizeInviteDelivery, validateSessionWindow, wholeDayHeldOn,
+  type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
 import type {
   Profile, Space, SpaceBooking, SpaceSeat, SpaceSession, SpaceType,
 } from '@/lib/types';
-import type { SeatPerson } from '@/components/spaces/office-3d';
+import type { SeatPerson, SessionBoard } from '@/components/spaces/office-3d';
 
 const todayKey = () => format(new Date(), 'yyyy-MM-dd');
 
@@ -70,6 +71,8 @@ export default function SpacesPage() {
   /** Admins get the room/type configuration as a second view here instead of a Settings tab. */
   const [view, setView] = useState<'book' | 'manage' | 'layout'>('book');
   const [day, setDay] = useState<string>(todayKey());
+  /** Which session each meeting room shows in the 3D plan; an unset room leads with current/next. */
+  const [planSessionView, setPlanSessionView] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   /** The timed room whose day is open in the sessions dialog. */
   const [roomModalId, setRoomModalId] = useState<string | null>(null);
@@ -79,6 +82,12 @@ export default function SpacesPage() {
 
   const today = todayKey();
   const isPast = day < today;
+
+  /** Changing the day clears the 3D session picks: a session id belongs to one date. */
+  const pickDay = (next: string) => {
+    setDay(next);
+    setPlanSessionView({});
+  };
 
   const activeTypes = useMemo(
     () => spaceTypes.filter(type => type.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
@@ -165,8 +174,24 @@ export default function SpacesPage() {
     [spaceDesks, planRoomIds]
   );
 
-  // A timed room shows the chairs of the session it leads with (yours, otherwise the next one), so a
-  // chair booked for the 10:00 meeting does not look taken for the 14:00 one.
+  /**
+   * The session each meeting room shows in the 3D plan. Picking one on the room's table wins;
+   * otherwise the room opens on the meeting running now, else the next one to start.
+   */
+  const planSessions = useMemo(() => {
+    const map = new Map<string, SpaceSessionState>();
+    states.forEach((state, roomId) => {
+      if (state.mode !== 'time_range') return;
+      const chosenId = planSessionView[roomId];
+      const chosen = chosenId ? state.sessions.find(entry => entry.session.id === chosenId) : undefined;
+      const shown = chosen ?? defaultPlanSession(state.sessions);
+      if (shown) map.set(roomId, shown);
+    });
+    return map;
+  }, [states, planSessionView]);
+
+  // A timed room shows the chairs of the session it is displaying, so a chair booked for the 10:00
+  // meeting does not look taken for the 14:00 one.
   const planSeatMarks = useMemo(() => {
     const taken: string[] = [];
     const mine: string[] = [];
@@ -175,7 +200,10 @@ export default function SpacesPage() {
       if (booking.booking_date !== day || !booking.seat_id || !planRoomIds.has(booking.space_id)) return;
       const state = states.get(booking.space_id);
       if (!state) return;
-      if (state.mode === 'time_range' && (!state.session || booking.session_id !== state.session.id)) return;
+      if (state.mode === 'time_range') {
+        const shown = planSessions.get(booking.space_id);
+        if (!shown || booking.session_id !== shown.session.id) return;
+      }
       taken.push(booking.seat_id);
       if (booking.profile_id === currentUser.id) mine.push(booking.seat_id);
       people.push({
@@ -185,15 +213,40 @@ export default function SpacesPage() {
       });
     });
     return { taken, mine, people };
-  }, [spaceBookings, day, planRoomIds, states, currentUser.id]);
+  }, [spaceBookings, day, planRoomIds, states, planSessions, currentUser.id]);
 
   const planSessionNote = useMemo(() => {
     const lines = planRooms
-      .map(room => ({ room, state: states.get(room.id) }))
-      .filter(entry => entry.state?.mode === 'time_range' && entry.state.session)
-      .map(({ room, state }) => `${room.name}: ${sessionLabel(state!.session!)}`);
+      .map(room => ({ room, session: planSessions.get(room.id) }))
+      .filter(entry => entry.session)
+      .map(({ room, session }) => `${room.name}: ${sessionLabel(session!.session)}`);
     return lines.length > 0 ? lines.join(' · ') : null;
-  }, [planRooms, states]);
+  }, [planRooms, planSessions]);
+
+  /** The tables that stand beside the meeting rooms, one row per session of the day. */
+  const planSessionBoards = useMemo(() => planRooms
+    .map(room => {
+      const state = states.get(room.id);
+      if (!state || state.mode !== 'time_range' || state.sessions.length === 0) return null;
+      const shown = planSessions.get(room.id);
+      const board: SessionBoard = {
+        roomId: room.id,
+        heading: `Sessions · ${formatDate(day)}`,
+        rows: state.sessions.map(entry => ({
+          id: entry.session.id,
+          window: `${clockLabel(entry.session.starts_at)} – ${clockLabel(entry.session.ends_at)}`,
+          title: entry.session.title,
+          seats: entry.seatsTaken,
+          capacity: room.capacity,
+          selected: shown?.session.id === entry.session.id,
+          live: sessionStarted(entry.session) && !entry.ended,
+          ended: entry.ended,
+        })),
+      };
+      return board;
+    })
+    .filter((board): board is SessionBoard => Boolean(board)),
+  [planRooms, states, planSessions, day]);
 
   const roomModal = roomModalId
     ? activeSpaces.find(space => space.id === roomModalId) ?? null
@@ -492,17 +545,17 @@ export default function SpacesPage() {
             <>
           <button
             type="button"
-            onClick={() => setDay(format(addDays(parseISO(day), -1), 'yyyy-MM-dd'))}
+            onClick={() => pickDay(format(addDays(parseISO(day), -1), 'yyyy-MM-dd'))}
             title="Previous day"
             aria-label="Previous day"
             className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)] cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <DatePicker value={day} onChange={setDay} className="w-[150px]" />
+          <DatePicker value={day} onChange={pickDay} className="w-[150px]" />
           <button
             type="button"
-            onClick={() => setDay(format(addDays(parseISO(day), 1), 'yyyy-MM-dd'))}
+            onClick={() => pickDay(format(addDays(parseISO(day), 1), 'yyyy-MM-dd'))}
             title="Next day"
             aria-label="Next day"
             className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-control)] border border-[var(--line-strong)] bg-white text-[var(--ink-3)] hover:bg-[var(--surface-muted)] cursor-pointer"
@@ -510,7 +563,7 @@ export default function SpacesPage() {
             <ChevronRight className="w-4 h-4" />
           </button>
           {day !== today && (
-            <Button size="sm" variant="secondary" onClick={() => setDay(today)}>
+            <Button size="sm" variant="secondary" onClick={() => pickDay(today)}>
               Today
             </Button>
           )}
@@ -581,6 +634,8 @@ export default function SpacesPage() {
           mySeatIds={planSeatMarks.mine}
           seatPeople={planSeatMarks.people}
           sessionNote={planSessionNote}
+          sessionBoards={planSessionBoards}
+          onSelectSession={(room, sessionId) => setPlanSessionView(previous => ({ ...previous, [room.id]: sessionId }))}
           onPickSeat={pickSeat}
           onPickRoom={openRoomSessions}
         />

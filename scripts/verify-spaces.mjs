@@ -14,6 +14,7 @@ import {
   canEditSession,
   canInviteToSession,
   clockLabel,
+  defaultPlanSession,
   defaultSessionWindow,
   heldWholeDaySpace,
   normalizeInviteEmail,
@@ -27,6 +28,7 @@ import {
   seatsLabel,
   sessionEnded,
   sessionLabel,
+  sessionStarted,
   spaceDaySessions,
   spaceDayState,
   validateSessionWindow,
@@ -331,6 +333,45 @@ assert(
 assert(
   heldWholeDaySpace(new Map([['sp-1', deskState([seat('b1', 'a')])]])) === null,
   'Nobody else\'s desk counts as your whole-day seat'
+);
+
+// --- Which session the 3D plan opens on: the one running now, else the next --------------
+const planStates = spaceDaySessions({
+  space, date: DAY, sessions: [session, afternoon], bookings: [], profileId: 'me', now: at('08:00'),
+});
+assert(
+  defaultPlanSession(planStates, at('08:00'))?.session.id === 'ses-1',
+  'Before the first meeting the room shows the next one to start'
+);
+assert(
+  defaultPlanSession(planStates, at('10:00'))?.session.id === 'ses-1',
+  'A meeting that is running now is the one the room shows',
+  'ses-1 runs 09:30–10:30'
+);
+assert(
+  defaultPlanSession(planStates, at('12:00'))?.session.id === 'ses-2',
+  'Between meetings the room looks ahead to the next one'
+);
+assert(
+  defaultPlanSession(planStates, at('16:00'))?.session.id === 'ses-2',
+  'After the last meeting the room keeps showing it, marked as ended'
+);
+assert(
+  defaultPlanSession([], at('10:00')) === undefined,
+  'A room with no sessions has nothing to show'
+);
+assert(
+  sessionStarted({ session_date: DAY, starts_at: '09:30:00' }, at('09:30'))
+    && !sessionStarted({ session_date: DAY, starts_at: '09:30:00' }, at('09:29')),
+  'A session counts as started exactly at its start time'
+);
+assert(
+  sessionStarted({ session_date: '2026-11-09', starts_at: '23:00:00' }, at('08:00')),
+  'Yesterday\'s session has started, whatever the clock says'
+);
+assert(
+  !sessionStarted({ session_date: '2026-11-11', starts_at: '09:00:00' }, at('23:00')),
+  'Tomorrow\'s session has not started yet'
 );
 
 // --- The rule every booking path shares: one whole-day seat per person per date ---------------

@@ -43,6 +43,30 @@ export interface SeatPerson {
   photoUrl?: string | null;
 }
 
+/** One line of a meeting room's schedule board. */
+export interface SessionBoardRow {
+  id: string;
+  /** `09:30 – 10:30`. */
+  window: string;
+  title?: string | null;
+  seats: number;
+  capacity: number;
+  /** The session whose people are drawn in the room right now. */
+  selected: boolean;
+  /** The window is running at this moment. */
+  live?: boolean;
+  /** The window is behind us. */
+  ended?: boolean;
+}
+
+/** The table standing beside a meeting room, listing the day's sessions. */
+export interface SessionBoard {
+  roomId: string;
+  /** `Sessions · 02/11/2026`. */
+  heading: string;
+  rows: SessionBoardRow[];
+}
+
 export interface Office3DProps {
   floor: OfficeFloor;
   rooms: Space[];
@@ -60,8 +84,12 @@ export interface Office3DProps {
   selectedDeskId?: string | null;
   mode: Office3DMode;
   colorForRoom: (room: Space) => string;
-  /** How the room is booked — meeting rooms get a screen on the wall. */
+  /** How the room is booked — meeting rooms get a screen on the wall and a schedule board beside it. */
   kindForRoom?: (room: Space) => 'whole_day' | 'time_range' | null;
+  /** The day's sessions per meeting room, printed on the board and clickable. */
+  sessionBoards?: SessionBoard[];
+  /** A session was clicked on a room's board — show that one in the room. */
+  onSelectSession?: (room: Space, sessionId: string) => void;
   onSelectRoom?: (room: Space | null) => void;
   onSelectSeat?: (seat: SpaceSeat, room: Space) => void;
   onSelectDesk?: (desk: SpaceDesk, room: Space) => void;
@@ -72,7 +100,7 @@ export interface Office3DProps {
   onResizeDesk?: (desk: SpaceDesk, width: number, depth: number) => void;
 }
 
-type PickedKind = 'room' | 'seat' | 'desk' | 'handle' | 'desk-handle';
+type PickedKind = 'room' | 'seat' | 'desk' | 'handle' | 'desk-handle' | 'session';
 
 interface DragState {
   kind: 'room' | 'corner' | 'seat' | 'desk' | 'desk-corner';
@@ -466,6 +494,190 @@ function labelSprite(text: string, color: string): THREE.Sprite {
   return sprite;
 }
 
+/**
+ * The schedule table that stands beside a meeting room: four legs, a pale top, and the day's
+ * sessions printed on it. Rows are separate planes so each one can be picked; the board sits flat
+ * rather than upright because the camera looks down at the model, and a flat list stays readable
+ * when the room is viewed from any corner.
+ */
+const BOARD = {
+  width: 1.8,
+  depth: 1.2,
+  height: 0.58,
+  padding: 0.075,
+  header: 0.14,
+  row: 0.17,
+  gap: 0.026,
+};
+
+const clampTo = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+function paintTexture(
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D) => void
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (ctx) draw(ctx);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+/** Trim with an ellipsis until the text fits, so a long agenda never bleeds out of its row. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxWidth) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
+}
+
+function sessionHeadingTexture(text: string, accent: string): THREE.CanvasTexture {
+  const width = 512;
+  const height = 48;
+  return paintTexture(width, height, ctx => {
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = accent;
+    ctx.fillRect(0, height - 4, width * 0.22, 4);
+    ctx.fillStyle = '#4d453c';
+    ctx.font = '700 21px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fitText(ctx, text.toUpperCase(), width - 8), 2, height / 2 - 2);
+  });
+}
+
+function sessionRowTexture(row: SessionBoardRow, accent: string): THREE.CanvasTexture {
+  const width = 512;
+  const height = 64;
+  return paintTexture(width, height, ctx => {
+    ctx.clearRect(0, 0, width, height);
+    ctx.beginPath();
+    ctx.roundRect(1.5, 1.5, width - 3, height - 3, 13);
+    ctx.fillStyle = row.selected ? '#eaf1f8' : '#fdfbf7';
+    ctx.fill();
+    ctx.lineWidth = row.selected ? 3 : 1.5;
+    ctx.strokeStyle = row.selected ? accent : '#ded5c4';
+    ctx.stroke();
+
+    ctx.globalAlpha = row.ended && !row.selected ? 0.55 : 1;
+    ctx.textBaseline = 'middle';
+    if (row.live) {
+      ctx.fillStyle = '#4f8566';
+      ctx.beginPath();
+      ctx.arc(21, height / 2, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = '#2f3a45';
+    ctx.font = '600 22px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillText(row.window, 36, height / 2);
+    const timeWidth = ctx.measureText(row.window).width;
+
+    const seats = `${row.seats}/${row.capacity}`;
+    ctx.textAlign = 'right';
+    ctx.font = '600 20px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.fillStyle = row.seats >= row.capacity ? '#b4562f' : '#6b7785';
+    ctx.fillText(seats, width - 16, height / 2);
+    const seatsWidth = ctx.measureText(seats).width;
+
+    ctx.textAlign = 'left';
+    ctx.font = '500 21px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.fillStyle = '#334155';
+    const title = row.title?.trim() || 'Open session';
+    ctx.fillText(fitText(ctx, title, width - 36 - timeWidth - 18 - seatsWidth - 26), 36 + timeWidth + 18, height / 2);
+  });
+}
+
+function buildSessionBoard(board: SessionBoard, accent: string): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `board:${board.roomId}`;
+
+  const shadow = softShadow(BOARD.width * 1.3, BOARD.depth * 1.6, 0.45);
+  shadow.position.y = 0.002;
+  group.add(shadow);
+
+  const top = new THREE.Mesh(rounded(BOARD.width, 0.045, BOARD.depth, 0.02), material(COLORS.paper, { roughness: 0.74 }));
+  top.position.y = BOARD.height;
+  top.castShadow = true;
+  top.receiveShadow = true;
+  group.add(top);
+
+  ([[-1, -1], [1, -1], [-1, 1], [1, 1]] as const).forEach(([sx, sz]) => {
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.026, 0.026, BOARD.height, 12),
+      material(COLORS.leg, { roughness: 0.62 })
+    );
+    leg.position.set(sx * (BOARD.width / 2 - 0.1), BOARD.height / 2 - 0.02, sz * (BOARD.depth / 2 - 0.1));
+    leg.castShadow = true;
+    group.add(leg);
+  });
+
+  // Faces lie flat on the top, printed towards the camera's corner of the model.
+  const faceY = BOARD.height + 0.024;
+  const innerWidth = BOARD.width - BOARD.padding * 2;
+  const heading = new THREE.Mesh(
+    new THREE.PlaneGeometry(innerWidth, BOARD.header),
+    new THREE.MeshBasicMaterial({ map: sessionHeadingTexture(board.heading, accent), transparent: true, depthWrite: false })
+  );
+  heading.rotation.x = -Math.PI / 2;
+  heading.position.set(0, faceY, -(BOARD.depth / 2) + BOARD.padding + BOARD.header / 2);
+  group.add(heading);
+
+  const available = BOARD.depth - BOARD.padding * 2 - BOARD.header;
+  const maxRows = Math.max(1, Math.floor((available + BOARD.gap) / (BOARD.row + BOARD.gap)));
+  board.rows.slice(0, maxRows).forEach((row, index) => {
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(innerWidth, BOARD.row),
+      new THREE.MeshBasicMaterial({ map: sessionRowTexture(row, accent), transparent: true, depthWrite: false })
+    );
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.set(
+      0,
+      faceY,
+      -(BOARD.depth / 2) + BOARD.padding + BOARD.header + BOARD.row / 2 + index * (BOARD.row + BOARD.gap)
+    );
+    plane.name = `session:${row.id}`;
+    plane.userData = {
+      kind: 'session',
+      roomId: board.roomId,
+      sessionId: row.id,
+      label: `${row.window}${row.title?.trim() ? ` · ${row.title.trim()}` : ''}${row.selected ? ' — showing' : ' — click to show'}`,
+    };
+    group.add(plane);
+  });
+
+  const hidden = board.rows.length - maxRows;
+  if (hidden > 0) {
+    const more = new THREE.Mesh(
+      new THREE.PlaneGeometry(innerWidth, BOARD.row * 0.7),
+      new THREE.MeshBasicMaterial({
+        map: paintTexture(512, 44, ctx => {
+          ctx.clearRect(0, 0, 512, 44);
+          ctx.fillStyle = '#8a8074';
+          ctx.font = '600 19px "IBM Plex Sans", system-ui, sans-serif';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`+${hidden} more session${hidden === 1 ? '' : 's'} that day`, 4, 22);
+        }),
+        transparent: true,
+        depthWrite: false,
+      })
+    );
+    more.rotation.x = -Math.PI / 2;
+    more.position.set(
+      0,
+      faceY,
+      -(BOARD.depth / 2) + BOARD.padding + BOARD.header + maxRows * (BOARD.row + BOARD.gap + BOARD.row / 2) - BOARD.gap / 2
+    );
+    group.add(more);
+  }
+
+  return group;
+}
+
 /** Free GPU memory before rebuilding the scene graph. */
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse(child => {
@@ -675,7 +887,8 @@ function cutAwayWalls(state: SceneState): void {
 export const Office3D: React.FC<Office3DProps> = ({
   floor, rooms, seats, desks = [], takenSeatIds, mySeatIds, seatPeople = [],
   selectedRoomId, selectedSeatId, selectedDeskId, mode,
-  colorForRoom, kindForRoom, onSelectRoom, onSelectSeat, onSelectDesk,
+  colorForRoom, kindForRoom, sessionBoards = [], onSelectSession,
+  onSelectRoom, onSelectSeat, onSelectDesk,
   onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -687,7 +900,8 @@ export const Office3D: React.FC<Office3DProps> = ({
     rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
   });
   const callbacksRef = useRef({
-    onSelectRoom, onSelectSeat, onSelectDesk, onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
+    onSelectRoom, onSelectSeat, onSelectDesk, onSelectSession,
+    onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
   });
   const colorRef = useRef(colorForRoom);
   const kindRef = useRef(kindForRoom);
@@ -698,7 +912,8 @@ export const Office3D: React.FC<Office3DProps> = ({
       rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode,
     };
     callbacksRef.current = {
-      onSelectRoom, onSelectSeat, onSelectDesk, onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
+      onSelectRoom, onSelectSeat, onSelectDesk, onSelectSession,
+      onMoveRoom, onResizeRoom, onMoveSeat, onMoveDesk, onResizeDesk,
     };
     colorRef.current = colorForRoom;
     kindRef.current = kindForRoom;
@@ -733,12 +948,13 @@ export const Office3D: React.FC<Office3DProps> = ({
     // inside it. Handles are likewise hit "through" the object they belong to. Both are therefore
     // resolved by priority; chairs and desks compete on plain distance, which is what a click means.
     const handle = hits.find(hit => kindOf(hit) === 'desk-handle') || hits.find(hit => kindOf(hit) === 'handle');
+    const board = hits.find(hit => kindOf(hit) === 'session');
     const item = handle || hits.find(hit => kindOf(hit) === 'seat' || kindOf(hit) === 'desk');
-    const match = item || hits.find(hit => kindOf(hit) === 'room');
+    const match = board || item || hits.find(hit => kindOf(hit) === 'room');
     if (!match) return null;
     return {
       data: match.object.userData as {
-        kind: PickedKind; roomId: string; seatId?: string; deskId?: string;
+        kind: PickedKind; roomId: string; seatId?: string; deskId?: string; sessionId?: string;
         corner?: RoomCorner; label?: string;
       },
       point: match.point,
@@ -992,6 +1208,7 @@ export const Office3D: React.FC<Office3DProps> = ({
 
       const {
         onSelectRoom: selectRoom, onSelectSeat: selectSeat, onSelectDesk: selectDesk,
+        onSelectSession: selectSession,
         onMoveRoom: moveRoom, onResizeRoom: resizeRoom, onMoveSeat: moveSeat,
         onMoveDesk: moveDesk, onResizeDesk: resizeDesk,
       } = callbacksRef.current;
@@ -1012,6 +1229,11 @@ export const Office3D: React.FC<Office3DProps> = ({
         }
         const room = currentRooms.find(entry => entry.id === hit.data.roomId);
         if (!room) return;
+        // A row of the schedule board picks the session the room shows; the room itself opens its day.
+        if (hit.data.kind === 'session' && hit.data.sessionId) {
+          selectSession?.(room, hit.data.sessionId);
+          return;
+        }
         // A meeting room's chairs carry no booking of their own: the click belongs to the room and
         // opens its sessions instead of grabbing the chair under the pointer.
         if (hit.data.kind === 'seat' && hit.data.seatId && kindRef.current?.(room) !== 'time_range') {
@@ -1444,9 +1666,30 @@ export const Office3D: React.FC<Office3DProps> = ({
       state.content.add(group);
       state.roomGroups.set(room.id, group);
       state.pickables.push(group);
+
+      // Meeting rooms get their schedule table just outside the front edge, clamped to the slab so
+      // it never hangs off the floor. It is a viewer aid: the layout editor draws no extra furniture.
+      const board = mode === 'editor' ? undefined : sessionBoards.find(entry => entry.roomId === room.id);
+      if (board && kindRef.current?.(room) === 'time_range') {
+        const roomX = Number(room.pos_x) || 0;
+        const roomZ = Number(room.pos_z) || 0;
+        // A phone pod gets a smaller table: the board never dwarfs the room it describes.
+        const scale = width < 4 ? 0.72 : 1;
+        const boardWidth = BOARD.width * scale;
+        const boardDepth = BOARD.depth * scale;
+        const boardGroup = buildSessionBoard(board, colorRef.current(room));
+        boardGroup.scale.setScalar(scale);
+        boardGroup.position.set(
+          clampTo(roomX + width / 2 - boardWidth / 2, -halfW + boardWidth / 2 + 0.1, halfW - boardWidth / 2 - 0.1),
+          FLOOR_TOP,
+          clampTo(roomZ + depth / 2 + boardDepth / 2 + 0.18, -halfD + boardDepth / 2 + 0.1, halfD - boardDepth / 2 - 0.1)
+        );
+        state.content.add(boardGroup);
+        state.pickables.push(boardGroup);
+      }
     });
 
-  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode, floor.width, floor.depth, floor.id]);
+  }, [ready, rooms, seats, desks, takenSeatIds, mySeatIds, seatPeople, selectedRoomId, selectedSeatId, selectedDeskId, mode, sessionBoards, floor.width, floor.depth, floor.id]);
 
   return (
     <div className="relative w-full h-full">

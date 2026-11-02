@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { Building2, MousePointerClick } from 'lucide-react';
 import { Card } from '@/components/ui/primitives';
 import type { OfficeFloor, Space, SpaceDesk, SpaceSeat, SpaceType } from '@/lib/types';
-import type { Office3DProps, SeatPerson } from '@/components/spaces/office-3d';
+import type { Office3DProps, SeatPerson, SessionBoard } from '@/components/spaces/office-3d';
 
 const Office3D = dynamic<Office3DProps>(
   () => import('@/components/spaces/office-3d').then(module => module.Office3D),
@@ -31,6 +31,10 @@ export interface OfficePlanProps {
   seatPeople?: SeatPerson[];
   /** Which session the timed rooms are showing, so the taken chairs are not mistaken for the whole day. */
   sessionNote?: string | null;
+  /** The day's sessions per meeting room, printed on the table beside each one. */
+  sessionBoards?: SessionBoard[];
+  /** Picking a session on a room's table shows its people in the room. */
+  onSelectSession?: (room: Space, sessionId: string) => void;
   onPickSeat: (seat: SpaceSeat, room: Space) => void;
   /** Clicking a room itself (its floor, walls or empty space) — timed rooms open their sessions. */
   onPickRoom?: (room: Space) => void;
@@ -49,7 +53,8 @@ const LEGEND = [
  * Dragging orbits the camera, so a click only counts when the pointer did not move.
  */
 export function OfficePlan({
-  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, seatPeople = [], sessionNote, onPickSeat, onPickRoom, height = 540,
+  floor, rooms, seats, desks = [], typesById, takenSeatIds, mySeatIds, seatPeople = [], sessionNote,
+  sessionBoards, onSelectSession, onPickSeat, onPickRoom, height = 540,
 }: OfficePlanProps) {
   const colorForRoom = useMemo(
     () => (room: Space) => typesById.get(room.type_id)?.color || '#64748b',
@@ -69,7 +74,7 @@ export function OfficePlan({
   return (
     <Card
       title={`Office plan · ${floor.name}`}
-      subtitle="Click a chair to take it for the day, a meeting room to see and join its sessions. Drag to orbit, scroll to zoom."
+      subtitle="Click a chair to take it for the day, a session on a meeting room's table to see who is in it, or the room itself to join one. Drag to orbit, scroll to zoom."
       action={
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {LEGEND.map(entry => (
@@ -96,13 +101,15 @@ export function OfficePlan({
           mode="viewer"
           colorForRoom={colorForRoom}
           kindForRoom={kindForRoom}
+          sessionBoards={sessionBoards}
+          onSelectSession={onSelectSession}
           onSelectSeat={onPickSeat}
           onSelectRoom={handleSelectRoom}
         />
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ink-4)]">
         <MousePointerClick className="h-3 w-3 shrink-0" />
-        A black chair is free, a blue-grey one is taken, the green one is yours — meeting rooms seat their sessions, so pick a session first.
+        A black chair is free, a blue-grey one is taken, the green one is yours — a meeting room&apos;s table picks which session its chairs belong to.
         {sessionNote ? <span className="truncate">Showing {sessionNote}</span> : null}
       </p>
     </Card>

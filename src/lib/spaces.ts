@@ -89,6 +89,32 @@ export function sessionEnded(
   return minutesOf(session.ends_at) <= now.getHours() * 60 + now.getMinutes();
 }
 
+/** A session that has already begun: an earlier date, or a window that started earlier today. */
+export function sessionStarted(
+  session: Pick<SpaceSession, 'session_date' | 'starts_at'>,
+  now: Date = new Date()
+): boolean {
+  const today = dayKey(now);
+  if (session.session_date < today) return true;
+  if (session.session_date > today) return false;
+  return minutesOf(session.starts_at) <= now.getHours() * 60 + now.getMinutes();
+}
+
+/**
+ * The session a meeting room shows before anyone picks one: the meeting running right now, otherwise
+ * the next one to start, otherwise the last of the day. This is what the 3D board opens on.
+ */
+export function defaultPlanSession(
+  states: SpaceSessionState[],
+  now: Date = new Date()
+): SpaceSessionState | undefined {
+  // Times are evaluated against `now`, not the `ended` flag baked into the state when it was built:
+  // a screen left open across a session boundary must still open on the meeting that is coming.
+  return states.find(entry => sessionStarted(entry.session, now) && !sessionEnded(entry.session, now))
+    ?? states.find(entry => !sessionEnded(entry.session, now))
+    ?? states[states.length - 1];
+}
+
 /** Every session of one space on one date, in start order, each with the seats it holds. */
 export function spaceDaySessions(args: {
   space: Pick<Space, 'id' | 'capacity'>;
