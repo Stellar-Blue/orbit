@@ -18,7 +18,7 @@ import { useOrbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project, Receipt } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { isSubcontract, primeFeeAmount } from '@/lib/subcontracts';
-import { buildRevenueSchedule, explainScheduleCell, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, explainScheduleCell, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type CellExplanationItem, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
@@ -371,6 +371,27 @@ function InvoicePeekModal({ invoices, contract, onClose }: {
   );
 }
 
+/** One contributor to an explained cell; a pricing group nests its own lines under its floor steps. */
+function ExplanationItemCard({ item }: { item: CellExplanationItem }) {
+  const isGroup = Boolean(item.children);
+  return (
+    <div className={`rounded-xl border p-3 ${isGroup ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[12px] font-bold text-slate-800 truncate">{item.label}</span>
+        <span className="font-mono text-[12px] font-bold text-slate-900 shrink-0">{formatTotal(item.amount)}</span>
+      </div>
+      <ol className={`mt-1.5 space-y-0.5 border-l-2 pl-2 text-[11px] tabular-nums ${isGroup ? 'border-amber-300 text-amber-800' : 'border-slate-200 text-slate-500'}`}>
+        {item.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}
+      </ol>
+      {item.children && (
+        <div className="mt-2 space-y-2">
+          {item.children.map((child, index) => <ExplanationItemCard key={`${child.label}-${index}`} item={child} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Right-click explanation of a month cell: which price lines (or CRs) land there and how each is priced. */
 function CellExplanationModal({ row, month, basis, explanation, onClose }: {
   row: RevenueScheduleRow;
@@ -403,17 +424,7 @@ function CellExplanationModal({ row, month, basis, explanation, onClose }: {
         <p className="rounded-lg border border-dashed border-slate-200 p-3 text-[12px] text-slate-500">Nothing is charged on this month.</p>
       ) : (
         <div className="space-y-2">
-          {explanation.items.map((item, index) => (
-            <div key={`${item.label}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[12px] font-bold text-slate-800 truncate">{item.label}</span>
-                <span className="font-mono text-[12px] font-bold text-slate-900 shrink-0">{formatTotal(item.amount)}</span>
-              </div>
-              <ol className="mt-1.5 space-y-0.5 border-l-2 border-slate-200 pl-2 text-[11px] text-slate-500 tabular-nums">
-                {item.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}
-              </ol>
-            </div>
-          ))}
+          {explanation.items.map((item, index) => <ExplanationItemCard key={`${item.label}-${index}`} item={item} />)}
         </div>
       )}
 

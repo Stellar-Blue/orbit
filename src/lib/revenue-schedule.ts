@@ -489,6 +489,8 @@ export interface CellExplanationItem {
   /** The calculation, step by step, ending on this item's amount. */
   steps: string[];
   amount: number;
+  /** A pricing group's own lines; the group's amount is their sum. */
+  children?: CellExplanationItem[];
 }
 
 export interface CellExplanation {
@@ -511,10 +513,10 @@ function chargeSteps(charge: LineChargeTrace, contract: Contract): string[] {
   const { line } = charge;
   const quantity = charge.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 });
   const steps = [`${quantity}${line.unit_label ? ` ${line.unit_label}` : ''} × ${money(Number(line.unit_price) || 0)} = ${money(charge.base)}`];
-  if (charge.gross !== charge.base) steps.push(`raised to the minimum charge → ${money(charge.gross)}`);
+  if (charge.gross !== charge.base) steps.push(`raised to the line's own minimum charge → ${money(charge.gross)}`);
   if (charge.floorRatio !== 1) {
     const group = (contract.groups || []).find(entry => entry.id === line.group_id)?.name || 'group';
-    steps.push(`×${Number(charge.floorRatio.toFixed(4))} to reach the "${group}" monthly floor → ${money(charge.gross * charge.floorRatio)}`);
+    steps.push(`×${Number(charge.floorRatio.toFixed(4))} share of the "${group}" floor uplift → ${money(charge.gross * charge.floorRatio)}`);
   }
   if (charge.discountMultiplier !== 1) {
     steps.push(`−${round2((1 - charge.discountMultiplier) * 100)}% contract discount → ${money(charge.net)}`);
@@ -522,26 +524,84 @@ function chargeSteps(charge: LineChargeTrace, contract: Contract): string[] {
   return steps;
 }
 
-/** One item per price line, summing every charge of that line that lands on the cell. */
+/** How a pricing group's floor played out on the months its charges were priced. */
+function groupFloorSteps(floor: number, charges: LineChargeTrace[]): string[] {
+  if (floor <= 0) return ['No floor: each line charges on its own'];
+
+  const recurring = charges.filter(charge => charge.line.frequency !== 'one_time');
+  const byMonth = new Map<string, LineChargeTrace>();
+  recurring.forEach(charge => { if (!byMonth.has(charge.pricedOn)) byMonth.set(charge.pricedOn, charge); });
+  const checks = Array.from(byMonth.values()).map(charge => {
+    const total = charge.groupMonthlyTotal;
+    return total < floor
+      ? `lines total ${money(total)}/month, below the floor → raised to ${money(floor)} (each line ×${Number(charge.floorRatio.toFixed(4))})`
+      : `lines total ${money(total)}/month, at or above the floor → no uplift`;
+  });
+  const sameEverywhere = checks.every(check => check === checks[0]);
+
+  return [
+    `Floor ${money(floor)} per month on the group's combined total, before discount`,
+    ...(sameEverywhere
+      ? checks.slice(0, 1)
+      : Array.from(byMonth.keys()).map((month, index) => `${monthName(month)}: ${checks[index]}`)),
+    ...(recurring.some(charge => charge.line.frequency === 'quarterly' || charge.line.frequency === 'annual')
+      ? ['quarterly and annual lines count at their monthly equivalent (÷3, ÷12)']
+      : []),
+    ...(recurring.length < charges.length ? ['one-time charges sit outside the floor'] : []),
+  ];
+}
+
+/**
+ * One item per price line, summing every charge of that line that lands on the cell. Lines in a
+ * pricing group sit under that group, which states its floor and whether it lifted the lines.
+ */
 function lineItems(charges: LineChargeTrace[], contract: Contract): CellExplanationItem[] {
+  const groups = new Map((contract.groups || []).map(group => [group.id, group]));
   const byLine = new Map<Partial<ContractLine>, LineChargeTrace[]>();
   charges.forEach(charge => byLine.set(charge.line, [...(byLine.get(charge.line) || []), charge]));
+  const items: CellExplanationItem[] = [];
+  const groupItems = new Map<string, CellExplanationItem>();
 
-  return Array.from(byLine.values()).map(lineCharges => {
-    const [first] = lineCharges;
-    const amount = round2(lineCharges.reduce((sum, charge) => sum + charge.net, 0));
-    const timing = first.timing === 'advance' ? 'billed in advance' : 'billed in arrears';
-    const deferred = first.pricedOn !== first.landsOn ? `, priced on ${monthName(first.pricedOn)} and recognised when its cycle closes` : '';
-    const context = `${FREQUENCY_LABELS[first.line.frequency || ''] || first.line.frequency} charge, ${timing}${deferred}`;
-    const identical = lineCharges.every(charge => round2(charge.net) === round2(first.net) && charge.quantity === first.quantity);
-
-    const steps = lineCharges.length === 1
-      ? [context, ...chargeSteps(first, contract)]
-      : identical
-        ? [context, ...chargeSteps(first, contract), `× ${lineCharges.length} months (${lineCharges.map(charge => monthName(charge.pricedOn)).join(', ')}) = ${money(amount)}`]
-        : [context, ...lineCharges.map(charge => `${monthName(charge.pricedOn)}: ${chargeSteps(charge, contract).join(' · ')}`)];
-    return { label: first.line.name || 'Price line', steps, amount };
+  byLine.forEach((lineCharges, line) => {
+    const item = lineItem(lineCharges, contract);
+    const group = groups.get(line.group_id || '');
+    if (!group) {
+      items.push(item);
+      return;
+    }
+    let groupItem = groupItems.get(group.id);
+    if (!groupItem) {
+      const groupCharges = charges.filter(charge => charge.line.group_id === group.id);
+      groupItem = {
+        label: `Pricing group "${group.name}"`,
+        steps: groupFloorSteps(Number(group.min_monthly_charge) || 0, groupCharges),
+        amount: 0,
+        children: [],
+      };
+      groupItems.set(group.id, groupItem);
+      items.push(groupItem);
+    }
+    groupItem.children!.push(item);
+    groupItem.amount = round2(groupItem.amount + item.amount);
   });
+  return items;
+}
+
+/** One price line's charges on the cell, priced step by step. */
+function lineItem(lineCharges: LineChargeTrace[], contract: Contract): CellExplanationItem {
+  const [first] = lineCharges;
+  const amount = round2(lineCharges.reduce((sum, charge) => sum + charge.net, 0));
+  const timing = first.timing === 'advance' ? 'billed in advance' : 'billed in arrears';
+  const deferred = first.pricedOn !== first.landsOn ? `, priced on ${monthName(first.pricedOn)} and recognised when its cycle closes` : '';
+  const context = `${FREQUENCY_LABELS[first.line.frequency || ''] || first.line.frequency} charge, ${timing}${deferred}`;
+  const identical = lineCharges.every(charge => round2(charge.net) === round2(first.net) && charge.quantity === first.quantity);
+
+  const steps = lineCharges.length === 1
+    ? [context, ...chargeSteps(first, contract)]
+    : identical
+      ? [context, ...chargeSteps(first, contract), `× ${lineCharges.length} months (${lineCharges.map(charge => monthName(charge.pricedOn)).join(', ')}) = ${money(amount)}`]
+      : [context, ...lineCharges.map(charge => `${monthName(charge.pricedOn)}: ${chargeSteps(charge, contract).join(' · ')}`)];
+  return { label: first.line.name || 'Price line', steps, amount };
 }
 
 /** Months of a total-only stream that the cashflow view bills on `month` (see resampleToBillingMonths). */

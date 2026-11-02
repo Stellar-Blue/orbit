@@ -206,7 +206,8 @@ export function linePeriodAnchor(line: Partial<ContractLine>, periods: string[])
  * Computes per-group floor scaling ratios for a single period: each group's
  * combined monthly-equivalent gross is compared against its floor, and lines
  * in floored groups scale proportionally (ratio > 1) so the group total
- * reaches the floor.
+ * reaches the floor. `totals`, when given, receives each floored group's combined monthly-equivalent
+ * gross before the floor.
  */
 function computeGroupFloorRatiosForPeriod(
   lines: Array<Partial<ContractLine>>,
@@ -214,7 +215,8 @@ function computeGroupFloorRatiosForPeriod(
   pIdx: number,
   groupFloors: Map<string, number>,
   catalogModules: CatalogModule[] = [],
-  catalogItems: CatalogItem[] = []
+  catalogItems: CatalogItem[] = [],
+  totals?: Map<string, number>
 ): Map<string, number> {
   const ratios = new Map<string, number>();
   if (groupFloors.size === 0) return ratios;
@@ -232,6 +234,7 @@ function computeGroupFloorRatiosForPeriod(
   equivByGroup.forEach((equiv, gid) => {
     const ratio = calculateGroupFloorRatio(groupFloors.get(gid), equiv);
     if (ratio !== 1) ratios.set(gid, ratio);
+    if (groupFloors.has(gid)) totals?.set(gid, equiv);
   });
 
   return ratios;
@@ -369,6 +372,10 @@ export interface LineChargeTrace {
   gross: number;
   /** Group-floor scaling (1 when no floor applied). */
   floorRatio: number;
+  /** The line's group floor per month (0 when the line has no floored group, or is one-time). */
+  groupFloor: number;
+  /** The group's combined monthly-equivalent gross this month, before the floor (0 without a floor). */
+  groupMonthlyTotal: number;
   /** Discount multiplier applied to this line (1 when the line is not discounted). */
   discountMultiplier: number;
   net: number;
@@ -411,7 +418,8 @@ export function calculatePeriodAmountsForPeriodsByTiming(
   };
 
   periods.forEach((period, pIdx) => {
-    const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems);
+    const groupTotals = new Map<string, number>();
+    const groupRatios = computeGroupFloorRatiosForPeriod(lines, periods, pIdx, groupFloors, catalogModules, catalogItems, groupTotals);
     let advance = 0;
     let arrears = 0;
 
@@ -443,6 +451,8 @@ export function calculatePeriodAmountsForPeriodsByTiming(
         base: (Number(l.unit_price) || 0) * effQty,
         gross: minGross,
         floorRatio,
+        groupFloor: (l.group_id && l.frequency !== 'one_time' && groupFloors.get(l.group_id)) || 0,
+        groupMonthlyTotal: (l.group_id && groupTotals.get(l.group_id)) || 0,
         discountMultiplier: lineMult,
         net: netVal,
       });

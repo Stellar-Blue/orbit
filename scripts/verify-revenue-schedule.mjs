@@ -1455,11 +1455,34 @@ assert(
   'A line explanation walks quantity × unit price through the discount',
   JSON.stringify(forecastItem)
 );
-const licenceItem = juneExplanation.items.find(item => item.label === 'Licence');
+const coreGroup = juneExplanation.items.find(item => item.label === 'Pricing group "Core"');
+const licenceItem = coreGroup?.children?.find(item => item.label === 'Licence');
 assert(
-  licenceItem && licenceItem.steps.some(step => step.includes('"Core" monthly floor → €2,500.00')),
-  'A group floor appears as its own step',
-  JSON.stringify(licenceItem)
+  coreGroup && licenceItem && coreGroup.amount === licenceItem.amount &&
+    coreGroup.steps.some(step => step.startsWith('Floor €2,500.00 per month')) &&
+    coreGroup.steps.some(step => step.includes('€1,000.00/month, below the floor → raised to €2,500.00')) &&
+    licenceItem.steps.some(step => step.includes('"Core" floor uplift → €2,500.00')),
+  'Grouped lines sit under their pricing group, which shows the floor it raised them to',
+  JSON.stringify(coreGroup)
+);
+// A floor the lines already clear is still shown, so a reader can see why nothing was added.
+const clearedFloor = contract({
+  id: 'cnt-x5', reference: 'SB-X5',
+  groups: [{ id: 'g5', contract_id: 'cnt-x5', name: 'Bundle', min_monthly_charge: 1000 }],
+  lines: [
+    { id: 'x5-a', contract_id: 'cnt-x5', name: 'Module A', unit_price: 700, quantity: 1, unit_label: 'flat', frequency: 'monthly', group_id: 'g5' },
+    { id: 'x5-b', contract_id: 'cnt-x5', name: 'Module B', unit_price: 1500, quantity: 1, unit_label: 'flat', frequency: 'quarterly', group_id: 'g5' },
+  ],
+});
+const clearedRow = buildRevenueSchedule([clearedFloor], []).rows[0];
+const bundle = explainScheduleCell(clearedRow, '2025-01', 'recognition').items[0];
+assert(
+  bundle?.label === 'Pricing group "Bundle"' && bundle.children?.length === 2 && bundle.amount === clearedRow.months['2025-01'] &&
+    bundle.steps.some(step => step.startsWith('Floor €1,000.00 per month')) &&
+    bundle.steps.some(step => step.includes('€1,200.00/month, at or above the floor → no uplift')) &&
+    bundle.steps.some(step => step.includes('monthly equivalent')),
+  'A floor the group already clears is shown as not applied',
+  JSON.stringify(bundle)
 );
 const crExplanation = explainScheduleCell(recognitionGrid.rows.find(row => row.id === 'cnt-x1::projects'), '2025-05', 'recognition');
 assert(
