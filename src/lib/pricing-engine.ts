@@ -354,6 +354,26 @@ export function calculatePeriodAmountsByTiming(
   );
 }
 
+/** One line's charge in one month, as priced — handed to `onCharge` so a cell can explain itself. */
+export interface LineChargeTrace {
+  line: Partial<ContractLine>;
+  /** Month the charge is priced on (the cycle's opening month for quarterly / annual lines). */
+  pricedOn: string;
+  /** Month the charge lands on in the split (later than pricedOn for deferred arrears). */
+  landsOn: string;
+  timing: 'advance' | 'arrears';
+  quantity: number;
+  /** unit_price × quantity, before any minimum or floor. */
+  base: number;
+  /** After the line's minimum charge (equals base when no minimum applied). */
+  gross: number;
+  /** Group-floor scaling (1 when no floor applied). */
+  floorRatio: number;
+  /** Discount multiplier applied to this line (1 when the line is not discounted). */
+  discountMultiplier: number;
+  net: number;
+}
+
 /**
  * The timing split of `calculatePeriodAmountsForPeriods`: identical inclusion rules (so advance +
  * arrears equals the monthly total), with each month's money attributed to the invoicing timing of
@@ -372,7 +392,7 @@ export function calculatePeriodAmountsForPeriodsByTiming(
   catalogItems: CatalogItem[] = [],
   groups: Array<Partial<ContractLineGroup>> = [],
   contractTiming: string = 'start_of_period',
-  options: { arrearsAtCycleEnd?: boolean } = {}
+  options: { arrearsAtCycleEnd?: boolean; onCharge?: (charge: LineChargeTrace) => void } = {}
 ): ContractPeriodTimingAmount[] {
   const discountMultiplier = Math.max(0, 1 - (Number(discountPct) || 0) / 100);
   const groupFloors = buildGroupFloorMap(groups);
@@ -399,10 +419,9 @@ export function calculatePeriodAmountsForPeriodsByTiming(
       if (!isLineActiveInPeriod(l, period)) return; // line's own start/end window
       const effQty = getEffectiveQuantityForPeriod(l, pIdx, periods, catalogModules, catalogItems);
       let { gross: grossVal } = calculateLineGrossAmount(l, effQty);
-      if (l.group_id && l.frequency !== 'one_time') {
-        const ratio = groupRatios.get(l.group_id);
-        if (ratio) grossVal *= ratio;
-      }
+      const minGross = grossVal;
+      const floorRatio = (l.group_id && l.frequency !== 'one_time' && groupRatios.get(l.group_id)) || 1;
+      grossVal *= floorRatio;
       const lineMult = l.apply_discount !== false ? discountMultiplier : 1.0;
       const netVal = grossVal * lineMult;
       const anchor = linePeriodAnchor(l, periods);
@@ -415,17 +434,33 @@ export function calculatePeriodAmountsForPeriodsByTiming(
         : false;
       if (!included) return;
 
+      const trace = (landsOn: number, timing: LineChargeTrace['timing']) => options.onCharge?.({
+        line: l,
+        pricedOn: period,
+        landsOn: periods[landsOn],
+        timing,
+        quantity: effQty,
+        base: (Number(l.unit_price) || 0) * effQty,
+        gross: minGross,
+        floorRatio,
+        discountMultiplier: lineMult,
+        net: netVal,
+      });
+
       if (getLineInvoiceTiming(l, contractTiming) === 'end_of_period') {
         if (alignArrears && (l.frequency === 'quarterly' || l.frequency === 'annual')) {
           const cycleMonths = l.frequency === 'quarterly' ? 3 : 12;
           const cycleEnd = anchor + Math.floor((pIdx - anchor) / cycleMonths) * cycleMonths + cycleMonths - 1;
           const target = Math.max(pIdx, Math.min(cycleEnd, lastActiveIndex(l)));
           deferredArrears.set(target, (deferredArrears.get(target) || 0) + netVal);
+          trace(target, 'arrears');
           return;
         }
         arrears += netVal;
+        trace(pIdx, 'arrears');
       } else {
         advance += netVal;
+        trace(pIdx, 'advance');
       }
     });
 

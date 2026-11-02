@@ -18,6 +18,7 @@ import {
   resampleToBillingMonths,
   toMonthKey,
   yearTotalOf,
+  explainScheduleCell,
 } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
@@ -1408,6 +1409,64 @@ assert(
     exportTable.totals.yearTotals[2026] === yearTotalOf(exportSchedule.monthTotals, 2026),
   'The last exported row is the portfolio total',
   JSON.stringify(exportTable.totals.yearTotals)
+);
+
+// --- Cell explanations (right-click "How is this calculated?") ----------------
+// Every cell's explanation must add up to the value the grid shows, on both views, whatever mix of
+// frequencies, timings, minimums, floors, discounts and legacy paths produced it.
+const explainContracts = [
+  contract({
+    id: 'cnt-x1', reference: 'SB-X1', discount_pct: 10, billing_cadence: 'quarterly', invoice_timing: 'end_of_period',
+    starts_on: '2025-02-01', ends_on: '2026-07-31',
+    groups: [{ id: 'g1', contract_id: 'cnt-x1', name: 'Core', min_monthly_charge: 2500 }],
+    lines: [
+      { id: 'x-a', contract_id: 'cnt-x1', name: 'Licence', unit_price: 1000, quantity: 1, unit_label: 'flat', frequency: 'monthly', group_id: 'g1' },
+      { id: 'x-b', contract_id: 'cnt-x1', name: 'Forecast', unit_price: 40, quantity: 10, unit_label: 'MW', frequency: 'monthly', min_monthly_charge: 600, monthly_quantities: { '2025-06': 25 } },
+      { id: 'x-c', contract_id: 'cnt-x1', name: 'Support', unit_price: 3000, quantity: 1, unit_label: 'flat', frequency: 'quarterly', invoice_timing: 'end_of_period', apply_discount: false },
+      { id: 'x-d', contract_id: 'cnt-x1', name: 'Hosting', unit_price: 6000, quantity: 1, unit_label: 'flat', frequency: 'annual', invoice_timing: 'start_of_period', starts_on: '2025-04-01' },
+      { id: 'x-e', contract_id: 'cnt-x1', name: 'Onboarding', unit_price: 9000, quantity: 1, unit_label: 'project', frequency: 'one_time', invoice_timing: 'start_of_period' },
+    ],
+  }),
+  contract({ id: 'cnt-x2', reference: 'SB-X2', value: 24000, billing_cadence: 'annual', discount_pct: 5, invoice_timing: 'start_of_period' }),
+  contract({ id: 'cnt-x3', reference: 'SB-X3', schedule: [{ period: '2025-03', amount: 700 }, { period: '2025-09', amount: 1300 }], billing_cadence: 'quarterly', invoice_timing: 'end_of_period' }),
+  contract({ id: 'cnt-x4', reference: 'SB-X4', value: 5000, billing_cadence: 'one_off' }),
+];
+const explainProjects = [
+  { id: 'xp-1', contract_id: 'cnt-x1', name: 'Rollout', code: 'CR-1', status: 'active', budget_value: 10000, starts_on: '2025-03-01', ends_on: '2025-05-31' },
+  { id: 'xp-2', contract_id: 'cnt-x1', name: 'Extras', status: 'active', budget_value: 1000, starts_on: '2025-04-01', ends_on: '2025-04-30' },
+];
+['recognition', 'cashflow'].forEach(basis => {
+  const grid = buildRevenueSchedule(explainContracts, explainProjects, [], [], { basis });
+  const mismatches = [];
+  grid.rows.forEach(row => grid.months.forEach(month => {
+    const explanation = explainScheduleCell(row, month, basis);
+    const sum = Math.round(explanation.items.reduce((total, item) => total + item.amount, 0) * 100) / 100;
+    const expected = Math.round((row.months[month] || 0) * 100) / 100;
+    if (Math.abs(sum - expected) > 0.011 || explanation.total !== expected) mismatches.push(`${row.id} ${month}: ${sum} vs ${expected}`);
+  }));
+  assert(mismatches.length === 0, `Every ${basis} cell explanation adds up to the grid value`, mismatches.slice(0, 5).join(' | '));
+});
+const recognitionGrid = buildRevenueSchedule(explainContracts, explainProjects);
+const juneExplanation = explainScheduleCell(recognitionGrid.rows.find(row => row.id === 'cnt-x1::contract'), '2025-06', 'recognition');
+const forecastItem = juneExplanation.items.find(item => item.label === 'Forecast');
+assert(
+  forecastItem && forecastItem.steps.some(step => step.startsWith('25 MW × €40.00 = €1,000.00')) &&
+    forecastItem.steps.some(step => step.includes('10% contract discount → €900.00')),
+  'A line explanation walks quantity × unit price through the discount',
+  JSON.stringify(forecastItem)
+);
+const licenceItem = juneExplanation.items.find(item => item.label === 'Licence');
+assert(
+  licenceItem && licenceItem.steps.some(step => step.includes('"Core" monthly floor → €2,500.00')),
+  'A group floor appears as its own step',
+  JSON.stringify(licenceItem)
+);
+const crExplanation = explainScheduleCell(recognitionGrid.rows.find(row => row.id === 'cnt-x1::projects'), '2025-05', 'recognition');
+assert(
+  crExplanation.items.length === 1 && crExplanation.items[0].label === 'CR-1 · Rollout' &&
+    crExplanation.items[0].steps.some(step => step.includes('rounding remainder')),
+  'A change-request cell names its project and the rounding remainder',
+  JSON.stringify(crExplanation.items)
 );
 
 console.log('\n================================================================');

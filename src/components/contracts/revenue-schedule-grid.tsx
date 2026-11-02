@@ -6,7 +6,10 @@ import {
   type BodyScrollEvent,
   type ColDef,
   type ColGroupDef,
+  type DefaultMenuItem,
+  type GetContextMenuItemsParams,
   type GridApi,
+  type MenuItemDef,
   type GridReadyEvent,
   type IHeaderParams,
   type ICellRendererParams,
@@ -15,7 +18,7 @@ import { useOrbitGridTheme, HAS_AG_GRID_LICENSE } from '@/lib/ag-grid-setup';
 import type { CatalogItem, CatalogModule, Contract, Invoice, Project, Receipt } from '@/lib/types';
 import { calculateContractValuation } from '@/lib/pricing-engine';
 import { isSubcontract, primeFeeAmount } from '@/lib/subcontracts';
-import { buildRevenueSchedule, groupMonthsByYear, scheduleExportTable, yearTotalOf, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
+import { buildRevenueSchedule, explainScheduleCell, groupMonthsByYear, scheduleExportTable, yearTotalOf, type CellExplanation, type ProjectMonthShare, type ScheduleBasis, type RevenueScheduleRow } from '@/lib/revenue-schedule';
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
@@ -368,6 +371,60 @@ function InvoicePeekModal({ invoices, contract, onClose }: {
   );
 }
 
+/** Right-click explanation of a month cell: which price lines (or CRs) land there and how each is priced. */
+function CellExplanationModal({ row, month, basis, explanation, onClose }: {
+  row: RevenueScheduleRow;
+  month: string;
+  basis: ScheduleBasis;
+  explanation: CellExplanation;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="lg"
+      eyebrow={`${basis === 'cashflow' ? 'Cashflow' : 'Revenue'} · ${row.kind === 'contract' ? 'Contract charges' : 'Change requests'} · ${row.counterparty}`}
+      title={`${monthLabel(month)} ${month.slice(0, 4)} · ${row.reference}`}
+    >
+      <div className="space-y-1.5 text-[12px] text-slate-500">
+        {explanation.method.map(text => <p key={text}>{text}</p>)}
+      </div>
+
+      {explanation.items.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-200 p-3 text-[12px] text-slate-500">Nothing is charged on this month.</p>
+      ) : (
+        <div className="space-y-2">
+          {explanation.items.map((item, index) => (
+            <div key={`${item.label}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[12px] font-bold text-slate-800 truncate">{item.label}</span>
+                <span className="font-mono text-[12px] font-bold text-slate-900 shrink-0">{formatTotal(item.amount)}</span>
+              </div>
+              <ol className="mt-1.5 space-y-0.5 border-l-2 border-slate-200 pl-2 text-[11px] text-slate-500 tabular-nums">
+                {item.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-baseline justify-between border-t border-slate-200 pt-3">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Cell value</span>
+        <span className="font-mono text-sm font-black text-slate-900">{formatTotal(explanation.total)}</span>
+      </div>
+    </Modal>
+  );
+}
+
 interface CellSelectionStats {
   count: number;
   sum: number;
@@ -460,6 +517,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
   const [pendingSuggestions, setPendingSuggestions] = useState<Record<string, true>>({});
   const [isExporting, setIsExporting] = useState(false);
   const [peek, setPeek] = useState<{ contract: Contract; invoiceIds: string[] } | null>(null);
+  const [explain, setExplain] = useState<{ row: RevenueScheduleRow; month: string } | null>(null);
   const currentYear = new Date().getFullYear();
   const yearStore = useMemo(() => createYearStore(currentYear), [currentYear]);
   const visibleYear = useSyncExternalStore(yearStore.subscribe, yearStore.getYear, yearStore.getYear);
@@ -558,6 +616,27 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
       if (invoiceIds.some(id => invoicesByIdRef.current.has(id))) setPeek({ contract, invoiceIds });
     };
   }, []);
+
+  const explanation = useMemo(
+    () => (explain ? explainScheduleCell(explain.row, explain.month, scheduleBasis, catalogModules, catalogItems) : null),
+    [explain, scheduleBasis, catalogModules, catalogItems]
+  );
+
+  // Licensed grids keep AG Grid's own menu (copy, export) and gain the explanation on month cells.
+  const getContextMenuItems = useCallback(
+    (params: GetContextMenuItemsParams<RevenueScheduleRow>): (DefaultMenuItem | MenuItemDef<RevenueScheduleRow>)[] => {
+      const colId = params.column?.getColId() ?? '';
+      const row = params.node?.data;
+      const defaults = params.defaultItems ?? [];
+      if (!colId.startsWith('m-') || !row || params.node?.rowPinned || params.node?.group) return defaults;
+      return [
+        { name: 'How is this value calculated?', action: () => setExplain({ row, month: colId.slice(2) }) },
+        'separator',
+        ...defaults,
+      ];
+    },
+    []
+  );
 
   const peekInvoices = peek
     ? peek.invoiceIds.map(id => invoicesById.get(id)).filter((invoice): invoice is Invoice => Boolean(invoice))
@@ -876,6 +955,11 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
                     : undefined
             }
             style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, height: '100%' }}
+            // Without a licence there is no grid menu, so a right-click opens the explanation directly.
+            onContextMenu={HAS_AG_GRID_LICENSE || !data ? undefined : event => {
+              event.preventDefault();
+              setExplain({ row: data, month: key });
+            }}
           >
             <span
               style={{
@@ -1297,6 +1381,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
               </>
             )}
             {HAS_AG_GRID_LICENSE && <span className="text-slate-400">Shift+click to sum cells</span>}
+            <span className="text-slate-400">Right-click a month to see how it is calculated</span>
           </div>
         )}
       </div>
@@ -1309,6 +1394,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
           autoGroupColumnDef={autoGroupColumnDef}
           pinnedBottomRowData={pinnedBottomRowData}
           getRowId={params => params.data.id}
+          getContextMenuItems={getContextMenuItems}
           defaultColDef={{ sortable: false, filter: false, resizable: true, suppressMovable: true, minWidth: 60 }}
           quickFilterText={quickFilter}
           cellSelection={HAS_AG_GRID_LICENSE}
@@ -1333,6 +1419,16 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         />
       </div>
       </div>
+
+      {explain && explanation && (
+        <CellExplanationModal
+          row={explain.row}
+          month={explain.month}
+          basis={scheduleBasis}
+          explanation={explanation}
+          onClose={() => setExplain(null)}
+        />
+      )}
 
       {peek && (
         <InvoicePeekModal

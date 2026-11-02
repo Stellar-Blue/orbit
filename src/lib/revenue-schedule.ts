@@ -1,8 +1,10 @@
-import type { CatalogItem, CatalogModule, Contract, Project } from '@/lib/types';
+import type { CatalogItem, CatalogModule, Contract, ContractLine, Project } from '@/lib/types';
 import {
   calculateContractValuation,
   calculatePeriodAmountsForPeriodsByTiming,
+  type LineChargeTrace,
 } from '@/lib/pricing-engine';
+import { formatMoney } from '@/lib/currency';
 
 /**
  * Monthly revenue schedule used by the contract registry's "Revenue Schedule & MRR" grid.
@@ -133,7 +135,7 @@ export function contractChargeMonthsByTiming(
   contract: Contract,
   catalogModules: CatalogModule[] = [],
   catalogItems: CatalogItem[] = [],
-  options: { arrearsAtCycleEnd?: boolean } = {}
+  options: { arrearsAtCycleEnd?: boolean; onCharge?: (charge: LineChargeTrace) => void } = {}
 ): Record<string, TimingSplitAmount> | null {
   const billableLines = (contract.lines || []).filter(l => l.line_kind !== 'man_hours');
   if (billableLines.length === 0) return null;
@@ -148,7 +150,7 @@ export function contractChargeMonthsByTiming(
     catalogItems,
     contract.groups || [],
     contract.invoice_timing || 'start_of_period',
-    { arrearsAtCycleEnd: options.arrearsAtCycleEnd === true }
+    { arrearsAtCycleEnd: options.arrearsAtCycleEnd === true, onCharge: options.onCharge }
   ).forEach(({ period, advance, arrears }) => {
     const adv = round2(advance);
     const arr = round2(arrears);
@@ -224,6 +226,27 @@ export type ScheduleBasis = 'recognition' | 'cashflow';
 const CADENCE_MONTHS: Record<string, number> = { monthly: 1, quarterly: 3, annual: 12 };
 
 /**
+ * The contract's billing cycles over its charged horizon, or null for one-off / milestone cadences.
+ * Cycles are anchored on the contract (not the calendar), exactly like getContractBillingPeriods.
+ */
+function billingCycles(contract: Contract, chargeMonths: string[]): string[][] | null {
+  const cycle = CADENCE_MONTHS[contract.billing_cadence || 'monthly'] ?? 0;
+  if (cycle === 0) return null;
+
+  const window = contractEffectiveWindow(contract);
+  const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
+  // The last cycle has to reach its own end, or arrears money charged in its opening month would be
+  // billed there instead of at the period end (second annual fee → January instead of December).
+  const lastCharge = chargeMonths[chargeMonths.length - 1];
+  const lastMonth = window.endKey > lastCharge ? window.endKey : lastCharge;
+  const horizon = monthKeysBetween(firstMonth, lastMonth);
+
+  const cycles: string[][] = [];
+  for (let index = 0; index < horizon.length; index += cycle) cycles.push(horizon.slice(index, index + cycle));
+  return cycles;
+}
+
+/**
  * Re-buckets a monthly stream onto the contract's invoicing months. One value per billing cycle:
  * a quarterly agreement shows its quarter total once, on the period start (billed in advance) or the
  * period end (billed in arrears). One-off / milestone agreements keep the single month they land in.
@@ -239,30 +262,20 @@ export function resampleToBillingMonths(
   const chargeMonths = Object.keys(monthly).filter(key => Number(monthly[key]) !== 0).sort();
   if (chargeMonths.length === 0) return billed;
 
-  const cycle = CADENCE_MONTHS[contract.billing_cadence || 'monthly'] ?? 0;
-  if (cycle === 0) {
+  const cycles = billingCycles(contract, chargeMonths);
+  if (!cycles) {
     // One-off / milestone: nothing to spread, the charge is billed where it lands.
     chargeMonths.forEach(key => { billed[key] = round2((billed[key] || 0) + monthly[key]); });
     return billed;
   }
 
   const billAtEnd = contract.invoice_timing === 'end_of_period';
-  const window = contractEffectiveWindow(contract);
-  const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
-  // The last cycle has to reach its own end, or arrears money charged in its opening month would be
-  // billed there instead of at the period end (second annual fee → January instead of December).
-  const lastCharge = chargeMonths[chargeMonths.length - 1];
-  const lastMonth = window.endKey > lastCharge ? window.endKey : lastCharge;
-  const horizon = monthKeysBetween(firstMonth, lastMonth);
-
-  // Cycles are anchored on the contract (not the calendar), exactly like getContractBillingPeriods.
-  for (let index = 0; index < horizon.length; index += cycle) {
-    const slice = horizon.slice(index, index + cycle);
+  cycles.forEach(slice => {
     const total = slice.reduce((sum, key) => sum + (monthly[key] || 0), 0);
-    if (total === 0) continue;
+    if (total === 0) return;
     const billingMonth = billAtEnd ? slice[slice.length - 1] : slice[0];
     billed[billingMonth] = round2((billed[billingMonth] || 0) + total);
-  }
+  });
   return billed;
 }
 
@@ -294,8 +307,8 @@ export function resampleTimingToBillingMonths(
     .sort();
   if (chargeMonths.length === 0) return billed;
 
-  const cycle = CADENCE_MONTHS[contract.billing_cadence || 'monthly'] ?? 0;
-  if (cycle === 0) {
+  const cycles = billingCycles(contract, chargeMonths);
+  if (!cycles) {
     // One-off / milestone: the charge is billed where it lands, whichever timing it carries.
     chargeMonths.forEach(key => {
       const total = round2((split[key].advance || 0) + (split[key].arrears || 0));
@@ -304,15 +317,7 @@ export function resampleTimingToBillingMonths(
     return billed;
   }
 
-  const window = contractEffectiveWindow(contract);
-  const firstMonth = chargeMonths[0] < window.startKey ? chargeMonths[0] : window.startKey;
-  const lastCharge = chargeMonths[chargeMonths.length - 1];
-  const lastMonth = window.endKey > lastCharge ? window.endKey : lastCharge;
-  const horizon = monthKeysBetween(firstMonth, lastMonth);
-
-  // Cycles are anchored on the contract, exactly like getContractBillingPeriods.
-  for (let index = 0; index < horizon.length; index += cycle) {
-    const slice = horizon.slice(index, index + cycle);
+  cycles.forEach(slice => {
     const advance = round2(slice.reduce((sum, key) => sum + (split[key]?.advance || 0), 0));
     const arrears = round2(slice.reduce((sum, key) => sum + (split[key]?.arrears || 0), 0));
     if (advance !== 0) {
@@ -323,7 +328,7 @@ export function resampleTimingToBillingMonths(
       const at = slice[slice.length - 1];
       billed[at] = round2((billed[at] || 0) + arrears);
     }
-  }
+  });
   return billed;
 }
 
@@ -475,6 +480,218 @@ export function buildRevenueSchedule(
     startKey: resolvedMonths[0],
     endKey: resolvedMonths[resolvedMonths.length - 1],
     monthTotals,
+  };
+}
+
+/** One contributor to a schedule cell: a price line, a change request, or the legacy contract value. */
+export interface CellExplanationItem {
+  label: string;
+  /** The calculation, step by step, ending on this item's amount. */
+  steps: string[];
+  amount: number;
+}
+
+export interface CellExplanation {
+  /** How the row is valued and, on the cashflow view, which billing cycle lands on this month. */
+  method: string[];
+  items: CellExplanationItem[];
+  /** The value the grid shows for the cell. */
+  total: number;
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthName = (key: string) => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key} ${key.slice(0, 4)}`;
+const monthRange = (keys: string[]) =>
+  keys.length > 1 ? `${monthName(keys[0])} – ${monthName(keys[keys.length - 1])}` : monthName(keys[0]);
+const money = (value: number) => formatMoney(round2(value), 'EUR');
+const FREQUENCY_LABELS: Record<string, string> = { monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual', one_time: 'One-time' };
+
+/** A price line's charge for one month, from quantity × unit price to the net amount. */
+function chargeSteps(charge: LineChargeTrace, contract: Contract): string[] {
+  const { line } = charge;
+  const quantity = charge.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 });
+  const steps = [`${quantity}${line.unit_label ? ` ${line.unit_label}` : ''} × ${money(Number(line.unit_price) || 0)} = ${money(charge.base)}`];
+  if (charge.gross !== charge.base) steps.push(`raised to the minimum charge → ${money(charge.gross)}`);
+  if (charge.floorRatio !== 1) {
+    const group = (contract.groups || []).find(entry => entry.id === line.group_id)?.name || 'group';
+    steps.push(`×${Number(charge.floorRatio.toFixed(4))} to reach the "${group}" monthly floor → ${money(charge.gross * charge.floorRatio)}`);
+  }
+  if (charge.discountMultiplier !== 1) {
+    steps.push(`−${round2((1 - charge.discountMultiplier) * 100)}% contract discount → ${money(charge.net)}`);
+  }
+  return steps;
+}
+
+/** One item per price line, summing every charge of that line that lands on the cell. */
+function lineItems(charges: LineChargeTrace[], contract: Contract): CellExplanationItem[] {
+  const byLine = new Map<Partial<ContractLine>, LineChargeTrace[]>();
+  charges.forEach(charge => byLine.set(charge.line, [...(byLine.get(charge.line) || []), charge]));
+
+  return Array.from(byLine.values()).map(lineCharges => {
+    const [first] = lineCharges;
+    const amount = round2(lineCharges.reduce((sum, charge) => sum + charge.net, 0));
+    const timing = first.timing === 'advance' ? 'billed in advance' : 'billed in arrears';
+    const deferred = first.pricedOn !== first.landsOn ? `, priced on ${monthName(first.pricedOn)} and recognised when its cycle closes` : '';
+    const context = `${FREQUENCY_LABELS[first.line.frequency || ''] || first.line.frequency} charge, ${timing}${deferred}`;
+    const identical = lineCharges.every(charge => round2(charge.net) === round2(first.net) && charge.quantity === first.quantity);
+
+    const steps = lineCharges.length === 1
+      ? [context, ...chargeSteps(first, contract)]
+      : identical
+        ? [context, ...chargeSteps(first, contract), `× ${lineCharges.length} months (${lineCharges.map(charge => monthName(charge.pricedOn)).join(', ')}) = ${money(amount)}`]
+        : [context, ...lineCharges.map(charge => `${monthName(charge.pricedOn)}: ${chargeSteps(charge, contract).join(' · ')}`)];
+    return { label: first.line.name || 'Price line', steps, amount };
+  });
+}
+
+/** Months of a total-only stream that the cashflow view bills on `month` (see resampleToBillingMonths). */
+function billedSourceMonths(contract: Contract, monthly: Record<string, number>, month: string): string[] {
+  const chargeMonths = Object.keys(monthly).filter(key => Number(monthly[key]) !== 0).sort();
+  if (chargeMonths.length === 0) return [];
+  const cycles = billingCycles(contract, chargeMonths);
+  if (!cycles) return monthly[month] ? [month] : [];
+  const slice = cycles.find(entry => entry.includes(month));
+  if (!slice) return [];
+  const billingMonth = contract.invoice_timing === 'end_of_period' ? slice[slice.length - 1] : slice[0];
+  return billingMonth === month ? slice.filter(key => monthly[key]) : [];
+}
+
+/** A total-only stream's months behind the cell: the month itself, or the cycle billed on it. */
+function streamItem(
+  contract: Contract,
+  monthly: Record<string, number>,
+  month: string,
+  basis: ScheduleBasis,
+  label: string,
+  description: string[]
+): CellExplanationItem | null {
+  const sources = basis === 'cashflow' ? billedSourceMonths(contract, monthly, month) : monthly[month] ? [month] : [];
+  if (sources.length === 0) return null;
+  const amount = round2(sources.reduce((sum, key) => sum + monthly[key], 0));
+  const cycle = basis === 'cashflow' && (sources.length > 1 || sources[0] !== month)
+    ? [`billed together: ${sources.map(key => `${monthName(key)} ${money(monthly[key])}`).join(' + ')} = ${money(amount)}`]
+    : [];
+  return { label, steps: [...description, ...cycle], amount };
+}
+
+/** The cashflow view's billing rule for the contract, and the cycle that holds `month`. */
+function cashflowMethod(contract: Contract, month: string, chargeMonths: string[], perLineTiming: boolean): string {
+  const cadence = contract.billing_cadence || 'monthly';
+  const cycles = chargeMonths.length > 0 ? billingCycles(contract, chargeMonths) : null;
+  if (!cycles) return `Cashflow: the agreement is billed ${cadence.replace('_', '-')}, so every charge is invoiced in the month it lands.`;
+  const slice = cycles.find(entry => entry.includes(month));
+  const rule = perLineTiming
+    ? 'charges billed in advance are invoiced on the cycle’s first month, charges billed in arrears on its last'
+    : contract.invoice_timing === 'end_of_period'
+      ? 'the cycle is invoiced in arrears, on its last month'
+      : 'the cycle is invoiced in advance, on its first month';
+  return `Cashflow: ${cadence} billing — ${rule}.${slice ? ` This month belongs to the cycle ${monthRange(slice)}.` : ''}`;
+}
+
+/**
+ * Explains a schedule cell from the pricing: which price lines (or change requests, or the legacy
+ * contract value) land on the month and how each amount is calculated. Mirrors buildRevenueSchedule
+ * step for step, so the items add up to the value the grid shows.
+ */
+export function explainScheduleCell(
+  row: RevenueScheduleRow,
+  month: string,
+  basis: ScheduleBasis,
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): CellExplanation {
+  const { contract } = row;
+  const total = round2(row.months[month] || 0);
+
+  if (row.kind === 'project') {
+    const items = contractProjectSchedules(contract, row.projects ?? [])
+      .map(({ project, months }) => {
+        const keys = Object.keys(months).sort();
+        if (keys.length === 0) return null;
+        const value = Number(project.budget_value) || 0;
+        const isLast = month === keys[keys.length - 1];
+        const perMonth = months[keys[0]];
+        const spread = keys.length === 1
+          ? [`Budget ${money(value)} lands entirely on ${monthName(keys[0])}`]
+          : [
+              `Budget ${money(value)} spread evenly over ${keys.length} months (${monthRange(keys)})`,
+              basis === 'recognition' && isLast
+                ? `last month takes the rounding remainder: ${money(value)} − ${keys.length - 1} × ${money(perMonth)} = ${money(months[month])}`
+                : `${money(value)} ÷ ${keys.length} = ${money(perMonth)} per month`,
+            ];
+        return streamItem(contract, months, month, basis, project.code ? `${project.code} · ${project.name}` : project.name, spread);
+      })
+      .filter((item): item is CellExplanationItem => Boolean(item));
+    const allMonths = Object.keys(row.months).sort();
+    return {
+      method: [
+        'Change requests: each project’s budget value is spread evenly over its planned (or actual) delivery months, inside the contract term.',
+        ...(basis === 'cashflow' ? [cashflowMethod(contract, month, allMonths, false)] : []),
+      ],
+      items,
+      total,
+    };
+  }
+
+  const charges: LineChargeTrace[] = [];
+  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems, {
+    arrearsAtCycleEnd: basis === 'recognition',
+    onCharge: charge => charges.push(charge),
+  });
+
+  if (split) {
+    const chargeMonths = Object.keys(split).sort();
+    let landing = charges.filter(charge => charge.landsOn === month);
+    if (basis === 'cashflow') {
+      const slice = billingCycles(contract, chargeMonths)?.find(entry => entry.includes(month));
+      if (slice) {
+        const first = slice[0];
+        const last = slice[slice.length - 1];
+        landing = charges.filter(charge => slice.includes(charge.landsOn) &&
+          ((charge.timing === 'advance' && month === first) || (charge.timing === 'arrears' && month === last)));
+      }
+    }
+    const discount = Number(contract.discount_pct) || 0;
+    return {
+      method: [
+        `Price lines: quantity × unit price per line, raised to any minimum charge or group floor${discount ? `, less the ${discount}% contract discount on discounted lines` : ''}. Each line charges in the months its frequency triggers (from its own start month).`,
+        basis === 'cashflow'
+          ? cashflowMethod(contract, month, chargeMonths, true)
+          : 'Revenue: a quarterly or annual charge billed in arrears sits on the last month of its cycle; everything else on the month it is priced.',
+      ],
+      items: lineItems(landing, contract),
+      total,
+    };
+  }
+
+  if ((contract.lines || []).length > 0) {
+    return {
+      method: ['Man-hours contract: it is billed from logged timesheets through its change requests, so the contract row carries no fixed charge.'],
+      items: [],
+      total,
+    };
+  }
+
+  const monthly = contractChargeMonths(contract, catalogModules, catalogItems);
+  const value = Number(contract.value) || 0;
+  const discount = Number(contract.discount_pct) || 0;
+  const cadence = contract.billing_cadence || 'monthly';
+  const description = (contract.schedule || []).length > 0
+    ? ['Amount taken from the agreement’s saved schedule']
+    : cadence === 'one_off'
+      ? [`One-off contract value ${money(value)} lands on the first service month`]
+      : [
+          `Contract value ${money(value)} per ${cadence === 'annual' ? 'year' : cadence === 'quarterly' ? 'quarter' : 'month'}${discount ? `, less ${discount}% discount` : ''}`,
+          ...(cadence === 'annual' || cadence === 'quarterly' ? [`÷ ${cadence === 'annual' ? 12 : 3} = ${money(Object.values(monthly)[0] || 0)} per month`] : []),
+        ];
+  const item = streamItem(contract, monthly, month, basis, 'Contract value', description);
+  return {
+    method: [
+      'No price lines on this agreement: the recorded contract value (or its saved schedule) is spread over the term.',
+      ...(basis === 'cashflow' ? [cashflowMethod(contract, month, Object.keys(monthly).sort(), false)] : []),
+    ],
+    items: item ? [item] : [],
+    total,
   };
 }
 
