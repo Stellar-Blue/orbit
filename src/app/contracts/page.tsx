@@ -11,17 +11,19 @@ import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDi
 import { Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, DollarSign, X,
-  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap, LayoutList
+  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap, LayoutList, ListChecks
 } from 'lucide-react';
 import { accountingInvoices } from '@/lib/invoice-netting';
 import { ContractPricingBuilder, type PricingDraft } from '@/components/contracts/contract-pricing-builder';
 import { ContractProjectsTab } from '@/components/contracts/contract-projects-tab';
+import { BillingCheck } from '@/components/contracts/billing-check';
 import { RateCardMatrix } from '@/components/settings/rate-card-matrix';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { formatDate, todayKey } from '@/lib/date';
 import { DocumentPreviewModal } from '@/components/ui/document-preview-modal';
 import { calculateContractValuation, getContractNoticeStatus, NOTICE_ALERT_WINDOW_DAYS } from '@/lib/pricing-engine';
-import { buildDraftInvoicePayload, getContractBillingPeriods, vatRateForTreatment, type BillingPeriodItem } from '@/lib/billing-periods';
+import { getContractBillingPeriods } from '@/lib/billing-periods';
+import { useCreateDraftInvoice } from '@/lib/use-create-draft-invoice';
 import { invoiceLinksContract } from '@/lib/invoice-links';
 import { SUPPLY_ROLES, contractEndCustomerName, isSubcontract, primeContractRef, primeFeeAmount, primeFeeLabel, netAfterPrimeFee, type SupplyRole } from '@/lib/subcontracts';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -38,7 +40,7 @@ const formatFileSizeSuffix = (bytes?: number | null): string => {
 };
 
 export default function ContractsRegistryPage() {
-  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, receipts, catalogModules, catalogItems, ensureContractRateCard, timesheets, addInvoice, refreshInvoices } = useAuth();
+  const { currentUser, contracts, counterparties, profiles, projects, addContract, updateContract, deleteContract, saveContractPricing, invoices, receipts, catalogModules, catalogItems, ensureContractRateCard, timesheets } = useAuth();
   const params = useParams();
   const router = useRouter();
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -50,52 +52,13 @@ export default function ContractsRegistryPage() {
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   /** Signed-document dossier for the open contract, tagged with its contract so a switch never flashes stale rows. */
   const [contractDocs, setContractDocs] = useState<{ contractId: string; docs: ContractDocument[] }>({ contractId: '', docs: [] });
-  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'projects' | 'ratecard'>('general');
+  const [dossierTab, setDossierTab] = useState<'general' | 'pricing' | 'invoices' | 'billing' | 'projects' | 'ratecard'>('general');
   const [contractRateCardId, setContractRateCardId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'revenue'>('table');
-  /** Optimistic "draft created" marks for the dossier's fast-create rows, keyed `${contractId}::${periodKey}`. */
-  const [contractDraftIds, setContractDraftIds] = useState<Record<string, string>>({});
-  /** Period currently being drafted — blocks a double click from creating two invoices. */
-  const [creatingPeriodKey, setCreatingPeriodKey] = useState<string | null>(null);
+  const { createDraft: createDraftForPeriod, creatingKey: creatingPeriodKey, draftIds: contractDraftIds } = useCreateDraftInvoice();
 
   const isAdmin = currentUser.role === 'admin';
-
-  // Fast-create a draft invoice for one of the contract's due billing periods, from the dossier or
-  // straight from a suggestion in the revenue schedule. Uses the same payload builder as the Invoices
-  // Hub quick-create so every path stays identical.
-  const createDraftForPeriod = async (contract: Contract, period: BillingPeriodItem) => {
-    if (!addInvoice || creatingPeriodKey) return;
-    setCreatingPeriodKey(period.key);
-    try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const dueStr = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
-      const invNumber = `INV-${(period.from || todayStr).slice(0, 4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      const newInv = await addInvoice(buildDraftInvoicePayload({
-        period,
-        contractId: contract.id,
-        counterpartyId: contract.counterparty_id,
-        direction: contract.direction,
-        currency: contract.currency,
-        netAmount: period.expectedAmount,
-        vatRate: vatRateForTreatment(contract.vat_treatment),
-        reference: contract.reference,
-        timing: period.timing,
-        invoiceNumber: invNumber,
-        issueDate: todayStr,
-        dueDate: dueStr,
-      }));
-
-      if (newInv) {
-        setContractDraftIds(prev => ({ ...prev, [`${contract.id}::${period.key}`]: newInv.id }));
-        notifySuccess(`Draft invoice #${invNumber} created for ${contract.reference} (${period.label}).`);
-        await refreshInvoices?.();
-      }
-    } finally {
-      setCreatingPeriodKey(null);
-    }
-  };
 
   // One Save for the whole dossier: the general form edits `selectedContract` in place while the
   // pricing builder reports its live draft into this ref, so both halves persist together.
@@ -199,6 +162,12 @@ export default function ContractsRegistryPage() {
 
   // Due billing periods for the contract currently open in the dossier (shared with the Invoices Hub
   // quick-create queue, so "what is owed" is computed in exactly one place).
+  // The Billing check reads the saved agreement, not the half-edited dossier copy.
+  const billingScope = useMemo(() => {
+    const saved = contracts.find(contract => contract.id === selectedContract?.id);
+    return saved ? [saved] : [];
+  }, [contracts, selectedContract?.id]);
+
   const selectedContractPeriods = useMemo(() => {
     if (!selectedContract) return [];
     return getContractBillingPeriods(selectedContract, {
@@ -785,6 +754,11 @@ export default function ContractsRegistryPage() {
                   <span className="font-mono text-[10px] font-semibold text-[var(--ink-4)]">{(invoices ?? []).filter(i => invoiceLinksContract(i, selectedContract.id, projects ?? [])).length}</span>
                 )}
               </button>
+              {selectedContract.direction === 'revenue' && (
+                <button type="button" aria-pressed={dossierTab === 'billing'} onClick={() => setDossierTab('billing')}>
+                  <ListChecks className="w-3.5 h-3.5" /> Billing check
+                </button>
+              )}
               <button type="button" aria-pressed={dossierTab === 'projects'} onClick={() => setDossierTab('projects')}>
                 <Layers className="w-3.5 h-3.5" /> Projects
                 {projects?.filter(p => p.contract_id === selectedContract.id && p.status !== 'archived').length > 0 && (
@@ -829,6 +803,8 @@ export default function ContractsRegistryPage() {
                   {contractRateCardId ? <RateCardMatrix cardId={contractRateCardId} /> : <div className="p-8 text-center text-xs text-slate-400">Preparing this contract's rate card…</div>}
                 </div>
               </div>
+            ) : dossierTab === 'billing' ? (
+              <BillingCheck contracts={billingScope} />
             ) : dossierTab === 'projects' ? (
               <ContractProjectsTab contract={selectedContract} />
             ) : dossierTab === 'invoices' ? (

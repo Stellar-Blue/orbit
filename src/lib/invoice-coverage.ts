@@ -687,3 +687,35 @@ export function buildProjectInvoiceCoverage(
   });
   return covered;
 }
+
+/** Merge the boxes of every project on a change-request row into the one drawn on that cell. */
+export function mergeProjectCoverage(cells: Array<InvoiceCellCoverage | undefined>): InvoiceCellCoverage | undefined {
+  const entries = cells.filter((entry): entry is InvoiceCellCoverage => Boolean(entry));
+  if (entries.length === 0) return undefined;
+
+  const merged: InvoiceCellCoverage = entries.length === 1 ? { ...entries[0] } : {
+    contractId: entries[0].contractId,
+    paid: entries.every(entry => entry.paid),
+    draft: entries.every(entry => entry.draft),
+    unpaid: entries.some(entry => entry.unpaid),
+    firstMonth: entries.map(entry => entry.firstMonth).sort()[0],
+    lastMonth: entries.map(entry => entry.lastMonth).sort().slice(-1)[0],
+    markerMonth: entries.map(entry => entry.markerMonth).sort().slice(-1)[0],
+    markerPosition: 'middle',
+    invoices: entries.flatMap(entry => entry.invoices).slice(-3),
+    invoiceIds: entries.flatMap(entry => entry.invoiceIds).slice(-3),
+    issueDate: entries.map(entry => entry.issueDate).sort().slice(-1)[0],
+    invoiceTotal: Math.round(entries.reduce((sum, entry) => sum + entry.invoiceTotal, 0) * 100) / 100,
+    documentNets: Object.assign({}, ...entries.map(entry => entry.documentNets)),
+    lines: entries.flatMap(entry => entry.lines).slice(-3),
+    receiptTotal: Math.round(entries.reduce((sum, entry) => sum + entry.receiptTotal, 0) * 100) / 100,
+    receipts: entries.flatMap(entry => entry.receipts).slice(-3),
+    // Each project's own comparison: project lines against their scheduled share, anything else
+    // (an invoice without lines, usually raised after delivery) against itself.
+    contractTotal: Math.round(entries.reduce((sum, entry) => sum + entry.contractTotal, 0) * 100) / 100,
+    variance: 0,
+  };
+  merged.markerPosition = invoiceMarkerPosition(merged.markerMonth, merged.firstMonth, merged.lastMonth);
+  merged.variance = Math.round((coverageTotal(merged) - merged.contractTotal) * 100) / 100;
+  return merged;
+}

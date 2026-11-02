@@ -78,6 +78,20 @@ export function buildInvoiceSuggestions(
     .sort((a, b) => a.contract.counterparty?.legal_name?.localeCompare(b.contract.counterparty?.legal_name || '') || 0);
 }
 
+/**
+ * The suggestions still to raise: each one keeps only the months no invoice covers yet, and one with
+ * nothing left drops out — a period already (partly) invoiced is never suggested twice.
+ */
+export function pendingInvoiceSuggestions(
+  suggestions: InvoiceSuggestion[],
+  isCovered: (contractId: string, month: string) => boolean
+): InvoiceSuggestion[] {
+  return suggestions.flatMap(suggestion => {
+    const months = suggestion.months.filter(month => !isCovered(suggestion.contractId, month));
+    return months.length === 0 ? [] : [{ ...suggestion, months, actionMonth: months[0] }];
+  });
+}
+
 export const suggestionCellKey = (contractId: string, month: string) => `${contractId}:${month}`;
 
 /** Inline style painting one cell of the suggestion box; contiguous cells share the box outline. */

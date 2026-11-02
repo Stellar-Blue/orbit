@@ -28,8 +28,8 @@ import {
   invoiceCellKey,
   invoiceCellStyle,
   invoiceMarkerColor,
-  invoiceMarkerPosition,
   invoiceVarianceTone,
+  mergeProjectCoverage,
   projectInvoiceCellKey,
   type InvoiceCellCoverage,
   type InvoiceCoverageMap,
@@ -37,6 +37,7 @@ import {
 } from '@/lib/invoice-coverage';
 import {
   buildInvoiceSuggestions,
+  pendingInvoiceSuggestions,
   suggestionCellKey,
   suggestionCellStyle,
   type InvoiceSuggestion,
@@ -144,43 +145,6 @@ const formatVatRate = (rate?: string | null) => {
   return raw.includes('%') ? raw : raw ? `${raw}%` : '24%';
 };
 
-/** Merge every covered project of a change-request row into the box drawn on that cell. */
-function projectCellCoverage(
-  row: RevenueScheduleRow,
-  month: string,
-  coverage: InvoiceCoverageMap
-): InvoiceCellCoverage | undefined {
-  const entries = (row.projects ?? [])
-    .map(project => coverage.get(projectInvoiceCellKey(project.id, month)))
-    .filter((entry): entry is InvoiceCellCoverage => Boolean(entry));
-  if (entries.length === 0) return undefined;
-
-  const merged: InvoiceCellCoverage = entries.length === 1 ? { ...entries[0] } : {
-    contractId: entries[0].contractId,
-    paid: entries.every(entry => entry.paid),
-    draft: entries.every(entry => entry.draft),
-    unpaid: entries.some(entry => entry.unpaid),
-    firstMonth: entries.map(entry => entry.firstMonth).sort()[0],
-    lastMonth: entries.map(entry => entry.lastMonth).sort().slice(-1)[0],
-    markerMonth: entries.map(entry => entry.markerMonth).sort().slice(-1)[0],
-    markerPosition: 'middle',
-    invoices: entries.flatMap(entry => entry.invoices).slice(-3),
-    invoiceIds: entries.flatMap(entry => entry.invoiceIds).slice(-3),
-    issueDate: entries.map(entry => entry.issueDate).sort().slice(-1)[0],
-    invoiceTotal: Math.round(entries.reduce((sum, entry) => sum + entry.invoiceTotal, 0) * 100) / 100,
-    documentNets: Object.assign({}, ...entries.map(entry => entry.documentNets)),
-    lines: entries.flatMap(entry => entry.lines).slice(-3),
-    receiptTotal: Math.round(entries.reduce((sum, entry) => sum + entry.receiptTotal, 0) * 100) / 100,
-    receipts: entries.flatMap(entry => entry.receipts).slice(-3),
-    // Each project's own comparison: project lines against their scheduled share, anything else
-    // (an invoice without lines, usually raised after delivery) against itself.
-    contractTotal: Math.round(entries.reduce((sum, entry) => sum + entry.contractTotal, 0) * 100) / 100,
-    variance: 0,
-  };
-  merged.markerPosition = invoiceMarkerPosition(merged.markerMonth, merged.firstMonth, merged.lastMonth);
-  merged.variance = Math.round((coverageTotal(merged) - merged.contractTotal) * 100) / 100;
-  return merged;
-}
 
 /** Short badge label for a project: its code when it has one, else its name. */
 const projectBadgeLabel = (project: Project) => project.code?.trim() || project.name;
@@ -623,19 +587,12 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
     const byCell = new Map<string, InvoiceSuggestion>();
     const list: InvoiceSuggestion[] = [];
 
-    buildInvoiceSuggestions(contracts, {
-      catalogModules,
-      catalogItems,
-      invoices,
-      draftInvoiceIds,
-    }).forEach(suggestion => {
-      const months = suggestion.months.filter(
-        month => !invoiceCoverage.has(invoiceCellKey(suggestion.contractId, month))
-      );
-      if (months.length === 0) return;
-      const pending = { ...suggestion, months, actionMonth: months[0] };
+    pendingInvoiceSuggestions(
+      buildInvoiceSuggestions(contracts, { catalogModules, catalogItems, invoices, draftInvoiceIds }),
+      (contractId, month) => invoiceCoverage.has(invoiceCellKey(contractId, month))
+    ).forEach(pending => {
       list.push(pending);
-      months.forEach(month => byCell.set(suggestionCellKey(suggestion.contractId, month), pending));
+      pending.months.forEach(month => byCell.set(suggestionCellKey(pending.contractId, month), pending));
     });
 
     return { list, byCell };
@@ -954,7 +911,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         if (!data) return MONTH_CELL_PADDING;
         const coverage = data.kind === 'contract'
           ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
-          : projectCellCoverage(data, key, projectCoverageRef.current);
+          : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key))));
         // The badge cell lets its badge run across the rest of the invoice box.
         if (coverage) {
           return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key), ...(key === coverage.firstMonth ? { overflow: 'visible', zIndex: 2 } : {}) };
@@ -969,7 +926,7 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         const coverage = data
           ? data.kind === 'contract'
             ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
-            : projectCellCoverage(data, key, projectCoverageRef.current)
+            : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key))))
           : undefined;
         const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.contractId, key)) : undefined;
         const projectShares = data && data.kind === 'project' ? data.projectMonths?.[key] : undefined;

@@ -46,6 +46,7 @@ import {
   supplyRoleOf,
 } from '@/lib/subcontracts';
 import { scheduleExportTable } from '@/lib/revenue-schedule';
+import { buildBillingStatement, statementSummary } from '@/lib/billing-statement';
 import { buildDraftInvoicePayload, getContractBillingPeriods, vatPercentFromRate, vatRateForTreatment } from '@/lib/billing-periods';
 import { accountingInvoices, netInvoices } from '@/lib/invoice-netting';
 import {
@@ -970,6 +971,37 @@ assert(
     linedPeriods.find(period => period.from === '2026-11-01')?.status !== 'unbilled',
   'Billing periods count an invoice for an agreement only through its own lines and their periods',
   JSON.stringify(linedPeriods.map(period => [period.from, period.status]))
+);
+
+// --- Billing check statement ----------------------------------------------------
+// One client's agreement, worked month by month: the lined invoice as one block per stream, every
+// unbilled due month as a "to invoice" block, and a summary that adds up to the same numbers.
+const tradingStatement = buildBillingStatement({
+  scope: [feeAndCrContracts[1]],
+  contracts: feeAndCrContracts,
+  projects: [trainingCr],
+  invoices: [linedDraft([etrmLine, tradingLine, trainingLine])],
+  today: new Date('2026-12-05T00:00:00'),
+});
+const tradingFee = tradingStatement.streams.find(stream => stream.row.kind === 'contract');
+const tradingCr = tradingStatement.streams.find(stream => stream.row.kind === 'project');
+const feeInvoiceBlocks = tradingFee?.blocks.filter(block => block.kind === 'invoice') ?? [];
+const feeDueBlocks = tradingFee?.blocks.filter(block => block.kind === 'due') ?? [];
+assert(
+  feeInvoiceBlocks.length === 1 && feeInvoiceBlocks[0].firstMonth === '2026-08' && feeInvoiceBlocks[0].lastMonth === '2026-10' &&
+    feeInvoiceBlocks[0].coverage.variance === 0 &&
+    feeDueBlocks.length === 9 && !feeDueBlocks.some(block => block.firstMonth >= '2026-08' && block.firstMonth <= '2026-10') &&
+    tradingCr?.blocks.length === 1 && tradingCr.blocks[0].firstMonth === '2026-10',
+  'The statement lists each invoice box once per stream and every uncovered due period as to invoice',
+  JSON.stringify(tradingStatement.streams.map(stream => stream.blocks.map(block => `${block.kind}:${block.firstMonth}-${block.lastMonth}`)))
+);
+const tradingSummary = statementSummary(tradingStatement, 2026);
+assert(
+  tradingSummary.toInvoice === 40050 && tradingSummary.duePeriods === 9 &&
+    tradingSummary.invoiced === 13445 && tradingSummary.expected === 53495 &&
+    tradingSummary.short.count === 0 && tradingSummary.over.count === 0,
+  'The statement summary adds up what is due, invoiced, expected and off',
+  JSON.stringify(tradingSummary)
 );
 
 // Change-request rows show the invoices their projects are billed by.

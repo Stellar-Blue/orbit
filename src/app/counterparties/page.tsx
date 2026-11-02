@@ -12,12 +12,13 @@ import { accountingInvoices } from '@/lib/invoice-netting';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { CounterpartyPicker } from '@/components/counterparties/counterparty-picker';
 import { TierOverrideForm } from '@/components/counterparties/tier-override-form';
+import { BillingCheck } from '@/components/contracts/billing-check';
 import { Card, Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import type { AttioSyncCompany } from '@/components/counterparties/attio-companies-grid';
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
-  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge, Award
+  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge, Award, ListChecks
 } from 'lucide-react';
 
 const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
@@ -37,7 +38,12 @@ export default function CounterpartiesRegistryPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [selectedEntity, setSelectedEntity] = useState<Counterparty | null>(null);
-  const [dossierTab, setDossierTab] = useState<'profile' | 'invoices' | 'tier'>('profile');
+  // Billing check covers the client agreements this counterparty pays for.
+  const billingScope = useMemo(
+    () => (selectedEntity ? contracts.filter(contract => contract.counterparty_id === selectedEntity.id && contract.direction === 'revenue') : []),
+    [contracts, selectedEntity]
+  );
+  const [dossierTab, setDossierTab] = useState<'profile' | 'invoices' | 'billing' | 'tier'>('profile');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [isTierRecomputing, setIsTierRecomputing] = useState(false);
@@ -729,7 +735,7 @@ export default function CounterpartiesRegistryPage() {
           isOpen={true}
           onClose={() => setSelectedEntity(null)}
           title={`Corporate Registry Dossier: ${selectedEntity.legal_name}`}
-          size="4xl"
+          size={dossierTab === 'billing' ? '6xl' : '4xl'}
         >
           <div className="space-y-6 text-sm">
             {/* Top Bar with badges */}
@@ -828,6 +834,17 @@ export default function CounterpartiesRegistryPage() {
                   <Badge variant="info" className="ml-2 text-[11px] px-2 py-0.5">{invoices?.filter(i => i.counterparty_id === selectedEntity.id).length}</Badge>
                 )}
               </button>
+              {billingScope.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDossierTab('billing')}
+                  className={`pb-2.5 text-xs font-extrabold transition-all border-b-2 -mb-[9px] cursor-pointer flex items-center ${
+                    dossierTab === 'billing' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <ListChecks className="w-4 h-4 mr-2 text-[var(--accent)]" /> Billing check
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setDossierTab('tier')}
@@ -842,7 +859,9 @@ export default function CounterpartiesRegistryPage() {
               </button>
             </div>
 
-            {dossierTab === 'tier' ? (
+            {dossierTab === 'billing' ? (
+              <BillingCheck contracts={billingScope} showAgreementLinks />
+            ) : dossierTab === 'tier' ? (
               <div className="pt-3 space-y-4 animate-fadeIn">
                 {(() => {
                   const tier = selectedEntity.tier;
