@@ -11,7 +11,7 @@ import { Contract, ContractLine, ContractLineGroup, ContractSchedule, ContractDi
 import { Button, Badge, Modal, StatCard } from '@/components/ui/primitives';
 import { 
   FileText, Plus, AlertTriangle, DollarSign, X,
-  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap, LayoutList, ListChecks
+  Download, Upload, Layers, BarChart3, Sparkles, Save, Edit3, Trash2, Receipt, Eye, Zap, LayoutList, ListChecks, ArrowLeft
 } from 'lucide-react';
 import { accountingInvoices } from '@/lib/invoice-netting';
 import { ContractPricingBuilder, type PricingDraft } from '@/components/contracts/contract-pricing-builder';
@@ -150,15 +150,27 @@ export default function ContractsRegistryPage() {
     return () => { cancelled = true; };
   }, [selectedContract?.id]);
 
-  // Sync address bar when contract is selected or closed
+  // The dossier is its own screen: opening one gets an address (and a history entry) of its own and
+  // starts at the top; edits inside it never add history entries.
+  const openContractId = selectedContract?.id;
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (selectedContract) {
-      window.history.pushState(null, '', `/contracts/${selectedContract.id}`);
-    } else if (window.location.pathname.startsWith('/contracts/')) {
-      window.history.pushState(null, '', '/contracts');
+    const path = openContractId ? `/contracts/${openContractId}` : '/contracts';
+    if (window.location.pathname !== path && (openContractId || window.location.pathname.startsWith('/contracts/'))) {
+      window.history.pushState(null, '', path);
     }
-  }, [selectedContract]);
+    window.scrollTo({ top: 0 });
+  }, [openContractId]);
+
+  // Browser Back / Forward move between the registry and a dossier.
+  useEffect(() => {
+    const onPopState = () => {
+      const id = decodeURIComponent(window.location.pathname.match(/^\/contracts\/([^/]+)$/)?.[1] ?? '');
+      setSelectedContract(id ? contracts.find(c => c.id === id || c.reference === id) ?? null : null);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [contracts]);
 
   // Due billing periods for the contract currently open in the dossier (shared with the Invoices Hub
   // quick-create queue, so "what is owed" is computed in exactly one place).
@@ -508,6 +520,7 @@ export default function ContractsRegistryPage() {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-150">
+      {!selectedContract && (<>
       {/* Header — command bar: where you are, then the one action that matters. */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-[var(--line-strong)] pb-3">
         <div className="min-w-0">
@@ -666,20 +679,27 @@ export default function ContractsRegistryPage() {
         />
       )}
 
-      {/* CONTRACT DETAIL MODAL WITH VERSIONED DOCUMENTS & MODULAR PRICING */}
-      <Modal 
-        isOpen={!!selectedContract} 
-        onClose={() => setSelectedContract(null)} 
-        title={selectedContract ? selectedContract.reference : 'Contract'}
-        eyebrow={`Contract dossier · ${selectedContract?.direction === 'cost' ? 'Supplier spend' : 'Client revenue'}`}
-        size="full"
-      >
-        {selectedContract && (
+      </>)}
+
+      {/* CONTRACT DOSSIER — its own screen, with versioned documents and modular pricing. */}
+      {selectedContract && (
+        <section className="space-y-5" aria-label={`Contract ${selectedContract.reference}`}>
+          <div className="border-b border-[var(--line-strong)] pb-3">
+            <button
+              type="button"
+              onClick={() => setSelectedContract(null)}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--ink-3)] hover:text-[var(--accent)] cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> All contracts
+            </button>
+            <p className="ui-eyebrow mt-3">Contract dossier · {selectedContract.direction === 'cost' ? 'Supplier spend' : 'Client revenue'}</p>
+            <h1 className="ui-title mt-1">{selectedContract.reference}</h1>
+          </div>
           <div className="space-y-6 text-sm">
             {(() => {
               const dossierVal = calculateContractValuation(selectedContract.lines || [], selectedContract.discount_pct || 0, selectedContract.term_years || 1, selectedContract.service_start_date || selectedContract.starts_on, catalogModules, catalogItems, selectedContract.value || 0, selectedContract.billing_cadence);
               return (
-                <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between px-4 py-2.5 bg-white rounded-[var(--radius-card)] border border-[var(--line)] gap-4 shadow-[var(--shadow-card)]">
+                <div className="sticky top-12 z-10 flex flex-wrap items-center justify-between px-4 py-2.5 bg-white rounded-[var(--radius-card)] border border-[var(--line)] gap-4 shadow-[var(--shadow-card)]">
                   <div className="flex items-center gap-3">
                     <span className={`px-2 h-6 inline-flex items-center rounded-md text-[11px] font-semibold border ${dossierVal.tierInfo.badgeClass}`}>
                       {dossierVal.tierInfo.label}
@@ -1357,8 +1377,8 @@ export default function ContractsRegistryPage() {
             </div>
             )}
           </div>
-        )}
-      </Modal>
+        </section>
+      )}
 
       {/* CREATE CONTRACT MODAL */}
       <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Register New Contract" size="2xl">

@@ -2,6 +2,8 @@ import { McpErrors } from './errors';
 import { validateInvoiceCreation, normalizeAfm, InvoiceCreationPayload } from './validation';
 import { Invoice, Counterparty, Contract } from '@/lib/types';
 import { normalizeLinkIds } from '@/lib/invoice-links';
+import { invoiceBillsMonth } from '@/lib/invoice-billing-months';
+import { toMonthKey } from '@/lib/revenue-schedule';
 import { fetchMyDataInvoices } from '@/lib/integrations/mydata';
 
 /**
@@ -59,7 +61,10 @@ export const MCP_TOOL_SCHEMAS = [
   },
   {
     name: 'get_billing_status',
-    description: 'Check schedule billing periods and identify unbilled installments or paid milestones on a contract.',
+    description:
+      'Check schedule billing periods and identify unbilled installments or paid milestones on a contract. '
+      + 'Reads invoice lines, so a month an itemised line bills is reported as invoiced even when the '
+      + 'invoice as a whole runs over a longer period.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -290,22 +295,41 @@ export async function executeMcpTool(toolName: string, args: Record<string, any>
           errorDetails = McpErrors.contractMismatch(args.contract_id, 'Contract ID not found in database.');
           break;
         }
-        const { data: invoices } = await supabase.from('invoices').select('*').contains('contract_ids', [args.contract_id]);
-        
-        const schedule = contract.schedule || [];
-        const statusReport = schedule.map((s: any) => {
-          const matched = (invoices || []).filter((inv: any) => inv.reference_period === s.period || inv.period_from === s.period || inv.due_date.startsWith(s.period));
-          const allocated = matched.reduce((sum: number, i: any) => sum + i.gross, 0);
-          const isPaid = matched.some((inv: any) => inv.status === 'paid');
+        // An invoice reaches the agreement through its link array or its legacy single link.
+        const { data: invoices } = await supabase
+          .from('invoices')
+          .select('*')
+          .or(`contract_id.eq.${args.contract_id},contract_ids.cs.{${args.contract_id}}`);
+        // A cancelled invoice bills nothing, and a credit note reverses an invoice instead of billing.
+        const bills = ((invoices || []) as Invoice[]).filter(
+          inv => inv.status !== 'cancelled' && inv.type !== 'credit_note'
+        );
+        const todayMonth = new Date().toISOString().slice(0, 7);
+
+        const schedule = (contract.schedule || []) as Array<{ period: string; amount: string | number }>;
+        const statusReport = schedule.map(s => {
+          const month = toMonthKey(s.period) || '';
+          // Every schedule row is a month; a label-only row can still be recognised when an invoice
+          // names it outright.
+          const matched = bills
+            .map(invoice => ({
+              invoice,
+              bill: month
+                ? invoiceBillsMonth(invoice, args.contract_id, month)
+                : { covers: invoice.reference_period === s.period, amount: 0 },
+            }))
+            .filter(entry => entry.bill.covers);
+          const allocated = matched.reduce((sum, entry) => sum + entry.bill.amount, 0);
+          const isPaid = matched.some(entry => entry.invoice.status === 'paid');
           let state = 'upcoming';
           if (matched.length > 0) state = isPaid ? 'invoiced_paid' : 'invoiced_unpaid';
-          else if (s.period < new Date().toISOString().slice(0, 7)) state = 'uninvoiced_past';
+          else if (String(s.period) < todayMonth) state = 'uninvoiced_past';
 
           return {
             period: s.period,
             expected_amount: s.amount,
-            allocated_amount: allocated,
-            invoice_refs: matched.map((i: any) => i.invoice_number),
+            allocated_amount: Math.round(allocated * 100) / 100,
+            invoice_refs: matched.map(entry => entry.invoice.invoice_number),
             state
           };
         });

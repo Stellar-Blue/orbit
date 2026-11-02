@@ -85,7 +85,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
     <>
       <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} collapsed={navCollapsed} />
       <CommandMenu />
-      <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden w-full max-w-full">
+      <div className="flex-1 flex flex-col min-h-screen overflow-x-clip w-full max-w-full">
         {isDemo && (
           <div className="bg-[var(--signal-soft)] text-[var(--signal)] border-b border-[color-mix(in_srgb,var(--signal)_35%,transparent)] px-3 sm:px-4 md:px-5 py-2 text-[11px] sm:text-xs font-medium flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2">
@@ -238,7 +238,7 @@ export const AppLayoutWrapper: React.FC<{ children: React.ReactNode }> = ({ chil
         )}
 
         {/* Page Content with Responsive Full-Width Layout */}
-        <main className="px-4 sm:px-6 py-5 w-full max-w-full flex-1 overflow-x-hidden">
+        <main className="px-4 sm:px-6 py-5 w-full max-w-full flex-1 overflow-x-clip">
           {blockedScreen ? (
             <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl max-w-xl mx-auto my-12 space-y-3 shadow-xs">
               <ShieldAlert className="w-10 h-10 mx-auto text-slate-400" />

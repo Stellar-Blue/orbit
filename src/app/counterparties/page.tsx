@@ -18,7 +18,7 @@ import type { AttioSyncCompany } from '@/components/counterparties/attio-compani
 import { 
   Building2, Search, RefreshCw, ShieldCheck, Plus, Check, ExternalLink, 
   AlertTriangle, ArrowUpRight, Users, Link as LinkIcon, Unlink, FileText, 
-  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge, Award, ListChecks
+  Filter, Sparkles, Globe, MapPin, Trash2, Edit3, CheckCircle2, AlertCircle, HelpCircle, Receipt, DollarSign, Copy, Pin, Layers, Merge, Award, ListChecks, ArrowLeft
 } from 'lucide-react';
 
 const AttioCompaniesGrid = dynamic(() => import('@/components/counterparties/attio-companies-grid').then(m => m.AttioCompaniesGrid), { ssr: false });
@@ -65,15 +65,27 @@ export default function CounterpartiesRegistryPage() {
     }
   }, [urlId, counterparties]);
 
-  // Sync address bar when counterparty is selected or closed
+  // The dossier is its own screen: opening one gets an address (and a history entry) of its own and
+  // starts at the top; edits inside it never add history entries.
+  const openEntityId = selectedEntity?.id;
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (selectedEntity) {
-      window.history.pushState(null, '', `/counterparties/${selectedEntity.id}`);
-    } else if (window.location.pathname.startsWith('/counterparties/')) {
-      window.history.pushState(null, '', '/counterparties');
+    const path = openEntityId ? `/counterparties/${openEntityId}` : '/counterparties';
+    if (window.location.pathname !== path && (openEntityId || window.location.pathname.startsWith('/counterparties/'))) {
+      window.history.pushState(null, '', path);
     }
-  }, [selectedEntity]);
+    window.scrollTo({ top: 0 });
+  }, [openEntityId]);
+
+  // Browser Back / Forward move between the registry and a dossier.
+  useEffect(() => {
+    const onPopState = () => {
+      const id = decodeURIComponent(window.location.pathname.match(/^\/counterparties\/([^/]+)$/)?.[1] ?? '');
+      setSelectedEntity(id ? counterparties.find(c => c.id === id || c.vat_number === id || c.afm === id) ?? null : null);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [counterparties]);
 
   const copyUuid = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -344,6 +356,7 @@ export default function CounterpartiesRegistryPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {!selectedEntity && (<>
       {/* Header & KPI Summary */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
@@ -729,14 +742,21 @@ export default function CounterpartiesRegistryPage() {
         </div>
       )}
 
-      {/* DOSSIER DRAWER / MODAL */}
+      </>)}
+
+      {/* COUNTERPARTY DOSSIER — its own screen; Back returns to the registry. */}
       {selectedEntity && (
-        <Modal
-          isOpen={true}
-          onClose={() => setSelectedEntity(null)}
-          title={`Corporate Registry Dossier: ${selectedEntity.legal_name}`}
-          size={dossierTab === 'billing' ? '6xl' : '4xl'}
-        >
+        <section className="space-y-5" aria-label={`Counterparty ${selectedEntity.legal_name}`}>
+          <div>
+            <button
+              type="button"
+              onClick={() => setSelectedEntity(null)}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--ink-3)] hover:text-[var(--accent)] cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> All counterparties
+            </button>
+            <p className="ui-eyebrow mt-3">Corporate registry dossier</p>
+          </div>
           <div className="space-y-6 text-sm">
             {/* Top Bar with badges */}
             <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1354,7 +1374,7 @@ export default function CounterpartiesRegistryPage() {
               </div>
             )}
           </div>
-        </Modal>
+        </section>
       )}
 
       {/* MERGE DUPLICATE COUNTERPARTY MODAL */}
