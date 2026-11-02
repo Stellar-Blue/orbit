@@ -1,7 +1,7 @@
 import type { CatalogItem, CatalogModule, Contract, Invoice, InvoiceLine, InvoiceStatus, Project, Receipt } from '@/lib/types';
 import { netInvoices } from '@/lib/invoice-netting';
 import { invoiceContractIds, invoiceLines, invoiceLineTargets, invoiceProjectIds, normalizeLinkIds } from '@/lib/invoice-links';
-import { contractChargeMonths, contractProjectSchedules, monthKeysBetween, toMonthKey } from '@/lib/revenue-schedule';
+import { contractChargeMonths, contractChargeStreams, contractProjectSchedules, monthKeysBetween, toMonthKey, type ChargeStream } from '@/lib/revenue-schedule';
 
 /**
  * Maps outgoing invoices — and receipts, the money that arrived without a tax document — onto the
@@ -75,7 +75,19 @@ export function invoiceBoxState(coverage: InvoiceCellCoverage): InvoiceBoxState 
 
 export type InvoiceCoverageMap = Map<string, InvoiceCellCoverage>;
 
-export const invoiceCellKey = (contractId: string, month: string) => `${contractId}:${month}`;
+/** Box key of a charge stream's month — a stream key is the contract id, or `${id}#${frequency}`. */
+export const invoiceCellKey = (streamKey: string, month: string) => `${streamKey}:${month}`;
+
+/** True when any charge stream of the contract has an invoice box on the month. */
+export function contractMonthCovered(coverage: InvoiceCoverageMap, contractId: string, month: string): boolean {
+  if (coverage.has(invoiceCellKey(contractId, month))) return true;
+  const prefix = `${contractId}#`;
+  const suffix = `:${month}`;
+  for (const key of coverage.keys()) {
+    if (key.startsWith(prefix) && key.endsWith(suffix)) return true;
+  }
+  return false;
+}
 
 /** Change-request cells use the same box model, keyed by project instead of contract. */
 export const projectInvoiceCellKey = (projectId: string, month: string) => `${projectId}:${month}`;
@@ -137,6 +149,15 @@ export function createInvoiceLineAllocator(
   const projectsById = new Map(projects.map(project => [project.id, project]));
   const charges = new Map<string, Record<string, number>>();
   const projectMonths = new Map<string, Record<string, number>>();
+  const lineMonths = new Map<string, Record<string, Record<string, number>>>();
+  /** Recognised amount per pricing line of the contract, for lines that name their charge lines. */
+  const lineMonthsOf = (contractId: string) => {
+    if (!lineMonths.has(contractId)) {
+      const contract = contractsById.get(contractId);
+      lineMonths.set(contractId, Object.assign({}, ...(contract ? contractChargeStreams(contract, catalogModules, catalogItems) : []).map(stream => stream.lineMonths)));
+    }
+    return lineMonths.get(contractId)!;
+  };
   const chargesOf = (contractId: string) => {
     if (!charges.has(contractId)) {
       const contract = contractsById.get(contractId);
@@ -165,8 +186,16 @@ export function createInvoiceLineAllocator(
     ];
     if (targets.length <= 1) return { months, shares: targets.map(target => ({ ...target, amount: total })) };
 
+    const chargeLineIds = line.charge_line_ids ?? [];
+    const contractWeight = (contractId: string) => {
+      const byLine = lineMonthsOf(contractId);
+      const named = chargeLineIds.filter(id => byLine[id]);
+      return named.length > 0
+        ? named.reduce((sum, id) => sum + sumOver(months, byLine[id]), 0)
+        : sumOver(months, chargesOf(contractId));
+    };
     const weights = targets.map(target => target.kind === 'contract'
-      ? sumOver(months, chargesOf(target.id))
+      ? contractWeight(target.id)
       : sumOver(months, projectMonthsOf(target.id)) || Number(projectsById.get(target.id)?.budget_value) || 0);
     const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
     let allocated = 0;
@@ -384,7 +413,8 @@ function paintReceiptBox(
   receipt: Receipt,
   months: string[],
   ownerId: string,
-  keyFor: (month: string) => string
+  keyFor: (month: string) => string,
+  share: number = round2(Number(receipt.amount_eur) || 0)
 ): void {
   if (months.length === 0) return;
   const firstMonth = months[0];
@@ -396,7 +426,7 @@ function paintReceiptBox(
       ? lastMonth
       : receivedMonth;
   const label = receiptLabel(receipt);
-  const amount = round2(Number(receipt.amount_eur) || 0);
+  const amount = share;
 
   months.forEach(month => {
     const key = keyFor(month);
@@ -538,14 +568,85 @@ export function buildInvoiceCoverage(
     return all.miss < direct.miss ? all : direct;
   };
 
-  /** Per cell, what a box's money pays for besides its own agreement's fee (see contractTotal). */
-  const otherBilled = new Map<string, number>();
-  const noteOtherBilled = (contractIds: string[], ownerId: string, months: string[], projectAmount: number) => {
-    const others = fees(contractIds.filter(id => id !== ownerId), months) + projectAmount;
-    if (others === 0) return;
-    months.forEach(month => {
-      const key = invoiceCellKey(ownerId, month);
-      otherBilled.set(key, (otherBilled.get(key) || 0) + others);
+  /** Each contract's charge streams (see contractChargeStreams), and every stream by its box key. */
+  const streamsByContract = new Map<string, ChargeStream[]>();
+  const streamsByKey = new Map<string, ChargeStream>();
+  const streamsOf = (contract: Contract) => {
+    let streams = streamsByContract.get(contract.id);
+    if (!streams) {
+      streams = contractChargeStreams(contract, catalogModules, catalogItems);
+      streamsByContract.set(contract.id, streams);
+      streams.forEach(stream => streamsByKey.set(stream.key, stream));
+    }
+    return streams;
+  };
+
+  const CYCLE_OF: Record<string, number> = { monthly: 1, quarterly: 3, annual: 12 };
+
+  /** Splits money in proportion to weights; the last part absorbs rounding. Even when nothing weighs. */
+  const proportional = <T,>(items: T[], weights: number[], amount: number): Array<{ item: T; amount: number }> => {
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    let allocated = 0;
+    return items.map((item, index) => {
+      const part = index === items.length - 1
+        ? round2(amount - allocated)
+        : round2(total > 0 ? (amount * weights[index]) / total : amount / items.length);
+      allocated += part;
+      return { item, amount: part };
+    });
+  };
+
+  /**
+   * One contract's share of an invoice, divided among its charge streams. A line naming its charge
+   * lines goes to those lines' streams. Otherwise the money goes to the streams whose charges over the
+   * months add up to it — €12,000 for Jan–Dec is the annual licence when that is what the annual row
+   * expects — and in proportion to what each expects when no combination fits.
+   */
+  // ponytail: exhaustive subset fit — fine for the four frequencies a contract can have.
+  const streamShares = (contract: Contract, months: string[], amount: number, chargeLineIds: string[] = []) => {
+    const streams = streamsOf(contract);
+    if (streams.length === 1) return [{ item: streams[0], amount }];
+    const named = streams.filter(stream => stream.lineIds.some(id => chargeLineIds.includes(id)));
+    let candidates = named.length > 0 ? named : streams;
+    let weights = candidates.map(stream => named.length > 0
+      ? stream.lineIds.filter(id => chargeLineIds.includes(id)).reduce((sum, id) => sum + sumOver(months, stream.lineMonths[id] || {}), 0)
+      : sumOver(months, stream.months));
+
+    if (named.length === 0) {
+      const all = (1 << candidates.length) - 1;
+      const fits: number[] = [];
+      for (let mask = 1; mask <= all; mask++) {
+        const total = weights.reduce((sum, weight, index) => (mask & (1 << index) ? sum + weight : sum), 0);
+        if (total > 0 && Math.abs(total - amount) < MATCH_TOLERANCE) fits.push(mask);
+      }
+      // Several fits (12 × €1,000 monthly and a €12,000 licence both make €12,000): the invoice's
+      // period decides — 12 months is the annual charge, 3 the quarterly, 1 the monthly.
+      const members = (mask: number) => candidates.filter((_, index) => mask & (1 << index));
+      const periodMatch = (mask: number) => members(mask).filter(stream => CYCLE_OF[stream.frequency ?? ''] === months.length).length;
+      const chosen = fits.includes(all)
+        ? all
+        : fits.sort((a, b) => members(a).length - members(b).length || periodMatch(b) - periodMatch(a))[0];
+      if (chosen !== undefined) {
+        const keep = candidates.map((_, index) => Boolean(chosen & (1 << index)));
+        candidates = candidates.filter((_, index) => keep[index]);
+        weights = weights.filter((_, index) => keep[index]);
+      }
+    }
+    // Nothing expected anywhere in those months: the money still shows, on the first stream.
+    if (weights.every(weight => weight === 0) && named.length === 0) return [{ item: candidates[0], amount }];
+    return proportional(candidates, weights, amount).filter(share => share.amount !== 0);
+  };
+
+  /** Paints a contract's share of an invoice on the streams it belongs to. */
+  const paintContractShare = (
+    invoice: Invoice,
+    contract: Contract,
+    months: string[],
+    amount: number,
+    line?: { label: string; chargeLineIds?: string[] }
+  ) => {
+    streamShares(contract, months, amount, line?.chargeLineIds).forEach(({ item: stream, amount: part }) => {
+      paintInvoiceBox(covered, invoice, months, contract.id, month => invoiceCellKey(stream.key, month), { amount: part, line: line?.label });
     });
   };
 
@@ -562,9 +663,9 @@ export function buildInvoiceCoverage(
         shares.forEach(share => {
           const contract = share.kind === 'contract' ? contractsById.get(share.id) : undefined;
           if (!contract) return;
-          paintInvoiceBox(covered, invoice, months, contract.id, month => invoiceCellKey(contract.id, month), {
-            amount: share.amount,
-            line: lineLabel(line, shares.length),
+          paintContractShare(invoice, contract, months, share.amount, {
+            label: lineLabel(line, shares.length),
+            chargeLineIds: line.charge_line_ids ?? [],
           });
         });
       });
@@ -593,11 +694,10 @@ export function buildInvoiceCoverage(
     const targets = linkedContracts.length > 0 ? linkedContracts : inferred ? [inferred] : [];
     if (targets.length === 0) return;
 
-    const targetIds = targets.map(contract => contract.id);
-    targets.forEach(contract => {
-      paintInvoiceBox(covered, invoice, months, contract.id, month => invoiceCellKey(contract.id, month));
-      noteOtherBilled(targetIds, contract.id, months, billed.projectAmount);
-    });
+    // What is left once the change requests take theirs is shared by the agreements in proportion
+    // to what each charges over the months, so each is compared with its own fee.
+    proportional(targets, targets.map(contract => fees([contract.id], months)), invoiceAmountEur(invoice) - billed.projectAmount)
+      .forEach(({ item: contract, amount }) => paintContractShare(invoice, contract, months, amount));
   });
 
   // Receipts (intercompany transfers, deposits) are paid money with no tax document; they paint the
@@ -621,21 +721,23 @@ export function buildInvoiceCoverage(
         months,
         round2(Number(receipt.amount_eur) || 0)
       );
-      const targetIds = billed.contractIds.filter(contractId => contractsById.has(contractId));
-      targetIds.forEach(contractId => {
-        paintReceiptBox(covered, receipt, months, contractId, month => invoiceCellKey(contractId, month));
-        noteOtherBilled(targetIds, contractId, months, billed.projectAmount);
-      });
+      const targets = billed.contractIds
+        .map(contractId => contractsById.get(contractId))
+        .filter((contract): contract is Contract => Boolean(contract));
+      proportional(targets, targets.map(contract => fees([contract.id], months)), round2(Number(receipt.amount_eur) || 0) - billed.projectAmount)
+        .forEach(({ item: contract, amount }) => {
+          streamShares(contract, months, amount).forEach(({ item: stream, amount: part }) => {
+            paintReceiptBox(covered, receipt, months, contract.id, month => invoiceCellKey(stream.key, month), part);
+          });
+        });
     });
 
   // The comparison only makes sense once a box has absorbed every overlapping invoice, so the
   // contract side is summed over the final month range in a second pass.
   covered.forEach((entry, key) => {
-    const contract = contractsById.get(entry.contractId);
-    const charges = contract ? chargesFor(contract) : {};
+    const charges = streamsByKey.get(key.slice(0, key.lastIndexOf(':')))?.months ?? {};
     entry.contractTotal = round2(
-      monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (charges[month] || 0), 0) +
-        (otherBilled.get(key) || 0)
+      monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (charges[month] || 0), 0)
     );
     entry.variance = round2(coverageTotal(entry) - entry.contractTotal);
   });

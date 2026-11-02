@@ -23,6 +23,8 @@ interface InvoiceLinesEditorProps {
 
 type Target = { kind: 'contract' | 'project'; id: string; label: string; title: string };
 
+const FREQUENCY_WORDS: Record<string, string> = { monthly: 'monthly', quarterly: 'quarterly', annual: 'annual', one_time: 'one-time' };
+
 /**
  * "What does each part of this invoice bill?" — each line has its own amount and service period and
  * bills one or more agreement fees and projects. A line billing several is split by what each expects
@@ -76,13 +78,29 @@ export const InvoiceLinesEditor: React.FC<InvoiceLinesEditorProps> = ({
   // Targets live in the arrays from here on; the single legacy fields are cleared so they never
   // stand in for an emptied selection.
   const toggleTarget = (index: number, target: Target) => {
-    const { contractIds, projectIds } = invoiceLineTargets(lines[index]);
+    const line = lines[index];
+    const { contractIds, projectIds } = invoiceLineTargets(line);
     const flip = (ids: string[]) => (ids.includes(target.id) ? ids.filter(id => id !== target.id) : [...ids, target.id]);
+    const nextContracts = target.kind === 'contract' ? flip(contractIds) : contractIds;
+    // Dropping an agreement drops the charge lines picked under it.
+    const keptLines = new Set(nextContracts.flatMap(id => chargeLinesOf(id).map(chargeLine => chargeLine.id)));
     update(index, {
-      contract_ids: target.kind === 'contract' ? flip(contractIds) : contractIds,
+      contract_ids: nextContracts,
       project_ids: target.kind === 'project' ? flip(projectIds) : projectIds,
+      charge_line_ids: (line.charge_line_ids ?? []).filter(id => keptLines.has(id)),
       contract_id: null,
       project_id: null,
+    });
+  };
+
+  /** The pricing lines of an agreement that an invoice line can name (timesheet lines bill separately). */
+  const chargeLinesOf = (contractId: string) =>
+    (allContracts?.find(contract => contract.id === contractId)?.lines ?? []).filter(chargeLine => chargeLine.line_kind !== 'man_hours');
+
+  const toggleChargeLine = (index: number, chargeLineId: string) => {
+    const current = lines[index].charge_line_ids ?? [];
+    update(index, {
+      charge_line_ids: current.includes(chargeLineId) ? current.filter(id => id !== chargeLineId) : [...current, chargeLineId],
     });
   };
 
@@ -213,6 +231,42 @@ export const InvoiceLinesEditor: React.FC<InvoiceLinesEditorProps> = ({
                     />
                   </div>
                 </div>
+
+                {contractIds.some(id => chargeLinesOf(id).length > 1) && (
+                  <div>
+                    <span className="ui-label block mb-1">
+                      Charge lines <span className="normal-case font-medium text-[var(--ink-4)]">(optional, for an exact match)</span>
+                    </span>
+                    <div className="space-y-1">
+                      {contractIds.filter(id => chargeLinesOf(id).length > 1).map(contractId => (
+                        <div key={contractId} role="group" aria-label={`Charge lines of ${options.find(option => option.id === contractId)?.label ?? 'the agreement'}`} className="flex flex-wrap items-center gap-1.5">
+                          {contractIds.length > 1 && (
+                            <span className="text-[11px] text-[var(--ink-3)]">{options.find(option => option.id === contractId)?.label}:</span>
+                          )}
+                          {chargeLinesOf(contractId).map(chargeLine => {
+                            const on = (line.charge_line_ids ?? []).includes(chargeLine.id);
+                            return (
+                              <button
+                                key={chargeLine.id}
+                                type="button"
+                                aria-pressed={on}
+                                onClick={() => toggleChargeLine(index, chargeLine.id)}
+                                className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors cursor-pointer ${
+                                  on
+                                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-ink)]'
+                                    : 'border-[var(--line)] text-[var(--ink-3)] hover:text-[var(--ink)]'
+                                }`}
+                              >
+                                {on && <Check className="h-3 w-3" />}
+                                {chargeLine.name} <span className="text-[var(--ink-4)]">({FREQUENCY_WORDS[chargeLine.frequency] ?? chargeLine.frequency})</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {selected.size === 0 ? (
                   <p className="text-[11px] font-semibold text-[var(--danger)]">Choose what this line bills, or the schedules cannot match it.</p>

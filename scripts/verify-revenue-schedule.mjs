@@ -35,6 +35,7 @@ import {
   invoiceMarkerPosition,
   invoiceVarianceTone,
   documentTotal,
+  contractMonthCovered,
 } from '@/lib/invoice-coverage';
 import { buildInvoiceSuggestions, suggestionMonths } from '@/lib/invoice-suggestions';
 import {
@@ -434,11 +435,21 @@ assert(
   `${yearTotalOf(mixedCash, 2025)} vs ${yearTotalOf(contractChargeMonths(mixedContract), 2025)}`
 );
 const mixedGrid = buildRevenueSchedule([mixedContract], [], [], [], { basis: 'cashflow' });
-const mixedGridRow = mixedGrid.rows.find(row => row.kind === 'contract');
+const mixedMonthly = mixedGrid.rows.find(row => row.frequency === 'monthly');
+const mixedOneOff = mixedGrid.rows.find(row => row.frequency === 'one_time');
 assert(
-  mixedGridRow && mixedGridRow.months['2025-01'] === 9000 && mixedGridRow.months['2025-03'] === 3000,
-  'The cashflow grid shows the one-off and the quarterly fee in separate months',
-  mixedGridRow ? JSON.stringify(mixedGridRow.months) : 'missing'
+  mixedMonthly?.streamLabel === 'Monthly charges' && mixedMonthly.streamKey === 'cnt-1#monthly' &&
+    mixedMonthly.months['2025-03'] === 3000 && !mixedMonthly.months['2025-01'] &&
+    mixedOneOff?.streamLabel === 'One-time charges' && JSON.stringify(mixedOneOff.months) === JSON.stringify({ '2025-01': 9000 }),
+  'A contract with monthly and one-off lines gets a cashflow row per frequency, each in its own months',
+  JSON.stringify(mixedGrid.rows.map(row => [row.id, row.months]))
+);
+const singleFrequency = buildRevenueSchedule([contract({ lines: [monthlyLine] })], []).rows;
+assert(
+  singleFrequency.length === 1 && singleFrequency[0].id === 'cnt-1::contract' && singleFrequency[0].streamKey === 'cnt-1' &&
+    singleFrequency[0].streamLabel === 'Contract charges',
+  'A contract billing one frequency keeps a single row keyed by the contract',
+  JSON.stringify(singleFrequency.map(row => [row.id, row.streamKey]))
 );
 
 // --- Recognition of periodic charges billed in arrears -----------------------
@@ -877,13 +888,13 @@ assert(
   'An invoice whose net includes a project parent’s fee paints that agreement too',
   [...feeAndCrCoverage.keys()].join(' ')
 );
+const etrmShare = feeAndCrCoverage.get('cnt-etrm:2026-08');
+const tradingShare = feeAndCrCoverage.get('cnt-trading:2026-10');
 assert(
-  ['cnt-etrm:2026-08', 'cnt-trading:2026-10'].every(key => {
-    const cell = feeAndCrCoverage.get(key);
-    return cell?.contractTotal === 16445 && cell.variance === 0 && invoiceVarianceTone(cell) === 'match';
-  }),
-  'Each agreement row compares the invoice with everything it bills, not with its own fee alone',
-  JSON.stringify(['cnt-etrm:2026-08', 'cnt-trading:2026-10'].map(key => feeAndCrCoverage.get(key)?.contractTotal))
+  etrmShare?.invoiceTotal === 3000 && etrmShare.contractTotal === 3000 && etrmShare.variance === 0 && documentTotal(etrmShare) === 16445 &&
+    tradingShare?.invoiceTotal === 13350 && tradingShare.contractTotal === 13350 && tradingShare.variance === 0,
+  'An invoice billing several agreements gives each its own share, compared with its own fee',
+  JSON.stringify({ etrm: etrmShare, trading: tradingShare })
 );
 // A quarterly invoice of the agreement fee plus the change request's share for those months, where
 // the change request's whole budget is larger than the fee: still fee + change request.
@@ -1037,6 +1048,53 @@ assert(
     tradingSummary.short.count === 0 && tradingSummary.over.count === 0,
   'The statement summary adds up what is due, invoiced, expected and off',
   JSON.stringify(tradingSummary)
+);
+
+// --- Invoices matched per charge frequency -------------------------------------
+// A contract with a monthly support fee and an annual licence shows one row per frequency, and each
+// invoice meets the charges it actually bills.
+const mixContract = contract({
+  id: 'cnt-mix', reference: 'SB-MIX', starts_on: '2026-01-01', ends_on: '2026-12-31',
+  lines: [
+    { id: 'mix-support', contract_id: 'cnt-mix', name: 'Support', unit_price: 1000, quantity: 1, unit_label: 'flat', frequency: 'monthly' },
+    { id: 'mix-licence', contract_id: 'cnt-mix', name: 'Licence', unit_price: 12000, quantity: 1, unit_label: 'flat', frequency: 'annual' },
+  ],
+});
+const mixInvoice = (overrides) => invoice({ counterparty_id: 'cp-1', contract_id: 'cnt-mix', contract_ids: ['cnt-mix'], status: 'sent_received', issue_date: '2026-01-10', ...overrides });
+const mixCoverage = buildInvoiceCoverage([
+  mixInvoice({ id: 'mix-annual', invoice_number: 'MIX-LIC', period_from: '2026-01-01', period_to: '2026-12-31', net: 12000 }),
+  mixInvoice({ id: 'mix-feb', invoice_number: 'MIX-FEB', period_from: '2026-02-01', period_to: '2026-02-28', net: 1000 }),
+  mixInvoice({ id: 'mix-jan', invoice_number: 'MIX-JAN', period_from: '2026-01-01', period_to: '2026-01-31', net: 0,
+    lines: [{ id: 'mj', description: 'January', amount: 13000, period_from: '2026-01-01', period_to: '2026-01-31', contract_ids: ['cnt-mix'] }] }),
+  mixInvoice({ id: 'mix-mar', invoice_number: 'MIX-MAR', period_from: '2026-03-01', period_to: '2026-03-31', net: 0,
+    lines: [{ id: 'mm', description: 'Support March', amount: 900, period_from: '2026-03-01', period_to: '2026-03-31', contract_ids: ['cnt-mix'], charge_line_ids: ['mix-support'] }] }),
+], [mixContract]);
+const annualBox = mixCoverage.get('cnt-mix#annual:2026-06');
+const febMonthly = mixCoverage.get('cnt-mix#monthly:2026-02');
+const janMonthly = mixCoverage.get('cnt-mix#monthly:2026-01');
+const marMonthly = mixCoverage.get('cnt-mix#monthly:2026-03');
+assert(
+  annualBox?.invoices.includes('MIX-LIC') && !febMonthly?.invoices.includes('MIX-LIC') &&
+    febMonthly?.invoices.join() === 'MIX-FEB' && febMonthly.invoiceTotal === 1000 && febMonthly.variance === 0,
+  'A Jan–Dec invoice for the annual amount lands on the annual row, a monthly invoice on the monthly row',
+  JSON.stringify({ annual: annualBox?.invoices, feb: febMonthly })
+);
+assert(
+  janMonthly?.invoices.includes('MIX-JAN') && janMonthly.invoiceTotal === 1000 &&
+    mixCoverage.get('cnt-mix#annual:2026-01')?.invoiceTotal === 12000 + 13000 - 1000,
+  'A line billing both frequencies splits into each row\'s own charges',
+  JSON.stringify({ janMonthly, janAnnual: mixCoverage.get('cnt-mix#annual:2026-01') })
+);
+assert(
+  marMonthly?.invoices.join() === 'MIX-MAR' && marMonthly.invoiceTotal === 900 && invoiceVarianceTone(marMonthly) === 'under' &&
+    !mixCoverage.get('cnt-mix#annual:2026-03')?.invoices.includes('MIX-MAR'),
+  'A line naming its charge line goes to that line\'s row, even when it is short',
+  JSON.stringify(marMonthly)
+);
+assert(
+  contractMonthCovered(mixCoverage, 'cnt-mix', '2026-07') && !contractMonthCovered(mixCoverage, 'cnt-other', '2026-07'),
+  'A contract month counts as covered when any of its frequency rows is',
+  'cnt-mix July'
 );
 
 // Change-request rows show the invoices their projects are billed by.
@@ -1667,7 +1725,7 @@ const explainProjects = [
   assert(mismatches.length === 0, `Every ${basis} cell explanation adds up to the grid value`, mismatches.slice(0, 5).join(' | '));
 });
 const recognitionGrid = buildRevenueSchedule(explainContracts, explainProjects);
-const juneExplanation = explainScheduleCell(recognitionGrid.rows.find(row => row.id === 'cnt-x1::contract'), '2025-06', 'recognition');
+const juneExplanation = explainScheduleCell(recognitionGrid.rows.find(row => row.id === 'cnt-x1::contract::monthly'), '2025-06', 'recognition');
 const forecastItem = juneExplanation.items.find(item => item.label === 'Forecast');
 assert(
   forecastItem && forecastItem.steps.some(step => step.startsWith('25 MW × €40.00 = €1,000.00')) &&
@@ -1694,15 +1752,19 @@ const clearedFloor = contract({
     { id: 'x5-b', contract_id: 'cnt-x5', name: 'Module B', unit_price: 1500, quantity: 1, unit_label: 'flat', frequency: 'quarterly', group_id: 'g5' },
   ],
 });
-const clearedRow = buildRevenueSchedule([clearedFloor], []).rows[0];
-const bundle = explainScheduleCell(clearedRow, '2025-01', 'recognition').items[0];
+const clearedRows = buildRevenueSchedule([clearedFloor], []).rows;
+const clearedMonthly = clearedRows.find(row => row.frequency === 'monthly');
+const clearedQuarterly = clearedRows.find(row => row.frequency === 'quarterly');
+const bundle = explainScheduleCell(clearedMonthly, '2025-01', 'recognition').items[0];
+const bundleQuarterly = explainScheduleCell(clearedQuarterly, '2025-01', 'recognition').items[0];
 assert(
-  bundle?.label === 'Pricing group "Bundle"' && bundle.children?.length === 2 && bundle.amount === clearedRow.months['2025-01'] &&
+  bundle?.label === 'Pricing group "Bundle"' && bundle.children?.length === 1 && bundle.amount === clearedMonthly.months['2025-01'] &&
     bundle.steps.some(step => step.startsWith('Floor €1,000.00 per month')) &&
     bundle.steps.some(step => step.includes('€1,200.00/month, at or above the floor → no uplift')) &&
-    bundle.steps.some(step => step.includes('monthly equivalent')),
-  'A floor the group already clears is shown as not applied',
-  JSON.stringify(bundle)
+    bundleQuarterly?.children?.[0]?.label === 'Module B' && bundleQuarterly.amount === clearedQuarterly.months['2025-01'] &&
+    bundleQuarterly.steps.some(step => step.includes('monthly equivalent')),
+  'A floor the group already clears is shown as not applied, on each frequency row of the group',
+  JSON.stringify({ monthly: bundle, quarterly: bundleQuarterly })
 );
 const crExplanation = explainScheduleCell(recognitionGrid.rows.find(row => row.id === 'cnt-x1::projects'), '2025-05', 'recognition');
 assert(

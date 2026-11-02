@@ -4,13 +4,14 @@ import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
   coverageTotal,
+  contractMonthCovered,
   invoiceCellKey,
   invoiceVarianceTone,
   mergeProjectCoverage,
   projectInvoiceCellKey,
   type InvoiceCellCoverage,
 } from '@/lib/invoice-coverage';
-import { buildInvoiceSuggestions, pendingInvoiceSuggestions, type InvoiceSuggestion } from '@/lib/invoice-suggestions';
+import { buildInvoiceSuggestions, pendingInvoiceSuggestions, suggestionStreamKey, type InvoiceSuggestion } from '@/lib/invoice-suggestions';
 
 /**
  * The Billing check statement for one client or one agreement: every stream of the agreements in
@@ -69,7 +70,7 @@ export function buildBillingStatement(args: {
   const projectCoverage = buildProjectInvoiceCoverage(invoices, projects, receipts, contracts, catalogModules, catalogItems);
   const suggestions = pendingInvoiceSuggestions(
     buildInvoiceSuggestions(scope, { catalogModules, catalogItems, invoices, draftInvoiceIds: args.draftInvoiceIds, today: args.today }),
-    (contractId, month) => coverage.has(invoiceCellKey(contractId, month))
+    (contractId, month) => contractMonthCovered(coverage, contractId, month)
   );
 
   const years = new Set(schedule.months.map(month => Number(month.slice(0, 4))));
@@ -77,14 +78,14 @@ export function buildBillingStatement(args: {
   const streams = schedule.rows.map(row => {
     // Every month an invoice box touches on this row, wherever it lies against the schedule.
     const boxMonths = new Set<string>();
-    const ownKeys = row.kind === 'contract' ? [row.contractId] : (row.projects ?? []).map(project => project.id);
+    const ownKeys = row.kind === 'contract' ? [row.streamKey] : (row.projects ?? []).map(project => project.id);
     const source = row.kind === 'contract' ? coverage : projectCoverage;
     source.forEach((_, key) => {
       const split = key.lastIndexOf(':');
       if (ownKeys.includes(key.slice(0, split))) boxMonths.add(key.slice(split + 1));
     });
     const cellAt = (month: string) => row.kind === 'contract'
-      ? coverage.get(invoiceCellKey(row.contractId, month))
+      ? coverage.get(invoiceCellKey(row.streamKey, month))
       : mergeProjectCoverage((row.projects ?? []).map(project => projectCoverage.get(projectInvoiceCellKey(project.id, month))));
 
     // A box is listed once, from the cell that opens it (the one the schedule's badge sits on).
@@ -101,7 +102,7 @@ export function buildBillingStatement(args: {
 
     if (row.kind === 'contract') {
       suggestions
-        .filter(suggestion => suggestion.contractId === row.contractId)
+        .filter(suggestion => suggestionStreamKey(suggestion, schedule.rows) === row.streamKey)
         .forEach(suggestion => monthRuns(suggestion.months).forEach(run => {
           blocks.push({ kind: 'due', firstMonth: run[0], lastMonth: run[run.length - 1], suggestion });
         }));

@@ -22,6 +22,7 @@ import { buildRevenueSchedule, explainScheduleCell, monthKeysBetween, groupMonth
 import {
   buildInvoiceCoverage,
   buildProjectInvoiceCoverage,
+  contractMonthCovered,
   coverageTotal,
   documentTotal,
   invoiceBoxState,
@@ -39,6 +40,7 @@ import {
   buildInvoiceSuggestions,
   pendingInvoiceSuggestions,
   suggestionCellKey,
+  suggestionStreamKey,
   suggestionCellStyle,
   type InvoiceSuggestion,
 } from '@/lib/invoice-suggestions';
@@ -250,7 +252,7 @@ function CounterpartyStreamRenderer(params: ICellRendererParams<RevenueScheduleR
       </div>
       <div className={`text-[9px] font-semibold flex items-center gap-1 ${isContractRow ? 'text-[var(--accent)]' : 'text-amber-600'}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${isContractRow ? 'bg-[var(--accent)]' : 'bg-amber-500'}`} />
-        {isContractRow ? 'Contract charges' : 'Change request'}
+        {params.data?.streamLabel || (isContractRow ? 'Contract charges' : 'Change request')}
       </div>
     </div>
   );
@@ -405,7 +407,7 @@ function CellExplanationModal({ row, month, basis, explanation, onClose }: {
       isOpen
       onClose={onClose}
       size="lg"
-      eyebrow={`${basis === 'cashflow' ? 'Cashflow' : 'Revenue'} · ${row.kind === 'contract' ? 'Contract charges' : 'Change requests'} · ${row.counterparty}`}
+      eyebrow={`${basis === 'cashflow' ? 'Cashflow' : 'Revenue'} · ${row.kind === 'contract' ? row.streamLabel || 'Contract charges' : 'Change requests'} · ${row.counterparty}`}
       title={`${monthLabel(month)} ${month.slice(0, 4)} · ${row.reference}`}
     >
       <div className="space-y-1.5 text-[12px] text-slate-500">
@@ -589,14 +591,15 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
 
     pendingInvoiceSuggestions(
       buildInvoiceSuggestions(contracts, { catalogModules, catalogItems, invoices, draftInvoiceIds }),
-      (contractId, month) => invoiceCoverage.has(invoiceCellKey(contractId, month))
+      (contractId, month) => contractMonthCovered(invoiceCoverage, contractId, month)
     ).forEach(pending => {
       list.push(pending);
-      pending.months.forEach(month => byCell.set(suggestionCellKey(pending.contractId, month), pending));
+      const streamKey = suggestionStreamKey(pending, schedule.rows);
+      pending.months.forEach(month => byCell.set(suggestionCellKey(streamKey, month), pending));
     });
 
     return { list, byCell };
-  }, [contracts, catalogModules, catalogItems, invoices, draftInvoiceIds, invoiceCoverage]);
+  }, [contracts, catalogModules, catalogItems, invoices, draftInvoiceIds, invoiceCoverage, schedule.rows]);
 
   const suggestionRef = useRef<Map<string, InvoiceSuggestion>>(new Map());
   useEffect(() => {
@@ -910,14 +913,14 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         const data = params.data;
         if (!data) return MONTH_CELL_PADDING;
         const coverage = data.kind === 'contract'
-          ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
+          ? invoiceCoverageRef.current.get(invoiceCellKey(data.streamKey, key))
           : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key))));
         // The badge cell lets its badge run across the rest of the invoice box.
         if (coverage) {
           return { ...MONTH_CELL_PADDING, ...invoiceCellStyle(coverage, key), ...(key === coverage.firstMonth ? { overflow: 'visible', zIndex: 2 } : {}) };
         }
         if (data.kind !== 'contract') return MONTH_CELL_PADDING;
-        const suggestion = suggestionRef.current.get(suggestionCellKey(data.contractId, key));
+        const suggestion = suggestionRef.current.get(suggestionCellKey(data.streamKey, key));
         return suggestion ? { ...MONTH_CELL_PADDING, ...suggestionCellStyle(suggestion, key) } : MONTH_CELL_PADDING;
       },
       cellRenderer: (params: ICellRendererParams<RevenueScheduleRow>) => {
@@ -925,10 +928,10 @@ export const RevenueScheduleGrid: React.FC<RevenueScheduleGridProps> = ({
         const contractRow = data && data.kind === 'contract' ? data : undefined;
         const coverage = data
           ? data.kind === 'contract'
-            ? invoiceCoverageRef.current.get(invoiceCellKey(data.contractId, key))
+            ? invoiceCoverageRef.current.get(invoiceCellKey(data.streamKey, key))
             : mergeProjectCoverage((data.projects ?? []).map(project => projectCoverageRef.current.get(projectInvoiceCellKey(project.id, key))))
           : undefined;
-        const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.contractId, key)) : undefined;
+        const suggestion = contractRow ? suggestionRef.current.get(suggestionCellKey(contractRow.streamKey, key)) : undefined;
         const projectShares = data && data.kind === 'project' ? data.projectMonths?.[key] : undefined;
         const text = formatAmount(Number(params.value) || 0);
 

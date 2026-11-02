@@ -29,6 +29,15 @@ export interface RevenueScheduleRow {
   kind: RevenueStreamKind;
   contractId: string;
   contract: Contract;
+  /**
+   * Key this row's invoice boxes use: the contract id, or `${id}#${frequency}` once the contract's
+   * charges are split by pricing-line frequency (see contractChargeStreams).
+   */
+  streamKey: string;
+  /** First-column label: 'Contract charges', 'Monthly charges', … or 'Change request'. */
+  streamLabel: string;
+  /** On a contract row split by frequency: the pricing-line frequency it carries. */
+  frequency?: string;
   counterparty: string;
   /** End customer the work serves — the counterparty itself for direct deals, the real client for subcontracts. */
   endCustomer: string;
@@ -379,6 +388,104 @@ export function contractProjectSchedules(
     });
 }
 
+const FREQUENCY_ORDER = ['monthly', 'quarterly', 'annual', 'one_time'];
+const FREQUENCY_STREAM_LABELS: Record<string, string> = {
+  monthly: 'Monthly charges',
+  quarterly: 'Quarterly charges',
+  annual: 'Annual charges',
+  one_time: 'One-time charges',
+};
+const frequencyOf = (line: { frequency?: string | null }) =>
+  FREQUENCY_ORDER.includes(String(line.frequency)) ? String(line.frequency) : 'monthly';
+
+/** One of a contract's charge streams: its own charges, or the charges of one pricing-line frequency. */
+export interface ChargeStream {
+  /** The invoice-box key: the contract id, or `${id}#${frequency}` when the contract is split. */
+  key: string;
+  frequency: string | null;
+  label: string;
+  /** The pricing lines behind the stream. */
+  lineIds: string[];
+  /** Revenue recognition: 'YYYY-MM' → amount. */
+  months: Record<string, number>;
+  /** Cashflow: the same money on the months it is billed. */
+  billed: Record<string, number>;
+  /** Recognised amount per pricing line, for invoice lines that name the charge lines they bill. */
+  lineMonths: Record<string, Record<string, number>>;
+}
+
+/**
+ * The contract's charges as the schedules show them: one stream per pricing-line frequency
+ * (monthly, quarterly, annual, one-time), so an invoice for the annual licence and the monthly
+ * invoices for support each meet their own charges. A contract billing one frequency — or with no
+ * pricing lines — stays a single stream keyed by the contract, exactly as before. Streams are cut
+ * from the engine's per-charge trace, so floors and discounts stay priced on the whole contract.
+ */
+export function contractChargeStreams(
+  contract: Contract,
+  catalogModules: CatalogModule[] = [],
+  catalogItems: CatalogItem[] = []
+): ChargeStream[] {
+  const charges: LineChargeTrace[] = [];
+  const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems, { onCharge: charge => charges.push(charge) });
+  if (!split) {
+    const months = contractChargeMonths(contract, catalogModules, catalogItems);
+    return [{ key: contract.id, frequency: null, label: 'Contract charges', lineIds: [], months, billed: resampleToBillingMonths(contract, months), lineMonths: {} }];
+  }
+
+  const lineMonthsOf = (traces: LineChargeTrace[]) => {
+    const byLine: Record<string, Record<string, number>> = {};
+    traces.forEach(charge => {
+      const id = String(charge.line.id || '');
+      if (!id) return;
+      const months = (byLine[id] ||= {});
+      months[charge.landsOn] = round2((months[charge.landsOn] || 0) + charge.net);
+    });
+    return byLine;
+  };
+  const byFrequency = new Map<string, LineChargeTrace[]>();
+  charges.forEach(charge => {
+    if (round2(charge.net) === 0) return;
+    const frequency = frequencyOf(charge.line);
+    byFrequency.set(frequency, [...(byFrequency.get(frequency) || []), charge]);
+  });
+  const frequencies = FREQUENCY_ORDER.filter(frequency => byFrequency.has(frequency));
+
+  if (frequencies.length <= 1) {
+    return [{
+      key: contract.id,
+      frequency: frequencies[0] ?? null,
+      label: 'Contract charges',
+      lineIds: (contract.lines || []).filter(line => line.line_kind !== 'man_hours').map(line => line.id),
+      months: totalChargesFromTiming(split),
+      billed: resampleTimingToBillingMonths(contract, split),
+      lineMonths: lineMonthsOf(charges),
+    }];
+  }
+
+  return frequencies.map(frequency => {
+    const streamCharges = byFrequency.get(frequency) || [];
+    const streamSplit: Record<string, TimingSplitAmount> = {};
+    streamCharges.forEach(charge => {
+      const entry = (streamSplit[charge.landsOn] ||= { advance: 0, arrears: 0 });
+      entry[charge.timing] += charge.net;
+    });
+    Object.values(streamSplit).forEach(entry => {
+      entry.advance = round2(entry.advance);
+      entry.arrears = round2(entry.arrears);
+    });
+    return {
+      key: `${contract.id}#${frequency}`,
+      frequency,
+      label: FREQUENCY_STREAM_LABELS[frequency],
+      lineIds: [...new Set(streamCharges.map(charge => String(charge.line.id || '')).filter(Boolean))],
+      months: totalChargesFromTiming(streamSplit),
+      billed: resampleTimingToBillingMonths(contract, streamSplit),
+      lineMonths: lineMonthsOf(streamCharges),
+    };
+  });
+}
+
 /** Builds the Excel-style grid: month columns, one CR row per project and month totals. */
 export function buildRevenueSchedule(
   contracts: Contract[],
@@ -406,30 +513,29 @@ export function buildRevenueSchedule(
     const window = contractEffectiveWindow(contract);
     monthKeysBetween(window.startKey, window.endKey).forEach(key => effectiveMonths.add(key));
 
-    // Cashflow re-buckets the timing split onto the contract's billing cycles; recognition reads the
-    // monthly stream. Both see periodic arrears charges on their own cycle's last month.
-    const timingSplit = basis === 'cashflow' ? contractChargeMonthsByTiming(contract, catalogModules, catalogItems) : null;
-    const charges = timingSplit
-      ? resampleTimingToBillingMonths(contract, timingSplit)
-      : basis === 'cashflow'
-        ? resampleToBillingMonths(contract, contractChargeMonths(contract, catalogModules, catalogItems))
-        : contractChargeMonths(contract, catalogModules, catalogItems);
-    const projectSchedules = contractProjectSchedules(contract, projects);
-
-    Object.keys(charges).forEach(key => effectiveMonths.add(key));
-
-    rows.push({
-      id: `${contract.id}::contract`,
-      kind: 'contract',
-      contractId: contract.id,
-      contract,
-      counterparty,
-      endCustomer,
-      supply,
-      reference: contract.reference,
-      product: contract.product || contract.type || '',
-      months: charges,
+    // One row per charge stream (pricing-line frequency). Cashflow re-buckets each stream onto the
+    // contract's billing cycles; recognition reads it month by month. Both see periodic arrears
+    // charges on their own cycle's last month.
+    contractChargeStreams(contract, catalogModules, catalogItems).forEach(stream => {
+      const charges = basis === 'cashflow' ? stream.billed : stream.months;
+      Object.keys(charges).forEach(key => effectiveMonths.add(key));
+      rows.push({
+        id: stream.key === contract.id ? `${contract.id}::contract` : `${contract.id}::contract::${stream.frequency}`,
+        kind: 'contract',
+        contractId: contract.id,
+        contract,
+        streamKey: stream.key,
+        streamLabel: stream.label,
+        frequency: stream.key === contract.id ? undefined : stream.frequency ?? undefined,
+        counterparty,
+        endCustomer,
+        supply,
+        reference: contract.reference,
+        product: contract.product || contract.type || '',
+        months: charges,
+      });
     });
+    const projectSchedules = contractProjectSchedules(contract, projects);
 
     // One row for all of the contract's change requests. Each month keeps the projects behind it,
     // so a cell that mixes several CRs can still say which ones it sums.
@@ -450,6 +556,8 @@ export function buildRevenueSchedule(
         kind: 'project',
         contractId: contract.id,
         contract,
+        streamKey: `${contract.id}::projects`,
+        streamLabel: 'Change request',
         counterparty,
         endCustomer,
         supply,
@@ -693,13 +801,17 @@ export function explainScheduleCell(
     };
   }
 
-  const charges: LineChargeTrace[] = [];
+  const allCharges: LineChargeTrace[] = [];
   const split = contractChargeMonthsByTiming(contract, catalogModules, catalogItems, {
-    onCharge: charge => charges.push(charge),
+    onCharge: charge => allCharges.push(charge),
   });
+  // A row split by frequency explains its own pricing lines only.
+  const charges = row.frequency ? allCharges.filter(charge => frequencyOf(charge.line) === row.frequency) : allCharges;
 
   if (split) {
-    const chargeMonths = Object.keys(split).sort();
+    const chargeMonths = row.frequency
+      ? [...new Set(charges.filter(charge => round2(charge.net) !== 0).map(charge => charge.landsOn))].sort()
+      : Object.keys(split).sort();
     let landing = charges.filter(charge => charge.landsOn === month);
     if (basis === 'cashflow') {
       const slice = billingCycles(contract, chargeMonths)?.find(entry => entry.includes(month));
@@ -809,7 +921,7 @@ export function scheduleExportTable(schedule: RevenueSchedule): ScheduleExportTa
         ? `${row.counterparty} (for ${row.endCustomer})`
         : row.counterparty,
       row.reference,
-      STREAM_LABELS[row.kind] ?? row.kind,
+      row.streamLabel || (STREAM_LABELS[row.kind] ?? row.kind),
       row.kind === 'project'
         ? (row.projects ?? []).map(project => project.code ? `${project.code} · ${project.name}` : project.name).join(' | ')
         : row.product,

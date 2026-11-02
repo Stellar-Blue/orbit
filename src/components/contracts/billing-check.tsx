@@ -44,7 +44,7 @@ function cadenceSentence(contract: Contract): string {
 }
 
 function streamTitle(stream: StatementStream): string {
-  if (stream.row.kind === 'contract') return 'Contract charges';
+  if (stream.row.kind === 'contract') return stream.row.streamLabel || 'Contract charges';
   const projects = stream.row.projects ?? [];
   return projects.length === 1
     ? `Change request: ${projects[0].code ? `${projects[0].code} ` : ''}${projects[0].name}`

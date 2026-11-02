@@ -92,6 +92,19 @@ export function pendingInvoiceSuggestions(
   });
 }
 
+/**
+ * The schedule row a suggestion sits on: its contract's first charge stream with money in the
+ * suggested months (a contract split by frequency has several), so the period is offered once.
+ */
+export function suggestionStreamKey(
+  suggestion: InvoiceSuggestion,
+  rows: Array<{ kind: string; contractId: string; streamKey: string; months: Record<string, number> }>
+): string {
+  const own = rows.filter(row => row.kind === 'contract' && row.contractId === suggestion.contractId);
+  const charged = own.find(row => suggestion.months.some(month => (row.months[month] || 0) !== 0));
+  return (charged ?? own[0])?.streamKey ?? suggestion.contractId;
+}
+
 export const suggestionCellKey = (contractId: string, month: string) => `${contractId}:${month}`;
 
 /** Inline style painting one cell of the suggestion box; contiguous cells share the box outline. */

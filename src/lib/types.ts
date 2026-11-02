@@ -1092,6 +1092,8 @@ export interface InvoiceLine {
   contract_ids?: string[] | null;
   /** Projects (change requests) the line bills. */
   project_ids?: string[] | null;
+  /** Optional detail: the contract pricing lines (charge lines) this line bills. */
+  charge_line_ids?: string[] | null;
   /** Lines saved before a line could bill several things: one agreement fee, or one project. */
   contract_id?: string | null;
   project_id?: string | null;
