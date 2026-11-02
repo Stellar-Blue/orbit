@@ -50,8 +50,10 @@ Messaging someone is a **bot** action: `users.lookupByEmail` → `conversations.
 - **Channels:** an address matching an *active* Orbit colleague is messaged on Slack from the bot. When the organiser ticks **Include an Outlook meeting invite**, that colleague is also an attendee of a Graph meeting on the organiser's calendar. An address that is not an Orbit user can only be reached by email, so it **always** gets the calendar invite. A departed colleague has no Slack to message, so their address is treated as external too.
 - **Slack identity:** `employee_integrations.external_user_id` (stored at OAuth time) is used when present, `users.lookupByEmail` otherwise. A colleague who never connected Slack is still reachable only if the bot resolves their address — a failure is recorded per recipient, never swallowed.
 - **Seats:** inviting an Orbit colleague books their seat in the session, so `enforce_space_booking` stays the single source of truth for capacity. A full session still sends the invite and reports "invited without a seat"; the Slack message tells the invitee the same.
-- **One Graph event per batch**, created with the organiser's delegated token when they have connected Microsoft, otherwise the application token. The event id is stored on the invite rows.
-- **Deleting a session** withdraws its Graph meetings first (`DELETE /api/spaces/session-invites?session_id=…`) because the invite rows cascade away with the session.
+- **One Graph meeting per session**, created with the organiser's delegated token when they have connected Microsoft, otherwise the application token. A later batch of invitees patches that same event instead of creating a second meeting, and removing the last attendee cancels it.
+- **Editing a session** (`PATCH /api/spaces/sessions`) is the same rule as deleting it — whoever opened it, or an admin. It changes the window, title and description, validates the window and refuses an overlap with another session of the room. The Outlook meeting is patched (Graph sends the update to its attendees), and colleagues invited on Slack get a short "moved" message because a Slack invitation has no calendar behind it.
+- **Removing an invitee** (`DELETE …?session_id=…&email=…`) drops their invitation, releases the seat booked for them and takes them off the meeting.
+- **Deleting a session** withdraws its Graph meetings first (`DELETE …?session_id=…`) because the invite rows cascade away with the session.
 - **No bot token configured:** the invitation is still recorded, with `slack_status = 'failed'` and the reason, so the organiser sees why instead of a silent success.
 
 ## 3. Outlook / Microsoft 365 integration
@@ -87,6 +89,8 @@ integration_outbox      id, provider, operation, orbit_kind, orbit_id,
                         attempts, next_retry_at, status, last_error
 integration_settings    provider-level config: labels per leave type, emoji,
                         default templates, feature toggles (auto_reply enabled)
+space_sessions          + description (agenda shown with the session and in invitations);
+                        UPDATE policy: creator or admin (see §2.2)
 space_session_invites   id, session_id, invited_by, profile_id (null = external guest),
                         email, name, slack_status, outlook_status, slack_error,
                         outlook_error, outlook_event_id, created_at  (see §2.2)

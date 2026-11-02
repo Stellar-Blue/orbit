@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { athensToday, getAdminClient, hasSlackBotToken, slackSendDirectMessage } from '@/lib/integrations/server';
-import { ATHENS_TIMEZONE } from '@/lib/integrations/types';
-import { cancelSessionCalendarInvite, sendSessionCalendarInvite } from '@/lib/integrations/outlook';
+import { cancelSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 import { EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration } from '@/lib/integrations/types';
+import { calendarStateOf, loadSessionContext, sessionWhen, syncSessionCalendar } from '@/lib/spaces-server';
 import { normalizeInviteEmail } from '@/lib/spaces';
 import type { SessionInviteStatus } from '@/lib/types';
 
 /**
- * Inviting people to a conference-room session.
+ * Inviting people to a conference-room session — and taking them off it again.
  *
- * An address that belongs to an active Orbit colleague is invited on Slack — a direct message from
- * the Orbit bot. An address that is not an Orbit user can only be reached by email, so it is always
+ * An address that belongs to an Orbit colleague is invited on Slack — a direct message from the
+ * Orbit bot. An address that is not an Orbit user can only be reached by email, so it is always
  * carried by the Outlook meeting invite. When the organiser ticks "include an Outlook invite", the
  * colleagues get one too, so the meeting lands in their calendar next to the Slack message.
+ *
+ * A session owns exactly one Outlook meeting: a second batch of invitees is added to it rather than
+ * creating a second meeting, and removing the last attendee cancels it.
  *
  * Seats are booked for the Orbit invitees as part of the invite: the room's capacity trigger has the
  * final word, so a session that is already full reports "invited without a seat" instead of failing
@@ -40,13 +43,6 @@ interface RecipientResult {
   slack_error?: string;
   outlook_error?: string;
 }
-
-const clock = (value: string): string => String(value || '').slice(0, 5);
-
-const longDate = (dateStr: string): string =>
-  new Intl.DateTimeFormat('en-GB', {
-    timeZone: ATHENS_TIMEZONE, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  }).format(new Date(`${dateStr}T12:00:00Z`));
 
 const personName = (
   profile?: { first_name?: string | null; last_name?: string | null; work_email?: string | null } | null
@@ -77,16 +73,10 @@ export async function POST(request: NextRequest) {
   const includeOutlook = Boolean(body?.include_outlook);
 
   const admin = getAdminClient();
+  const context = await loadSessionContext(admin, sessionId, caller.profileId);
+  if (!context) return NextResponse.json({ error: 'That session no longer exists.' }, { status: 404 });
 
-  const { data: sessionRow, error: sessionError } = await admin
-    .from('space_sessions')
-    .select('id, space_id, session_date, starts_at, ends_at, title, created_by')
-    .eq('id', sessionId)
-    .maybeSingle();
-  if (sessionError) return NextResponse.json({ error: sessionError.message }, { status: 500 });
-  if (!sessionRow) return NextResponse.json({ error: 'That session no longer exists.' }, { status: 404 });
-
-  if (!caller.isAdmin && sessionRow.created_by !== caller.profileId) {
+  if (!caller.isAdmin && context.createdBy !== caller.profileId) {
     return NextResponse.json(
       { error: 'Only the person who opened this session, or an administrator, can invite people.' },
       { status: 403 }
@@ -94,20 +84,9 @@ export async function POST(request: NextRequest) {
   }
 
   // A session on a past day is history; same-day invitations stay possible right up to the window.
-  if (sessionRow.session_date < athensToday()) {
+  if (context.sessionDate < athensToday()) {
     return NextResponse.json({ error: 'That session is already over.' }, { status: 400 });
   }
-
-  const { data: spaceRow } = await admin
-    .from('spaces')
-    .select('id, name, location')
-    .eq('id', sessionRow.space_id)
-    .maybeSingle();
-  const { data: organizerRow } = await admin
-    .from('profiles')
-    .select('id, first_name, last_name, work_email')
-    .eq('id', sessionRow.created_by || caller.profileId)
-    .maybeSingle();
 
   // One directory read, matched in JS: `work_email` casing in the database is not guaranteed, and an
   // address typed in capitals must still be recognised as the colleague it belongs to.
@@ -137,14 +116,9 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const roomName = spaceRow?.name || 'the meeting room';
-  const roomLocation = spaceRow?.location || null;
-  const organizerName = personName(organizerRow);
-  const organizerEmail = organizerRow?.work_email || '';
-  const organizerProfileId = organizerRow?.id || caller.profileId;
+  const when = sessionWhen(context);
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
-  const when = `${longDate(sessionRow.session_date)} · ${clock(sessionRow.starts_at)} – ${clock(sessionRow.ends_at)}`;
-
+  const agenda = context.description?.trim();
   const results: RecipientResult[] = [];
 
   for (const email of emails) {
@@ -160,10 +134,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { error: seatError } = await admin.from('space_bookings').insert([{
-      space_id: sessionRow.space_id,
-      session_id: sessionRow.id,
+      space_id: context.spaceId,
+      session_id: context.id,
       profile_id: profile.id,
-      booking_date: sessionRow.session_date,
+      booking_date: context.sessionDate,
       created_by: caller.profileId,
     }]);
     const seat: RecipientResult['seat'] = !seatError
@@ -182,10 +156,11 @@ export async function POST(request: NextRequest) {
           ? 'The room is full, so no seat could be reserved — ask the organiser.'
           : '';
     const text = [
-      `:calendar: *${sessionRow.title?.trim() || 'Meeting'}* in *${roomName}*`,
+      `:calendar: *${context.title?.trim() || 'Meeting'}* in *${context.roomName}*`,
       when,
       '',
-      `${organizerName} invited you to a session booked in Orbit.`,
+      `${context.organizer?.name || 'An Orbit colleague'} invited you to a session booked in Orbit.`,
+      agenda || '',
       seatLine,
       ...(appUrl ? ['', `Join or review it: ${appUrl}/spaces`] : []),
     ].filter(Boolean).join('\n');
@@ -212,45 +187,35 @@ export async function POST(request: NextRequest) {
   }
 
   // Every address gets the Outlook invite when the box is ticked; otherwise only the guests without
-  // an Orbit account, whose only channel is email. One meeting carries them all.
+  // an Orbit account, whose only channel is email. The session's existing meeting is patched, so
+  // people invited earlier stay on it.
   const outlookRecipients = emails.filter(email => includeOutlook || !byEmail.get(email));
-  let outlookEventId: string | undefined;
-  let outlookError: string | undefined;
-  if (outlookRecipients.length > 0) {
-    if (!organizerEmail) {
-      outlookError = 'The organiser has no work email, so no calendar invite could be sent.';
-    } else {
-      const sent = await sendSessionCalendarInvite({
-        admin,
-        organizerProfileId,
-        organizerEmail,
-        details: {
-          organizerName,
-          roomName,
-          roomLocation,
-          sessionDate: sessionRow.session_date,
-          startsAt: sessionRow.starts_at,
-          endsAt: sessionRow.ends_at,
-          title: sessionRow.title,
-          attendees: outlookRecipients,
-        },
-      });
-      if (sent.ok) outlookEventId = sent.eventId;
-      else outlookError = sent.error || 'Graph refused the meeting invite.';
-    }
+  const calendar = await calendarStateOf(admin, sessionId);
+  const wanted = Array.from(new Set([...calendar.attendees, ...outlookRecipients]));
+  const synced = await syncSessionCalendar({
+    admin, context, attendees: wanted, eventId: calendar.eventId,
+  });
+  const eventId = synced.ok ? synced.eventId || null : null;
+  // A meeting deleted in Outlook is recreated under a new id; every earlier row still points at the
+  // dead one, so they are re-pointed before this batch is written.
+  if (eventId && calendar.eventId && eventId !== calendar.eventId) {
+    await admin.from('space_session_invites')
+      .update({ outlook_event_id: eventId })
+      .eq('session_id', sessionId)
+      .eq('outlook_event_id', calendar.eventId);
   }
   results.forEach(result => {
-    if (!outlookRecipients.includes(result.email)) {
+    if (!wanted.includes(result.email)) {
       result.outlook_status = 'skipped';
       return;
     }
-    result.outlook_status = outlookEventId ? 'sent' : 'failed';
-    if (!outlookEventId) result.outlook_error = outlookError || 'The calendar invite could not be created.';
+    result.outlook_status = eventId ? 'sent' : 'failed';
+    if (!eventId) result.outlook_error = synced.error || 'The calendar invite could not be created.';
   });
 
   const { error: writeError } = await admin.from('space_session_invites').upsert(
     results.map(result => ({
-      session_id: sessionRow.id,
+      session_id: sessionId,
       invited_by: caller.profileId,
       profile_id: result.profile_id,
       email: result.email,
@@ -259,7 +224,8 @@ export async function POST(request: NextRequest) {
       outlook_status: result.outlook_status,
       slack_error: result.slack_error || null,
       outlook_error: result.outlook_error || null,
-      outlook_event_id: outlookEventId || null,
+      // Only an actual attendee belongs to the meeting; a Slack-only invitee must not look like one.
+      outlook_event_id: result.outlook_status === 'sent' ? eventId : null,
     })),
     { onConflict: 'session_id,email' }
   );
@@ -269,36 +235,69 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    session_id: sessionRow.id,
+    session_id: sessionId,
     invites: results,
     slack_configured: hasSlackBotToken(),
   });
 }
 
 /**
- * Withdraws the calendar invites of a session before it is deleted. The client calls this first
- * because deleting the session cascades its invite rows away, and the Graph event would otherwise
- * stay in everyone's calendar for a meeting that no longer exists.
+ * `?session_id=…&email=…` takes one person off the session: their invitation, their seat and their
+ * place on the Outlook meeting. `?session_id=…` alone withdraws every meeting of the session — the
+ * client calls that before deleting it, because the invite rows cascade away with the session and
+ * the Graph events would otherwise stay in everyone's calendar.
  */
 export async function DELETE(request: NextRequest) {
   const caller = await requireApiSession(request);
   if (isNextResponse(caller)) return caller;
 
-  const sessionId = new URL(request.url).searchParams.get('session_id') || '';
+  const url = new URL(request.url);
+  const sessionId = url.searchParams.get('session_id') || '';
+  const email = normalizeInviteEmail(url.searchParams.get('email') || '');
   if (!sessionId) return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
 
   const admin = getAdminClient();
-  const { data: sessionRow } = await admin
-    .from('space_sessions')
-    .select('id, created_by')
-    .eq('id', sessionId)
-    .maybeSingle();
-  if (!sessionRow) return NextResponse.json({ ok: true, cancelled: 0 });
-  if (!caller.isAdmin && sessionRow.created_by !== caller.profileId) {
+  const context = await loadSessionContext(admin, sessionId, caller.profileId);
+  if (!context) return NextResponse.json({ ok: true, removed: 0, cancelled: 0 });
+  if (!caller.isAdmin && context.createdBy !== caller.profileId) {
     return NextResponse.json(
-      { error: 'Only the person who opened this session, or an administrator, can delete it.' },
+      { error: 'Only the person who opened this session, or an administrator, can change who is invited.' },
       { status: 403 }
     );
+  }
+
+  if (email) {
+    const { data: invite } = await admin
+      .from('space_session_invites')
+      .select('id, profile_id')
+      .eq('session_id', sessionId)
+      .eq('email', email)
+      .maybeSingle();
+    if (!invite) return NextResponse.json({ ok: true, removed: 0 });
+
+    // Removing someone from the session frees their seat too — the room card and the capacity
+    // trigger must agree with the invite list.
+    let seatReleased = false;
+    if (invite.profile_id) {
+      const { error: seatError } = await admin.from('space_bookings')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('profile_id', invite.profile_id);
+      seatReleased = !seatError;
+    }
+    await admin.from('space_session_invites').delete().eq('id', invite.id);
+
+    // Recompute the meeting from what is left; an empty attendee list cancels it.
+    const calendar = await calendarStateOf(admin, sessionId);
+    const synced = await syncSessionCalendar({
+      admin, context, attendees: calendar.attendees, eventId: calendar.eventId,
+    });
+    return NextResponse.json({
+      ok: true,
+      removed: 1,
+      seat_released: seatReleased,
+      calendar_error: synced.ok ? undefined : synced.error,
+    });
   }
 
   const { data: invites } = await admin
@@ -307,7 +306,7 @@ export async function DELETE(request: NextRequest) {
     .eq('session_id', sessionId)
     .not('outlook_event_id', 'is', null);
 
-  // One Graph event per invite batch, on the mailbox of whoever sent that batch.
+  // One Graph event per session, on the mailbox of whoever sent it.
   const events = new Map<string, string>();
   (invites || []).forEach((row: { invited_by: string | null; outlook_event_id: string | null }) => {
     if (row.outlook_event_id && row.invited_by) events.set(row.outlook_event_id, row.invited_by);

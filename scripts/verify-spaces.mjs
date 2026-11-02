@@ -9,6 +9,7 @@
 import {
   BOOKING_MODE_LABELS,
   canDeleteSession,
+  canEditSession,
   canInviteToSession,
   clockLabel,
   defaultSessionWindow,
@@ -393,6 +394,18 @@ assert(
 assert(
   !canInviteToSession({ created_by: 'someone-else' }, 'me', false),
   'A colleague\'s session cannot be used to message people'
+);
+assert(
+  canEditSession({ created_by: 'me' }, 'me', false),
+  'The person who opened a session can change its time, title and invitees'
+);
+assert(
+  canEditSession({ created_by: 'someone-else' }, 'me', true),
+  'An administrator can edit any session'
+);
+assert(
+  !canEditSession({ created_by: 'someone-else' }, 'me', false),
+  'A colleague\'s session is out of reach for edits too'
 );
 
 assert(

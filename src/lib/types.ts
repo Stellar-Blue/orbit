@@ -673,6 +673,8 @@ export interface SpaceSession {
   starts_at: string;
   ends_at: string;
   title?: string | null;
+  /** Free-text agenda shown with the session and carried into the invitations. */
+  description?: string | null;
   created_by?: string | null;
   created_at?: string;
   space?: Space;

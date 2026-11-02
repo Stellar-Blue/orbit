@@ -16,9 +16,9 @@ import { OfficeLayoutEditor } from '@/components/spaces/office-layout-editor';
 import { SessionSlots } from '@/components/spaces/session-slots';
 import { RoomSessionsModal } from '@/components/spaces/room-sessions-modal';
 import { SessionInviteFields } from '@/components/spaces/session-invite-fields';
-import { SessionInviteModal } from '@/components/spaces/session-invite-modal';
+import { SessionEditModal } from '@/components/spaces/session-edit-modal';
 import {
-  BOOKING_MODE_LABELS, canDeleteSession, canInviteToSession, clockLabel, heldWholeDaySpace, nextFreeSessionWindow,
+  BOOKING_MODE_LABELS, canDeleteSession, canEditSession, clockLabel, heldWholeDaySpace, nextFreeSessionWindow,
   overlappingSession, seatHolders, seatsLabel, sessionLabel, spaceDayState, summarizeInviteDelivery, validateSessionWindow,
   wholeDayHeldOn, type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
@@ -44,6 +44,7 @@ interface BookingDraft {
   startsAt: string;
   endsAt: string;
   title: string;
+  description: string;
   note: string;
   /** Guests invited as part of opening the session — only for a session this dialog creates. */
   inviteEmails: string[];
@@ -62,7 +63,7 @@ export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings, spaceSessionInvites,
     officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking, deleteSpaceSession,
-    inviteToSpaceSession,
+    inviteToSpaceSession, removeSpaceSessionInvite, updateSpaceSession,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -72,8 +73,8 @@ export default function SpacesPage() {
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   /** The timed room whose day is open in the sessions dialog. */
   const [roomModalId, setRoomModalId] = useState<string | null>(null);
-  /** The session whose invite dialog is open, with the room it belongs to. */
-  const [inviteTarget, setInviteTarget] = useState<{ session: SpaceSession; space: Space } | null>(null);
+  /** The session being edited, with the room it belongs to. */
+  const [editTarget, setEditTarget] = useState<{ session: SpaceSession; space: Space } | null>(null);
   const [saving, setSaving] = useState(false);
 
   const today = todayKey();
@@ -294,6 +295,7 @@ export default function SpacesPage() {
       startsAt: window.startsAt,
       endsAt: window.endsAt,
       title: focus?.session.title || '',
+      description: focus?.session.description || '',
       note: '',
       inviteEmails: [],
       includeOutlook: false,
@@ -316,6 +318,7 @@ export default function SpacesPage() {
       startsAt: window.startsAt,
       endsAt: window.endsAt,
       title: '',
+      description: '',
       note: '',
       inviteEmails: [],
       includeOutlook: false,
@@ -377,7 +380,7 @@ export default function SpacesPage() {
       session: timed
         ? draft.sessionId
           ? { id: draft.sessionId, startsAt: draft.startsAt, endsAt: draft.endsAt }
-          : { startsAt: draft.startsAt, endsAt: draft.endsAt, title: draft.title }
+          : { startsAt: draft.startsAt, endsAt: draft.endsAt, title: draft.title, description: draft.description }
         : null,
     });
     if (!result.ok) {
@@ -450,8 +453,8 @@ export default function SpacesPage() {
 
   /** A session can be taken back by whoever opened it, or by an administrator. */
   const canDeleteThisSession = (session: SpaceSession) => canDeleteSession(session, currentUser.id, isAdmin);
-  /** Inviting is the same rule: the person who opened the session, or an administrator. */
-  const canInviteThisSession = (session: SpaceSession) => canInviteToSession(session, currentUser.id, isAdmin);
+  /** Editing is the same rule: the person who opened the session, or an administrator. */
+  const canEditThisSession = (session: SpaceSession) => canEditSession(session, currentUser.id, isAdmin);
 
   const leave = async (bookingId: string, label: string) => {
     if (!confirm(`Release this seat in ${label}?`)) return;
@@ -671,8 +674,8 @@ export default function SpacesPage() {
                         canDelete={canDeleteThisSession}
                         onDelete={session => void removeSession(session, space.name)}
                         invites={spaceSessionInvites}
-                        canInvite={canInviteThisSession}
-                        onInvite={session => setInviteTarget({ session, space })}
+                        canEdit={canEditThisSession}
+                        onEdit={session => setEditTarget({ session, space })}
                       />
                     ) : (
                       <>
@@ -788,27 +791,31 @@ export default function SpacesPage() {
         canDelete={canDeleteThisSession}
         onDelete={session => void removeSession(session, roomModal?.name || 'this room')}
         invites={spaceSessionInvites}
-        canInvite={canInviteThisSession}
-        onInvite={session => {
+        canEdit={canEditThisSession}
+        onEdit={session => {
           if (!roomModal) return;
           setRoomModalId(null);
-          setInviteTarget({ session, space: roomModal });
+          setEditTarget({ session, space: roomModal });
         }}
       />
 
-      <SessionInviteModal
-        session={inviteTarget?.session || null}
-        space={inviteTarget?.space}
-        dayLabel={formatDate(day)}
-        people={profiles}
-        existing={inviteTarget
-          ? spaceSessionInvites.filter(invite => invite.session_id === inviteTarget.session.id)
-          : []}
-        onClose={() => setInviteTarget(null)}
-        onSend={(emails, includeOutlook) => inviteTarget
-          ? inviteToSpaceSession({ sessionId: inviteTarget.session.id, emails, includeOutlook })
-          : Promise.resolve({ ok: false, error: 'That session is no longer open.' })}
-      />
+      {/* Mounted per session: opening it again always starts from the values the card shows now. */}
+      {editTarget && (
+        <SessionEditModal
+          key={editTarget.session.id}
+          session={editTarget.session}
+          space={editTarget.space}
+          dayLabel={formatDate(day)}
+          people={profiles}
+          invites={spaceSessionInvites.filter(invite => invite.session_id === editTarget.session.id)}
+          onClose={() => setEditTarget(null)}
+          onSave={changes => updateSpaceSession({ sessionId: editTarget.session.id, ...changes })}
+          onAddInvitees={(emails, includeOutlook) => inviteToSpaceSession({
+            sessionId: editTarget.session.id, emails, includeOutlook,
+          })}
+          onRemoveInvitee={invite => removeSpaceSessionInvite(invite)}
+        />
+      )}
 
       <Modal
         isOpen={Boolean(draft)}
@@ -927,6 +934,16 @@ export default function SpacesPage() {
                     onChange={event => setDraft({ ...draft, title: event.target.value })}
                     placeholder="What is happening in this room?"
                     className="ui-input w-full"
+                  />
+                </div>
+                <div>
+                  <label className="ui-label block mb-1.5">Description (optional)</label>
+                  <textarea
+                    value={draft.description}
+                    onChange={event => setDraft({ ...draft, description: event.target.value })}
+                    placeholder="Agenda, links, anything the room should know"
+                    rows={2}
+                    className="ui-input w-full resize-y"
                   />
                 </div>
                 <SessionInviteFields

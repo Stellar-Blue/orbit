@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Clock, Mail, Plus, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Clock, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/primitives';
 import { clockLabel, seatHolders, seatsLabel, type SpaceDayState, type SpaceSessionState } from '@/lib/spaces';
 import type { Space, SpaceBooking, SpaceSession, SpaceSessionInvite } from '@/lib/types';
@@ -20,9 +20,9 @@ export interface SessionSlotsProps {
   onDelete?: (session: SpaceSession) => void;
   /** Everyone invited to the day's sessions, so each row can name them. */
   invites?: SpaceSessionInvite[];
-  /** Whether this viewer may invite people to the session (the person who opened it, or an admin). */
-  canInvite?: (session: SpaceSession) => boolean;
-  onInvite?: (session: SpaceSession) => void;
+  /** Whether this viewer may change the session (the person who opened it, or an admin). */
+  canEdit?: (session: SpaceSession) => boolean;
+  onEdit?: (session: SpaceSession) => void;
 }
 
 /** `Ana`, or the address itself when the guest has no Orbit profile. */
@@ -37,7 +37,7 @@ const inviteLabel = (invite: SpaceSessionInvite): string => {
  * its own window and its own seats, so the card lists them instead of showing a single state.
  */
 export function SessionSlots({
-  space, state, disabled, onJoin, onLeave, onOpen, canDelete, onDelete, invites, canInvite, onInvite,
+  space, state, disabled, onJoin, onLeave, onOpen, canDelete, onDelete, invites, canEdit, onEdit,
 }: SessionSlotsProps) {
   if (state.sessions.length === 0) {
     return (
@@ -75,15 +75,15 @@ export function SessionSlots({
                 </p>
                 <span className="flex shrink-0 items-center gap-1.5">
                   <span className="ui-meta">{seatsLabel(entry, space.capacity)}</span>
-                  {onInvite && !disabled && !entry.ended && canInvite?.(entry.session) && (
+                  {onEdit && !disabled && canEdit?.(entry.session) && (
                     <button
                       type="button"
-                      onClick={() => onInvite(entry.session)}
+                      onClick={() => onEdit(entry.session)}
                       className="cursor-pointer rounded p-0.5 text-[var(--ink-4)] transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--accent-ink)]"
-                      title="Invite people to this session"
-                      aria-label={`Invite people to the ${clockLabel(entry.session.starts_at)} session`}
+                      title="Edit this session, its time and the people invited"
+                      aria-label={`Edit the ${clockLabel(entry.session.starts_at)} session`}
                     >
-                      <UserPlus className="w-3 h-3" />
+                      <Pencil className="w-3 h-3" />
                     </button>
                   )}
                   {onDelete && canDelete?.(entry.session) && (
@@ -99,6 +99,11 @@ export function SessionSlots({
                   )}
                 </span>
               </div>
+              {entry.session.description && (
+                <p className="mt-0.5 min-w-0 truncate ui-meta" title={entry.session.description}>
+                  {entry.session.description}
+                </p>
+              )}
               <div className="mt-1 flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate ui-meta" title={holders.join(', ')}>
                   <Users className="w-3 h-3 inline mr-1 -mt-0.5" />

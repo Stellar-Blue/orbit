@@ -226,7 +226,7 @@ interface AppState {
     note?: string;
     seatId?: string | null;
     seatIds?: string[];
-    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
+    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string; description?: string } | null;
   }) => Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null }>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
   /** Deletes a whole session; its bookings cascade with it, so the seats are released. */
@@ -240,6 +240,19 @@ interface AppState {
     emails: string[];
     includeOutlook: boolean;
   }) => Promise<{ ok: boolean; error?: string; invites?: SessionInviteOutcome[]; slackConfigured?: boolean }>;
+  /** Takes one invitee off a session: their invitation, their seat and their calendar entry. */
+  removeSpaceSessionInvite: (invite: SpaceSessionInvite) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Changes a session's window, title or agenda. The server patches the Outlook meeting and tells
+   * the colleagues invited on Slack when the time moved.
+   */
+  updateSpaceSession: (input: {
+    sessionId: string;
+    startsAt: string;
+    endsAt: string;
+    title: string;
+    description: string;
+  }) => Promise<{ ok: boolean; error?: string; notified?: number; calendarError?: string }>;
   refreshSpaces: () => Promise<void>;
   budgets: Budget[];
   budgetCategories: BudgetCategory[];
@@ -5825,7 +5838,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     /** Chairs the room may hand out in turn, tried in order when one is taken by a faster colleague. */
     seatIds?: string[];
     /** `id` joins a session that already exists; without it the window opens a new session. */
-    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string } | null;
+    session?: { id?: string | null; startsAt: string; endsAt: string; title?: string; description?: string } | null;
   }): Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null }> => {
     const supabase = getSupabaseBrowserClient();
     try {
@@ -5873,6 +5886,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               starts_at: startsAt,
               ends_at: endsAt,
               title: input.session.title?.trim() || null,
+              description: input.session.description?.trim() || null,
               // The session belongs to whoever is booking, even when an admin books for a colleague.
               created_by: currentUser?.id || null,
             }]).select().single();
@@ -5900,6 +5914,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 starts_at: startsAt,
                 ends_at: endsAt,
                 title: input.session.title?.trim() || null,
+                description: input.session.description?.trim() || null,
                 created_at: new Date().toISOString(),
               } as SpaceSession;
               setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
@@ -6090,6 +6105,94 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error('inviteToSpaceSession exception:', e);
+      return { ok: false, error: message };
+    }
+  };
+
+  /**
+   * Takes one person off a session. The API drops their invitation and seat and removes them from
+   * the Outlook meeting; the local slices follow so the room card updates without a reload.
+   */
+  const removeSpaceSessionInvite = async (invite: SpaceSessionInvite): Promise<{ ok: boolean; error?: string }> => {
+    if (isDemoMode()) {
+      return { ok: false, error: 'Invitations need the real workspace — the demo has no Slack or calendar to change.' };
+    }
+    try {
+      const query = new URLSearchParams({ session_id: invite.session_id, email: invite.email });
+      const response = await fetch(`/api/spaces/session-invites?${query.toString()}`, { method: 'DELETE' });
+      const payload = await response.json().catch(() => null) as {
+        error?: string; seat_released?: boolean; calendar_error?: string;
+      } | null;
+      if (!response.ok) {
+        return { ok: false, error: payload?.error || 'That person could not be removed from the session.' };
+      }
+      setSpaceSessionInvites(prev => prev.filter(entry => !(
+        entry.session_id === invite.session_id && entry.email === invite.email
+      )));
+      if (payload?.seat_released && invite.profile_id) {
+        setSpaceBookings(prev => prev.filter(booking => !(
+          booking.session_id === invite.session_id && booking.profile_id === invite.profile_id
+        )));
+      }
+      void refreshSpaces();
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('removeSpaceSessionInvite exception:', e);
+      return { ok: false, error: message };
+    }
+  };
+
+  /**
+   * Edits a session that already exists. The server owns the write because it also has to patch the
+   * Outlook meeting and warm the Slack invitees about a moved window.
+   */
+  const updateSpaceSession = async (input: {
+    sessionId: string;
+    startsAt: string;
+    endsAt: string;
+    title: string;
+    description: string;
+  }): Promise<{ ok: boolean; error?: string; notified?: number; calendarError?: string }> => {
+    if (isDemoMode()) {
+      return { ok: false, error: 'Sessions live in the real workspace — the demo only has sample rooms.' };
+    }
+    try {
+      const response = await fetch('/api/spaces/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: input.sessionId,
+          starts_at: input.startsAt,
+          ends_at: input.endsAt,
+          title: input.title,
+          description: input.description,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+        notified?: number;
+        calendar_error?: string;
+        session?: { starts_at: string; ends_at: string; title: string | null; description: string | null };
+      } | null;
+      if (!response.ok || !payload?.session) {
+        return { ok: false, error: payload?.error || 'The session could not be updated.' };
+      }
+      const saved = payload.session;
+      setSpaceSessions(prev => prev.map(session => session.id === input.sessionId
+        ? {
+          ...session,
+          starts_at: saved.starts_at,
+          ends_at: saved.ends_at,
+          title: saved.title,
+          description: saved.description,
+        }
+        : session));
+      void refreshSpaces();
+      return { ok: true, notified: payload.notified, calendarError: payload.calendar_error };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('updateSpaceSession exception:', e);
       return { ok: false, error: message };
     }
   };
@@ -7248,6 +7351,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       cancelSpaceBooking,
       deleteSpaceSession,
       inviteToSpaceSession,
+      removeSpaceSessionInvite,
+      updateSpaceSession,
       refreshSpaces,
       updateInvoiceStatus,
       linkInvoiceToContract,

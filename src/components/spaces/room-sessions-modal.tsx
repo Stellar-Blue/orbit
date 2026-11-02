@@ -23,8 +23,9 @@ export interface RoomSessionsModalProps {
   onDelete?: (session: SpaceSession) => void;
   /** Everyone invited to the room's sessions on this day. */
   invites?: SpaceSessionInvite[];
-  canInvite?: (session: SpaceSession) => boolean;
-  onInvite?: (session: SpaceSession) => void;
+  /** Whether this viewer may change a session — its time, title, agenda and invitees. */
+  canEdit?: (session: SpaceSession) => boolean;
+  onEdit?: (session: SpaceSession) => void;
 }
 
 /**
@@ -34,7 +35,7 @@ export interface RoomSessionsModalProps {
  */
 export function RoomSessionsModal({
   room, type, state, dayLabel, isPast, onClose, onJoin, onLeave, onNew, canDelete, onDelete,
-  invites, canInvite, onInvite,
+  invites, canEdit, onEdit,
 }: RoomSessionsModalProps) {
   if (!room || !state) return null;
   return (
@@ -73,8 +74,8 @@ export function RoomSessionsModal({
           canDelete={canDelete}
           onDelete={onDelete}
           invites={invites}
-          canInvite={canInvite}
-          onInvite={onInvite}
+          canEdit={canEdit}
+          onEdit={onEdit}
         />
 
         {isPast && (

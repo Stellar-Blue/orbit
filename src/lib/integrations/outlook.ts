@@ -148,8 +148,8 @@ export async function graphCreateEvent(mailboxEmail: string, payload: GraphEvent
   return graphRequest('POST', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events`, payload, token);
 }
 
-export async function graphPatchEvent(mailboxEmail: string, eventId: string, payload: Partial<GraphEventPayload>): Promise<GraphResult> {
-  return graphRequest('PATCH', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`, payload);
+export async function graphPatchEvent(mailboxEmail: string, eventId: string, payload: Partial<GraphEventPayload>, token?: string): Promise<GraphResult> {
+  return graphRequest('PATCH', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`, payload, token);
 }
 
 export async function graphGetEvent(mailboxEmail: string, eventId: string): Promise<GraphResult> {
@@ -251,6 +251,7 @@ export interface SessionInviteDetails {
   startsAt: string;
   endsAt: string;
   title?: string | null;
+  description?: string | null;
   note?: string | null;
   attendees: string[];
 }
@@ -271,6 +272,7 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
     ? `${details.title.trim()} · ${details.roomName}`
     : `Meeting in ${details.roomName}`;
   const where = details.roomLocation ? `${details.roomName} (${details.roomLocation})` : details.roomName;
+  const description = details.description?.trim();
   const note = details.note?.trim();
   return {
     subject,
@@ -281,6 +283,7 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
         '',
         `Room: ${where}`,
         `When: ${longDate(details.sessionDate)}, ${clock(details.startsAt)} – ${clock(details.endsAt)}`,
+        ...(description ? ['', description] : []),
         ...(note ? ['', note] : []),
       ].join('\n'),
     },
@@ -297,25 +300,43 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
 }
 
 /**
- * Creates the meeting on the organiser's mailbox. The delegated token is preferred so the invite
- * comes from the person who booked; the application token is the fallback for organisers who never
- * connected Microsoft, since Graph accepts application `Calendars.ReadWrite` on any tenant mailbox.
+ * Puts the session on the organiser's calendar and keeps it in sync. The delegated token is used
+ * when the organiser connected Microsoft, so the invitation comes from the person who booked; the
+ * application token covers organisers who never connected, since Graph accepts application
+ * `Calendars.ReadWrite` on any tenant mailbox.
+ *
+ * `existingEventId` is the single meeting a session owns: an edit patches it (Graph notifies the
+ * attendees itself) and an empty attendee list cancels it. A meeting deleted by hand in Outlook is
+ * recreated rather than silently lost.
  */
-export async function sendSessionCalendarInvite(args: {
+export async function syncSessionCalendarInvite(args: {
   admin: SupabaseClient;
   organizerProfileId: string;
   organizerEmail: string;
   details: SessionInviteDetails;
+  existingEventId?: string | null;
 }): Promise<{ ok: boolean; eventId?: string; error?: string }> {
-  if (args.details.attendees.length === 0) return { ok: true };
   const token = await getDelegatedToken(args.admin, args.organizerProfileId);
-  const result = await graphCreateEvent(
-    args.organizerEmail,
-    buildSessionInvitePayload(args.details),
-    token || undefined
-  );
-  if (!result.ok) return { ok: false, error: result.message || result.code || `http_${result.status}` };
-  const eventId = (result.event as { id?: string } | undefined)?.id;
+  const payload = buildSessionInvitePayload(args.details);
+
+  if (args.existingEventId) {
+    if (args.details.attendees.length === 0) {
+      const cancelled = await graphDeleteEvent(args.organizerEmail, args.existingEventId, token || undefined);
+      return cancelled.ok
+        ? { ok: true }
+        : { ok: false, error: cancelled.message || cancelled.code || `http_${cancelled.status}` };
+    }
+    const patched = await graphPatchEvent(args.organizerEmail, args.existingEventId, payload, token || undefined);
+    if (patched.ok) return { ok: true, eventId: args.existingEventId };
+    if (patched.status !== 404) {
+      return { ok: false, error: patched.message || patched.code || `http_${patched.status}` };
+    }
+  }
+
+  if (args.details.attendees.length === 0) return { ok: true };
+  const created = await graphCreateEvent(args.organizerEmail, payload, token || undefined);
+  if (!created.ok) return { ok: false, error: created.message || created.code || `http_${created.status}` };
+  const eventId = (created.event as { id?: string } | undefined)?.id;
   return { ok: true, eventId };
 }
 

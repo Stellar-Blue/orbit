@@ -297,6 +297,18 @@ export function canInviteToSession(
   return canDeleteSession(session, profileId, isAdmin);
 }
 
+/**
+ * Who may change a session — its window, title, description and the people invited to it. The same
+ * rule as taking it back, so the pencil and the trash can never disagree with the database.
+ */
+export function canEditSession(
+  session: Pick<SpaceSession, 'created_by'>,
+  profileId: string | null | undefined,
+  isAdmin: boolean
+): boolean {
+  return canDeleteSession(session, profileId, isAdmin);
+}
+
 /** A dialect of the HTML5 address rule that also accepts the `+tag` addresses the team uses. */
 const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
