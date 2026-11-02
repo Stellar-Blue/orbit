@@ -116,7 +116,7 @@ function coverageTooltip(coverage: InvoiceCellCoverage): string {
         }`
       : undefined,
     `covered ${formatTotal(coverageTotal(coverage))}`,
-    `contract ${formatTotal(coverage.contractTotal)}`,
+    `expected ${formatTotal(coverage.contractTotal)}`,
     comparison,
     coverage.invoices.join(', '),
     coverage.issueDate ? `issued ${coverage.issueDate}` : undefined,

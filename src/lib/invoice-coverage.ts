@@ -36,7 +36,11 @@ export interface InvoiceCellCoverage {
   receiptTotal: number;
   /** Labels of the receipts covering the box, oldest first. */
   receipts: string[];
-  /** The contract's own charges over the box's months — what should have been billed. */
+  /**
+   * What the box's money should come to: this contract's charges over the box's months, plus what
+   * else its invoices bill (other agreements' fees, change requests) — so a multi-agreement invoice
+   * is measured against all of it.
+   */
   contractTotal: number;
   /** `invoiceTotal + receiptTotal - contractTotal`; 0 when the coverage matches the schedule. */
   variance: number;
@@ -372,34 +376,45 @@ export function buildInvoiceCoverage(
   };
   const sumOver = (months: string[], amounts: Record<string, number>) =>
     months.reduce((total, month) => total + (amounts[month] || 0), 0);
+  const fees = (contractIds: string[], months: string[]) => contractIds.reduce((total, id) => {
+    const contract = contractsById.get(id);
+    return total + (contract ? sumOver(months, chargesFor(contract)) : 0);
+  }, 0);
 
   /**
-   * Agreements whose own fees an invoice (or receipt) bills. Contracts linked directly always count.
-   * A linked project's parent agreement is added by the link picker on its own, so the links cannot
-   * say whether its fee is billed as well — the money can: the parents count when `amount` sits
-   * closer to "direct fees + projects + parent fees" than to "direct fees + projects" over the
-   * months. Projects are valued generously (their whole budget when that beats the months' share),
-   * so a change request billed in one lump never pulls its agreement in.
+   * What an invoice (or receipt) bills: the agreements whose own fees it covers, and the part its
+   * change requests account for. Contracts linked directly always count. A linked project's parent
+   * agreement is added by the link picker on its own, so the links cannot say whether its fee is
+   * billed too — the money can. A change request is billed either for its share of the months or in
+   * one lump (its budget); the parents count when, once their fees are taken out, the rest matches
+   * one of those better than it does with the fees left in.
    */
   // ponytail: amount heuristic — a budget-less (timesheet) change request billed for about its
   // agreement's fee can tip it; store an explicit fee / change-request flag on the link if that bites.
-  const feeContractIds = (contractIds: string[], projectIds: string[], months: string[], amount: number): string[] => {
-    const parents = new Set(projectIds.map(projectId => String(projectsById.get(projectId)?.contract_id || '')));
-    const direct = contractIds.filter(id => !parents.has(id));
-    const parentIds = contractIds.filter(id => parents.has(id));
-    if (parentIds.length === 0) return direct;
+  const billedShares = (contractIds: string[], projectIds: string[], months: string[], amount: number) => {
+    const share = projectIds.reduce((total, id) => total + sumOver(months, projectMonths(id)), 0);
+    const budget = projectIds.reduce((total, id) => total + (Number(projectsById.get(id)?.budget_value) || 0), 0);
+    const fit = (ids: string[]) => {
+      const rest = amount - fees(ids, months);
+      const projectAmount = projectIds.length === 0 ? 0 : Math.abs(rest - share) <= Math.abs(rest - budget) ? share : budget;
+      return { contractIds: ids, projectAmount, miss: Math.abs(rest - projectAmount) };
+    };
+    const parents = new Set(projectIds.map(id => String(projectsById.get(id)?.contract_id || '')));
+    const direct = fit(contractIds.filter(id => !parents.has(id)));
+    if (direct.contractIds.length === contractIds.length) return direct;
+    const all = fit(contractIds);
+    return all.miss < direct.miss ? all : direct;
+  };
 
-    const fees = (ids: string[]) => ids.reduce((total, id) => {
-      const contract = contractsById.get(id);
-      return total + (contract ? sumOver(months, chargesFor(contract)) : 0);
-    }, 0);
-    const projectValue = projectIds.reduce(
-      (total, projectId) => total + Math.max(sumOver(months, projectMonths(projectId)), Number(projectsById.get(projectId)?.budget_value) || 0),
-      0
-    );
-    const withoutParents = fees(direct) + projectValue;
-    const withParents = withoutParents + fees(parentIds);
-    return Math.abs(amount - withParents) < Math.abs(amount - withoutParents) ? contractIds : direct;
+  /** Per cell, what a box's money pays for besides its own agreement's fee (see contractTotal). */
+  const otherBilled = new Map<string, number>();
+  const noteOtherBilled = (contractIds: string[], ownerId: string, months: string[], projectAmount: number) => {
+    const others = fees(contractIds.filter(id => id !== ownerId), months) + projectAmount;
+    if (others === 0) return;
+    months.forEach(month => {
+      const key = invoiceCellKey(ownerId, month);
+      otherBilled.set(key, (otherBilled.get(key) || 0) + others);
+    });
   };
 
   ordered.forEach(invoice => {
@@ -407,9 +422,10 @@ export function buildInvoiceCoverage(
     if (months.length === 0) return;
 
     // A change-request invoice paints its project rows; the parent agreement only when the invoice
-    // bills its fee too (see feeContractIds), or the same money would show twice.
+    // bills its fee too (see billedShares), or the same money would show twice.
     const billedThroughProjects = invoiceProjectIds(invoice).length > 0;
-    const linkedContracts = feeContractIds(invoiceContractIds(invoice), invoiceProjectIds(invoice), months, invoiceAmountEur(invoice))
+    const billed = billedShares(invoiceContractIds(invoice), invoiceProjectIds(invoice), months, invoiceAmountEur(invoice));
+    const linkedContracts = billed.contractIds
       .map(contractId => contractsById.get(contractId))
       .filter((contract): contract is Contract => Boolean(contract));
     // Nothing linked at all: fall back to the counterparty contract the invoice actually mentions
@@ -424,8 +440,10 @@ export function buildInvoiceCoverage(
     const targets = linkedContracts.length > 0 ? linkedContracts : inferred ? [inferred] : [];
     if (targets.length === 0) return;
 
+    const targetIds = targets.map(contract => contract.id);
     targets.forEach(contract => {
       paintInvoiceBox(covered, invoice, months, contract.id, month => invoiceCellKey(contract.id, month));
+      noteOtherBilled(targetIds, contract.id, months, billed.projectAmount);
     });
   });
 
@@ -444,27 +462,27 @@ export function buildInvoiceCoverage(
       ]);
       // Same rule as invoices: money that covers a change request belongs to that row, and to the
       // agreement it sits under only when the amount says its fee was paid too.
-      const contractIds = feeContractIds(
+      const billed = billedShares(
         normalizeLinkIds([...(receipt.contract_ids ?? []), ...(linkedInvoice ? invoiceContractIds(linkedInvoice) : [])]),
         billedProjectIds,
         months,
         round2(Number(receipt.amount_eur) || 0)
       );
-      contractIds
-        .map(contractId => contractsById.get(contractId))
-        .filter((contract): contract is Contract => Boolean(contract))
-        .forEach(contract => {
-          paintReceiptBox(covered, receipt, months, contract.id, month => invoiceCellKey(contract.id, month));
-        });
+      const targetIds = billed.contractIds.filter(contractId => contractsById.has(contractId));
+      targetIds.forEach(contractId => {
+        paintReceiptBox(covered, receipt, months, contractId, month => invoiceCellKey(contractId, month));
+        noteOtherBilled(targetIds, contractId, months, billed.projectAmount);
+      });
     });
 
   // The comparison only makes sense once a box has absorbed every overlapping invoice, so the
   // contract side is summed over the final month range in a second pass.
-  covered.forEach(entry => {
+  covered.forEach((entry, key) => {
     const contract = contractsById.get(entry.contractId);
     const charges = contract ? chargesFor(contract) : {};
     entry.contractTotal = round2(
-      monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (charges[month] || 0), 0)
+      monthKeysBetween(entry.firstMonth, entry.lastMonth).reduce((total, month) => total + (charges[month] || 0), 0) +
+        (otherBilled.get(key) || 0)
     );
     entry.variance = round2(coverageTotal(entry) - entry.contractTotal);
   });

@@ -822,10 +822,10 @@ assert(
 );
 
 // The link picker saves the parent agreement alongside a project; the schedule must not show the
-// same invoice on both rows.
+// same invoice on both rows. The net is the change request's whole budget — billed in one lump.
 const contractAndProjectInvoice = invoice({
   id: 'inv-both', invoice_number: 'Α-22', status: 'paid',
-  contract_id: 'cnt-1', contract_ids: ['cnt-1'], project_ids: ['prj-alpha'], net: 4500,
+  contract_id: 'cnt-1', contract_ids: ['cnt-1'], project_ids: ['prj-alpha'], net: 6000,
 });
 const bothCoverage = buildInvoiceCoverage([contractAndProjectInvoice], twoSameCounterparty, [], [], [crAlpha, crBeta]);
 const bothProjectCoverage = buildProjectInvoiceCoverage([contractAndProjectInvoice], [crAlpha, crBeta]);
@@ -862,6 +862,26 @@ assert(
   ['2026-08', '2026-09', '2026-10'].every(month => feeAndCrCoverage.has(`cnt-etrm:${month}`) && feeAndCrCoverage.has(`cnt-trading:${month}`)),
   'An invoice whose net includes a project parent’s fee paints that agreement too',
   [...feeAndCrCoverage.keys()].join(' ')
+);
+assert(
+  ['cnt-etrm:2026-08', 'cnt-trading:2026-10'].every(key => {
+    const cell = feeAndCrCoverage.get(key);
+    return cell?.contractTotal === 16445 && cell.variance === 0 && invoiceVarianceTone(cell) === 'match';
+  }),
+  'Each agreement row compares the invoice with everything it bills, not with its own fee alone',
+  JSON.stringify(['cnt-etrm:2026-08', 'cnt-trading:2026-10'].map(key => feeAndCrCoverage.get(key)?.contractTotal))
+);
+// A quarterly invoice of the agreement fee plus the change request's share for those months, where
+// the change request's whole budget is larger than the fee: still fee + change request.
+const sharedRollout = { id: 'prj-rollout', contract_id: 'cnt-trading', name: 'Rollout', status: 'active', budget_value: 30000, starts_on: '2026-07-01', ends_on: '2026-12-31' };
+const feeAndShare = buildInvoiceCoverage(
+  [invoice({ id: 'inv-share', counterparty_id: 'cp-fi', contract_id: 'cnt-trading', contract_ids: ['cnt-trading'], project_ids: ['prj-rollout'], period_from: '2026-07-01', period_to: '2026-09-30', net: 28350 })],
+  feeAndCrContracts, [], [], [sharedRollout]
+);
+assert(
+  feeAndShare.get('cnt-trading:2026-07')?.variance === 0,
+  'Fee plus a change request’s period share paints the agreement and matches',
+  JSON.stringify(feeAndShare.get('cnt-trading:2026-07'))
 );
 const feeAndCrPeriods = getContractBillingPeriods(feeAndCrContracts[1], { today: new Date('2026-11-05T00:00:00'), invoices: [feeAndCrDraft] });
 assert(
