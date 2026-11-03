@@ -17,6 +17,7 @@ import {
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { DatePicker } from '@/components/ui/date-picker';
+import { ProfileAvatar } from '@/components/ui/profile-avatar';
 
 const PeopleGrid = dynamic(() => import('@/components/people/people-grid').then(m => m.PeopleGrid), { ssr: false });
 
@@ -387,9 +388,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                   </Badge>
                 </div>
                 <div className="flex items-center space-x-3.5">
-                  <div className="w-12 h-12 rounded-full bg-slate-800 text-white font-extrabold text-base flex items-center justify-center shadow-xs">
-                    {p.first_name[0]}{p.last_name[0]}
-                  </div>
+                  <ProfileAvatar photoUrl={p.photo_url} firstName={p.first_name} lastName={p.last_name} size="lg" />
                   <div>
                     <h3 className="font-bold text-base text-slate-800 group-hover:text-[var(--accent)] transition-colors">{p.first_name} {p.last_name}</h3>
                     <p className="text-xs text-slate-500">{p.name_el}</p>
