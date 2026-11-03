@@ -392,7 +392,7 @@ export default function RemoteWorkLogPage() {
       const skipNote = coverageSkipped.length > 0
         ? ` ${coverageSkipped.length} day(s) stayed office: a team coverage rule caps how many of your group can be remote on the same day.`
         : '';
-      notifySuccess(`Applied your default pattern to ${remoteCount} remote working day(s) for ${filledRange}.${skipNote}`);
+      notifySuccess(`Registered ${declarations.length} working day(s) for ${filledRange} from your default pattern (${remoteCount} remote).${skipNote}`);
     }
   };
 

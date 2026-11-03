@@ -4972,22 +4972,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const bulkAddRemoteDays = async (profileId: string, declarations: { date: string; mode: RemoteMode | 'office'; location?: string; note?: string }[]): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     try {
-      const toDeleteDates = declarations.filter(d => d.mode === 'office').map(d => d.date);
-      const toUpsert = declarations.filter(d => d.mode !== 'office').map(d => ({
+      // Office days are saved too (like a single-day declaration): the row is what marks the day as
+      // registered on the remote calendar and for the advance-registration Slack reminder.
+      const toUpsert = declarations.map(d => ({
         id: remoteDays.find(r => r.profile_id === profileId && r.date === d.date)?.id || generateUUID(),
         profile_id: profileId,
         date: d.date,
         mode: d.mode as RemoteMode,
         location: d.location || null,
         note: d.note || null,
-        ergani_status: 'pending' as const
+        ergani_status: d.mode === 'office' ? 'not_required' as const : 'pending' as const
       }));
 
-      if (toDeleteDates.length > 0) {
-        await supabase.from('remote_days').delete().eq('profile_id', profileId).in('date', toDeleteDates);
-      }
       if (toUpsert.length > 0) {
-        await supabase.from('remote_days').upsert(toUpsert, { onConflict: 'profile_id,date' });
+        const { error } = await supabase.from('remote_days').upsert(toUpsert, { onConflict: 'profile_id,date' });
+        if (error) {
+          alert(`Database Error: ${error.message}`);
+          return false;
+        }
       }
 
       setRemoteDays(prev => {
