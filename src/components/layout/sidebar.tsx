@@ -8,7 +8,7 @@ import { roleLabel } from '@/lib/profile-role';
 import { 
   Users, FileText, Calendar, Globe, DollarSign, 
   ChevronDown, AlertTriangle, Sliders, LogOut, 
-  Settings, CalendarDays, Home, Briefcase, X, Eye, EyeOff, Building2, Receipt, UserRound, Clock, BarChart3, DoorOpen
+  Settings, CalendarDays, Home, Briefcase, X, Building2, Receipt, UserRound, Clock, BarChart3, DoorOpen
 } from 'lucide-react';
 import { Badge } from '@/components/ui/primitives';
 
@@ -21,7 +21,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMobileMenuOpen, collapsed = false }) => {
   const pathname = usePathname();
-  const { currentUser, profiles, switchUser, isDevMode, signOut, isViewAsEmployee, setIsViewAsEmployee, realUserRole, companyProfile, previewProfileId, stopPreview, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
+  const { currentUser, profiles, switchUser, isDevMode, signOut, companyProfile, profileRoleHistory, jobRoles, seniorityLevels, hiddenScreens } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isContractor = currentUser.employment_type === 'contractor';
@@ -159,53 +159,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileMenuOpen = false, setMob
         )}
       </div>
 
-      {/* Footer / User Profile & Dev Mode Switcher. The icon rail keeps only the avatar: the header
-          carries the preview switches and the ribbon the way out of a preview. */}
+      {/* Footer / User Profile & Dev Mode Switcher. Preview switches live in the header and the
+          way out of a preview in the ribbon, so the footer keeps only the account controls. */}
       <div className={`border-t border-[var(--line)] shrink-0 ${compact ? 'p-2' : 'p-3'}`}>
-        {!compact && realUserRole === 'admin' && previewProfileId && (
-          <div className="mb-3">
-            <button
-              onClick={stopPreview}
-              className="w-full p-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer shadow-2xs border bg-amber-500 text-white border-amber-600 hover:bg-amber-600"
-              title="Return to Full Admin view"
-            >
-              <span className="flex items-center truncate">
-                <EyeOff className="w-3.5 h-3.5 mr-2 shrink-0 text-white" />
-                <span>Exit Preview — {currentUser.first_name} {currentUser.last_name}</span>
-              </span>
-              <Badge variant="neutral" className="text-[9px] px-1.5 py-0.5 font-black shrink-0 bg-white text-amber-950 border-amber-300">
-                ACTIVE
-              </Badge>
-            </button>
-          </div>
-        )}
-
-        {!compact && realUserRole === 'admin' && !previewProfileId && (
-          <div className="mb-3">
-            <button
-              onClick={() => setIsViewAsEmployee(!isViewAsEmployee)}
-              className={`w-full p-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer shadow-2xs border ${
-                isViewAsEmployee
-                  ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600'
-                  : 'bg-white text-[var(--ink-2)] border-[var(--line-strong)] hover:bg-[var(--surface-muted)]'
-              }`}
-              title={isViewAsEmployee ? "Return to Full Admin view" : "Switch view to experience platform as an ordinary employee"}
-            >
-              <span className="flex items-center truncate">
-                {isViewAsEmployee ? (
-                  <EyeOff className="w-3.5 h-3.5 mr-2 shrink-0 text-white" />
-                ) : (
-                  <Eye className="w-3.5 h-3.5 mr-2 shrink-0 text-[var(--accent)]" />
-                )}
-                <span>{isViewAsEmployee ? 'Exit Employee Preview' : 'View as Employee'}</span>
-              </span>
-              <Badge variant={isViewAsEmployee ? 'neutral' : 'info'} className={`text-[9px] px-1.5 py-0.5 font-black shrink-0 ${isViewAsEmployee ? 'bg-white text-amber-950 border-amber-300' : ''}`}>
-                {isViewAsEmployee ? 'ACTIVE' : 'PREVIEW'}
-              </Badge>
-            </button>
-          </div>
-        )}
-
         {isDevMode && !compact && (
           <div className="mb-3 px-2.5 py-1.5 rounded-[4px] bg-[var(--surface-muted)] border border-[var(--line)] text-[var(--ink-2)] flex items-center justify-between text-[11px]">
             <span className="flex items-center font-semibold truncate">

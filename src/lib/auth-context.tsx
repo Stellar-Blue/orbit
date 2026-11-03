@@ -7441,6 +7441,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isDemo,
       ensureData,
     }}>
+      {/* Browser-tab icon follows Settings → Corporate Profile → Logo URL; React hoists it into <head>. */}
+      <link rel="icon" href={companyProfile?.logo_url || '/icon.png'} />
       {children}
     </AuthContext.Provider>
   );
