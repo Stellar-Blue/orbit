@@ -159,6 +159,8 @@ export async function slackSendDirectMessage(args: {
   email: string;
   userId?: string | null;
   text: string;
+  /** Block Kit layout; `text` stays the notification/fallback copy. */
+  blocks?: unknown[];
 }): Promise<{ ok: boolean; error?: string }> {
   let userId = args.userId || null;
   if (!userId) {
@@ -172,6 +174,7 @@ export async function slackSendDirectMessage(args: {
   const posted = await slackBotRequest('chat.postMessage', {
     channel,
     text: args.text,
+    ...(args.blocks ? { blocks: JSON.stringify(args.blocks) } : {}),
     unfurl_links: 'false',
     unfurl_media: 'false',
   });

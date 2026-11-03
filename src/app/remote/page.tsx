@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { 
   Globe, MapPin, AlertTriangle, Calendar as CalendarIcon, 
-  Users, ShieldCheck, Clock, Building2, Info, XCircle, 
+  Users, ShieldCheck, Clock, Building2, Info, XCircle, CheckCircle2,
   ChevronLeft, ChevronRight, Zap, Lock, RefreshCw, FileText 
 } from 'lucide-react';
 import { 
@@ -246,6 +246,8 @@ export default function RemoteWorkLogPage() {
         isHoliday: isHoliday || isMandatory,
         isOnLeave,
         mode,
+        // A saved remote_days row (office, remote or other city). Without one, `mode` is only the office default.
+        isRegistered: !!remoteEntry,
         isCustom: !!remoteEntry && !patternCovered,
         location: remoteEntry?.location,
         note: remoteEntry?.note,
@@ -753,6 +755,8 @@ export default function RemoteWorkLogPage() {
                 <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-cyan-500 mr-1.5" /> Remote (GR)</span>
                 <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-blue-600 mr-1.5" /> Other City</span>
                 <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-full bg-slate-400 mr-1.5" /> Office HQ</span>
+                <span className="flex items-center font-medium"><CheckCircle2 className="w-3 h-3 text-emerald-600 mr-1" /> Registered</span>
+                <span className="flex items-center font-medium"><span className="w-2.5 h-2.5 rounded-sm border border-dashed border-amber-400 mr-1.5" /> Not registered</span>
               </div>
             </div>
 
@@ -829,20 +833,28 @@ export default function RemoteWorkLogPage() {
                       )}
                       {!day.isHoliday && !day.isOnLeave && !day.isWeekend && day.isCurrentMonth && (
                         <div className="space-y-1">
-                          {day.mode === 'office' && (
-                            <div className="px-2 py-1 rounded-md bg-slate-100/90 text-slate-600 text-[11px] font-bold text-center border border-slate-200/80 transition-transform group-hover:scale-[1.02]">
+                          {day.mode === 'office' && (day.isRegistered || day.isPast) && (
+                            <div className="px-2 py-1 rounded-md bg-slate-100/90 text-slate-600 text-[11px] font-bold text-center border border-slate-200/80 transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
                               🏢 Office HQ
+                              {day.isRegistered && <CheckCircle2 aria-label="Registered" className="w-3 h-3 text-emerald-600 shrink-0" />}
+                            </div>
+                          )}
+                          {!day.isRegistered && !day.isPast && (
+                            <div className="px-2 py-1 rounded-md bg-amber-50/70 text-amber-800 text-[10px] font-bold text-center border border-dashed border-amber-400 transition-transform group-hover:scale-[1.02]">
+                              Not registered
                             </div>
                           )}
                           {day.mode === 'remote_gr' && (
                             <div title={day.isCustom ? (outlookConnected ? 'Extra day — synced to your Outlook calendar as an event' : 'Extra day — connect Microsoft to sync to Outlook') : undefined} className="px-2 py-1 rounded-md bg-cyan-100 text-cyan-950 text-[11px] font-extrabold text-center border border-cyan-300 shadow-2xs transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
                               🏠 Remote GR
+                              <CheckCircle2 aria-label="Registered" className="w-3 h-3 text-emerald-600 shrink-0" />
                               {day.isCustom && <span className={`inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1 py-0.5 rounded ${outlookConnected ? 'bg-emerald-500/15 text-emerald-700' : 'bg-slate-400/15 text-slate-500'}`}><RefreshCw className="w-2 h-2" /> Outlook</span>}
                             </div>
                           )}
                           {day.mode === 'remote_abroad' && (
                             <div title={`Other City: ${day.location || 'Logged'}${day.isCustom ? ' · declared day — synced to Outlook as an extra event' : ''}`} className="px-2 py-1 rounded-md bg-blue-100 text-blue-950 text-[11px] font-extrabold truncate text-center border border-blue-300 shadow-2xs transition-transform group-hover:scale-[1.02] flex items-center justify-center gap-1">
                               📍 Other City
+                              <CheckCircle2 aria-label="Registered" className="w-3 h-3 text-emerald-600 shrink-0" />
                               {day.isCustom && <span className={`inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1 py-0.5 rounded shrink-0 ${outlookConnected ? 'bg-emerald-500/15 text-emerald-700' : 'bg-slate-400/15 text-slate-500'}`}><RefreshCw className="w-2 h-2" /> Outlook</span>}
                             </div>
                           )}
