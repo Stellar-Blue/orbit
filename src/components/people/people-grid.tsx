@@ -10,6 +10,7 @@ import { EmployeeIntegration } from '@/lib/integrations/types';
 import { resolveCurrentRole } from '@/lib/profile-role';
 import { formatDate } from '@/lib/date';
 import { Badge } from '@/components/ui/primitives';
+import { ProfileAvatar } from '@/components/ui/profile-avatar';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { Search } from 'lucide-react';
 
@@ -107,9 +108,7 @@ export const PeopleGrid: React.FC<PeopleGridProps> = ({ profiles, teams, integra
       headerName: 'Employee Name', field: 'name', minWidth: 240, sortable: true, ...excelSetFilter(), pinned: 'left',
       cellRenderer: (p: ICellRendererParams<PeopleRow, string>) => (
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
-            {(p.value || '').split(' ').map(w => w[0]).slice(0, 2).join('')}
-          </div>
+          <ProfileAvatar photoUrl={p.data?.profile.photo_url} firstName={p.data?.profile.first_name || ''} lastName={p.data?.profile.last_name || ''} size="md" />
           <div className="min-w-0">
             <p className="font-semibold text-slate-800 truncate flex items-center gap-1.5">
               {p.value}
