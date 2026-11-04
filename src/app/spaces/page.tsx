@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import {
   CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Grid2x2, LayoutGrid, MapPin, Users, X,
@@ -64,7 +64,7 @@ export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings, spaceSessionInvites,
     officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking, deleteSpaceSession,
-    inviteToSpaceSession, removeSpaceSessionInvite, updateSpaceSession,
+    inviteToSpaceSession, removeSpaceSessionInvite, updateSpaceSession, isLoading,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -76,6 +76,8 @@ export default function SpacesPage() {
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   /** The timed room whose day is open in the sessions dialog. */
   const [roomModalId, setRoomModalId] = useState<string | null>(null);
+  /** The session a shared `?session=` link opened, outlined in the room's dialog. */
+  const [sharedSessionId, setSharedSessionId] = useState<string | null>(null);
   /** The session being edited, with the room it belongs to. */
   const [editTarget, setEditTarget] = useState<{ session: SpaceSession; space: Space } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -88,6 +90,29 @@ export default function SpacesPage() {
     setDay(next);
     setPlanSessionView({});
   };
+
+  // A shared link — /spaces?session=<id> — opens that session's room on its day. It waits for the
+  // workspace to load, then strips the query so a refresh (or a realtime reload) cannot reopen it.
+  useEffect(() => {
+    if (isLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedId = params.get('session');
+    if (!sharedId) return;
+    params.delete('session');
+    const rest = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+    const shared = spaceSessions.find(session => session.id === sharedId);
+    if (!shared) {
+      notifyValidation({
+        type: 'error', title: 'Session not found', message: 'That session no longer exists — it may have been deleted.',
+      });
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep link once the sessions have loaded
+    pickDay(shared.session_date);
+    setRoomModalId(shared.space_id);
+    setSharedSessionId(shared.id);
+  }, [isLoading, spaceSessions]);
 
   const activeTypes = useMemo(
     () => spaceTypes.filter(type => type.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
@@ -831,7 +856,8 @@ export default function SpacesPage() {
         state={roomModalState}
         dayLabel={formatDate(day)}
         isPast={isPast}
-        onClose={() => setRoomModalId(null)}
+        onClose={() => { setRoomModalId(null); setSharedSessionId(null); }}
+        highlightId={sharedSessionId}
         onJoin={entry => {
           if (!roomModal || !roomModalState) return;
           setRoomModalId(null);

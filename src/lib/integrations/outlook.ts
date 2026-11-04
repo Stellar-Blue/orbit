@@ -253,6 +253,8 @@ export interface SessionInviteDetails {
   title?: string | null;
   description?: string | null;
   note?: string | null;
+  /** The session's Orbit link, so whoever gets (or is forwarded) the invite can open it. */
+  link?: string | null;
   attendees: string[];
 }
 
@@ -285,6 +287,7 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
         `When: ${longDate(details.sessionDate)}, ${clock(details.startsAt)} – ${clock(details.endsAt)}`,
         ...(description ? ['', description] : []),
         ...(note ? ['', note] : []),
+        ...(details.link ? ['', `Open in Orbit: ${details.link}`] : []),
       ].join('\n'),
     },
     start: { dateTime: `${details.sessionDate}T${clock(details.startsAt)}:00`, timeZone: ATHENS_TIMEZONE },

@@ -1,9 +1,12 @@
 "use client";
 
 import React from 'react';
-import { Clock, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { Clock, Link2, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/primitives';
-import { clockLabel, seatHolders, seatsLabel, type SpaceDayState, type SpaceSessionState } from '@/lib/spaces';
+import { notifySuccess } from '@/lib/validation-modal';
+import {
+  clockLabel, seatHolders, seatsLabel, sessionSharePath, type SpaceDayState, type SpaceSessionState,
+} from '@/lib/spaces';
 import type { Space, SpaceBooking, SpaceSession, SpaceSessionInvite } from '@/lib/types';
 
 export interface SessionSlotsProps {
@@ -23,7 +26,17 @@ export interface SessionSlotsProps {
   /** Whether this viewer may change the session (the person who opened it, or an admin). */
   canEdit?: (session: SpaceSession) => boolean;
   onEdit?: (session: SpaceSession) => void;
+  /** The session a shared link pointed at, outlined so it stands out among the day's others. */
+  highlightId?: string | null;
 }
+
+/** Copies the session's link; a browser that refuses the clipboard shows it to copy by hand. */
+const copySessionLink = (sessionId: string) => {
+  const url = `${window.location.origin}${sessionSharePath(sessionId)}`;
+  navigator.clipboard.writeText(url)
+    .then(() => notifySuccess('Anyone in Orbit with this link opens the session.', 'Link copied'))
+    .catch(() => window.prompt('Copy this link to share the session', url));
+};
 
 /** `Ana`, or the address itself when the guest has no Orbit profile. */
 const inviteLabel = (invite: SpaceSessionInvite): string => {
@@ -37,7 +50,7 @@ const inviteLabel = (invite: SpaceSessionInvite): string => {
  * its own window and its own seats, so the card lists them instead of showing a single state.
  */
 export function SessionSlots({
-  space, state, disabled, onJoin, onLeave, onOpen, canDelete, onDelete, invites, canEdit, onEdit,
+  space, state, disabled, onJoin, onLeave, onOpen, canDelete, onDelete, invites, canEdit, onEdit, highlightId,
 }: SessionSlotsProps) {
   if (state.sessions.length === 0) {
     return (
@@ -64,7 +77,9 @@ export function SessionSlots({
               key={entry.session.id}
               className={`rounded-[var(--radius-control)] border px-2.5 py-1.5 ${
                 mine ? 'border-[var(--accent)] bg-[var(--accent-soft)]' : 'border-[var(--line)] bg-[var(--surface-muted)]'
-              } ${entry.ended ? 'opacity-60' : ''}`}
+              } ${entry.ended ? 'opacity-60' : ''} ${
+                highlightId === entry.session.id ? 'ring-2 ring-[var(--accent)] ring-offset-1' : ''
+              }`}
             >
               <div className="flex items-baseline justify-between gap-2">
                 <p className="min-w-0 truncate text-[12px] font-semibold text-[var(--ink)]">
@@ -75,6 +90,15 @@ export function SessionSlots({
                 </p>
                 <span className="flex shrink-0 items-center gap-1.5">
                   <span className="ui-meta">{seatsLabel(entry, space.capacity)}</span>
+                  <button
+                    type="button"
+                    onClick={() => copySessionLink(entry.session.id)}
+                    className="cursor-pointer rounded p-0.5 text-[var(--ink-4)] transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--accent-ink)]"
+                    title="Copy a link to this session"
+                    aria-label={`Copy a link to the ${clockLabel(entry.session.starts_at)} session`}
+                  >
+                    <Link2 className="w-3 h-3" />
+                  </button>
                   {onEdit && !disabled && canEdit?.(entry.session) && (
                     <button
                       type="button"

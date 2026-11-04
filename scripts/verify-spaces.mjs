@@ -28,11 +28,13 @@ import {
   seatsLabel,
   sessionEnded,
   sessionLabel,
+  sessionSharePath,
   sessionStarted,
   spaceDaySessions,
   spaceDayState,
   validateSessionWindow,
 } from '@/lib/spaces';
+import { buildSessionInvitePayload } from '@/lib/integrations/outlook';
 
 let passed = 0;
 let failed = 0;
@@ -633,6 +635,24 @@ assert(
     && delivery.problems.some(problem => problem.problem.includes('session is full')),
   'Every failed channel and every unseated invitee is reported against their name',
   delivery.problems.map(problem => `${problem.who}: ${problem.problem}`).join(' | ')
+);
+
+// A shared link opens one session; the Outlook invite carries it so a forwarded invite opens it too.
+const inviteDetails = {
+  organizerName: 'Ana', roomName: 'Athena', sessionDate: '2026-11-05',
+  startsAt: '10:00:00', endsAt: '11:00:00', attendees: ['guest@example.com'],
+};
+const linked = buildSessionInvitePayload({ ...inviteDetails, link: `https://orbit.test${sessionSharePath('ses 1')}` });
+assert(
+  sessionSharePath('ses-1') === '/spaces?session=ses-1' && sessionSharePath('ses 1') === '/spaces?session=ses%201',
+  'A session link points at Spaces with the session id, encoded',
+  sessionSharePath('ses 1')
+);
+assert(
+  linked.body.content.includes('Open in Orbit: https://orbit.test/spaces?session=ses%201')
+    && !buildSessionInvitePayload(inviteDetails).body.content.includes('Open in Orbit'),
+  'The Outlook invite carries the session link only when one is configured',
+  linked.body.content.split('\n').pop()
 );
 
 console.log('\n================================================================');

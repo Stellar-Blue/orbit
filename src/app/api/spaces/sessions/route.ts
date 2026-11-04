@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, hasSlackBotToken, slackSendDirectMessage } from '@/lib/integrations/server';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
-import { calendarStateOf, clock, loadSessionContext, sessionWhen, syncSessionCalendar } from '@/lib/spaces-server';
+import {
+  calendarStateOf, clock, loadSessionContext, sessionShareUrl, sessionWhen, syncSessionCalendar,
+} from '@/lib/spaces-server';
 import { clockLabel, overlappingSession, sessionLabel, validateSessionWindow } from '@/lib/spaces';
 
 /**
@@ -107,6 +109,7 @@ export async function PATCH(request: NextRequest) {
       .eq('slack_status', 'sent')
       .not('profile_id', 'is', null);
     const when = sessionWhen(updated);
+    const link = sessionShareUrl(sessionId);
     for (const row of (invited || []) as { email: string }[]) {
       const sent = await slackSendDirectMessage({
         email: row.email,
@@ -115,6 +118,7 @@ export async function PATCH(request: NextRequest) {
           `Now: ${when}`,
           '',
           `${context.organizer?.name || 'The organiser'} changed the time of a session you were invited to.`,
+          ...(link ? ['', `Review it: ${link}`] : []),
         ].join('\n'),
       });
       if (sent.ok) notified += 1;

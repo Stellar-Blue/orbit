@@ -26,6 +26,8 @@ export interface RoomSessionsModalProps {
   /** Whether this viewer may change a session — its time, title, agenda and invitees. */
   canEdit?: (session: SpaceSession) => boolean;
   onEdit?: (session: SpaceSession) => void;
+  /** The session a shared link pointed at. */
+  highlightId?: string | null;
 }
 
 /**
@@ -35,7 +37,7 @@ export interface RoomSessionsModalProps {
  */
 export function RoomSessionsModal({
   room, type, state, dayLabel, isPast, onClose, onJoin, onLeave, onNew, canDelete, onDelete,
-  invites, canEdit, onEdit,
+  invites, canEdit, onEdit, highlightId,
 }: RoomSessionsModalProps) {
   if (!room || !state) return null;
   return (
@@ -76,6 +78,7 @@ export function RoomSessionsModal({
           invites={invites}
           canEdit={canEdit}
           onEdit={onEdit}
+          highlightId={highlightId}
         />
 
         {isPast && (

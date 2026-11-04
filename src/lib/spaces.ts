@@ -240,6 +240,10 @@ export function sessionLabel(session: Pick<SpaceSession, 'starts_at' | 'ends_at'
   return session.title ? `${window} · ${session.title}` : window;
 }
 
+/** The shareable link to one session: Spaces opens that session's room on its day. */
+export const sessionSharePath = (sessionId: string): string =>
+  `/spaces?session=${encodeURIComponent(sessionId)}`;
+
 /**
  * Validates the window the first booker types. Returns an error message, or null when usable —
  * the DB rejects `ends_at <= starts_at` as well, this just fails fast and readably.

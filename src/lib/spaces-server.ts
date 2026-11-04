@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from '@/lib/integrations/types';
 import { syncSessionCalendarInvite } from '@/lib/integrations/outlook';
-import { absenceOnDate, type DayAbsence } from '@/lib/spaces';
+import { absenceOnDate, sessionSharePath, type DayAbsence } from '@/lib/spaces';
 
 /**
  * Server-side session context shared by the invite and edit routes.
@@ -35,6 +35,12 @@ export const longDate = (dateStr: string): string =>
 
 export const sessionWhen = (context: Pick<SessionContext, 'sessionDate' | 'startsAt' | 'endsAt'>): string =>
   `${longDate(context.sessionDate)} · ${clock(context.startsAt)} – ${clock(context.endsAt)}`;
+
+/** The session's absolute link for Slack and Outlook, or null when the app URL is not configured. */
+export function sessionShareUrl(sessionId: string): string | null {
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+  return appUrl ? `${appUrl}${sessionSharePath(sessionId)}` : null;
+}
 
 const personName = (profile?: { first_name?: string | null; last_name?: string | null; work_email?: string | null } | null): string =>
   [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || profile?.work_email || 'An Orbit colleague';
@@ -153,6 +159,7 @@ export async function syncSessionCalendar(args: {
     endsAt: args.context.endsAt,
     title: args.context.title,
     description: args.context.description,
+    link: sessionShareUrl(args.context.id),
     attendees: Array.from(new Set(args.attendees)),
   };
   if (!args.context.organizer?.email) {

@@ -3,7 +3,9 @@ import { athensToday, getAdminClient, hasSlackBotToken, slackSendDirectMessage }
 import { cancelSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 import { EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration } from '@/lib/integrations/types';
-import { absenceOf, calendarStateOf, loadSessionContext, sessionWhen, syncSessionCalendar } from '@/lib/spaces-server';
+import {
+  absenceOf, calendarStateOf, loadSessionContext, sessionShareUrl, sessionWhen, syncSessionCalendar,
+} from '@/lib/spaces-server';
 import { normalizeInviteEmail } from '@/lib/spaces';
 import type { SessionInviteStatus } from '@/lib/types';
 
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
   }
 
   const when = sessionWhen(context);
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+  const link = sessionShareUrl(sessionId);
   const agenda = context.description?.trim();
   const results: RecipientResult[] = [];
 
@@ -209,7 +211,7 @@ export async function POST(request: NextRequest) {
       `${context.organizer?.name || 'An Orbit colleague'} invited you to a session booked in Orbit.`,
       agenda || '',
       seatLine,
-      ...(appUrl ? ['', `Join or review it: ${appUrl}/spaces`] : []),
+      ...(link ? ['', `Join or review it: ${link}`] : []),
     ].filter(Boolean).join('\n');
 
     let slackStatus: SessionInviteStatus = 'failed';
