@@ -19,6 +19,7 @@ import {
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import type { AvatarConfig } from './avatar';
+import type { RoomSyncResult } from './room-sync';
 import { toHiddenScreenKeys } from './screens';
 import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
 import { isDemoMode, exitDemoMode } from './demo-mode';
@@ -216,7 +217,11 @@ interface AppState {
   }) => Promise<boolean>;
   saveSpaceType: (input: { id?: string; name: string; booking_mode: SpaceBookingMode; color?: string; sort_order?: number; active?: boolean }) => Promise<boolean>;
   deleteSpaceType: (id: string) => Promise<boolean>;
-  saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean }) => Promise<boolean>;
+  saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean; onSaved?: (space: Space) => void }) => Promise<boolean>;
+  /** Links (or, with null, unlinks) the room's Outlook mailbox and runs the first sync. */
+  linkRoomMailbox: (spaceId: string, email: string | null) => Promise<{ ok: boolean; error?: string; backfilled?: number; sync?: RoomSyncResult }>;
+  /** Re-reads the room's Outlook calendar now. */
+  syncRoomNow: (spaceId: string) => Promise<{ ok: boolean; error?: string; sync?: RoomSyncResult }>;
   deleteSpace: (id: string) => Promise<boolean>;
   /** Returns the session that was created or joined — the handle an invite needs next. */
   bookSpaceSeat: (input: {
@@ -5632,6 +5637,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     location?: string | null;
     notes?: string | null;
     active?: boolean;
+    onSaved?: (space: Space) => void;
   }): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     const row = {
@@ -5656,7 +5662,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const next = input.id ? prev.map(space => space.id === saved.id ? saved : space) : [...prev, saved];
       return next.sort((a, b) => a.name.localeCompare(b.name));
     });
+    input.onSaved?.(saved);
     return true;
+  };
+
+  /** Posts to a room route; an unstructured 500 still yields a readable message. */
+  const postRoomRoute = async (method: 'PUT' | 'POST', url: string, body: unknown) => {
+    if (isDemoMode()) return { ok: false as const, error: 'Outlook rooms need the real workspace.', json: null };
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => null);
+      void refreshSpaces();
+      if (!res.ok || json?.ok === false) {
+        return { ok: false as const, error: json?.error || res.statusText || 'Request failed', json };
+      }
+      return { ok: true as const, error: undefined, json };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : 'Request failed', json: null };
+    }
+  };
+
+  const linkRoomMailbox = async (spaceId: string, email: string | null) => {
+    const r = await postRoomRoute('PUT', '/api/spaces/room-mailbox', { space_id: spaceId, outlook_email: email });
+    return { ok: r.ok, error: r.error, backfilled: r.json?.backfilled, sync: r.json?.sync as RoomSyncResult | undefined };
+  };
+
+  const syncRoomNow = async (spaceId: string) => {
+    const r = await postRoomRoute('POST', '/api/spaces/room-sync', { space_id: spaceId });
+    return { ok: r.ok, error: r.error, sync: r.json?.sync as RoomSyncResult | undefined };
   };
 
   const deleteSpace = async (id: string): Promise<boolean> => {
@@ -5977,6 +6014,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 created_at: new Date().toISOString(),
               } as SpaceSession;
               setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
+              // Books the room in Outlook; the session stays valid when this fails, so fire and forget.
+              if (!isDemoMode()) {
+                void fetch('/api/spaces/sessions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ session_id: session.id }),
+                }).then(() => refreshSpaces()).catch(() => undefined);
+              }
             }
           }
           sessionId = session.id;
@@ -7407,6 +7452,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveSpaceType,
       deleteSpaceType,
       saveSpace,
+      linkRoomMailbox,
+      syncRoomNow,
       deleteSpace,
       bookSpaceSeat,
       cancelSpaceBooking,

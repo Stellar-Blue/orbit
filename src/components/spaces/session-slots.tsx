@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Clock, Link2, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { CalendarDays, Clock, Link2, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/primitives';
 import { notifySuccess } from '@/lib/validation-modal';
 import {
@@ -123,6 +123,12 @@ export function SessionSlots({
                   )}
                 </span>
               </div>
+              {entry.session.source === 'outlook' && (
+                <p className="mt-0.5 ui-meta">
+                  <CalendarDays className="w-3 h-3 inline mr-1 -mt-0.5" />
+                  Managed in Outlook
+                </p>
+              )}
               {entry.session.description && (
                 <p className="mt-0.5 min-w-0 truncate ui-meta" title={entry.session.description}>
                   {entry.session.description}
