@@ -15,8 +15,10 @@ export type GraphCalendarEvent = {
   type?: 'singleInstance' | 'occurrence' | 'exception' | 'seriesMaster';
   subject?: string | null;
   body?: { content?: string | null } | null;
-  start: { dateTime: string };
-  end: { dateTime: string };
+  sensitivity?: 'normal' | 'personal' | 'private' | 'confidential';
+  /** Present when Graph says which zone `dateTime` is in; Orbit asks for Athens. */
+  start: { dateTime: string; timeZone?: string };
+  end: { dateTime: string; timeZone?: string };
   isAllDay?: boolean;
   isCancelled?: boolean;
   organizer?: { emailAddress?: GraphAddress };
@@ -45,6 +47,8 @@ export type RoomOccurrence = {
   organizerEmail: string | null;
   organizerName: string | null;
   attendees: OccurrenceAttendee[];
+  /** The meeting carries an Orbit session link: Orbit sent it, so it is never imported as Outlook's. */
+  orbitMeeting?: boolean;
 };
 
 export type LinkedSession = Pick<
@@ -81,6 +85,9 @@ export type RoomSyncResult = {
   skipped?: 'locked' | 'no_mailbox';
 };
 
+/** Shared by the server and the client. */
+export type RoomSubscription = { state: 'active' | 'renewed' | 'created' | 'skipped'; reason?: string };
+
 const RESPONSES: Record<string, OccurrenceAttendee['response']> = {
   accepted: 'accepted',
   tentativelyAccepted: 'tentative',
@@ -89,6 +96,21 @@ const RESPONSES: Record<string, OccurrenceAttendee['response']> = {
 };
 
 const BODY_LIMIT = 2000;
+const ATHENS_ZONES = ['Europe/Athens', 'GTB Standard Time'];
+const PRIVATE = ['private', 'confidential'];
+
+/** Every Orbit meeting body ends with the session link (`/spaces?session=…`). */
+export function isOrbitMeetingBody(body: string | null | undefined): boolean {
+  return typeof body === 'string' && body.includes('/spaces?session=');
+}
+
+/**
+ * The first zone Graph reported that is not Athens, or null. Orbit stores Athens wall-clock times, so
+ * a read in any other zone would move every session.
+ */
+export function unexpectedTimeZone(events: Pick<GraphCalendarEvent, 'start'>[]): string | null {
+  return events.map(event => event.start.timeZone).find(zone => zone && !ATHENS_ZONES.includes(zone)) || null;
+}
 
 /**
  * A Graph event as one dated occurrence, or null when it cannot be a session (cancelled, all-day,
@@ -120,17 +142,21 @@ export function occurrenceFromGraph(
   }
 
   const organizer = source.organizer?.emailAddress;
+  // An app token reads private meetings in full; everyone in Orbit would see what the attendees
+  // agreed to keep private. The seat still holds the room.
+  const hidden = [room, organizerCopy].some(event => PRIVATE.includes(event?.sensitivity ?? ''));
   return {
     icalUid: room.iCalUId,
     seriesId: room.seriesMasterId ?? null,
     date,
     startsAt: room.start.dateTime.slice(11, 16),
     endsAt: room.end.dateTime.slice(11, 16),
-    subject: source.subject || null,
-    body: source.body?.content?.trim().slice(0, BODY_LIMIT) || null,
+    subject: hidden ? 'Private meeting' : source.subject || null,
+    body: hidden ? null : source.body?.content?.trim().slice(0, BODY_LIMIT) || null,
     organizerEmail: organizer?.address?.trim().toLowerCase() || null,
     organizerName: organizer?.name || null,
     attendees,
+    orbitMeeting: isOrbitMeetingBody(source.body?.content),
   };
 }
 
@@ -269,11 +295,17 @@ export function planRoomSync(args: {
     if (entry.source === 'outlook') plan.deletes.push(entry.id);
     else {
       if (entry.outlook_ical_uid) plan.missingOrbit.push(entry.id);
+      else plan.issues.push(`${meetingLabel(entry.title, entry.session_date, entry.starts_at)}: not booked in Outlook yet — re-save the room mailbox to retry`);
       finalWindow.set(entry.id, entry);
     }
   }
 
   for (const occurrence of stillUnmatched) {
+    // An orphan meeting, or one whose cancel failed: importing it would resurrect a deleted session.
+    if (occurrence.orbitMeeting) {
+      plan.issues.push(`${meetingLabel(occurrence.subject, occurrence.date, occurrence.startsAt)}: an Orbit meeting whose session no longer exists — cancel it in Outlook`);
+      continue;
+    }
     const obstacles = [
       ...sessions
         .filter(entry => entry.session_date === occurrence.date && finalWindow.has(entry.id))
@@ -330,6 +362,70 @@ export function notifiedSubscriptionIds(body: unknown, clientState: string): str
     if (entry?.clientState === clientState && typeof entry.subscriptionId === 'string') ids.add(entry.subscriptionId);
   }
   return [...ids];
+}
+
+/** Whether the room mailbox declined the meeting, per the organiser's copy of it. */
+export function roomDeclined(event: Record<string, unknown> | undefined, roomMailbox: string): boolean {
+  const room = roomMailbox.trim().toLowerCase();
+  const attendees = (event?.attendees ?? []) as NonNullable<GraphCalendarEvent['attendees']>;
+  return attendees.some(attendee => (
+    attendee.emailAddress?.address?.trim().toLowerCase() === room && attendee.status?.response === 'declined'
+  ));
+}
+
+/**
+ * One result for a sync that ran again because Outlook changed meanwhile: the extra run's state (it
+ * is the newer read), with the changes both runs made.
+ */
+export function mergeSyncRuns(first: RoomSyncResult, extra: RoomSyncResult): RoomSyncResult {
+  if (extra.skipped) return first;
+  return {
+    ...extra,
+    created: first.created + extra.created,
+    updated: first.updated + extra.updated,
+    deleted: first.deleted + extra.deleted,
+  };
+}
+
+/** The room issue a subscription that could not be kept leaves behind; null when live updates work. */
+export function subscriptionIssue(subscription: RoomSubscription | undefined): string | null {
+  return subscription?.state === 'skipped'
+    ? `Live updates from Outlook are off, so this room only syncs daily or on Sync now: ${subscription.reason || 'unknown reason'}`
+    : null;
+}
+
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+const firstFew = (lines: string[]) =>
+  `${lines.slice(0, 3).join('; ')}${lines.length > 3 ? ` (+${lines.length - 3} more)` : ''}`;
+
+/**
+ * What an admin is told after linking a mailbox or Sync now: what was done, and every problem — a
+ * failed sync, meetings not booked, issues, clashes, live updates being off. `ok` only when there is
+ * no problem at all.
+ */
+export function roomSyncReport(result: {
+  backfilled?: number;
+  backfillFailures?: string[];
+  subscription?: RoomSubscription;
+  sync?: RoomSyncResult;
+}): { ok: boolean; summary: string; problems: string[] } {
+  const { sync, subscription, backfillFailures = [] } = result;
+  const done: string[] = [];
+  const problems: string[] = [];
+  if (result.backfilled !== undefined) done.push(`${count(result.backfilled, 'Orbit session')} booked in Outlook`);
+  if (sync?.skipped === 'locked') done.push('a sync was already running and will pick this up');
+  else if (sync?.ok) done.push(`${sync.created} imported, ${sync.updated} updated, ${sync.deleted} removed`);
+  else if (sync) problems.push(`The sync failed: ${sync.error || 'unknown error'}`);
+  if (backfillFailures.length > 0) {
+    problems.push(`${count(backfillFailures.length, 'Orbit session')} not booked in Outlook: ${firstFew(backfillFailures)}`);
+  }
+  const ownIssue = subscriptionIssue(subscription);
+  const issues = (sync?.issues ?? []).filter(issue => issue !== ownIssue);
+  if (issues.length > 0) problems.push(`${count(issues.length, 'issue')}: ${firstFew(issues)}`);
+  if (sync?.clashes) problems.push(`${count(sync.clashes, 'Outlook meeting')} not imported (overlapping Orbit sessions)`);
+  if (ownIssue) problems.push(ownIssue);
+  else if (subscription) done.push(`live updates ${subscription.state}`);
+  return { ok: problems.length === 0, summary: done.join(' · '), problems };
 }
 
 /** A Graph failure as a sentence an admin can act on. */

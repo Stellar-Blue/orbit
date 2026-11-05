@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from '@/lib/integrations/types';
-import { syncSessionCalendarInvite } from '@/lib/integrations/outlook';
+import { cancelSessionCalendarInvite, graphGetEvent, syncSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { absenceOnDate, sessionSharePath, type DayAbsence } from '@/lib/spaces';
 
 /**
@@ -186,14 +186,49 @@ export async function syncSessionCalendar(args: {
     if (details.attendees.length === 0 && !details.roomMailbox) return { ok: true };
     return { ok: false, error: 'The organiser has no work email, so no calendar invite could be sent.' };
   }
+  const organizer = { organizerProfileId: args.context.organizer.profileId, organizerEmail: args.context.organizer.email };
   const result = await syncSessionCalendarInvite({
-    admin: args.admin,
-    organizerProfileId: args.context.organizer.profileId,
-    organizerEmail: args.context.organizer.email,
-    details,
-    existingEventId: args.eventId || null,
+    admin: args.admin, ...organizer, details, existingEventId: args.eventId || null,
   });
   if (!result.ok) return result;
+
+  if (result.created && result.eventId) {
+    // Two requests that both found no meeting both create one. Only the first id written sticks; the
+    // other cancels its copy and puts its attendees on the winner, so the room is booked once.
+    const claim = args.admin
+      .from('space_sessions')
+      .update({ outlook_event_id: result.eventId, outlook_ical_uid: result.icalUid || null })
+      .eq('id', args.context.id);
+    const { data: won, error } = await (args.context.outlookEventId
+      ? claim.eq('outlook_event_id', args.context.outlookEventId)
+      : claim.is('outlook_event_id', null)
+    ).select('id');
+    if (error) console.error('space_sessions outlook ids update error:', error.message);
+    if (error || (won || []).length > 0) return { ok: true, eventId: result.eventId };
+
+    const { data: session } = await args.admin
+      .from('space_sessions').select('outlook_event_id').eq('id', args.context.id).maybeSingle();
+    await cancelSessionCalendarInvite({ admin: args.admin, ...organizer, eventId: result.eventId });
+    const winner: string | null = session?.outlook_event_id || null;
+    if (!winner) return { ok: false, error: 'The session was deleted while its Outlook meeting was being created.' };
+    // The winner's guests come from Outlook itself: its invite rows may not be written yet.
+    const current = await graphGetEvent(organizer.organizerEmail, winner);
+    const onWinner = current.ok
+      ? ((current.event?.attendees ?? []) as { type?: string; emailAddress?: { address?: string } }[])
+        .filter(attendee => attendee.type !== 'resource')
+        .map(attendee => attendee.emailAddress?.address?.trim().toLowerCase() || '')
+        .filter(Boolean)
+      : (await calendarStateOf(args.admin, args.context.id)).attendees;
+    const missing = details.attendees.filter(address => !onWinner.includes(address.toLowerCase()));
+    // No patch when the winner already has everyone: every PATCH mails the attendees.
+    if (current.ok && missing.length === 0) return { ok: true, eventId: winner };
+    const patched = await syncSessionCalendarInvite({
+      admin: args.admin, ...organizer,
+      details: { ...details, attendees: Array.from(new Set([...onWinner, ...details.attendees])) },
+      existingEventId: winner,
+    });
+    return patched.ok ? { ok: true, eventId: winner } : patched;
+  }
 
   // Remember the meeting on the session so Outlook-side changes can be matched back to it. A value
   // Graph did not return (an empty PATCH body) never overwrites what is stored; both are cleared

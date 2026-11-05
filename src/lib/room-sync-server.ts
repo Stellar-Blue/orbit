@@ -2,9 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { addDays, graphCalendarView, graphGetEvent } from '@/lib/integrations/outlook';
 import { athensToday } from '@/lib/integrations/server';
 import {
-  clashOf, describeGraphFailure, meetingLabel, occurrenceFromGraph, organizerCancelled, organizerEmailOf,
-  organizersToRead, planAttendees, planRoomSync,
-  type GraphCalendarEvent, type LinkedSession, type RoomOccurrence, type RoomSyncMatch, type RoomSyncResult,
+  clashOf, describeGraphFailure, meetingLabel, mergeSyncRuns, occurrenceFromGraph, organizerCancelled,
+  organizerEmailOf, organizersToRead, planAttendees, planRoomSync, roomDeclined, subscriptionIssue, unexpectedTimeZone,
+  type GraphCalendarEvent, type LinkedSession, type RoomOccurrence, type RoomSubscription, type RoomSyncMatch,
+  type RoomSyncResult,
 } from '@/lib/room-sync';
 import { bookInviteeSeat, removeInvitee } from '@/lib/spaces-server';
 import type { RoomClash } from '@/lib/types';
@@ -33,6 +34,7 @@ type Invite = { email: string; profile_id: string | null };
 type Sync = {
   admin: SupabaseClient;
   spaceId: string;
+  mailbox: string;
   today: string;
   horizonEnd: string;
   directory: Directory;
@@ -51,13 +53,19 @@ const idle = (fields: Partial<RoomSyncResult> = {}): RoomSyncResult => ({
 /**
  * Syncs one room. Runs never overlap: a call that finds the room claimed only leaves a "pending"
  * flag, and the running sync goes once more when it ends, so a burst of notifications costs at most
- * two runs.
+ * two runs. `subscription` is the caller's attempt to keep live updates; when it failed, the reason
+ * is saved with the room's issues so admins see it.
  */
-export async function syncRoom(admin: SupabaseClient, spaceId: string): Promise<RoomSyncResult> {
-  return runClaimed(admin, spaceId, true);
+export async function syncRoom(
+  admin: SupabaseClient,
+  spaceId: string,
+  options: { subscription?: RoomSubscription } = {}
+): Promise<RoomSyncResult> {
+  const note = subscriptionIssue(options.subscription);
+  return runClaimed(admin, spaceId, true, note ? [note] : []);
 }
 
-async function runClaimed(admin: SupabaseClient, spaceId: string, mayRepeat: boolean): Promise<RoomSyncResult> {
+async function runClaimed(admin: SupabaseClient, spaceId: string, mayRepeat: boolean, notes: string[]): Promise<RoomSyncResult> {
   const claim = await claimRoom(admin, spaceId);
   if (claim.error) return idle({ ok: false, error: claim.error });
   if (!claim.room) {
@@ -70,18 +78,34 @@ async function runClaimed(admin: SupabaseClient, spaceId: string, mayRepeat: boo
       .not('outlook_sync_started_at', 'is', null)
       .select('id')
       .maybeSingle();
-    return !held && mayRepeat ? runClaimed(admin, spaceId, false) : idle({ skipped: 'locked' });
+    return !held && mayRepeat ? runClaimed(admin, spaceId, false, notes) : idle({ skipped: 'locked' });
   }
   const mailbox: string | null = claim.room.outlook_email;
   let result: RoomSyncResult;
   let pending: boolean;
   try {
-    result = mailbox ? await syncMailbox(admin, spaceId, mailbox) : idle({ skipped: 'no_mailbox' });
+    result = mailbox ? await syncMailbox(admin, spaceId, mailbox, notes) : await dropOutlookSessions(admin, spaceId);
+  } catch (error) {
+    result = await recordFailure(admin, spaceId, `The sync stopped: ${error instanceof Error ? error.message : String(error)}`, notes);
   } finally {
     // Released even when the run throws, so a crash never locks the room for the claim's lifetime.
     pending = await releaseRoom(admin, spaceId);
   }
-  return pending && mayRepeat ? runClaimed(admin, spaceId, false) : result;
+  return pending && mayRepeat ? mergeSyncRuns(result, await runClaimed(admin, spaceId, false, notes)) : result;
+}
+
+/**
+ * A room without a mailbox keeps no Outlook-born sessions from today on. Unlinking deletes them, but
+ * a sync that was still running on the old mailbox may have created more since; this run removes them.
+ */
+async function dropOutlookSessions(admin: SupabaseClient, spaceId: string): Promise<RoomSyncResult> {
+  const { count, error } = await admin
+    .from('space_sessions')
+    .delete({ count: 'exact' })
+    .eq('space_id', spaceId)
+    .eq('source', 'outlook')
+    .gte('session_date', athensToday());
+  return idle({ skipped: 'no_mailbox', deleted: count || 0, ...(error ? { ok: false, error: error.message } : {}) });
 }
 
 /**
@@ -114,9 +138,9 @@ async function releaseRoom(admin: SupabaseClient, spaceId: string): Promise<bool
 // ---------- Read and plan ----------
 
 /** A failed read leaves every session as it was; the room only shows why. */
-async function recordFailure(admin: SupabaseClient, spaceId: string, error: string): Promise<RoomSyncResult> {
-  await admin.from('spaces').update({ outlook_sync_error: error }).eq('id', spaceId);
-  return idle({ ok: false, error });
+async function recordFailure(admin: SupabaseClient, spaceId: string, error: string, notes: string[]): Promise<RoomSyncResult> {
+  await admin.from('spaces').update({ outlook_sync_error: [error, ...notes].join('\n') }).eq('id', spaceId);
+  return idle({ ok: false, error, issues: notes });
 }
 
 /**
@@ -129,16 +153,21 @@ export function roomSyncWindow(today: string): { horizonEnd: string; start: stri
   return { horizonEnd, start: `${addDays(today, -1)}T00:00:00Z`, end: `${addDays(horizonEnd, 1)}T00:00:00Z` };
 }
 
-async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: string): Promise<RoomSyncResult> {
+async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: string, notes: string[]): Promise<RoomSyncResult> {
   const today = athensToday();
   const window = roomSyncWindow(today);
   const { horizonEnd } = window;
   const roomView = await graphCalendarView(mailbox, window.start, window.end);
-  if (!roomView.ok) return recordFailure(admin, spaceId, describeGraphFailure(roomView));
+  if (!roomView.ok) return recordFailure(admin, spaceId, describeGraphFailure(roomView), notes);
+  // Times are stored as Athens wall-clock: a read in another zone would move every session.
+  const zone = unexpectedTimeZone(roomView.events);
+  if (zone) {
+    return recordFailure(admin, spaceId, `Outlook returned times in ${zone}, not Europe/Athens — sync stopped so no session moves`, notes);
+  }
 
   // Without the directory every create would lose its organiser and every guest their seat for good.
   const directory = await loadDirectory(admin);
-  if ('error' in directory) return recordFailure(admin, spaceId, `Could not read the people directory: ${directory.error}`);
+  if ('error' in directory) return recordFailure(admin, spaceId, `Could not read the people directory: ${directory.error}`, notes);
   const read = await withOrganizerCopies(roomView.events, mailbox, window, directory);
   // Sessions are loaded for the same dates: the planner deletes Outlook-born sessions it cannot
   // match, so nothing outside the window read may reach it.
@@ -149,14 +178,14 @@ async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: stri
     .eq('space_id', spaceId)
     .gte('session_date', today)
     .lte('session_date', horizonEnd);
-  if (error) return recordFailure(admin, spaceId, `Could not read the room's sessions: ${error.message}`);
+  if (error) return recordFailure(admin, spaceId, `Could not read the room's sessions: ${error.message}`, notes);
   const sessions = (data || []) as RoomSession[];
 
   const plan = planRoomSync({ occurrences, sessions, today });
   const sync: Sync = {
-    admin, spaceId, today, horizonEnd, directory, staleDetails: read.staleDetails,
+    admin, spaceId, mailbox, today, horizonEnd, directory, staleDetails: read.staleDetails,
     sessions: new Map(sessions.map(session => [session.id, session])),
-    tally: { created: 0, updated: 0, deleted: 0, clashes: [...plan.clashes], issues: [...read.issues, ...plan.issues] },
+    tally: { created: 0, updated: 0, deleted: 0, clashes: [...plan.clashes], issues: [...notes, ...read.issues, ...plan.issues] },
   };
   // Deletes first: a meeting re-created in Outlook at the same time must not trip the overlap trigger.
   await applyDeletes(sync, plan.deletes);
@@ -323,8 +352,8 @@ async function applyCreates(sync: Sync, creates: RoomOccurrence[]) {
       created_by: organizerIdOf(sync, occurrence),
     }).select('id').single();
     if (error) {
-      // Already imported: by a run whose claim had lapsed, or into another room the meeting also books.
-      if (error.code === '23505' && /outlook_ical_uid/.test(error.message)) continue;
+      // Already imported into this room, by a run whose claim had lapsed.
+      if (error.code === '23505' && /space_sessions_space_outlook_ical_uid_key/.test(error.message)) continue;
       // An Orbit session opened in that window since the calendar was read.
       if (/overlaps|space_sessions_window_idx/.test(error.message)) sync.tally.clashes.push(clashOf(occurrence));
       else sync.tally.issues.push(`${meetingLabel(occurrence.subject, occurrence.date, occurrence.startsAt)}: ${error.message}`);
@@ -362,19 +391,23 @@ async function syncAttendees(
     if (seat === 'failed') sync.tally.issues.push(`${label}: ${person.email} ${error}`);
   }
   const organizerId = organizerIdOf(sync, occurrence);
-  const { error } = await sync.admin.from('space_session_invites').upsert(
-    add.map(person => ({
-      session_id: target.sessionId,
-      invited_by: organizerId,
-      profile_id: person.profileId,
-      email: person.email,
-      name: sync.directory.byEmail.get(person.email)?.name || person.name,
-      slack_status: 'skipped',
-      outlook_status: 'skipped',
-    })),
-    { onConflict: 'session_id,email' }
-  );
-  if (error) sync.tally.issues.push(`${label}: the guest list could not be saved: ${error.message}`);
+  const rows = add.map(person => ({
+    session_id: target.sessionId,
+    invited_by: organizerId,
+    profile_id: person.profileId,
+    email: person.email,
+    name: sync.directory.byEmail.get(person.email)?.name || person.name,
+    slack_status: 'skipped',
+    outlook_status: 'skipped',
+  }));
+  // The organiser's row is written on its own, first: the earliest invite of an Outlook-born session
+  // names its organiser, even one outside Orbit.
+  const isOrganizer = (row: { email: string }) => row.email === occurrence.organizerEmail;
+  for (const batch of [rows.filter(isOrganizer), rows.filter(row => !isOrganizer(row))]) {
+    if (batch.length === 0) continue;
+    const { error } = await sync.admin.from('space_session_invites').upsert(batch, { onConflict: 'session_id,email' });
+    if (error) sync.tally.issues.push(`${label}: the guest list could not be saved: ${error.message}`);
+  }
 }
 
 /**
@@ -397,9 +430,12 @@ async function checkMissingOrbit(sync: Sync, ids: string[]) {
     }
     const read = await graphGetEvent(organizer, session.outlook_event_id);
     if (!organizerCancelled(read)) {
-      sync.tally.issues.push(read.ok
-        ? `${label}: the room declined it in Outlook`
-        : `${label}: could not check it in Outlook — ${describeGraphFailure(read)}`);
+      // A room that has not processed the meeting yet (just linked, or slow to auto-accept) is not a decline.
+      sync.tally.issues.push(!read.ok
+        ? `${label}: could not check it in Outlook — ${describeGraphFailure(read)}`
+        : roomDeclined(read.event, sync.mailbox)
+          ? `${label}: the room declined it in Outlook`
+          : `${label}: waiting for the room to accept it in Outlook`);
       continue;
     }
     const { count, error } = await sync.admin

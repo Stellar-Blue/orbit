@@ -165,7 +165,7 @@ export async function graphDeleteEvent(mailboxEmail: string, eventId: string, to
 
 // ---------- Room mailboxes: calendar reads and change notifications (application token) ----------
 
-const CALENDAR_VIEW_SELECT = 'id,iCalUId,seriesMasterId,type,subject,body,start,end,isAllDay,isCancelled,organizer,attendees';
+const CALENDAR_VIEW_SELECT = 'id,iCalUId,seriesMasterId,type,subject,body,sensitivity,start,end,isAllDay,isCancelled,organizer,attendees';
 
 /**
  * Every occurrence on a mailbox's calendar in [startIso, endIso), recurring series expanded, with
@@ -371,7 +371,7 @@ export async function syncSessionCalendarInvite(args: {
   organizerEmail: string;
   details: SessionInviteDetails;
   existingEventId?: string | null;
-}): Promise<{ ok: boolean; eventId?: string; icalUid?: string; error?: string }> {
+}): Promise<{ ok: boolean; eventId?: string; icalUid?: string; created?: boolean; error?: string }> {
   const token = await getDelegatedToken(args.admin, args.organizerProfileId);
   const keep = args.details.attendees.length > 0 || Boolean(args.details.roomMailbox);
   const payload = buildSessionInvitePayload(args.details);
@@ -396,7 +396,7 @@ export async function syncSessionCalendarInvite(args: {
   const created = await graphCreateEvent(args.organizerEmail, payload, token || undefined);
   if (!created.ok) return { ok: false, error: created.message || created.code || `http_${created.status}` };
   const event = created.event as { id?: string; iCalUId?: string } | undefined;
-  return { ok: true, eventId: event?.id, icalUid: event?.iCalUId };
+  return { ok: true, eventId: event?.id, icalUid: event?.iCalUId, created: true };
 }
 
 /** Withdraws a meeting invite when the session it belongs to is deleted. */

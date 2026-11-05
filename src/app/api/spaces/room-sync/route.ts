@@ -18,6 +18,6 @@ export async function POST(request: NextRequest) {
 
   const admin = getAdminClient();
   const subscription = await ensureRoomSubscription(admin, spaceId);
-  const sync = await syncRoom(admin, spaceId);
+  const sync = await syncRoom(admin, spaceId, { subscription });
   return NextResponse.json({ subscription, sync });
 }

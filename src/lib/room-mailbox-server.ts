@@ -3,7 +3,9 @@ import {
   graphCalendarView, graphCreateSubscription, graphDeleteSubscription, graphRenewSubscription,
 } from '@/lib/integrations/outlook';
 import { athensToday } from '@/lib/integrations/server';
-import { describeGraphFailure, meetingLabel, sessionsMissingFromRoom, type RoomSyncResult } from '@/lib/room-sync';
+import {
+  describeGraphFailure, meetingLabel, sessionsMissingFromRoom, type RoomSubscription, type RoomSyncResult,
+} from '@/lib/room-sync';
 import { roomSyncWindow, syncRoom } from '@/lib/room-sync-server';
 import { normalizeInviteEmail } from '@/lib/spaces';
 import { calendarStateOf, loadSessionContext, syncSessionCalendar } from '@/lib/spaces-server';
@@ -25,7 +27,7 @@ export type RoomMailboxResult = {
   backfilled: number;
   /** One readable reason per Orbit session whose meeting could not book the room; re-saving retries. */
   backfillFailures: string[];
-  subscription?: string;
+  subscription?: RoomSubscription;
   sync?: RoomSyncResult;
 };
 
@@ -39,7 +41,7 @@ const refuse = (status: number, error: string): RoomMailboxResult =>
 export async function ensureRoomSubscription(
   admin: SupabaseClient,
   spaceId: string
-): Promise<{ state: 'active' | 'renewed' | 'created' | 'skipped'; reason?: string }> {
+): Promise<RoomSubscription> {
   const { data: room } = await admin
     .from('spaces')
     .select('outlook_email, outlook_subscription_id, outlook_subscription_expires_at')
@@ -109,6 +111,19 @@ export async function linkRoomMailbox(
   const bookingMode = (room.space_types as { booking_mode?: string } | null)?.booking_mode;
   if (next && bookingMode !== 'time_range') return refuse(400, 'Only rooms booked by the hour can have an Outlook room mailbox.');
 
+  if (next) {
+    // A person's mailbox would make the sync import their whole calendar as room meetings.
+    const { data: people, error: peopleError } = await admin.from('profiles').select('first_name, last_name, work_email, status');
+    if (peopleError) return refuse(500, `Could not check the address against the people directory: ${peopleError.message}`);
+    const owner = (people || []).find(person => (
+      person.status !== 'departed' && String(person.work_email || '').trim().toLowerCase() === next
+    ));
+    if (owner) {
+      const name = [owner.first_name, owner.last_name].filter(Boolean).join(' ').trim() || next;
+      return refuse(400, `That address belongs to ${name} — use the room's own mailbox.`);
+    }
+  }
+
   const previous: string | null = room.outlook_email ? String(room.outlook_email).trim().toLowerCase() : null;
   if (previous !== next) {
     const { error } = await admin.from('spaces').update({
@@ -126,21 +141,17 @@ export async function linkRoomMailbox(
         .eq('space_id', spaceId).eq('source', 'outlook').gte('session_date', athensToday());
     }
   }
-  if (!next) return { ok: true, backfilled: 0, backfillFailures: [] };
+  // A sync still running on the old mailbox may import sessions after the delete above; this run (or
+  // the extra one it leaves pending) removes them.
+  if (!next) return { ok: true, backfilled: 0, backfillFailures: [], sync: await syncRoom(admin, spaceId) };
 
   // Subscribed first, so the room accepting the meetings booked below already notifies Orbit. A new
   // mailbox goes on every meeting (one burst of mails, agreed); re-saving the same one only books
   // the meetings the room's calendar is missing, since every PATCH mails the attendees.
   const subscription = await ensureRoomSubscription(admin, spaceId);
   const backfill = await bookRoomForOrbitSessions(admin, spaceId, previous === next ? next : null);
-  const sync = await syncRoom(admin, spaceId);
-  return {
-    ok: true,
-    backfilled: backfill.booked,
-    backfillFailures: backfill.failures,
-    subscription: subscription.reason ? `${subscription.state}: ${subscription.reason}` : subscription.state,
-    sync,
-  };
+  const sync = await syncRoom(admin, spaceId, { subscription });
+  return { ok: true, backfilled: backfill.booked, backfillFailures: backfill.failures, subscription, sync };
 }
 
 /**
