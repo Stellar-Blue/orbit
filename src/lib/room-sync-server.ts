@@ -119,12 +119,20 @@ async function recordFailure(admin: SupabaseClient, spaceId: string, error: stri
   return idle({ ok: false, error });
 }
 
+/**
+ * The dates a sync covers, [today, horizonEnd], and the UTC range read for them. Athens midnight is
+ * 21:00 or 22:00 UTC the day before, so the UTC range is a day wider on both ends; callers drop the
+ * dates outside [today, horizonEnd].
+ */
+export function roomSyncWindow(today: string): { horizonEnd: string; start: string; end: string } {
+  const horizonEnd = addDays(today, HORIZON_DAYS);
+  return { horizonEnd, start: `${addDays(today, -1)}T00:00:00Z`, end: `${addDays(horizonEnd, 1)}T00:00:00Z` };
+}
+
 async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: string): Promise<RoomSyncResult> {
   const today = athensToday();
-  const horizonEnd = addDays(today, HORIZON_DAYS);
-  // Athens midnight is 21:00 or 22:00 UTC the day before, so the UTC window is a day wider on both
-  // ends; the planner drops dates before today and the filter below drops dates past the horizon.
-  const window = { start: `${addDays(today, -1)}T00:00:00Z`, end: `${addDays(horizonEnd, 1)}T00:00:00Z` };
+  const window = roomSyncWindow(today);
+  const { horizonEnd } = window;
   const roomView = await graphCalendarView(mailbox, window.start, window.end);
   if (!roomView.ok) return recordFailure(admin, spaceId, describeGraphFailure(roomView));
 

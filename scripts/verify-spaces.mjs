@@ -45,6 +45,7 @@ import {
   organizersToRead,
   planAttendees,
   planRoomSync,
+  sessionsMissingFromRoom,
 } from '@/lib/room-sync';
 
 let passed = 0;
@@ -754,6 +755,20 @@ assert(
   meetingLabel(null, '2026-11-10', '09:00:00') === 'Session on 2026-11-10 09:00'
     && meetingLabel('Standup', '2026-11-10', '09:30') === 'Standup on 2026-11-10 09:30',
   'Room issues name the meeting, its day and its start time'
+);
+const missingFromRoom = sessionsMissingFromRoom(
+  [
+    { id: 'm1', session_date: '2026-11-10', outlook_ical_uid: null },
+    { id: 'm2', session_date: '2026-11-10', outlook_ical_uid: 'on-room' },
+    { id: 'm3', session_date: '2026-11-11', outlook_ical_uid: 'not-on-room' },
+    { id: 'm4', session_date: '2027-03-01', outlook_ical_uid: 'past-horizon' },
+  ],
+  new Set(['on-room']),
+  '2027-01-28'
+);
+assert(
+  missingFromRoom.join() === 'm1,m3',
+  'Re-saving a mailbox only books sessions with no meeting or a meeting the room calendar lacks', missingFromRoom.join()
 );
 const byOrganizer = email => ({ organizer: { emailAddress: { address: email } } });
 const toRead = organizersToRead(

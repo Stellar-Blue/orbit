@@ -1,8 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { graphCreateSubscription, graphDeleteSubscription, graphRenewSubscription } from '@/lib/integrations/outlook';
+import {
+  graphCalendarView, graphCreateSubscription, graphDeleteSubscription, graphRenewSubscription,
+} from '@/lib/integrations/outlook';
 import { athensToday } from '@/lib/integrations/server';
-import { describeGraphFailure, meetingLabel, type RoomSyncResult } from '@/lib/room-sync';
-import { syncRoom } from '@/lib/room-sync-server';
+import { describeGraphFailure, meetingLabel, sessionsMissingFromRoom, type RoomSyncResult } from '@/lib/room-sync';
+import { roomSyncWindow, syncRoom } from '@/lib/room-sync-server';
 import { normalizeInviteEmail } from '@/lib/spaces';
 import { calendarStateOf, loadSessionContext, syncSessionCalendar } from '@/lib/spaces-server';
 
@@ -84,9 +86,9 @@ export async function ensureRoomSubscription(
 }
 
 /**
- * Saves (or clears) a room's mailbox. Admin authorisation is the route's job. Setting a mailbox —
- * also re-saving the same one, which is how a failed backfill is retried — subscribes, books the room
- * on every upcoming Orbit meeting and syncs once. A mailbox that is replaced or cleared loses its
+ * Saves (or clears) a room's mailbox. Admin authorisation is the route's job. Setting a mailbox
+ * subscribes, books the room on the upcoming Orbit meetings and syncs once; re-saving the same one is
+ * how a failed backfill is retried. A mailbox that is replaced or cleared loses its
  * subscription and its upcoming Outlook-born sessions; Orbit-born sessions stay.
  */
 export async function linkRoomMailbox(
@@ -126,9 +128,11 @@ export async function linkRoomMailbox(
   }
   if (!next) return { ok: true, backfilled: 0, backfillFailures: [] };
 
-  // Subscribed first, so the room accepting the meetings booked below already notifies Orbit.
+  // Subscribed first, so the room accepting the meetings booked below already notifies Orbit. A new
+  // mailbox goes on every meeting (one burst of mails, agreed); re-saving the same one only books
+  // the meetings the room's calendar is missing, since every PATCH mails the attendees.
   const subscription = await ensureRoomSubscription(admin, spaceId);
-  const backfill = await bookRoomForOrbitSessions(admin, spaceId);
+  const backfill = await bookRoomForOrbitSessions(admin, spaceId, previous === next ? next : null);
   const sync = await syncRoom(admin, spaceId);
   return {
     ok: true,
@@ -140,27 +144,44 @@ export async function linkRoomMailbox(
 }
 
 /**
- * Puts the room on the Outlook meeting of every upcoming Orbit session, so the room shows busy in
- * Outlook and the sync recognises those meetings instead of importing them. Every session that could
- * not be booked is reported.
+ * Puts the room on the Outlook meeting of upcoming Orbit sessions, so the room shows busy in Outlook
+ * and the sync recognises those meetings instead of importing them. With `onlyMissingFrom` (the room
+ * mailbox) only the sessions its calendar does not show yet are booked; when that calendar cannot be
+ * read nothing is booked, rather than re-patching every meeting. Every session not booked is reported.
  */
 async function bookRoomForOrbitSessions(
   admin: SupabaseClient,
-  spaceId: string
+  spaceId: string,
+  onlyMissingFrom: string | null
 ): Promise<{ booked: number; failures: string[] }> {
+  const today = athensToday();
   const { data, error } = await admin
     .from('space_sessions')
-    .select('id, created_by, title, session_date, starts_at')
+    .select('id, created_by, title, session_date, starts_at, outlook_ical_uid')
     .eq('space_id', spaceId)
     .eq('source', 'orbit')
-    .gte('session_date', athensToday())
+    .gte('session_date', today)
     .order('session_date')
     .order('starts_at');
   if (error) return { booked: 0, failures: [`Could not read the room's upcoming sessions: ${error.message}`] };
 
+  type Row = {
+    id: string; created_by: string | null; title: string | null; session_date: string; starts_at: string;
+    outlook_ical_uid: string | null;
+  };
+  let rows = (data || []) as Row[];
+  if (onlyMissingFrom) {
+    const window = roomSyncWindow(today);
+    const view = await graphCalendarView(onlyMissingFrom, window.start, window.end);
+    if (!view.ok) {
+      return { booked: 0, failures: [`Could not read the room calendar, so no meeting was booked: ${describeGraphFailure(view)}`] };
+    }
+    const missing = new Set(sessionsMissingFromRoom(rows, new Set(view.events.map(event => event.iCalUId)), window.horizonEnd));
+    rows = rows.filter(row => missing.has(row.id));
+  }
+
   const result = { booked: 0, failures: [] as string[] };
-  type Row = { id: string; created_by: string | null; title: string | null; session_date: string; starts_at: string };
-  for (const row of (data || []) as Row[]) {
+  for (const row of rows) {
     const label = meetingLabel(row.title, row.session_date, row.starts_at);
     if (!row.created_by) {
       result.failures.push(`${label}: the session has no organiser, so no Outlook meeting can book the room`);

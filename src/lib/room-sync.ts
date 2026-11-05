@@ -150,6 +150,22 @@ export function meetingLabel(title: string | null | undefined, date: string, sta
   return `${title || 'Session'} on ${date} ${clockLabel(startsAt)}`;
 }
 
+/**
+ * Orbit sessions whose meeting is not on the room calendar yet: no meeting at all, or a meeting the
+ * room's calendar (read up to `horizonEnd`) does not show. A session past the horizon read is only
+ * counted when it has no meeting, since the read cannot vouch for it.
+ */
+export function sessionsMissingFromRoom(
+  sessions: { id: string; session_date: string; outlook_ical_uid?: string | null }[],
+  roomIcalUids: Set<string>,
+  horizonEnd: string
+): string[] {
+  return sessions
+    .filter(session => !session.outlook_ical_uid
+      || (session.session_date <= horizonEnd && !roomIcalUids.has(session.outlook_ical_uid)))
+    .map(session => session.id);
+}
+
 /** The organiser's address on an event, lowercased; empty when Outlook gives none. */
 export function organizerEmailOf(event: GraphCalendarEvent): string {
   return event.organizer?.emailAddress?.address?.trim().toLowerCase() || '';
