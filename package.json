@@ -27,6 +27,7 @@
     "test:dates": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-date-input.mjs",
     "test:spaces": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-spaces.mjs",
     "test:office": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-office-layout.mjs",
+    "test:roomsync": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-outlook-room-provisioning.mjs",
     "test:avatar": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-avatar.mjs",
     "test:redirects": "node --import ./scripts/lib/ts-alias-loader.mjs scripts/verify-redirects.mjs"
   },

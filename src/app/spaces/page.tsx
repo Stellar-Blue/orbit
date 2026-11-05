@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import {
-  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Grid2x2, LayoutGrid, MapPin, Users, X,
+  CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, ExternalLink, Grid2x2, LayoutGrid, MapPin, Users, X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Badge, Button, Card, Modal } from '@/components/ui/primitives';
@@ -19,7 +19,7 @@ import { SessionInviteFields } from '@/components/spaces/session-invite-fields';
 import { SessionEditModal } from '@/components/spaces/session-edit-modal';
 import {
   BOOKING_MODE_LABELS, canDeleteSession, canEditSession, clockLabel, defaultPlanSession, heldWholeDaySpace,
-  lastSeatHoldsRoom, nextFreeSessionWindow, outlookOrganizerName, overlappingSession, seatHolders, seatsLabel,
+  lastSeatHoldsRoom, nextFreeSessionWindow, outlookOrganizerName, outlookRoomUrl, overlappingSession, seatHolders, seatsLabel,
   sessionLabel, sessionStarted, spaceDayState, summarizeInviteDelivery, validateSessionWindow, wholeDayHeldOn,
   type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
@@ -727,6 +727,7 @@ export default function SpacesPage() {
                 if (!state) return null;
                 const timed = state.mode === 'time_range';
                 const mine = Boolean(state.myBooking);
+                const outlookUrl = outlookRoomUrl(space.outlook_email);
                 const holders = seatHolders(state.bookings);
                 const fillPct = Math.min(100, Math.round((state.seatsTaken / Math.max(space.capacity, 1)) * 100));
                 const sessionCount = state.sessions.length;
@@ -748,6 +749,20 @@ export default function SpacesPage() {
                         </h3>
                         <p className="ui-meta mt-0.5 flex items-center gap-1">
                           {space.location ? <><MapPin className="w-3 h-3" />{space.location}</> : <span>No location</span>}
+                          {outlookUrl && (
+                            <>
+                              <span className="text-[var(--ink-4)]">·</span>
+                              <a
+                                href={outlookUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={`Open ${space.outlook_email} in Outlook`}
+                                className="inline-flex items-center gap-1 font-semibold text-[var(--accent-ink)] hover:underline"
+                              >
+                                <ExternalLink className="w-3 h-3" /> Outlook
+                              </a>
+                            </>
+                          )}
                         </p>
                       </div>
                       {timed ? (

@@ -2,6 +2,7 @@
 
 Conference rooms can be linked to their Exchange room mailbox. Meetings booked on the mailbox show up
 in Orbit as sessions ("Managed in Outlook"), and sessions opened in Orbit book the room in Outlook.
+Rooms that do not exist in Outlook yet can be created from Orbit.
 
 ## One-time setup
 
@@ -10,16 +11,41 @@ in Orbit as sessions ("Managed in Outlook"), and sessions opened in Orbit book t
      (e.g. `openssl rand -hex 32`). Graph sends it back with every notification; anything else is ignored.
    - `NEXT_PUBLIC_APP_URL` — the public `https://` address of Orbit. Graph only notifies an https URL,
      so without it a room only syncs daily and on **Sync now** (always the case in local development).
+   - *Optional* `OUTLOOK_ROOMS_BUILDING` / `OUTLOOK_ROOMS_FLOOR` — the building and floor to use when a
+     room has no location or is not drawn on an Orbit floor (defaults: `Orbit` / `Main`).
 2. **Database**: apply `supabase/migrations/20261105120000_outlook_room_sync.sql`.
-3. **Exchange application access policy**: if the tenant restricts the Orbit app with an application
+3. **Create rooms from Orbit** (only if Outlook does not have them yet): the app registration needs
+   - the **application** permission `Place.ReadWrite.All` (Microsoft Graph, admin consent), and
+   - the Exchange application roles `MailRecipient` and `TenantPlacesManagement` for the app.
+   The tenant must also have Places configured; without it the Places list calls return nothing:
+   `Connect-MicrosoftPlaces`, then `Set-PlacesSettings -EnableBuildings 'Default:true'`.
+   Creating rooms needs *Exchange Administrator* or a custom role with those assignments. Without
+   these, **Sync to Outlook** reports exactly what is missing, and rooms that already exist in
+   Exchange can still be linked by address.
+4. **Exchange application access policy**: if the tenant restricts the Orbit app with an application
    access policy, add the room mailboxes to the allowed group. Otherwise the room shows
    "Orbit cannot read this room mailbox (access denied)".
-4. **Vercel Deployment Protection**: `/api/integrations/outlook/rooms/notify` must be reachable
+5. **Vercel Deployment Protection**: `/api/integrations/outlook/rooms/notify` must be reachable
    without it (Graph cannot log in). Exempt the path or use a protection bypass for production.
-5. **Room mailboxes should auto-accept** meeting requests (the Exchange default for room mailboxes).
+6. **Room mailboxes should auto-accept** meeting requests (the Exchange default for room mailboxes).
    Until the room accepts, Orbit reports "waiting for the room to accept it in Outlook".
 
-## Linking a room
+## Creating the rooms in Outlook
+
+In **Spaces → Manage**, **Sync to Outlook** walks every active time-range room:
+
+- a room with no mailbox is created in Outlook as a Places room (an Exchange room mailbox). Orbit
+  creates or reuses the building (from the room's location) and floor (the Orbit floor it is drawn
+  on), puts the room on that floor, and copies its name and capacity;
+- a room that already has a mailbox has its name, capacity, location and floor brought back in step
+  when they differ;
+- every room is then subscribed, its upcoming Orbit sessions are booked in Outlook and its Outlook
+  meetings are imported into Orbit — the same work as saving the mailbox by hand.
+
+The result toast lists how many rooms were created/updated and every room that failed, with the
+reason (usually a missing permission or Exchange role).
+
+## Linking an existing room mailbox
 
 In **Spaces → Manage**, edit a time-range room and type its room mailbox (e.g. `athena@stellarblue.eu`)
 in **Room mailbox**. Saving it:
@@ -36,4 +62,5 @@ room's upcoming Outlook-born sessions; Orbit-born sessions stay. A colleague's o
 Each linked room in Manage shows its mailbox, the last sync time, clashes (Outlook meetings that overlap
 an Orbit session and were not imported) and, in red, the last sync's issues: a failed read, meetings not
 booked in Outlook, rooms that declined, live updates being off. **Sync now** re-reads the room at once
-and reports the result.
+and reports the result. The **Outlook** link next to the mailbox opens the room's calendar in Outlook on
+the web; the same link appears in the room's info in Spaces.

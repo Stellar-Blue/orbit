@@ -1,10 +1,10 @@
 "use client";
 
 import React from 'react';
-import { Clock, MapPin, Users } from 'lucide-react';
+import { Clock, ExternalLink, MapPin, Users } from 'lucide-react';
 import { Modal } from '@/components/ui/primitives';
 import { SessionSlots } from '@/components/spaces/session-slots';
-import type { SpaceDayState, SpaceSessionState } from '@/lib/spaces';
+import { outlookRoomUrl, type SpaceDayState, type SpaceSessionState } from '@/lib/spaces';
 import type { Space, SpaceBooking, SpaceSession, SpaceSessionInvite, SpaceType } from '@/lib/types';
 
 export interface RoomSessionsModalProps {
@@ -42,6 +42,7 @@ export function RoomSessionsModal({
   invites, canEdit, onEdit, highlightId, organizerOf,
 }: RoomSessionsModalProps) {
   if (!room || !state) return null;
+  const outlookUrl = outlookRoomUrl(room.outlook_email);
   return (
     <Modal isOpen onClose={onClose} title={room.name} eyebrow={`Sessions · ${dayLabel}`} size="lg">
       <div className="space-y-3">
@@ -61,6 +62,18 @@ export function RoomSessionsModal({
               <MapPin className="h-3 w-3" />
               {room.location}
             </span>
+          )}
+          {outlookUrl && (
+            <a
+              href={outlookUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open ${room.outlook_email} in Outlook`}
+              className="inline-flex items-center gap-1.5 font-medium text-[var(--accent-ink)] hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Outlook room
+            </a>
           )}
           <span className="inline-flex items-center gap-1.5">
             <Clock className="h-3 w-3" />

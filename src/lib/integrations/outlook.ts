@@ -105,7 +105,7 @@ interface GraphEventPayload {
   id?: string;
 }
 
-type GraphResult =
+export type GraphResult =
   | { ok: true; event?: Record<string, unknown>; status?: number; code?: string }
   | { ok: false; status: number; code?: string; message?: string; retryAfter?: number };
 
@@ -204,6 +204,57 @@ export async function graphRenewSubscription(id: string, expirationDateTime: str
 
 export async function graphDeleteSubscription(id: string): Promise<GraphResult> {
   return graphRequest('DELETE', `${GRAPH_BASE}/subscriptions/${encodeURIComponent(id)}`);
+}
+
+// ---------- Places: Orbit rooms as Exchange room mailboxes (application token) ----------
+
+/** A Places directory entry: a building, floor or room, as the room sync reads it. */
+export type GraphPlace = {
+  id: string;
+  displayName?: string | null;
+  emailAddress?: string | null;
+  parentId?: string | null;
+  capacity?: number | null;
+  building?: string | null;
+  floorLabel?: string | null;
+  label?: string | null;
+};
+
+/**
+ * Every place of one type (`microsoft.graph.building`, `microsoft.graph.floor`, ...), all pages
+ * read. An empty list is also what a tenant without Places configured returns, so callers treat it
+ * as "nothing there yet", not as proof the directory is empty.
+ */
+export async function graphListPlaces(placeType: string): Promise<
+  { ok: true; places: GraphPlace[] } | { ok: false; status: number; code?: string; message?: string }
+> {
+  const places: GraphPlace[] = [];
+  let url: string | undefined = `${GRAPH_BASE}/places/${placeType}?$top=100`;
+  while (url) {
+    const page: GraphResult = await graphRequest('GET', url);
+    if (!page.ok) return { ok: false, status: page.status, code: page.code, message: page.message };
+    places.push(...((page.event?.value as GraphPlace[] | undefined) || []));
+    url = page.event?.['@odata.nextLink'] as string | undefined;
+  }
+  return { ok: true, places };
+}
+
+/** Creates a building, floor or room in the Places directory. */
+export async function graphCreatePlace(payload: Record<string, unknown>): Promise<GraphResult> {
+  return graphRequest('POST', `${GRAPH_BASE}/places`, payload);
+}
+
+/** One place, by its id or a room's email address. */
+export async function graphGetPlace(idOrEmail: string): Promise<GraphResult> {
+  return graphRequest('GET', `${GRAPH_BASE}/places/${encodeURIComponent(idOrEmail)}`);
+}
+
+/** Updates a room's details; the same address key `graphGetPlace` accepted identifies it. */
+export async function graphUpdateRoom(idOrEmail: string, patch: Record<string, unknown>): Promise<GraphResult> {
+  return graphRequest('PATCH', `${GRAPH_BASE}/places/${encodeURIComponent(idOrEmail)}`, {
+    '@odata.type': 'microsoft.graph.room',
+    ...patch,
+  });
 }
 
 // ---------- Work plan CRUD (delegated token) ----------

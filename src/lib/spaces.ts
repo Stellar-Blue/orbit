@@ -616,6 +616,12 @@ export function wholeDayHeldOn(
   ) ?? null;
 }
 
+/** Outlook on the web, opening a linked room mailbox's calendar. */
+export function outlookRoomUrl(email: string | null | undefined): string | null {
+  const address = (email || '').trim();
+  return address ? `https://outlook.office.com/mail/${encodeURIComponent(address)}/calendar` : null;
+}
+
 /**
  * The whole-day seat a person already holds on the day, if any. A whole-day space fills the whole
  * day, so once one is held no other whole-day space can take a second — the database says the same

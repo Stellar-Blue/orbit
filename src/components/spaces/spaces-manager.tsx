@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import { Clock, DoorOpen, Grid2x2, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { Cloud, Clock, DoorOpen, ExternalLink, Grid2x2, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { notifySuccess } from '@/lib/validation-modal';
 import { Badge, Button, Card } from '@/components/ui/primitives';
-import { BOOKING_MODE_LABELS } from '@/lib/spaces';
-import { roomSyncReport } from '@/lib/room-sync';
+import { BOOKING_MODE_LABELS, outlookRoomUrl } from '@/lib/spaces';
+import { roomProvisionReport, roomSyncReport } from '@/lib/room-sync';
 import type { Space, SpaceBookingMode } from '@/lib/types';
 
 const COLORS = ['#2f6fa3', '#a21caf', '#0d9488', '#b45309', '#4f46e5', '#be123c', '#475569'];
@@ -46,11 +46,12 @@ interface RoomDraft {
  *   • rooms, what people actually book, with their capacity.
  */
 export const SpacesManager: React.FC = () => {
-  const { spaceTypes, spaces, spaceBookings, saveSpaceType, deleteSpaceType, saveSpace, deleteSpace, linkRoomMailbox, syncRoomNow } = useAuth();
+  const { spaceTypes, spaces, spaceBookings, saveSpaceType, deleteSpaceType, saveSpace, deleteSpace, linkRoomMailbox, syncRoomNow, syncOutlookRooms } = useAuth();
 
   const [typeDraft, setTypeDraft] = useState<TypeDraft | null>(null);
   const [roomDraft, setRoomDraft] = useState<RoomDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncingOutlook, setSyncingOutlook] = useState(false);
 
   const orderedTypes = useMemo(
     () => [...spaceTypes].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
@@ -128,6 +129,19 @@ export const SpacesManager: React.FC = () => {
     }
     setSaving(false);
     if (ok) setRoomDraft(null);
+  };
+
+  const syncToOutlook = async () => {
+    if (syncingOutlook) return;
+    setSyncingOutlook(true);
+    const result = await syncOutlookRooms();
+    setSyncingOutlook(false);
+    if (result.results.length === 0) {
+      if (result.error) alert(`Rooms were not synced to Outlook: ${result.error}`);
+      else notifySuccess('No time-range room needed an Outlook mailbox.', 'Rooms synced to Outlook');
+      return;
+    }
+    showRoomReport('Rooms synced to Outlook', roomProvisionReport(result.results));
   };
 
   const bookingsFor = (spaceId: string) => spaceBookings.filter(booking => booking.space_id === spaceId).length;
@@ -214,11 +228,16 @@ export const SpacesManager: React.FC = () => {
 
       <Card
         title="Rooms"
-        subtitle="Every bookable space, its type and how many seats it holds. Capacity is enforced when someone books."
+        subtitle="Every bookable space, its type and how many seats it holds. Capacity is enforced when someone books. Sync to Outlook creates a room mailbox for every time-range room."
         action={
-          <Button size="sm" variant="primary" onClick={startNewRoom} disabled={orderedTypes.length === 0}>
-            <Plus className="w-4 h-4 stroke-[3]" /> New room
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => void syncToOutlook()} disabled={syncingOutlook}>
+              <Cloud className="w-4 h-4" /> {syncingOutlook ? 'Syncing…' : 'Sync to Outlook'}
+            </Button>
+            <Button size="sm" variant="primary" onClick={startNewRoom} disabled={orderedTypes.length === 0}>
+              <Plus className="w-4 h-4 stroke-[3]" /> New room
+            </Button>
+          </div>
         }
       >
         {spaces.length === 0 ? (
@@ -242,6 +261,7 @@ export const SpacesManager: React.FC = () => {
               <tbody>
                 {[...spaces].sort((a, b) => a.name.localeCompare(b.name)).map(space => {
                   const type = orderedTypes.find(entry => entry.id === space.type_id);
+                  const outlookUrl = outlookRoomUrl(space.outlook_email);
                   return (
                     <tr key={space.id} className="border-b border-[var(--line)] last:border-b-0 hover:bg-[var(--surface-muted)]">
                       <td className="py-2 pr-3">
@@ -250,9 +270,21 @@ export const SpacesManager: React.FC = () => {
                           <span className="font-semibold text-[var(--ink)] truncate">{space.name}</span>
                           {!space.active && <Badge variant="neutral">Hidden</Badge>}
                         </span>
-                        {space.outlook_email && (
+                        {outlookUrl && (
                           <span className="block ui-meta mt-0.5">
-                            Outlook · {space.outlook_email} · {space.outlook_synced_at
+                            <a
+                              href={outlookUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Open ${space.outlook_email} in Outlook`}
+                              className="inline-flex items-center gap-0.5 font-semibold text-[var(--accent-ink)] hover:underline"
+                            >
+                              Outlook <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <span className="mx-1">·</span>
+                            {space.outlook_email}
+                            <span className="mx-1">·</span>
+                            {space.outlook_synced_at
                               ? `synced ${syncedLabel(space.outlook_synced_at)}`
                               : 'not synced yet'}
                             {(space.outlook_clashes?.length ?? 0) > 0 && (
@@ -476,7 +508,10 @@ export const SpacesManager: React.FC = () => {
                   placeholder="room@stellarblue.eu"
                   className="ui-input w-full"
                 />
-                <p className="ui-meta mt-1">Pick this room in Outlook&apos;s room list and its meetings appear here.</p>
+                <p className="ui-meta mt-1">
+                  Pick this room in Outlook&apos;s room list and its meetings appear here. Leave it empty
+                  and use <strong>Sync to Outlook</strong> to let Orbit create the room mailbox.
+                </p>
               </div>
             )}
             <div>

@@ -88,6 +88,60 @@ export type RoomSyncResult = {
 /** Shared by the server and the client. */
 export type RoomSubscription = { state: 'active' | 'renewed' | 'created' | 'skipped'; reason?: string };
 
+/** What syncing an Orbit room into Outlook's Places directory did. */
+export type RoomProvisionOutcome = 'created' | 'updated' | 'unchanged' | 'failed' | 'skipped';
+
+export type RoomProvisionResult = {
+  space_id: string;
+  name: string;
+  outcome: RoomProvisionOutcome;
+  outlook_email?: string | null;
+  /** A warning next to a successful outcome, or the reason a room was skipped or failed. */
+  message?: string;
+  backfilled?: number;
+  backfillFailures?: string[];
+  subscription?: RoomSubscription;
+  sync?: RoomSyncResult;
+};
+
+/** The Outlook Places room fields Orbit owns; `building` and `floorLabel` come from the room. */
+export type RoomPlaceFields = {
+  displayName: string;
+  capacity: number;
+  building: string;
+  floorLabel: string;
+};
+
+/**
+ * What an Orbit room should look like in Outlook: its name, how many people it seats, and where it
+ * is. The building falls back to the room's location, the floor to the Orbit floor it is drawn on.
+ */
+export function roomPlaceFields(
+  space: { name: string; capacity: number; location?: string | null },
+  floorName?: string | null,
+  defaults?: { building?: string; floor?: string }
+): RoomPlaceFields {
+  return {
+    displayName: space.name.trim(),
+    capacity: Math.max(1, Math.round(Number(space.capacity) || 1)),
+    building: (space.location || '').trim() || defaults?.building || 'Orbit',
+    floorLabel: (floorName || '').trim() || defaults?.floor || 'Main',
+  };
+}
+
+/** Only the room fields whose Orbit value differs from what Outlook holds, so no-op PATCHes stay rare. */
+export function roomPlacePatch(
+  current: { displayName?: string | null; capacity?: number | null; building?: string | null; floorLabel?: string | null },
+  wanted: RoomPlaceFields
+): Partial<RoomPlaceFields> {
+  const patch: Partial<RoomPlaceFields> = {};
+  if ((current.displayName || '').trim() !== wanted.displayName) patch.displayName = wanted.displayName;
+  if (Number(current.capacity || 0) !== wanted.capacity) patch.capacity = wanted.capacity;
+  if ((current.building || '').trim() !== wanted.building) patch.building = wanted.building;
+  if ((current.floorLabel || '').trim() !== wanted.floorLabel) patch.floorLabel = wanted.floorLabel;
+  return patch;
+}
+
 const RESPONSES: Record<string, OccurrenceAttendee['response']> = {
   accepted: 'accepted',
   tentativelyAccepted: 'tentative',
@@ -439,4 +493,59 @@ export function describeGraphFailure(failure: { status: number; code?: string; m
   }
   if (code === 'no_token' || status === 0) return 'Microsoft Graph is not configured (no application token).';
   return `Outlook returned ${status}${code ? ` (${code})` : ''}: ${message || 'unknown error'}`;
+}
+
+/**
+ * A Places failure as a sentence an admin can act on. Places needs its own application permission
+ * and Exchange roles, which room-calendar access does not grant.
+ */
+export function describePlaceFailure(
+  failure: { status: number; code?: string; message?: string },
+  action: 'create' | 'read' | 'update'
+): string {
+  const { status, code, message } = failure;
+  if (code === 'no_token' || status === 0) return 'Microsoft Graph is not configured (no application token).';
+  if (status === 403 || code === 'ErrorAccessDenied' || code === 'Authorization_RequestDenied') {
+    return `Orbit may not ${action} Outlook rooms. Grant the app the Place.ReadWrite.All application permission (admin consent) and the Exchange MailRecipient and TenantPlacesManagement roles.`;
+  }
+  if (status === 404) return 'Outlook does not list this room.';
+  return `Outlook returned ${status}${code ? ` (${code})` : ''}: ${message || 'unknown error'}`;
+}
+
+/**
+ * What an admin is told after syncing Orbit's rooms into Outlook: how many rooms were created,
+ * updated or already matched, and every room that failed or still has a sync problem.
+ */
+export function roomProvisionReport(results: RoomProvisionResult[]): {
+  ok: boolean; summary: string; problems: string[];
+} {
+  const tally = (outcome: RoomProvisionOutcome) => results.filter(result => result.outcome === outcome).length;
+  const created = tally('created');
+  const updated = tally('updated');
+  const unchanged = tally('unchanged');
+  const skipped = tally('skipped');
+  const failed = tally('failed');
+  const done: string[] = [];
+  if (created > 0) done.push(`${count(created, 'room')} created in Outlook`);
+  if (updated > 0) done.push(`${count(updated, 'room')} updated`);
+  if (unchanged > 0) done.push(`${count(unchanged, 'room')} already in Outlook`);
+  if (skipped > 0) done.push(`${count(skipped, 'room')} skipped`);
+  if (failed > 0) done.push(`${count(failed, 'room')} failed`);
+  if (done.length === 0) done.push('no room needed an Outlook mailbox');
+
+  const problems: string[] = [];
+  for (const result of results) {
+    if (result.outcome === 'failed') {
+      problems.push(`${result.name}: ${result.message || 'Outlook refused the room'}`);
+      continue;
+    }
+    if (result.outcome === 'skipped') {
+      if (result.message) problems.push(`${result.name}: ${result.message}`);
+      continue;
+    }
+    if (result.message) problems.push(`${result.name}: ${result.message}`);
+    const report = roomSyncReport(result);
+    if (!report.ok) problems.push(`${result.name}: ${report.problems.join('; ')}`);
+  }
+  return { ok: problems.length === 0, summary: done.join(' · '), problems };
 }

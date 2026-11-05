@@ -19,7 +19,7 @@ import {
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import type { AvatarConfig } from './avatar';
-import type { RoomSubscription, RoomSyncResult } from './room-sync';
+import type { RoomSubscription, RoomSyncResult, RoomProvisionResult } from './room-sync';
 import { toHiddenScreenKeys } from './screens';
 import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
 import { isDemoMode, exitDemoMode } from './demo-mode';
@@ -225,6 +225,11 @@ interface AppState {
   }>;
   /** Re-reads the room's Outlook calendar now. */
   syncRoomNow: (spaceId: string) => Promise<{ ok: boolean; error?: string; subscription?: RoomSubscription; sync?: RoomSyncResult }>;
+  /**
+   * Creates any missing Outlook rooms (Exchange room mailboxes) for Orbit's time-range rooms,
+   * refreshes their details, and links/syncs them. One room with `spaceId`, all of them without.
+   */
+  syncOutlookRooms: (spaceId?: string) => Promise<{ ok: boolean; error?: string; results: RoomProvisionResult[] }>;
   deleteSpace: (id: string) => Promise<boolean>;
   /**
    * Returns the session that was created or joined — the handle an invite needs next — and whether
@@ -5722,6 +5727,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   };
 
+  const syncOutlookRooms = async (spaceId?: string) => {
+    const r = await postRoomRoute('POST', '/api/spaces/outlook-rooms', spaceId ? { space_id: spaceId } : {});
+    return {
+      ok: r.ok,
+      error: r.error,
+      results: (r.json?.results || []) as RoomProvisionResult[],
+    };
+  };
+
   const deleteSpace = async (id: string): Promise<boolean> => {
     const supabase = getSupabaseBrowserClient();
     const { error } = await supabase.from('spaces').delete().eq('id', id);
@@ -7502,6 +7516,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveSpace,
       linkRoomMailbox,
       syncRoomNow,
+      syncOutlookRooms,
       deleteSpace,
       bookSpaceSeat,
       ensureSessionMeeting,
