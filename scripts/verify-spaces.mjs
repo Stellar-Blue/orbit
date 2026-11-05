@@ -17,7 +17,9 @@ import {
   defaultPlanSession,
   defaultSessionWindow,
   heldWholeDaySpace,
+  lastSeatHoldsRoom,
   normalizeInviteEmail,
+  outlookOrganizerName,
   overlappingSession,
   parseInviteEmails,
   resolveInviteTargets,
@@ -38,14 +40,20 @@ import { buildSessionInvitePayload } from '@/lib/integrations/outlook';
 import {
   clashOf,
   describeGraphFailure,
+  isOrbitMeetingBody,
   meetingLabel,
+  mergeSyncRuns,
   notifiedSubscriptionIds,
   occurrenceFromGraph,
   organizerCancelled,
   organizersToRead,
   planAttendees,
   planRoomSync,
+  roomDeclined,
+  roomSyncReport,
   sessionsMissingFromRoom,
+  subscriptionIssue,
+  unexpectedTimeZone,
 } from '@/lib/room-sync';
 
 let passed = 0;
@@ -879,6 +887,103 @@ assert(
     && describeGraphFailure({ status: 0, code: 'no_token' }) === 'Microsoft Graph is not configured (no application token).'
     && describeGraphFailure({ status: 500, code: 'X', message: 'boom' }) === 'Outlook returned 500 (X): boom',
   'Graph failures turn into readable room errors'
+);
+
+// ---- Final review fixes ----
+const privateCopy = syncGev({
+  subject: 'Salary review', body: { content: 'Confidential agenda' },
+  attendees: [{ type: 'required', status: { response: 'accepted' }, emailAddress: { address: 'kostas@x.gr' } }],
+});
+const privOrganizer = occurrenceFromGraph(syncGev(), { ...privateCopy, sensitivity: 'private' }, SYNC_ROOM);
+const privRoom = occurrenceFromGraph(syncGev({ sensitivity: 'confidential' }), privateCopy, SYNC_ROOM);
+const normal = occurrenceFromGraph(syncGev(), { ...privateCopy, sensitivity: 'normal' }, SYNC_ROOM);
+assert(
+  privOrganizer?.subject === 'Private meeting' && privOrganizer.body === null && privOrganizer.attendees.length === 1
+    && privRoom?.subject === 'Private meeting' && privRoom.body === null
+    && normal?.subject === 'Salary review' && normal.body === 'Confidential agenda',
+  'Private or confidential meetings show no subject or agenda, but keep their guests and seats', JSON.stringify(privOrganizer)
+);
+assert(
+  unexpectedTimeZone([syncGev(), syncGev({ start: { dateTime: 'x', timeZone: 'Europe/Athens' } }),
+    syncGev({ start: { dateTime: 'x', timeZone: 'GTB Standard Time' } })]) === null
+    && unexpectedTimeZone([syncGev({ start: { dateTime: 'x', timeZone: 'Europe/Athens' } }),
+      syncGev({ start: { dateTime: 'x', timeZone: 'UTC' } })]) === 'UTC',
+  'A calendar read in any zone but Athens is caught before it can move sessions'
+);
+const orbitLink = 'Ana invited you to a session booked in Orbit.\n\nOpen in Orbit: https://orbit.test/spaces?session=abc';
+const longOrbit = occurrenceFromGraph(syncGev(), syncGev({ body: { content: `${'x'.repeat(3000)}\n${orbitLink}` } }), SYNC_ROOM);
+assert(
+  isOrbitMeetingBody(orbitLink) && !isOrbitMeetingBody('Weekly sync') && !isOrbitMeetingBody(null)
+    && longOrbit?.orbitMeeting === true && longOrbit.body.length === 2000,
+  'An Orbit meeting is recognised by its session link, even past the stored agenda length'
+);
+const orphan = syncPlan([syncOcc('u-orphan', '2026-11-10', '09:00', '10:00', { orbitMeeting: true })], []);
+assert(
+  orphan.creates.length === 0 && orphan.clashes.length === 0 && orphan.issues.length === 1
+    && orphan.issues[0].endsWith('an Orbit meeting whose session no longer exists — cancel it in Outlook'),
+  'An Orbit meeting with no session is reported, never imported as an Outlook session', JSON.stringify(orphan)
+);
+const unbooked = syncPlan([], [syncSes('o1', 'orbit', null, '2026-11-10', '09:00:00', '10:00:00')]);
+assert(
+  unbooked.issues.join() === 'Standup on 2026-11-10 09:00: not booked in Outlook yet — re-save the room mailbox to retry'
+    && unbooked.missingOrbit.length === 0,
+  'An Orbit session in a linked room with no meeting is reported', unbooked.issues.join()
+);
+const roomAnswer = response => ({ attendees: [
+  { type: 'required', status: { response: 'declined' }, emailAddress: { address: 'kostas@x.gr' } },
+  { type: 'resource', status: { response }, emailAddress: { address: 'Athena@StellarBlue.eu' } },
+] });
+assert(
+  roomDeclined(roomAnswer('declined'), SYNC_ROOM) && !roomDeclined(roomAnswer('none'), SYNC_ROOM)
+    && !roomDeclined(roomAnswer('accepted'), SYNC_ROOM) && !roomDeclined(undefined, SYNC_ROOM),
+  "Only the room's own decline counts as declined; anything else is still waiting"
+);
+const runA = { ok: false, created: 2, updated: 1, deleted: 0, clashes: 1, issues: ['old'], error: 'x' };
+const runB = { ok: true, created: 1, updated: 0, deleted: 3, clashes: 0, issues: [] };
+const merged = mergeSyncRuns(runA, runB);
+assert(
+  merged.ok && merged.created === 3 && merged.updated === 1 && merged.deleted === 3 && merged.clashes === 0
+    && merged.issues.length === 0 && mergeSyncRuns(runA, { ...runB, skipped: 'locked' }) === runA,
+  'A sync that ran twice reports both runs’ changes and the newer state', JSON.stringify(merged)
+);
+const subscriptionOff = { state: 'skipped', reason: 'OUTLOOK_ROOMS_WEBHOOK_SECRET is not set.' };
+const allGood = roomSyncReport({ backfilled: 2, backfillFailures: [], subscription: { state: 'created' }, sync: runB });
+const failures = ['a', 'b', 'c', 'd'].map(n => `${n}: refused`);
+const bad = roomSyncReport({
+  backfilled: 0, backfillFailures: failures, subscription: subscriptionOff,
+  sync: { ...runB, issues: [subscriptionIssue(subscriptionOff), 'one issue'], clashes: 1 },
+});
+assert(
+  allGood.ok && allGood.problems.length === 0 && allGood.summary.includes('2 Orbit sessions booked in Outlook')
+    && allGood.summary.includes('live updates created'),
+  'Linking a room reports success only when everything worked', allGood.summary
+);
+assert(
+  !bad.ok && bad.problems.some(p => p.startsWith('4 Orbit sessions not booked in Outlook: a: refused; b: refused; c: refused (+1 more)'))
+    && bad.problems.some(p => p === '1 issue: one issue')
+    && bad.problems.some(p => p.startsWith('1 Outlook meeting not imported'))
+    && bad.problems.some(p => p.endsWith('OUTLOOK_ROOMS_WEBHOOK_SECRET is not set.'))
+    && !roomSyncReport({ sync: { ...runB, ok: false, error: 'boom' } }).ok
+    && subscriptionIssue({ state: 'renewed' }) === null,
+  'Failed backfills, issues, clashes, a failed sync and missing live updates are all reported', bad.problems.join(' | ')
+);
+assert(
+  lastSeatHoldsRoom({ source: 'orbit', outlook_event_id: 'e1' }, [{ id: 'b1' }])
+    && !lastSeatHoldsRoom({ source: 'orbit', outlook_event_id: 'e1' }, [{ id: 'b1' }, { id: 'b2' }])
+    && !lastSeatHoldsRoom({ source: 'orbit', outlook_event_id: null }, [{ id: 'b1' }])
+    && !lastSeatHoldsRoom({ source: 'outlook', outlook_event_id: 'e1' }, [{ id: 'b1' }]),
+  'Only the last seat of an Orbit session that books the room in Outlook offers to delete it'
+);
+const orgInvites = [
+  { session_id: 's-ext', name: null, email: 'guest@ex.com', created_at: '2026-11-05T10:00:01Z' },
+  { session_id: 's-ext', name: 'Boss', email: 'boss@ext.com', created_at: '2026-11-05T10:00:00Z' },
+];
+const orgProfiles = [{ id: 'p-maria', first_name: 'Maria', last_name: 'K', work_email: 'maria@x.gr' }];
+assert(
+  outlookOrganizerName({ id: 's1', created_by: 'p-maria' }, orgProfiles, orgInvites) === 'Maria K'
+    && outlookOrganizerName({ id: 's-ext', created_by: null }, orgProfiles, orgInvites) === 'Boss'
+    && outlookOrganizerName({ id: 's-none', created_by: null }, orgProfiles, orgInvites) === null,
+  'An Outlook session names its Orbit organiser, else its first invite, else nobody'
 );
 
 // ---- Outlook-born sessions are read-only; session meetings book the room ----

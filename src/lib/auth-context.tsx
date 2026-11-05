@@ -19,7 +19,7 @@ import {
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
 import type { AvatarConfig } from './avatar';
-import type { RoomSyncResult } from './room-sync';
+import type { RoomSubscription, RoomSyncResult } from './room-sync';
 import { toHiddenScreenKeys } from './screens';
 import { slicesForPath, withDependencies, tablesForSlices, type DataSliceKey } from './data-slices';
 import { isDemoMode, exitDemoMode } from './demo-mode';
@@ -219,11 +219,17 @@ interface AppState {
   deleteSpaceType: (id: string) => Promise<boolean>;
   saveSpace: (input: { id?: string; name: string; type_id: string; capacity: number; location?: string | null; notes?: string | null; active?: boolean; onSaved?: (space: Space) => void }) => Promise<boolean>;
   /** Links (or, with null, unlinks) the room's Outlook mailbox and runs the first sync. */
-  linkRoomMailbox: (spaceId: string, email: string | null) => Promise<{ ok: boolean; error?: string; backfilled?: number; sync?: RoomSyncResult }>;
+  linkRoomMailbox: (spaceId: string, email: string | null) => Promise<{
+    ok: boolean; error?: string; backfilled?: number; backfillFailures?: string[];
+    subscription?: RoomSubscription; sync?: RoomSyncResult;
+  }>;
   /** Re-reads the room's Outlook calendar now. */
-  syncRoomNow: (spaceId: string) => Promise<{ ok: boolean; error?: string; sync?: RoomSyncResult }>;
+  syncRoomNow: (spaceId: string) => Promise<{ ok: boolean; error?: string; subscription?: RoomSubscription; sync?: RoomSyncResult }>;
   deleteSpace: (id: string) => Promise<boolean>;
-  /** Returns the session that was created or joined — the handle an invite needs next. */
+  /**
+   * Returns the session that was created or joined — the handle an invite needs next — and whether
+   * this booking opened it (`createdSession`), so the caller knows to book the room in Outlook.
+   */
   bookSpaceSeat: (input: {
     space: Space;
     mode: SpaceBookingMode;
@@ -233,7 +239,12 @@ interface AppState {
     seatId?: string | null;
     seatIds?: string[];
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string; description?: string } | null;
-  }) => Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null }>;
+  }) => Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null; createdSession?: boolean }>;
+  /**
+   * Gives a newly opened session its Outlook meeting, which books the room's mailbox. Only for a
+   * session nobody is being invited to: the invite creates that same meeting itself.
+   */
+  ensureSessionMeeting: (sessionId: string) => Promise<void>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
   /** Deletes a whole session; its bookings cascade with it, so the seats are released. */
   deleteSpaceSession: (id: string) => Promise<boolean>;
@@ -5563,7 +5574,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // The demo answers every query with an empty set; refetching would wipe the sample bookings.
     if (isDemoMode()) return;
     try {
-      const [sessionRows, bookingRows, floorRows, seatRows, deskRows, inviteRows] = await Promise.all([
+      // Rooms too: the sync writes each room's mailbox state, errors and clashes.
+      const [spaceRows, sessionRows, bookingRows, floorRows, seatRows, deskRows, inviteRows] = await Promise.all([
+        fetchRows('spaces', 'all', { order: ['name'] }),
         fetchRows('space_sessions', 'all'),
         fetchRows('space_bookings', 'all'),
         fetchRows('office_floors', 'all', { order: ['sort_order'] }),
@@ -5571,6 +5584,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fetchRows('space_desks', 'all'),
         fetchRows('space_session_invites', 'all'),
       ]);
+      setSpaces(spaceRows as Space[]);
       setSpaceSessions(sessionRows as SpaceSession[]);
       setOfficeFloors(floorRows as OfficeFloor[]);
       setSpaceSeats(seatRows as SpaceSeat[]);
@@ -5688,12 +5702,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const linkRoomMailbox = async (spaceId: string, email: string | null) => {
     const r = await postRoomRoute('PUT', '/api/spaces/room-mailbox', { space_id: spaceId, outlook_email: email });
-    return { ok: r.ok, error: r.error, backfilled: r.json?.backfilled, sync: r.json?.sync as RoomSyncResult | undefined };
+    return {
+      ok: r.ok,
+      error: r.error,
+      backfilled: r.json?.backfilled as number | undefined,
+      backfillFailures: r.json?.backfillFailures as string[] | undefined,
+      subscription: r.json?.subscription as RoomSubscription | undefined,
+      sync: r.json?.sync as RoomSyncResult | undefined,
+    };
   };
 
   const syncRoomNow = async (spaceId: string) => {
     const r = await postRoomRoute('POST', '/api/spaces/room-sync', { space_id: spaceId });
-    return { ok: r.ok, error: r.error, sync: r.json?.sync as RoomSyncResult | undefined };
+    return {
+      ok: r.ok,
+      error: r.error,
+      subscription: r.json?.subscription as RoomSubscription | undefined,
+      sync: r.json?.sync as RoomSyncResult | undefined,
+    };
   };
 
   const deleteSpace = async (id: string): Promise<boolean> => {
@@ -5935,7 +5961,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     seatIds?: string[];
     /** `id` joins a session that already exists; without it the window opens a new session. */
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string; description?: string } | null;
-  }): Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null }> => {
+  }): Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null; createdSession?: boolean }> => {
     const supabase = getSupabaseBrowserClient();
     try {
       // One whole-day seat per person per day: checked here so no screen can book a second one, and
@@ -5952,6 +5978,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       let sessionId: string | null = null;
+      let createdSession = false;
       if (input.mode === 'time_range') {
         if (input.session?.id) {
           sessionId = input.session.id;
@@ -6014,14 +6041,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 created_at: new Date().toISOString(),
               } as SpaceSession;
               setSpaceSessions(prev => [...prev.filter(entry => entry.id !== session!.id), session!]);
-              // Books the room in Outlook; the session stays valid when this fails, so fire and forget.
-              if (!isDemoMode()) {
-                void fetch('/api/spaces/sessions', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ session_id: session.id }),
-                }).then(() => refreshSpaces()).catch(() => undefined);
-              }
+              // The Outlook meeting is the caller's next step (ensureSessionMeeting or an invite): two
+              // requests creating it at once would book the room twice.
+              createdSession = true;
             }
           }
           sessionId = session.id;
@@ -6077,7 +6099,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile: profiles.find(profile => profile.id === input.profileId),
       }]);
       void refreshSpaces();
-      return { ok: true, seatId, sessionId };
+      return { ok: true, seatId, sessionId, createdSession };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error('bookSpaceSeat exception:', e);
@@ -6085,7 +6107,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  /** Releases a seat. The last seat leaving closes the session (database trigger). */
+  /**
+   * The room is booked in Outlook even when nobody is invited; the session stays valid when this
+   * fails (the room sync reports it), so failures are only logged.
+   */
+  const ensureSessionMeeting = async (sessionId: string): Promise<void> => {
+    if (isDemoMode()) return;
+    try {
+      const response = await fetch('/api/spaces/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string; calendar_error?: string } | null;
+      if (!response.ok || payload?.calendar_error) {
+        console.warn('ensureSessionMeeting:', payload?.error || payload?.calendar_error || response.statusText);
+      }
+    } catch (e) {
+      console.warn('ensureSessionMeeting exception:', e);
+    }
+    void refreshSpaces();
+  };
+
+  /**
+   * Releases a seat. The last seat leaving closes the session (database trigger), unless the session
+   * owns an Outlook meeting or came from Outlook: the room is still booked there, so the session
+   * stays. The Spaces page offers to delete such a session when its last seat is released.
+   */
   const cancelSpaceBooking = async (id: string): Promise<boolean> => {
     const previous = spaceBookings;
     setSpaceBookings(prev => prev.filter(booking => booking.id !== id));
@@ -7456,6 +7504,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       syncRoomNow,
       deleteSpace,
       bookSpaceSeat,
+      ensureSessionMeeting,
       cancelSpaceBooking,
       deleteSpaceSession,
       inviteToSpaceSession,
