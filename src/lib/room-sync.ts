@@ -145,6 +145,41 @@ export function clashOf(occurrence: RoomOccurrence): RoomClash {
   };
 }
 
+/** `Standup on 2026-11-10 09:00`, the prefix of every per-session room issue. */
+export function meetingLabel(title: string | null | undefined, date: string, startsAt: string): string {
+  return `${title || 'Session'} on ${date} ${clockLabel(startsAt)}`;
+}
+
+/** The organiser's address on an event, lowercased; empty when Outlook gives none. */
+export function organizerEmailOf(event: GraphCalendarEvent): string {
+  return event.organizer?.emailAddress?.address?.trim().toLowerCase() || '';
+}
+
+/**
+ * Organisers whose own calendar carries the full meeting, each once: never the room itself, and only
+ * inside the tenant (the room mailbox's domain, or a current colleague). Anyone else is read from the
+ * room's copy.
+ */
+export function organizersToRead(
+  events: GraphCalendarEvent[],
+  roomMailbox: string,
+  isColleague: (email: string) => boolean
+): string[] {
+  const room = roomMailbox.trim().toLowerCase();
+  const domain = room.slice(room.indexOf('@'));
+  return [...new Set(events.map(organizerEmailOf))].filter(email => (
+    email !== '' && email !== room && (email.endsWith(domain) || isColleague(email))
+  ));
+}
+
+/**
+ * Whether the organiser's read of an Orbit meeting proves it was cancelled. Only a missing item or a
+ * cancelled event does: a missing mailbox or a refused read says nothing about the meeting.
+ */
+export function organizerCancelled(read: { ok: boolean; status?: number; code?: string; event?: Record<string, unknown> }): boolean {
+  return read.ok ? read.event?.isCancelled === true : read.status === 404 && read.code === 'ErrorItemNotFound';
+}
+
 /**
  * What to create, update, delete or report so the room's sessions mirror its Outlook calendar.
  * Past dates are ignored on both sides. Outlook-born sessions follow Outlook completely; Orbit-born

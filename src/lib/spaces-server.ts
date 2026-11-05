@@ -277,11 +277,16 @@ export async function bookInviteeSeat(
 /**
  * Takes one person off a session: their invitation and their seat. The caller recomputes the meeting
  * afterwards (an empty attendee list cancels it).
+ *
+ * `syncSeatOnly` is for the room sync: it books seats with no `created_by`, while every seat taken in
+ * the app records who took it, so only a seat the sync booked is released and a seat the person took
+ * themselves stays theirs.
  */
 export async function removeInvitee(
   admin: SupabaseClient,
   sessionId: string,
-  email: string
+  email: string,
+  options: { syncSeatOnly?: boolean } = {}
 ): Promise<{ removed: boolean; seatReleased: boolean }> {
   const { data: invite } = await admin
     .from('space_session_invites')
@@ -295,10 +300,12 @@ export async function removeInvitee(
   // trigger must agree with the invite list.
   let seatReleased = false;
   if (invite.profile_id) {
-    const { error: seatError } = await admin.from('space_bookings')
+    let release = admin.from('space_bookings')
       .delete()
       .eq('session_id', sessionId)
       .eq('profile_id', invite.profile_id);
+    if (options.syncSeatOnly) release = release.is('created_by', null);
+    const { error: seatError } = await release;
     seatReleased = !seatError;
   }
   await admin.from('space_session_invites').delete().eq('id', invite.id);

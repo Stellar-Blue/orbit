@@ -38,8 +38,11 @@ import { buildSessionInvitePayload } from '@/lib/integrations/outlook';
 import {
   clashOf,
   describeGraphFailure,
+  meetingLabel,
   notifiedSubscriptionIds,
   occurrenceFromGraph,
+  organizerCancelled,
+  organizersToRead,
   planAttendees,
   planRoomSync,
 } from '@/lib/room-sync';
@@ -746,6 +749,35 @@ const insertClash = clashOf(syncOcc('u3', '2026-11-10', '10:30', '11:30', { orga
 assert(
   insertClash.organizer === 'ext@y.com' && insertClash.subject === 'Standup' && insertClash.startsAt === '10:30',
   'A clash names the organiser by email when Outlook gives no name', JSON.stringify(insertClash)
+);
+assert(
+  meetingLabel(null, '2026-11-10', '09:00:00') === 'Session on 2026-11-10 09:00'
+    && meetingLabel('Standup', '2026-11-10', '09:30') === 'Standup on 2026-11-10 09:30',
+  'Room issues name the meeting, its day and its start time'
+);
+const byOrganizer = email => ({ organizer: { emailAddress: { address: email } } });
+const toRead = organizersToRead(
+  [byOrganizer('athena@stellarblue.eu'), byOrganizer('Ana@StellarBlue.eu '), byOrganizer('ana@stellarblue.eu'),
+    byOrganizer('guest@gmail.com'), byOrganizer('kostas@x.gr'), {}],
+  'Athena@StellarBlue.eu',
+  email => email === 'kostas@x.gr'
+);
+assert(
+  toRead.join() === 'ana@stellarblue.eu,kostas@x.gr',
+  'Organiser calendars are read once each, never the room itself, and only inside the tenant', toRead.join()
+);
+assert(
+  organizerCancelled({ ok: false, status: 404, code: 'ErrorItemNotFound' })
+    && organizerCancelled({ ok: true, event: { isCancelled: true } }),
+  'A missing or cancelled organiser copy means the meeting was cancelled'
+);
+assert(
+  !organizerCancelled({ ok: false, status: 404, code: 'ErrorInvalidUser' })
+    && !organizerCancelled({ ok: false, status: 404, code: 'MailboxNotEnabledForRESTAPI' })
+    && !organizerCancelled({ ok: false, status: 404 })
+    && !organizerCancelled({ ok: false, status: 403, code: 'ErrorAccessDenied' })
+    && !organizerCancelled({ ok: true, event: { isCancelled: false } }),
+  'A missing mailbox, a refused read or a live meeting never deletes an Orbit session'
 );
 assert(
   !syncPlan([], [syncSes('s4', 'outlook', 'u4', '2026-11-04', '09:00:00', '10:00:00')]).deletes.includes('s4'),

@@ -1,16 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import {
-  graphCalendarView, graphCreateSubscription, graphDeleteSubscription, graphGetEvent, graphRenewSubscription,
-} from '@/lib/integrations/outlook';
+import { addDays, graphCalendarView, graphGetEvent } from '@/lib/integrations/outlook';
 import { athensToday } from '@/lib/integrations/server';
 import {
-  clashOf, describeGraphFailure, occurrenceFromGraph, planAttendees, planRoomSync,
+  clashOf, describeGraphFailure, meetingLabel, occurrenceFromGraph, organizerCancelled, organizerEmailOf,
+  organizersToRead, planAttendees, planRoomSync,
   type GraphCalendarEvent, type LinkedSession, type RoomOccurrence, type RoomSyncMatch, type RoomSyncResult,
 } from '@/lib/room-sync';
-import { normalizeInviteEmail } from '@/lib/spaces';
-import {
-  bookInviteeSeat, calendarStateOf, clock, loadSessionContext, removeInvitee, syncSessionCalendar,
-} from '@/lib/spaces-server';
+import { bookInviteeSeat, removeInvitee } from '@/lib/spaces-server';
 import type { RoomClash } from '@/lib/types';
 
 /**
@@ -24,9 +20,7 @@ import type { RoomClash } from '@/lib/types';
 
 const HORIZON_DAYS = 84;
 const CLAIM_MS = 5 * 60_000;
-const DAY_MS = 86_400_000;
-const SUBSCRIPTION_DAYS = 6;
-const RENEW_WITHIN_MS = 48 * 3_600_000;
+const INVITE_PAGE = 1000;
 
 type RoomSession = LinkedSession & { outlook_event_id: string | null; created_by: string | null };
 type Directory = {
@@ -40,27 +34,19 @@ type Sync = {
   admin: SupabaseClient;
   spaceId: string;
   today: string;
+  horizonEnd: string;
   directory: Directory;
-  /** Organisers whose calendar could not be read this run: their meetings show the room's copy. */
-  unreadOrganizers: Set<string>;
+  /** Occurrences whose organiser copy should exist but was not read: only the stripped room copy is known. */
+  staleDetails: Set<string>;
   sessions: Map<string, RoomSession>;
   tally: { created: number; updated: number; deleted: number; clashes: RoomClash[]; issues: string[] };
-};
-
-const addDays = (date: string, days: number): string => {
-  const d = new Date(`${date}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 };
 
 const idle = (fields: Partial<RoomSyncResult> = {}): RoomSyncResult => ({
   ok: true, created: 0, updated: 0, deleted: 0, clashes: 0, issues: [], ...fields,
 });
 
-const labelOf = (title: string | null | undefined, date: string, startsAt: string): string =>
-  `${title || 'Session'} on ${date} ${clock(startsAt)}`;
-
-// ---------- One room's sync ----------
+// ---------- Claim ----------
 
 /**
  * Syncs one room. Runs never overlap: a call that finds the room claimed only leaves a "pending"
@@ -125,6 +111,8 @@ async function releaseRoom(admin: SupabaseClient, spaceId: string): Promise<bool
   return Boolean(data?.outlook_sync_pending);
 }
 
+// ---------- Read and plan ----------
+
 /** A failed read leaves every session as it was; the room only shows why. */
 async function recordFailure(admin: SupabaseClient, spaceId: string, error: string): Promise<RoomSyncResult> {
   await admin.from('spaces').update({ outlook_sync_error: error }).eq('id', spaceId);
@@ -140,7 +128,9 @@ async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: stri
   const roomView = await graphCalendarView(mailbox, window.start, window.end);
   if (!roomView.ok) return recordFailure(admin, spaceId, describeGraphFailure(roomView));
 
+  // Without the directory every create would lose its organiser and every guest their seat for good.
   const directory = await loadDirectory(admin);
+  if ('error' in directory) return recordFailure(admin, spaceId, `Could not read the people directory: ${directory.error}`);
   const read = await withOrganizerCopies(roomView.events, mailbox, window, directory);
   // Sessions are loaded for the same dates: the planner deletes Outlook-born sessions it cannot
   // match, so nothing outside the window read may reach it.
@@ -156,9 +146,9 @@ async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: stri
 
   const plan = planRoomSync({ occurrences, sessions, today });
   const sync: Sync = {
-    admin, spaceId, today, directory, unreadOrganizers: read.unreadOrganizers,
+    admin, spaceId, today, horizonEnd, directory, staleDetails: read.staleDetails,
     sessions: new Map(sessions.map(session => [session.id, session])),
-    tally: { created: 0, updated: 0, deleted: 0, clashes: [...plan.clashes], issues: [...plan.issues] },
+    tally: { created: 0, updated: 0, deleted: 0, clashes: [...plan.clashes], issues: [...read.issues, ...plan.issues] },
   };
   // Deletes first: a meeting re-created in Outlook at the same time must not trip the overlap trigger.
   await applyDeletes(sync, plan.deletes);
@@ -178,8 +168,9 @@ async function syncMailbox(admin: SupabaseClient, spaceId: string, mailbox: stri
   });
 }
 
-async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
-  const { data } = await admin.from('profiles').select('id, first_name, last_name, work_email, status');
+async function loadDirectory(admin: SupabaseClient): Promise<Directory | { error: string }> {
+  const { data, error } = await admin.from('profiles').select('id, first_name, last_name, work_email, status');
+  if (error) return { error: error.message };
   const directory: Directory = { byEmail: new Map(), emailOf: new Map() };
   for (const profile of data || []) {
     if (!profile.work_email) continue;
@@ -194,38 +185,39 @@ async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
 
 /**
  * The room's events as occurrences, with subject, agenda and guests from each organiser's own copy:
- * the room's copy is usually stripped. Each organiser in the tenant is read once per sync; one outside
- * it, or one whose calendar cannot be read, leaves the room's copy as the source.
+ * the room's copy is usually stripped. Each organiser in the tenant is read once per sync. When that
+ * copy is missing (unreadable calendar, or not on it), the occurrence is marked stale so its session
+ * keeps the details it has; organisers outside the tenant are read from the room's copy as designed.
  */
 async function withOrganizerCopies(
   roomEvents: GraphCalendarEvent[],
   mailbox: string,
   window: { start: string; end: string },
   directory: Directory
-): Promise<{ occurrences: RoomOccurrence[]; unreadOrganizers: Set<string> }> {
-  const room = mailbox.trim().toLowerCase();
-  const tenantDomain = room.slice(room.indexOf('@'));
-  const organizerOf = (event: GraphCalendarEvent): string =>
-    event.organizer?.emailAddress?.address?.trim().toLowerCase() || '';
-  const organizers = [...new Set(roomEvents.map(organizerOf))].filter(email => (
-    email && email !== room && (email.endsWith(tenantDomain) || directory.byEmail.has(email))
-  ));
-
+): Promise<{ occurrences: RoomOccurrence[]; staleDetails: Set<string>; issues: string[] }> {
+  const organizers = organizersToRead(roomEvents, mailbox, email => directory.byEmail.has(email));
   const copies = new Map<string, Map<string, GraphCalendarEvent>>();
-  const unreadOrganizers = new Set<string>();
+  const issues: string[] = [];
   await Promise.all(organizers.map(async email => {
     const view = await graphCalendarView(email, window.start, window.end);
     if (view.ok) copies.set(email, new Map(view.events.map(event => [event.iCalUId, event])));
-    else unreadOrganizers.add(email);
+    else issues.push(`Could not read ${email}'s calendar: ${describeGraphFailure(view)}`);
   }));
 
-  const occurrences = roomEvents
-    .map(event => occurrenceFromGraph(event, copies.get(organizerOf(event))?.get(event.iCalUId) ?? null, mailbox))
-    .filter((occurrence): occurrence is RoomOccurrence => occurrence !== null);
-  return { occurrences, unreadOrganizers };
+  const expected = new Set(organizers);
+  const staleDetails = new Set<string>();
+  const occurrences: RoomOccurrence[] = [];
+  for (const event of roomEvents) {
+    const organizer = organizerEmailOf(event);
+    const copy = copies.get(organizer)?.get(event.iCalUId) ?? null;
+    if (!copy && expected.has(organizer)) staleDetails.add(event.iCalUId);
+    const occurrence = occurrenceFromGraph(event, copy, mailbox);
+    if (occurrence) occurrences.push(occurrence);
+  }
+  return { occurrences, staleDetails, issues: issues.sort() };
 }
 
-// ---------- Applying the plan ----------
+// ---------- Apply ----------
 
 const organizerIdOf = (sync: Sync, occurrence: RoomOccurrence): string | null =>
   (occurrence.organizerEmail && sync.directory.byEmail.get(occurrence.organizerEmail)?.id) || null;
@@ -240,7 +232,7 @@ async function applyDeletes(sync: Sync, ids: string[]) {
       .eq('source', 'outlook')
       .gte('session_date', sync.today);
     const session = sync.sessions.get(id)!;
-    if (error) sync.tally.issues.push(`${labelOf(session.title, session.session_date, session.starts_at)}: ${error.message}`);
+    if (error) sync.tally.issues.push(`${meetingLabel(session.title, session.session_date, session.starts_at)}: ${error.message}`);
     else sync.tally.deleted += count || 0;
   }
 }
@@ -249,10 +241,10 @@ async function applyMatches(sync: Sync, matches: RoomSyncMatch[]) {
   const invites = await upcomingInvites(sync);
   for (const match of matches) {
     const { occurrence } = match;
-    // Orbit-born sessions keep their own title: the Outlook subject Orbit wrote is "title · room". An
-    // organiser whose calendar failed to read this run leaves only the stripped room copy, so a
-    // transient Graph error must not overwrite the title or drop the guests and their seats.
-    const followDetails = match.source === 'outlook' && !sync.unreadOrganizers.has(occurrence.organizerEmail || '');
+    // Orbit-born sessions keep their own title: the Outlook subject Orbit wrote is "title · room". A
+    // stale occurrence only has the stripped room copy, which must not overwrite the title or drop
+    // the guests and their seats.
+    const followDetails = match.source === 'outlook' && !sync.staleDetails.has(occurrence.icalUid);
     if (match.changed) {
       const { error } = await sync.admin.from('space_sessions').update({
         starts_at: `${occurrence.startsAt}:00`,
@@ -264,7 +256,7 @@ async function applyMatches(sync: Sync, matches: RoomSyncMatch[]) {
       // reported as an issue, not resolved. Upgrade path: park one session's window first.
       if (error) {
         const title = sync.sessions.get(match.sessionId)?.title || occurrence.subject;
-        sync.tally.issues.push(`${labelOf(title, occurrence.date, occurrence.startsAt)}: ${error.message}`);
+        sync.tally.issues.push(`${meetingLabel(title, occurrence.date, occurrence.startsAt)}: ${error.message}`);
       } else {
         sync.tally.updated += 1;
       }
@@ -277,22 +269,33 @@ async function applyMatches(sync: Sync, matches: RoomSyncMatch[]) {
 }
 
 /**
- * The room's upcoming invite rows by session, in one read. Null when the read fails: guests are then
- * left alone this run, since an empty list would re-seat everyone who released their seat.
+ * The invite rows of the room's sessions in the horizon, by session, read page by page until the
+ * reported total is reached. Pages advance by the rows actually returned, so a server row cap below
+ * INVITE_PAGE cannot skip any. Null when a read fails: guests are then left alone this run, since a
+ * missing list would re-seat everyone who released their seat.
  */
 async function upcomingInvites(sync: Sync): Promise<Map<string, Invite[]> | null> {
-  const { data, error } = await sync.admin
-    .from('space_session_invites')
-    .select('session_id, email, profile_id, space_sessions!inner(space_id, session_date)')
-    .eq('space_sessions.space_id', sync.spaceId)
-    .gte('space_sessions.session_date', sync.today);
-  if (error) {
-    sync.tally.issues.push(`Could not read the room's guest lists: ${error.message}`);
-    return null;
-  }
   const bySession = new Map<string, Invite[]>();
-  for (const row of (data || []) as (Invite & { session_id: string })[]) {
-    bySession.set(row.session_id, [...(bySession.get(row.session_id) || []), row]);
+  let from = 0;
+  let total = Number.POSITIVE_INFINITY;
+  while (from < total) {
+    const { data, error, count } = await sync.admin
+      .from('space_session_invites')
+      .select('id, session_id, email, profile_id, space_sessions!inner(space_id, session_date)', { count: 'exact' })
+      .eq('space_sessions.space_id', sync.spaceId)
+      .gte('space_sessions.session_date', sync.today)
+      .lte('space_sessions.session_date', sync.horizonEnd)
+      .order('id')
+      .range(from, from + INVITE_PAGE - 1);
+    if (error) {
+      sync.tally.issues.push(`Could not read the room's guest lists: ${error.message}`);
+      return null;
+    }
+    const rows = (data || []) as (Invite & { session_id: string })[];
+    for (const row of rows) bySession.set(row.session_id, [...(bySession.get(row.session_id) || []), row]);
+    total = count ?? total;
+    if (rows.length === 0) break;
+    from += rows.length;
   }
   return bySession;
 }
@@ -316,7 +319,7 @@ async function applyCreates(sync: Sync, creates: RoomOccurrence[]) {
       if (error.code === '23505' && /outlook_ical_uid/.test(error.message)) continue;
       // An Orbit session opened in that window since the calendar was read.
       if (/overlaps|space_sessions_window_idx/.test(error.message)) sync.tally.clashes.push(clashOf(occurrence));
-      else sync.tally.issues.push(`${labelOf(occurrence.subject, occurrence.date, occurrence.startsAt)}: ${error.message}`);
+      else sync.tally.issues.push(`${meetingLabel(occurrence.subject, occurrence.date, occurrence.startsAt)}: ${error.message}`);
       continue;
     }
     sync.tally.created += 1;
@@ -326,8 +329,9 @@ async function applyCreates(sync: Sync, creates: RoomOccurrence[]) {
 
 /**
  * Brings an Outlook-born session's guest list in line with the meeting. Only invites the sync wrote
- * are dropped, so people who joined by hand keep their seat; a full room or a day away means invited
- * without a seat. No Slack and no mail: Outlook already told everyone.
+ * are dropped, and only seats the sync booked are released: the sync books with no `created_by`,
+ * every seat taken in the app records who took it. A full room or a day away means invited without
+ * a seat. No Slack and no mail: Outlook already told everyone.
  */
 async function syncAttendees(
   sync: Sync,
@@ -336,16 +340,20 @@ async function syncAttendees(
   existingInvites: Invite[]
 ) {
   const { add, remove } = planAttendees({ occurrence, directory: sync.directory.byEmail, existingInvites });
+  const label = meetingLabel(occurrence.subject, occurrence.date, occurrence.startsAt);
   // Removals first, so a full room frees the chairs the newcomers need.
-  for (const person of remove) await removeInvitee(sync.admin, target.sessionId, person.email);
+  for (const person of remove) {
+    const { removed, seatReleased } = await removeInvitee(sync.admin, target.sessionId, person.email, { syncSeatOnly: true });
+    if (removed && person.profileId && !seatReleased) sync.tally.issues.push(`${label}: ${person.email}'s seat could not be released`);
+  }
   if (add.length === 0) return;
 
-  const organizerId = organizerIdOf(sync, occurrence);
   for (const person of add) {
     if (!person.profileId) continue;
-    const { seat, error } = await bookInviteeSeat(sync.admin, target, person.profileId, organizerId);
-    if (seat === 'failed') console.error(`room sync: seat for ${person.email} failed: ${error}`);
+    const { seat, error } = await bookInviteeSeat(sync.admin, target, person.profileId, null);
+    if (seat === 'failed') sync.tally.issues.push(`${label}: ${person.email} ${error}`);
   }
+  const organizerId = organizerIdOf(sync, occurrence);
   const { error } = await sync.admin.from('space_session_invites').upsert(
     add.map(person => ({
       session_id: target.sessionId,
@@ -358,174 +366,41 @@ async function syncAttendees(
     })),
     { onConflict: 'session_id,email' }
   );
-  if (error) console.error('room sync: space_session_invites upsert error:', error.message);
+  if (error) sync.tally.issues.push(`${label}: the guest list could not be saved: ${error.message}`);
 }
 
 /**
- * Orbit-born meetings the room calendar no longer shows. Gone or cancelled on the organiser's side
- * means the organiser cancelled it in Outlook, so the session goes too; otherwise the room declined
- * it, and a session someone made in Orbit is flagged, never deleted.
+ * Orbit-born meetings the room calendar no longer shows. Only the organiser's own copy being gone or
+ * cancelled deletes the session; a declined room, a read that failed or a meeting never created is
+ * flagged, and the session someone made in Orbit stays.
  */
 async function checkMissingOrbit(sync: Sync, ids: string[]) {
   for (const id of ids) {
-    const session = sync.sessions.get(id);
-    if (!session) continue;
-    const label = labelOf(session.title, session.session_date, session.starts_at);
+    const session = sync.sessions.get(id)!;
+    const label = meetingLabel(session.title, session.session_date, session.starts_at);
+    if (!session.outlook_event_id) {
+      sync.tally.issues.push(`${label}: not booked in Outlook yet — re-save the room mailbox to retry`);
+      continue;
+    }
     const organizer = session.created_by ? sync.directory.emailOf.get(session.created_by) : undefined;
-    const copy = organizer && session.outlook_event_id ? await graphGetEvent(organizer, session.outlook_event_id) : null;
-    const cancelled = copy ? (copy.ok ? copy.event?.isCancelled === true : copy.status === 404) : false;
-    if (!cancelled) {
-      sync.tally.issues.push(`${label}: the room declined it in Outlook`);
+    if (!organizer) {
+      sync.tally.issues.push(`${label}: could not check it in Outlook — the organiser has no work email`);
+      continue;
+    }
+    const read = await graphGetEvent(organizer, session.outlook_event_id);
+    if (!organizerCancelled(read)) {
+      sync.tally.issues.push(read.ok
+        ? `${label}: the room declined it in Outlook`
+        : `${label}: could not check it in Outlook — ${describeGraphFailure(read)}`);
       continue;
     }
     const { count, error } = await sync.admin
       .from('space_sessions')
       .delete({ count: 'exact' })
       .eq('id', id)
+      .eq('source', 'orbit')
       .gte('session_date', sync.today);
     if (error) sync.tally.issues.push(`${label}: ${error.message}`);
     else sync.tally.deleted += count || 0;
   }
-}
-
-// ---------- Change notifications ----------
-
-/**
- * Keeps a Graph subscription on the room mailbox's events. Subscriptions lapse after a few days, so
- * the daily job renews one that is close to expiry and re-creates one Graph no longer knows.
- */
-export async function ensureRoomSubscription(
-  admin: SupabaseClient,
-  spaceId: string
-): Promise<{ state: 'active' | 'renewed' | 'created' | 'skipped'; reason?: string }> {
-  const { data: room } = await admin
-    .from('spaces')
-    .select('outlook_email, outlook_subscription_id, outlook_subscription_expires_at')
-    .eq('id', spaceId)
-    .maybeSingle();
-  const secret = process.env.OUTLOOK_ROOMS_WEBHOOK_SECRET;
-  const notificationUrl = `${(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '')}/api/integrations/outlook/rooms/notify`;
-  if (!room?.outlook_email) return { state: 'skipped', reason: 'The room has no Outlook mailbox.' };
-  if (!secret) return { state: 'skipped', reason: 'OUTLOOK_ROOMS_WEBHOOK_SECRET is not set.' };
-  if (!notificationUrl.startsWith('https://')) {
-    return { state: 'skipped', reason: 'Outlook can only notify a public https:// address; use Sync now.' };
-  }
-
-  const expirationDateTime = new Date(Date.now() + SUBSCRIPTION_DAYS * DAY_MS).toISOString();
-  // Graph may shorten the expiry it was asked for, so the one it answers with is stored.
-  const save = async (subscription: Record<string, unknown> | undefined, fallbackId: string) => {
-    await admin.from('spaces').update({
-      outlook_subscription_id: String(subscription?.id || fallbackId),
-      outlook_subscription_expires_at: String(subscription?.expirationDateTime || expirationDateTime),
-    }).eq('id', spaceId);
-  };
-
-  const currentId: string | null = room.outlook_subscription_id;
-  if (currentId) {
-    const expiresAt = Date.parse(room.outlook_subscription_expires_at || '') || 0;
-    if (expiresAt - Date.now() > RENEW_WITHIN_MS) return { state: 'active' };
-    const renewed = await graphRenewSubscription(currentId, expirationDateTime);
-    if (renewed.ok) {
-      await save(renewed.event, currentId);
-      return { state: 'renewed' };
-    }
-    if (renewed.status !== 404) return { state: 'skipped', reason: describeGraphFailure(renewed) };
-  }
-
-  const created = await graphCreateSubscription({
-    resource: `/users/${room.outlook_email}/events`,
-    notificationUrl,
-    clientState: secret,
-    expirationDateTime,
-  });
-  if (!created.ok) return { state: 'skipped', reason: describeGraphFailure(created) };
-  await save(created.event, '');
-  return { state: 'created' };
-}
-
-// ---------- Linking a room to its mailbox ----------
-
-/**
- * Saves (or clears) a room's mailbox. Admin authorisation is the route's job. A new mailbox books the
- * room for every upcoming Orbit session, gets its subscription and is synced once; the mailbox it
- * replaces loses its subscription and its upcoming Outlook-born sessions. Orbit-born sessions stay.
- */
-export async function linkRoomMailbox(
-  admin: SupabaseClient,
-  spaceId: string,
-  email: string | null
-): Promise<{ ok: boolean; error?: string; status?: number; backfilled: number; subscription?: string; sync?: RoomSyncResult }> {
-  const typed = (email || '').trim();
-  const next = typed ? normalizeInviteEmail(typed) : null;
-  if (typed && !next) return { ok: false, status: 400, error: 'Enter the room mailbox as an email address.', backfilled: 0 };
-
-  const { data: room } = await admin
-    .from('spaces')
-    .select('outlook_email, outlook_subscription_id, space_types(booking_mode)')
-    .eq('id', spaceId)
-    .maybeSingle();
-  if (!room) return { ok: false, status: 404, error: 'That room no longer exists.', backfilled: 0 };
-  const bookingMode = (room.space_types as { booking_mode?: string } | null)?.booking_mode;
-  if (next && bookingMode !== 'time_range') {
-    return { ok: false, status: 400, error: 'Only rooms booked by the hour can have an Outlook room mailbox.', backfilled: 0 };
-  }
-
-  const previous: string | null = room.outlook_email ? String(room.outlook_email).trim().toLowerCase() : null;
-  const changed = previous !== next;
-  if (changed) {
-    const { error } = await admin.from('spaces').update({
-      outlook_email: next,
-      outlook_subscription_id: null,
-      outlook_subscription_expires_at: null,
-      outlook_synced_at: null,
-      outlook_sync_error: null,
-      outlook_clashes: [],
-    }).eq('id', spaceId);
-    if (error) {
-      return error.code === '23505'
-        ? { ok: false, status: 409, error: `${next} is already linked to another room.`, backfilled: 0 }
-        : { ok: false, status: 500, error: error.message, backfilled: 0 };
-    }
-    if (room.outlook_subscription_id) await graphDeleteSubscription(room.outlook_subscription_id);
-    if (previous) {
-      await admin.from('space_sessions').delete()
-        .eq('space_id', spaceId).eq('source', 'outlook').gte('session_date', athensToday());
-    }
-  }
-  if (!next) return { ok: true, backfilled: 0 };
-
-  // Re-saving the same mailbox does not re-patch every meeting: that would mail every attendee.
-  const backfilled = changed ? await bookRoomForOrbitSessions(admin, spaceId) : 0;
-  const subscription = await ensureRoomSubscription(admin, spaceId);
-  const sync = await syncRoom(admin, spaceId);
-  return {
-    ok: true,
-    backfilled,
-    subscription: subscription.reason ? `${subscription.state}: ${subscription.reason}` : subscription.state,
-    sync,
-  };
-}
-
-/**
- * Puts the room on the Outlook meeting of every upcoming Orbit session, so the room shows busy in
- * Outlook and the first sync recognises those meetings instead of importing them.
- */
-async function bookRoomForOrbitSessions(admin: SupabaseClient, spaceId: string): Promise<number> {
-  const { data } = await admin
-    .from('space_sessions')
-    .select('id, created_by')
-    .eq('space_id', spaceId)
-    .eq('source', 'orbit')
-    .gte('session_date', athensToday())
-    .not('created_by', 'is', null);
-  let booked = 0;
-  for (const row of (data || []) as { id: string; created_by: string }[]) {
-    const context = await loadSessionContext(admin, row.id, row.created_by);
-    if (!context) continue;
-    const calendar = await calendarStateOf(admin, row.id);
-    const synced = await syncSessionCalendar({ admin, context, attendees: calendar.attendees, eventId: calendar.eventId });
-    if (synced.ok) booked += 1;
-    else console.error(`room mailbox backfill: session ${row.id} failed: ${synced.error}`);
-  }
-  return booked;
 }
