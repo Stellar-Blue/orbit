@@ -188,6 +188,7 @@ assert(!skipped.ok && skipped.problems[0].includes('booked by the hour'), 'a tar
 const denied = describePlaceFailure({ status: 403 }, 'create');
 assert(denied.includes('Place.ReadWrite.All'), 'a refusal names the missing Graph permission', denied);
 assert(denied.includes('MailRecipient') && denied.includes('TenantPlacesManagement'), 'a refusal names the missing Exchange roles', denied);
+assert(describePlaceFailure({ status: 403, message: 'Insufficient privileges to complete the operation.' }, 'create').includes('Insufficient privileges'), 'a refusal keeps Exchange’s own reason');
 assert(describePlaceFailure({ status: 404 }, 'read').includes('does not list this room'), 'a missing place is explained');
 assert(describePlaceFailure({ status: 0, code: 'no_token' }, 'create').includes('not configured'), 'a missing token is explained');
 assert(describePlaceFailure({ status: 400, code: 'BadRequest', message: 'nope' }, 'update').includes('BadRequest'), 'other failures keep the Graph code');
