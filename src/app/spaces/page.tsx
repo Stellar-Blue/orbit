@@ -19,8 +19,8 @@ import { SessionInviteFields } from '@/components/spaces/session-invite-fields';
 import { SessionEditModal } from '@/components/spaces/session-edit-modal';
 import {
   BOOKING_MODE_LABELS, canDeleteSession, canEditSession, clockLabel, defaultPlanSession, heldWholeDaySpace,
-  nextFreeSessionWindow, overlappingSession, seatHolders, seatsLabel, sessionLabel, sessionStarted, spaceDayState,
-  summarizeInviteDelivery, validateSessionWindow, wholeDayHeldOn,
+  lastSeatHoldsRoom, nextFreeSessionWindow, outlookOrganizerName, overlappingSession, seatHolders, seatsLabel,
+  sessionLabel, sessionStarted, spaceDayState, summarizeInviteDelivery, validateSessionWindow, wholeDayHeldOn,
   type SpaceDayState, type SpaceSessionState,
 } from '@/lib/spaces';
 import { seatLabel as seatName } from '@/lib/office-layout';
@@ -63,7 +63,7 @@ interface BookingDraft {
 export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings, spaceSessionInvites,
-    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, cancelSpaceBooking, deleteSpaceSession,
+    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, ensureSessionMeeting, cancelSpaceBooking, deleteSpaceSession,
     inviteToSpaceSession, removeSpaceSessionInvite, updateSpaceSession, isLoading,
   } = useAuth();
 
@@ -480,6 +480,9 @@ export default function SpacesPage() {
         includeOutlook: draft.includeOutlook,
       })
       : null;
+    // A new session books the room in Outlook through its meeting. The invite above already created
+    // that meeting; asking for it again at the same time would create a second one.
+    if (result.createdSession && result.sessionId && !invited?.ok) void ensureSessionMeeting(result.sessionId);
     const inviteSummary = invited?.ok ? summarizeInviteDelivery(invited.invites || []) : null;
     const inviteChannels = inviteSummary
       ? [
@@ -535,10 +538,27 @@ export default function SpacesPage() {
   const canEditThisSession = (session: SpaceSession) => canEditSession(session, currentUser.id, isAdmin);
 
   const leave = async (bookingId: string, label: string) => {
+    // A session that books the room in Outlook survives its last seat (the database keeps it), so the
+    // last one out is offered to delete it, which also cancels the meeting and frees the room.
+    const booking = spaceBookings.find(entry => entry.id === bookingId);
+    const session = booking?.session_id ? spaceSessions.find(entry => entry.id === booking.session_id) : undefined;
+    if (
+      session
+      && canDeleteThisSession(session)
+      && lastSeatHoldsRoom(session, spaceBookings.filter(entry => entry.session_id === session.id))
+      && confirm('You were the last one in this session. Delete it and free the room in Outlook too?')
+    ) {
+      const deleted = await deleteSpaceSession(session.id);
+      if (deleted) notifySuccess(`The session in ${label} has been deleted and the room freed.`, 'Session deleted');
+      return;
+    }
     if (!confirm(`Release this seat in ${label}?`)) return;
     const ok = await cancelSpaceBooking(bookingId);
     if (ok) notifySuccess(`The seat in ${label} has been released.`, 'Seat released');
   };
+
+  /** The organiser an Outlook-born session row names next to "Managed in Outlook". */
+  const organizerOf = (session: SpaceSession) => outlookOrganizerName(session, profiles, spaceSessionInvites);
 
   const draftSession = draft?.state.sessions.find(entry => entry.session.id === draft.sessionId) ?? null;
   /** The whole-day booking the chosen attendee already holds elsewhere — the dialog cannot save past it. */
@@ -756,6 +776,7 @@ export default function SpacesPage() {
                         invites={spaceSessionInvites}
                         canEdit={canEditThisSession}
                         onEdit={session => setEditTarget({ session, space })}
+                        organizerOf={organizerOf}
                       />
                     ) : (
                       <>
@@ -878,6 +899,7 @@ export default function SpacesPage() {
           setRoomModalId(null);
           setEditTarget({ session, space: roomModal });
         }}
+        organizerOf={organizerOf}
       />
 
       {/* Mounted per session: opening it again always starts from the values the card shows now. */}

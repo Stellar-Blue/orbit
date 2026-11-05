@@ -3,11 +3,24 @@
 import React, { useMemo, useState } from 'react';
 import { Clock, DoorOpen, Grid2x2, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { notifySuccess } from '@/lib/validation-modal';
 import { Badge, Button, Card } from '@/components/ui/primitives';
 import { BOOKING_MODE_LABELS } from '@/lib/spaces';
+import { roomSyncReport } from '@/lib/room-sync';
 import type { Space, SpaceBookingMode } from '@/lib/types';
 
 const COLORS = ['#2f6fa3', '#a21caf', '#0d9488', '#b45309', '#4f46e5', '#be123c', '#475569'];
+
+/** `05/11 14:30` in Athens time. */
+const syncedLabel = (iso: string) => new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Athens',
+}).format(new Date(iso)).replace(',', '');
+
+/** A success toast only when everything worked; any problem is an alert the admin has to read. */
+const showRoomReport = (title: string, report: ReturnType<typeof roomSyncReport>) => {
+  if (report.ok) notifySuccess(`${report.summary}.`, title);
+  else alert([`${title}: ${report.summary || 'nothing changed'}.`, ...report.problems].join('\n\n'));
+};
 
 interface TypeDraft {
   id?: string;
@@ -24,6 +37,7 @@ interface RoomDraft {
   capacity: number;
   location: string;
   notes: string;
+  outlook_email: string;
 }
 
 /**
@@ -32,7 +46,7 @@ interface RoomDraft {
  *   • rooms, what people actually book, with their capacity.
  */
 export const SpacesManager: React.FC = () => {
-  const { spaceTypes, spaces, spaceBookings, saveSpaceType, deleteSpaceType, saveSpace, deleteSpace } = useAuth();
+  const { spaceTypes, spaces, spaceBookings, saveSpaceType, deleteSpaceType, saveSpace, deleteSpace, linkRoomMailbox, syncRoomNow } = useAuth();
 
   const [typeDraft, setTypeDraft] = useState<TypeDraft | null>(null);
   const [roomDraft, setRoomDraft] = useState<RoomDraft | null>(null);
@@ -65,6 +79,7 @@ export const SpacesManager: React.FC = () => {
     capacity: 1,
     location: '',
     notes: '',
+    outlook_email: '',
   });
 
   const submitType = async () => {
@@ -85,8 +100,16 @@ export const SpacesManager: React.FC = () => {
       alert('A room needs a name and a type.');
       return;
     }
+    const original = roomDraft.id ? spaces.find(space => space.id === roomDraft.id) : undefined;
+    const wanted = roomDraft.outlook_email.trim().toLowerCase() || null;
+    if (
+      original?.outlook_email && wanted !== original.outlook_email
+      && !confirm("Removing the mailbox deletes this room's upcoming sessions that came from Outlook. Continue?")
+    ) return;
     setSaving(true);
+    let savedId = roomDraft.id;
     const ok = await saveSpace({
+      onSaved: saved => { savedId = saved.id; },
       id: roomDraft.id,
       name: roomDraft.name,
       type_id: roomDraft.type_id,
@@ -94,6 +117,15 @@ export const SpacesManager: React.FC = () => {
       location: roomDraft.location,
       notes: roomDraft.notes,
     });
+    // Saving a linked room again re-links it: that is how meetings that failed to book are retried.
+    if (ok && savedId && (wanted || original?.outlook_email)) {
+      const result = await linkRoomMailbox(savedId, wanted);
+      if (!result.ok) {
+        alert(`The room was saved, but its Outlook mailbox was not linked: ${result.error}`);
+      } else if (wanted) {
+        showRoomReport('Room mailbox linked', roomSyncReport(result));
+      }
+    }
     setSaving(false);
     if (ok) setRoomDraft(null);
   };
@@ -218,6 +250,24 @@ export const SpacesManager: React.FC = () => {
                           <span className="font-semibold text-[var(--ink)] truncate">{space.name}</span>
                           {!space.active && <Badge variant="neutral">Hidden</Badge>}
                         </span>
+                        {space.outlook_email && (
+                          <span className="block ui-meta mt-0.5">
+                            Outlook · {space.outlook_email} · {space.outlook_synced_at
+                              ? `synced ${syncedLabel(space.outlook_synced_at)}`
+                              : 'not synced yet'}
+                            {(space.outlook_clashes?.length ?? 0) > 0 && (
+                              <span
+                                className="ml-1.5 text-amber-700"
+                                title={space.outlook_clashes!.map(c => `${c.date} ${c.startsAt}–${c.endsAt} ${c.subject || ''} ${c.organizer || ''}`.trim()).join('\n')}
+                              >
+                                {space.outlook_clashes!.length} clash{space.outlook_clashes!.length === 1 ? '' : 'es'}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                        {space.outlook_email && space.outlook_sync_error && (
+                          <span className="block text-[11px] text-rose-600 mt-0.5 whitespace-pre-line">{space.outlook_sync_error}</span>
+                        )}
                       </td>
                       <td className="py-2 pr-3">
                         <span className="inline-flex items-center gap-1.5">
@@ -238,6 +288,7 @@ export const SpacesManager: React.FC = () => {
                             capacity: space.capacity,
                             location: space.location || '',
                             notes: space.notes || '',
+                            outlook_email: space.outlook_email || '',
                           })}
                           title="Edit room"
                           aria-label="Edit room"
@@ -245,6 +296,19 @@ export const SpacesManager: React.FC = () => {
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
+                        {space.outlook_email && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const r = await syncRoomNow(space.id);
+                              if (!r.ok) alert(`Could not sync the room: ${r.error}`);
+                              else showRoomReport(`${space.name} synced`, roomSyncReport(r));
+                            }}
+                            className="inline-flex items-center justify-center h-6 px-1.5 rounded-[var(--radius-control)] text-[10px] font-semibold text-[var(--ink-3)] hover:bg-[var(--surface-sunken)] cursor-pointer"
+                          >
+                            Sync now
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => void saveSpace({ ...space, active: !space.active })}
@@ -401,6 +465,20 @@ export const SpacesManager: React.FC = () => {
                 className="ui-input w-full"
               />
             </div>
+            {orderedTypes.find(type => type.id === roomDraft.type_id)?.booking_mode === 'time_range' && (
+              <div>
+                <label htmlFor="room-mailbox" className="ui-label block mb-1.5">Room mailbox</label>
+                <input
+                  id="room-mailbox"
+                  type="email"
+                  value={roomDraft.outlook_email}
+                  onChange={event => setRoomDraft({ ...roomDraft, outlook_email: event.target.value })}
+                  placeholder="room@stellarblue.eu"
+                  className="ui-input w-full"
+                />
+                <p className="ui-meta mt-1">Pick this room in Outlook&apos;s room list and its meetings appear here.</p>
+              </div>
+            )}
             <div>
               <label className="ui-label block mb-1.5">Notes</label>
               <textarea

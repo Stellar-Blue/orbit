@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from '@/lib/integrations/types';
-import { syncSessionCalendarInvite } from '@/lib/integrations/outlook';
+import { cancelSessionCalendarInvite, graphGetEvent, syncSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { absenceOnDate, sessionSharePath, type DayAbsence } from '@/lib/spaces';
 
 /**
@@ -24,7 +24,15 @@ export interface SessionContext {
   roomName: string;
   roomLocation?: string | null;
   organizer: { profileId: string; email: string; name: string } | null;
+  /** `outlook` sessions were imported from a room mailbox and are read-only in Orbit. */
+  source: 'orbit' | 'outlook';
+  /** The room's Outlook mailbox, when it has one; the session's meeting books it. */
+  roomMailbox: string | null;
+  outlookEventId: string | null;
+  outlookIcalUid: string | null;
 }
+
+export const OUTLOOK_MANAGED_ERROR = 'This session is managed in Outlook — change it there.';
 
 export const clock = (value: string): string => String(value || '').slice(0, 5);
 
@@ -52,13 +60,13 @@ export async function loadSessionContext(
 ): Promise<SessionContext | null> {
   const { data: sessionRow } = await admin
     .from('space_sessions')
-    .select('id, space_id, session_date, starts_at, ends_at, title, description, created_by')
+    .select('id, space_id, session_date, starts_at, ends_at, title, description, created_by, source, outlook_event_id, outlook_ical_uid')
     .eq('id', sessionId)
     .maybeSingle();
   if (!sessionRow) return null;
 
   const [{ data: spaceRow }, { data: organizerRow }] = await Promise.all([
-    admin.from('spaces').select('id, name, location').eq('id', sessionRow.space_id).maybeSingle(),
+    admin.from('spaces').select('id, name, location, outlook_email').eq('id', sessionRow.space_id).maybeSingle(),
     admin
       .from('profiles')
       .select('id, first_name, last_name, work_email')
@@ -80,6 +88,10 @@ export async function loadSessionContext(
     organizer: organizerRow?.work_email
       ? { profileId: organizerRow.id, email: organizerRow.work_email, name: personName(organizerRow) }
       : null,
+    source: sessionRow.source === 'outlook' ? 'outlook' : 'orbit',
+    roomMailbox: spaceRow?.outlook_email || null,
+    outlookEventId: sessionRow.outlook_event_id || null,
+    outlookIcalUid: sessionRow.outlook_ical_uid || null,
   };
 }
 
@@ -91,20 +103,22 @@ export async function calendarStateOf(
   admin: SupabaseClient,
   sessionId: string
 ): Promise<{ eventId: string | null; attendees: string[] }> {
-  const { data } = await admin
-    .from('space_session_invites')
-    .select('email, outlook_event_id')
-    .eq('session_id', sessionId)
-    .eq('outlook_status', 'sent')
-    .not('outlook_event_id', 'is', null)
-    .order('created_at');
+  const [{ data }, { data: session }] = await Promise.all([
+    admin
+      .from('space_session_invites')
+      .select('email, outlook_event_id')
+      .eq('session_id', sessionId)
+      .eq('outlook_status', 'sent')
+      .not('outlook_event_id', 'is', null)
+      .order('created_at'),
+    admin.from('space_sessions').select('outlook_event_id').eq('id', sessionId).maybeSingle(),
+  ]);
   const rows = (data || []) as { email: string; outlook_event_id: string }[];
-  const eventId = rows[0]?.outlook_event_id || null;
-  if (!eventId) return { eventId: null, attendees: [] };
+  const rowsEventId = rows[0]?.outlook_event_id || null;
   const attendees = Array.from(new Set(
-    rows.filter(row => row.outlook_event_id === eventId).map(row => row.email)
+    rows.filter(row => row.outlook_event_id === rowsEventId).map(row => row.email)
   ));
-  return { eventId, attendees };
+  return { eventId: session?.outlook_event_id || rowsEventId, attendees };
 }
 
 /**
@@ -143,17 +157,23 @@ export async function absenceOf(
   });
 }
 
-/** Creates, patches or cancels the session's meeting so it always mirrors Orbit. */
+/**
+ * Creates, patches or cancels the session's meeting so it always mirrors Orbit. The meeting also
+ * books the room's mailbox, so a session in a room with a mailbox owns a meeting even with no guests.
+ * Outlook-born sessions already live in Outlook and are never pushed back.
+ */
 export async function syncSessionCalendar(args: {
   admin: SupabaseClient;
   context: SessionContext;
   attendees: string[];
   eventId?: string | null;
 }): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  if (args.context.source === 'outlook') return { ok: true };
   const details = {
     organizerName: args.context.organizer?.name || 'An Orbit colleague',
     roomName: args.context.roomName,
     roomLocation: args.context.roomLocation,
+    roomMailbox: args.context.roomMailbox,
     sessionDate: args.context.sessionDate,
     startsAt: args.context.startsAt,
     endsAt: args.context.endsAt,
@@ -163,14 +183,166 @@ export async function syncSessionCalendar(args: {
     attendees: Array.from(new Set(args.attendees)),
   };
   if (!args.context.organizer?.email) {
-    if (details.attendees.length === 0) return { ok: true };
+    if (details.attendees.length === 0 && !details.roomMailbox) return { ok: true };
     return { ok: false, error: 'The organiser has no work email, so no calendar invite could be sent.' };
   }
-  return syncSessionCalendarInvite({
-    admin: args.admin,
-    organizerProfileId: args.context.organizer.profileId,
-    organizerEmail: args.context.organizer.email,
-    details,
-    existingEventId: args.eventId || null,
+  const organizer = { organizerProfileId: args.context.organizer.profileId, organizerEmail: args.context.organizer.email };
+  const result = await syncSessionCalendarInvite({
+    admin: args.admin, ...organizer, details, existingEventId: args.eventId || null,
   });
+  if (!result.ok) return result;
+
+  if (result.created && result.eventId) {
+    // Two requests that both found no meeting both create one. Only the first id written sticks; the
+    // other cancels its copy and puts its attendees on the winner, so the room is booked once.
+    const claim = args.admin
+      .from('space_sessions')
+      .update({ outlook_event_id: result.eventId, outlook_ical_uid: result.icalUid || null })
+      .eq('id', args.context.id);
+    const { data: won, error } = await (args.context.outlookEventId
+      ? claim.eq('outlook_event_id', args.context.outlookEventId)
+      : claim.is('outlook_event_id', null)
+    ).select('id');
+    if (error) console.error('space_sessions outlook ids update error:', error.message);
+    if (error || (won || []).length > 0) return { ok: true, eventId: result.eventId };
+
+    const { data: session } = await args.admin
+      .from('space_sessions').select('outlook_event_id').eq('id', args.context.id).maybeSingle();
+    await cancelSessionCalendarInvite({ admin: args.admin, ...organizer, eventId: result.eventId });
+    const winner: string | null = session?.outlook_event_id || null;
+    if (!winner) return { ok: false, error: 'The session was deleted while its Outlook meeting was being created.' };
+    // The winner's guests come from Outlook itself: its invite rows may not be written yet.
+    const current = await graphGetEvent(organizer.organizerEmail, winner);
+    const onWinner = current.ok
+      ? ((current.event?.attendees ?? []) as { type?: string; emailAddress?: { address?: string } }[])
+        .filter(attendee => attendee.type !== 'resource')
+        .map(attendee => attendee.emailAddress?.address?.trim().toLowerCase() || '')
+        .filter(Boolean)
+      : (await calendarStateOf(args.admin, args.context.id)).attendees;
+    const missing = details.attendees.filter(address => !onWinner.includes(address.toLowerCase()));
+    // No patch when the winner already has everyone: every PATCH mails the attendees.
+    if (current.ok && missing.length === 0) return { ok: true, eventId: winner };
+    const patched = await syncSessionCalendarInvite({
+      admin: args.admin, ...organizer,
+      details: { ...details, attendees: Array.from(new Set([...onWinner, ...details.attendees])) },
+      existingEventId: winner,
+    });
+    return patched.ok ? { ok: true, eventId: winner } : patched;
+  }
+
+  // Remember the meeting on the session so Outlook-side changes can be matched back to it. A value
+  // Graph did not return (an empty PATCH body) never overwrites what is stored; both are cleared
+  // only when the meeting was cancelled.
+  const patch: { outlook_event_id?: string | null; outlook_ical_uid?: string | null } = {};
+  if (result.eventId) {
+    if (result.eventId !== args.context.outlookEventId) patch.outlook_event_id = result.eventId;
+    if (result.icalUid && result.icalUid !== args.context.outlookIcalUid) patch.outlook_ical_uid = result.icalUid;
+  } else if (args.context.outlookEventId || args.context.outlookIcalUid) {
+    patch.outlook_event_id = null;
+    patch.outlook_ical_uid = null;
+  }
+  if (Object.keys(patch).length > 0) {
+    const { error } = await args.admin.from('space_sessions').update(patch).eq('id', args.context.id);
+    if (error) console.error('space_sessions outlook ids update error:', error.message);
+  }
+  return { ok: true, eventId: result.eventId };
+}
+
+/** The chairs of a room still free in a session, in a stable order (oldest drawn first). */
+async function freeChairsFor(admin: SupabaseClient, spaceId: string, sessionId: string): Promise<string[]> {
+  const [{ data: seats }, { data: taken }] = await Promise.all([
+    admin.from('space_seats').select('id').eq('space_id', spaceId).eq('active', true).order('created_at'),
+    admin.from('space_bookings').select('seat_id').eq('session_id', sessionId).not('seat_id', 'is', null),
+  ]);
+  const used = new Set((taken || []).map(row => row.seat_id as string));
+  return (seats || []).map(seat => seat.id as string).filter(id => !used.has(id));
+}
+
+/**
+ * Seats one Orbit colleague in a session: the absence check, a free chair, and the error mapping the
+ * invite report relies on. `away` carries the readable reason as `error`.
+ */
+export async function bookInviteeSeat(
+  admin: SupabaseClient,
+  target: { spaceId: string; sessionId: string; sessionDate: string },
+  profileId: string,
+  createdBy: string | null
+): Promise<{ seat: 'booked' | 'already' | 'full' | 'away' | 'failed'; error?: string }> {
+  // The seat is only for a day at the office; the database refuses anything else (SQLSTATE
+  // SB001), and this check lets the report say why instead of a generic failure.
+  const away = await absenceOf(admin, profileId, target.sessionDate);
+  if (away) return { seat: 'away', error: `invited, but ${away.label} that day so no seat was reserved` };
+
+  // A seat needs a chair: the room draws people above the chair they took, so a booking with no
+  // seat would be invisible in the 3D plan. Free chairs are tried in turn, like the booking
+  // dialog does, and a room without drawn chairs still gets the booking.
+  const chairs = await freeChairsFor(admin, target.spaceId, target.sessionId);
+  let bookingError: { code?: string; message: string } | null = null;
+  for (const chair of chairs.length > 0 ? chairs : [null]) {
+    const attempt = await admin.from('space_bookings').insert([{
+      space_id: target.spaceId,
+      session_id: target.sessionId,
+      profile_id: profileId,
+      booking_date: target.sessionDate,
+      seat_id: chair,
+      created_by: createdBy,
+    }]);
+    bookingError = attempt.error;
+    const chairTaken = Boolean(
+      bookingError
+      && chair
+      && (bookingError.code === '23505' || /seat has just been taken/i.test(bookingError.message))
+      && !/one_seat_session|one_seat_day/i.test(bookingError.message)
+    );
+    if (!chairTaken) break;
+  }
+  if (!bookingError) return { seat: 'booked' };
+  const seat = /one_seat_session|one_seat_day/i.test(bookingError.message)
+    ? 'already'
+    : bookingError.code === 'SB001'
+      ? 'away'
+      : /full|fully booked/i.test(bookingError.message)
+        ? 'full'
+        : 'failed';
+  return seat === 'already'
+    ? { seat }
+    : { seat, error: `invited, but the seat was not booked: ${bookingError.message}` };
+}
+
+/**
+ * Takes one person off a session: their invitation and their seat. The caller recomputes the meeting
+ * afterwards (an empty attendee list cancels it).
+ *
+ * `syncSeatOnly` is for the room sync: it books seats with no `created_by`, while every seat taken in
+ * the app records who took it, so only a seat the sync booked is released and a seat the person took
+ * themselves stays theirs.
+ */
+export async function removeInvitee(
+  admin: SupabaseClient,
+  sessionId: string,
+  email: string,
+  options: { syncSeatOnly?: boolean } = {}
+): Promise<{ removed: boolean; seatReleased: boolean }> {
+  const { data: invite } = await admin
+    .from('space_session_invites')
+    .select('id, profile_id')
+    .eq('session_id', sessionId)
+    .eq('email', email)
+    .maybeSingle();
+  if (!invite) return { removed: false, seatReleased: false };
+
+  // Removing someone from the session frees their seat too — the room card and the capacity
+  // trigger must agree with the invite list.
+  let seatReleased = false;
+  if (invite.profile_id) {
+    let release = admin.from('space_bookings')
+      .delete()
+      .eq('session_id', sessionId)
+      .eq('profile_id', invite.profile_id);
+    if (options.syncSeatOnly) release = release.is('created_by', null);
+    const { error: seatError } = await release;
+    seatReleased = !seatError;
+  }
+  await admin.from('space_session_invites').delete().eq('id', invite.id);
+  return { removed: true, seatReleased };
 }

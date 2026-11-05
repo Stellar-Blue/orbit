@@ -17,7 +17,9 @@ import {
   defaultPlanSession,
   defaultSessionWindow,
   heldWholeDaySpace,
+  lastSeatHoldsRoom,
   normalizeInviteEmail,
+  outlookOrganizerName,
   overlappingSession,
   parseInviteEmails,
   resolveInviteTargets,
@@ -35,6 +37,24 @@ import {
   validateSessionWindow,
 } from '@/lib/spaces';
 import { buildSessionInvitePayload } from '@/lib/integrations/outlook';
+import {
+  clashOf,
+  describeGraphFailure,
+  isOrbitMeetingBody,
+  meetingLabel,
+  mergeSyncRuns,
+  notifiedSubscriptionIds,
+  occurrenceFromGraph,
+  organizerCancelled,
+  organizersToRead,
+  planAttendees,
+  planRoomSync,
+  roomDeclined,
+  roomSyncReport,
+  sessionsMissingFromRoom,
+  subscriptionIssue,
+  unexpectedTimeZone,
+} from '@/lib/room-sync';
 
 let passed = 0;
 let failed = 0;
@@ -653,6 +673,336 @@ assert(
     && !buildSessionInvitePayload(inviteDetails).body.content.includes('Open in Orbit'),
   'The Outlook invite carries the session link only when one is configured',
   linked.body.content.split('\n').pop()
+);
+
+// ---------------------------------------------------------------------------
+// Outlook room sync planner (pure)
+// ---------------------------------------------------------------------------
+const SYNC_ROOM = 'athena@stellarblue.eu';
+const syncGev = (extra = {}) => ({
+  id: 'e1', iCalUId: 'u1', type: 'singleInstance', subject: 'Ana Papadopoulou',
+  start: { dateTime: '2026-11-10T09:30:00.0000000' }, end: { dateTime: '2026-11-10T10:00:00.0000000' },
+  ...extra,
+});
+assert(
+  occurrenceFromGraph(syncGev({ isAllDay: true }), null, SYNC_ROOM) === null
+    && occurrenceFromGraph(syncGev({ isCancelled: true }), null, SYNC_ROOM) === null
+    && occurrenceFromGraph(syncGev({ type: 'seriesMaster' }), null, SYNC_ROOM) === null
+    && occurrenceFromGraph(syncGev({ start: { dateTime: '2026-11-10T23:00:00' }, end: { dateTime: '2026-11-11T00:30:00' } }), null, SYNC_ROOM) === null,
+  'All-day, cancelled, series-master and overnight Outlook events are skipped'
+);
+const occA = occurrenceFromGraph(syncGev(), null, SYNC_ROOM);
+assert(
+  occA?.date === '2026-11-10' && occA.startsAt === '09:30' && occA.endsAt === '10:00',
+  'An Outlook event keeps its Athens date and HH:MM times', JSON.stringify(occA)
+);
+const occB = occurrenceFromGraph(
+  syncGev({ seriesMasterId: 's1' }),
+  syncGev({
+    subject: 'Weekly sync', body: { content: '  Agenda  ' },
+    organizer: { emailAddress: { name: 'Maria', address: 'Maria@x.gr' } },
+    attendees: [
+      { type: 'resource', status: { response: 'accepted' }, emailAddress: { address: SYNC_ROOM } },
+      { type: 'required', status: { response: 'accepted' }, emailAddress: { address: 'ATHENA@stellarblue.eu' } },
+      { type: 'required', status: { response: 'none' }, emailAddress: { name: 'Kostas', address: 'KOSTAS@x.gr' } },
+      { type: 'optional', status: { response: 'tentativelyAccepted' }, emailAddress: { address: 'ana@x.gr' } },
+      { type: 'optional', status: { response: 'declined' }, emailAddress: { address: 'ana@x.gr' } },
+    ],
+  }),
+  SYNC_ROOM
+);
+assert(occB?.subject === 'Weekly sync', 'The organiser copy subject wins over the room copy', occB?.subject);
+assert(
+  occB?.attendees.map(a => a.email).join() === 'kostas@x.gr,ana@x.gr'
+    && occB.attendees[1].response === 'tentative' && occB.body === 'Agenda' && occB.seriesId === 's1',
+  'Attendees drop the resource and the room, lowercase, dedupe and map responses', JSON.stringify(occB?.attendees)
+);
+
+const syncOcc = (uid, date, startsAt, endsAt, extra = {}) => ({
+  icalUid: uid, seriesId: null, date, startsAt, endsAt, subject: 'Standup', body: null,
+  organizerEmail: null, organizerName: null, attendees: [], ...extra,
+});
+const syncSes = (id, source, uid, date, startsAt, endsAt, extra = {}) => ({
+  id, source, outlook_ical_uid: uid, outlook_series_id: null, session_date: date,
+  starts_at: startsAt, ends_at: endsAt, title: 'Standup', description: null, ...extra,
+});
+const SYNC_TODAY = '2026-11-05';
+const syncPlan = (occurrences, sessions) => planRoomSync({ occurrences, sessions, today: SYNC_TODAY });
+
+assert(syncPlan([syncOcc('u1', '2026-11-10', '09:00', '10:00')], []).creates.length === 1, 'A new Outlook meeting in an empty room is created');
+const syncMoved = syncPlan([syncOcc('u1', '2026-11-10', '09:30', '10:30')], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(
+  syncMoved.matches.length === 1 && syncMoved.matches[0].changed && !syncMoved.creates.length && !syncMoved.deletes.length,
+  'A moved Outlook meeting updates its session in place', JSON.stringify(syncMoved)
+);
+const syncSame = syncPlan([syncOcc('u1', '2026-11-10', '09:00', '10:00')], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(syncSame.matches.length === 1 && !syncSame.matches[0].changed, 'An unchanged Outlook meeting is a no-op match');
+assert(
+  syncPlan([], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]).deletes.includes('s1'),
+  'An Outlook-born session whose meeting is gone is deleted'
+);
+const orbitSame = syncPlan([syncOcc('u-orbit', '2026-11-10', '09:00', '10:00')], [syncSes('s2', 'orbit', 'u-orbit', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(orbitSame.matches.length === 1 && orbitSame.creates.length === 0, 'An Orbit-born session is matched, never duplicated');
+const orbitGone = syncPlan([], [syncSes('s2', 'orbit', 'u-orbit', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(orbitGone.missingOrbit.includes('s2') && !orbitGone.deletes.includes('s2'), 'An Orbit-born session whose meeting is gone is reported, not deleted');
+const syncClash = syncPlan(
+  [syncOcc('u3', '2026-11-10', '10:30', '11:30')],
+  [syncSes('s3', 'orbit', null, '2026-11-10', '10:00:00', '11:00:00')]
+);
+assert(
+  syncClash.clashes.length === 1 && syncClash.clashes[0].date === '2026-11-10' && syncClash.clashes[0].startsAt === '10:30'
+    && syncClash.clashes[0].endsAt === '11:30' && syncClash.creates.length === 0,
+  'An Outlook meeting overlapping an Orbit session is a clash, not a create', JSON.stringify(syncClash)
+);
+const insertClash = clashOf(syncOcc('u3', '2026-11-10', '10:30', '11:30', { organizerEmail: 'ext@y.com' }));
+assert(
+  insertClash.organizer === 'ext@y.com' && insertClash.subject === 'Standup' && insertClash.startsAt === '10:30',
+  'A clash names the organiser by email when Outlook gives no name', JSON.stringify(insertClash)
+);
+assert(
+  meetingLabel(null, '2026-11-10', '09:00:00') === 'Session on 2026-11-10 09:00'
+    && meetingLabel('Standup', '2026-11-10', '09:30') === 'Standup on 2026-11-10 09:30',
+  'Room issues name the meeting, its day and its start time'
+);
+const missingFromRoom = sessionsMissingFromRoom(
+  [
+    { id: 'm1', session_date: '2026-11-10', outlook_ical_uid: null },
+    { id: 'm2', session_date: '2026-11-10', outlook_ical_uid: 'on-room' },
+    { id: 'm3', session_date: '2026-11-11', outlook_ical_uid: 'not-on-room' },
+    { id: 'm4', session_date: '2027-03-01', outlook_ical_uid: 'past-horizon' },
+  ],
+  new Set(['on-room']),
+  '2027-01-28'
+);
+assert(
+  missingFromRoom.join() === 'm1,m3',
+  'Re-saving a mailbox only books sessions with no meeting or a meeting the room calendar lacks', missingFromRoom.join()
+);
+const byOrganizer = email => ({ organizer: { emailAddress: { address: email } } });
+const toRead = organizersToRead(
+  [byOrganizer('athena@stellarblue.eu'), byOrganizer('Ana@StellarBlue.eu '), byOrganizer('ana@stellarblue.eu'),
+    byOrganizer('guest@gmail.com'), byOrganizer('kostas@x.gr'), {}],
+  'Athena@StellarBlue.eu',
+  email => email === 'kostas@x.gr'
+);
+assert(
+  toRead.join() === 'ana@stellarblue.eu,kostas@x.gr',
+  'Organiser calendars are read once each, never the room itself, and only inside the tenant', toRead.join()
+);
+assert(
+  organizerCancelled({ ok: false, status: 404, code: 'ErrorItemNotFound' })
+    && organizerCancelled({ ok: true, event: { isCancelled: true } }),
+  'A missing or cancelled organiser copy means the meeting was cancelled'
+);
+assert(
+  !organizerCancelled({ ok: false, status: 404, code: 'ErrorInvalidUser' })
+    && !organizerCancelled({ ok: false, status: 404, code: 'MailboxNotEnabledForRESTAPI' })
+    && !organizerCancelled({ ok: false, status: 404 })
+    && !organizerCancelled({ ok: false, status: 403, code: 'ErrorAccessDenied' })
+    && !organizerCancelled({ ok: true, event: { isCancelled: false } }),
+  'A missing mailbox, a refused read or a live meeting never deletes an Orbit session'
+);
+assert(
+  !syncPlan([], [syncSes('s4', 'outlook', 'u4', '2026-11-04', '09:00:00', '10:00:00')]).deletes.includes('s4'),
+  'Sessions dated before today are never touched'
+);
+const relink = syncPlan(
+  [syncOcc('u9', '2026-11-12', '09:00', '10:00', { seriesId: 's1' })],
+  [syncSes('x1', 'outlook', 'u1', '2026-11-12', '09:00:00', '10:00:00', { outlook_series_id: 's1' })]
+);
+assert(
+  relink.matches.length === 1 && relink.matches[0].relink === true && !relink.deletes.length && !relink.creates.length,
+  'A re-issued occurrence of the same series relinks the session', JSON.stringify(relink)
+);
+const outlookMoved = syncPlan(
+  [syncOcc('u1', '2026-11-13', '09:00', '10:00')],
+  [syncSes('x2', 'outlook', 'u1', '2026-11-12', '09:00:00', '10:00:00')]
+);
+assert(
+  outlookMoved.deletes.includes('x2') && outlookMoved.creates.length === 1 && outlookMoved.creates[0].date === '2026-11-13',
+  'An Outlook-born meeting moved to another day is deleted and re-created', JSON.stringify(outlookMoved)
+);
+const movedIntoClash = syncPlan(
+  [syncOcc('u1', '2026-11-13', '10:30', '11:30')],
+  [
+    syncSes('x5', 'outlook', 'u1', '2026-11-12', '09:00:00', '10:00:00'),
+    syncSes('x6', 'orbit', null, '2026-11-13', '10:00:00', '11:00:00'),
+  ]
+);
+assert(
+  movedIntoClash.deletes.includes('x5') && movedIntoClash.creates.length === 0 && movedIntoClash.clashes.length === 1
+    && movedIntoClash.clashes[0].date === '2026-11-13' && movedIntoClash.clashes[0].startsAt === '10:30'
+    && movedIntoClash.clashes[0].endsAt === '11:30',
+  'A moved Outlook meeting landing on an Orbit session is a clash, not a double booking', JSON.stringify(movedIntoClash)
+);
+const orbitMoved = syncPlan(
+  [syncOcc('u-orbit', '2026-11-13', '09:00', '10:00')],
+  [syncSes('x3', 'orbit', 'u-orbit', '2026-11-12', '09:00:00', '10:00:00')]
+);
+assert(
+  orbitMoved.issues.length === 1 && orbitMoved.matches.length === 0,
+  'An Orbit-born meeting moved to another day is reported as an issue', JSON.stringify(orbitMoved)
+);
+
+const syncDirectory = new Map([
+  ['kostas@x.gr', { id: 'p-kostas', name: 'Kostas' }],
+  ['maria@x.gr', { id: 'p-maria', name: 'Maria' }],
+]);
+const syncAtt = (email, response) => ({ email, name: null, response });
+const attPlan = planAttendees({
+  occurrence: syncOcc('u1', '2026-11-10', '09:00', '10:00', {
+    organizerEmail: 'maria@x.gr', organizerName: 'Maria',
+    attendees: [syncAtt('ana@x.gr', 'declined'), syncAtt('kostas@x.gr', 'accepted'), syncAtt('guest@ex.com', 'accepted')],
+  }),
+  directory: syncDirectory,
+  existingInvites: [{ email: 'ana@x.gr', profile_id: 'p-ana' }],
+});
+assert(
+  attPlan.remove.length === 1 && attPlan.remove[0].email === 'ana@x.gr'
+    && attPlan.add.find(a => a.email === 'kostas@x.gr')?.profileId === 'p-kostas'
+    && attPlan.add.find(a => a.email === 'guest@ex.com')?.profileId === null
+    && attPlan.add.some(a => a.email === 'maria@x.gr'),
+  'Attendee plan adds new people, drops those who declined, and leaves guests unseated', JSON.stringify(attPlan)
+);
+const extOrg = planAttendees({
+  occurrence: syncOcc('u1', '2026-11-10', '09:00', '10:00', { organizerEmail: 'boss@ext.com', organizerName: 'Boss' }),
+  directory: syncDirectory, existingInvites: [],
+});
+assert(
+  extOrg.add.length === 1 && extOrg.add[0].email === 'boss@ext.com' && extOrg.add[0].profileId === null,
+  'An organiser outside Orbit is listed as a guest with no profile', JSON.stringify(extOrg)
+);
+
+const syncHook = { value: [
+  { subscriptionId: 'a', clientState: 's' }, { subscriptionId: 'a', clientState: 's' }, { subscriptionId: 'b', clientState: 'x' },
+] };
+assert(
+  JSON.stringify(notifiedSubscriptionIds(syncHook, 's')) === '["a"]'
+    && notifiedSubscriptionIds(null, 's').length === 0 && notifiedSubscriptionIds(syncHook, '').length === 0,
+  'Webhook notifications are filtered by the shared secret and deduplicated'
+);
+assert(
+  describeGraphFailure({ status: 403 }).startsWith('Orbit cannot read this room mailbox (access denied).')
+    && describeGraphFailure({ status: 404, code: 'ErrorInvalidUser' }) === 'No mailbox found at this address — check the room mailbox email.'
+    && describeGraphFailure({ status: 0, code: 'no_token' }) === 'Microsoft Graph is not configured (no application token).'
+    && describeGraphFailure({ status: 500, code: 'X', message: 'boom' }) === 'Outlook returned 500 (X): boom',
+  'Graph failures turn into readable room errors'
+);
+
+// ---- Final review fixes ----
+const privateCopy = syncGev({
+  subject: 'Salary review', body: { content: 'Confidential agenda' },
+  attendees: [{ type: 'required', status: { response: 'accepted' }, emailAddress: { address: 'kostas@x.gr' } }],
+});
+const privOrganizer = occurrenceFromGraph(syncGev(), { ...privateCopy, sensitivity: 'private' }, SYNC_ROOM);
+const privRoom = occurrenceFromGraph(syncGev({ sensitivity: 'confidential' }), privateCopy, SYNC_ROOM);
+const normal = occurrenceFromGraph(syncGev(), { ...privateCopy, sensitivity: 'normal' }, SYNC_ROOM);
+assert(
+  privOrganizer?.subject === 'Private meeting' && privOrganizer.body === null && privOrganizer.attendees.length === 1
+    && privRoom?.subject === 'Private meeting' && privRoom.body === null
+    && normal?.subject === 'Salary review' && normal.body === 'Confidential agenda',
+  'Private or confidential meetings show no subject or agenda, but keep their guests and seats', JSON.stringify(privOrganizer)
+);
+assert(
+  unexpectedTimeZone([syncGev(), syncGev({ start: { dateTime: 'x', timeZone: 'Europe/Athens' } }),
+    syncGev({ start: { dateTime: 'x', timeZone: 'GTB Standard Time' } })]) === null
+    && unexpectedTimeZone([syncGev({ start: { dateTime: 'x', timeZone: 'Europe/Athens' } }),
+      syncGev({ start: { dateTime: 'x', timeZone: 'UTC' } })]) === 'UTC',
+  'A calendar read in any zone but Athens is caught before it can move sessions'
+);
+const orbitLink = 'Ana invited you to a session booked in Orbit.\n\nOpen in Orbit: https://orbit.test/spaces?session=abc';
+const longOrbit = occurrenceFromGraph(syncGev(), syncGev({ body: { content: `${'x'.repeat(3000)}\n${orbitLink}` } }), SYNC_ROOM);
+assert(
+  isOrbitMeetingBody(orbitLink) && !isOrbitMeetingBody('Weekly sync') && !isOrbitMeetingBody(null)
+    && longOrbit?.orbitMeeting === true && longOrbit.body.length === 2000,
+  'An Orbit meeting is recognised by its session link, even past the stored agenda length'
+);
+const orphan = syncPlan([syncOcc('u-orphan', '2026-11-10', '09:00', '10:00', { orbitMeeting: true })], []);
+assert(
+  orphan.creates.length === 0 && orphan.clashes.length === 0 && orphan.issues.length === 1
+    && orphan.issues[0].endsWith('an Orbit meeting whose session no longer exists — cancel it in Outlook'),
+  'An Orbit meeting with no session is reported, never imported as an Outlook session', JSON.stringify(orphan)
+);
+const unbooked = syncPlan([], [syncSes('o1', 'orbit', null, '2026-11-10', '09:00:00', '10:00:00')]);
+assert(
+  unbooked.issues.join() === 'Standup on 2026-11-10 09:00: not booked in Outlook yet — re-save the room mailbox to retry'
+    && unbooked.missingOrbit.length === 0,
+  'An Orbit session in a linked room with no meeting is reported', unbooked.issues.join()
+);
+const roomAnswer = response => ({ attendees: [
+  { type: 'required', status: { response: 'declined' }, emailAddress: { address: 'kostas@x.gr' } },
+  { type: 'resource', status: { response }, emailAddress: { address: 'Athena@StellarBlue.eu' } },
+] });
+assert(
+  roomDeclined(roomAnswer('declined'), SYNC_ROOM) && !roomDeclined(roomAnswer('none'), SYNC_ROOM)
+    && !roomDeclined(roomAnswer('accepted'), SYNC_ROOM) && !roomDeclined(undefined, SYNC_ROOM),
+  "Only the room's own decline counts as declined; anything else is still waiting"
+);
+const runA = { ok: false, created: 2, updated: 1, deleted: 0, clashes: 1, issues: ['old'], error: 'x' };
+const runB = { ok: true, created: 1, updated: 0, deleted: 3, clashes: 0, issues: [] };
+const merged = mergeSyncRuns(runA, runB);
+assert(
+  merged.ok && merged.created === 3 && merged.updated === 1 && merged.deleted === 3 && merged.clashes === 0
+    && merged.issues.length === 0 && mergeSyncRuns(runA, { ...runB, skipped: 'locked' }) === runA,
+  'A sync that ran twice reports both runs’ changes and the newer state', JSON.stringify(merged)
+);
+const subscriptionOff = { state: 'skipped', reason: 'OUTLOOK_ROOMS_WEBHOOK_SECRET is not set.' };
+const allGood = roomSyncReport({ backfilled: 2, backfillFailures: [], subscription: { state: 'created' }, sync: runB });
+const failures = ['a', 'b', 'c', 'd'].map(n => `${n}: refused`);
+const bad = roomSyncReport({
+  backfilled: 0, backfillFailures: failures, subscription: subscriptionOff,
+  sync: { ...runB, issues: [subscriptionIssue(subscriptionOff), 'one issue'], clashes: 1 },
+});
+assert(
+  allGood.ok && allGood.problems.length === 0 && allGood.summary.includes('2 Orbit sessions booked in Outlook')
+    && allGood.summary.includes('live updates created'),
+  'Linking a room reports success only when everything worked', allGood.summary
+);
+assert(
+  !bad.ok && bad.problems.some(p => p.startsWith('4 Orbit sessions not booked in Outlook: a: refused; b: refused; c: refused (+1 more)'))
+    && bad.problems.some(p => p === '1 issue: one issue')
+    && bad.problems.some(p => p.startsWith('1 Outlook meeting not imported'))
+    && bad.problems.some(p => p.endsWith('OUTLOOK_ROOMS_WEBHOOK_SECRET is not set.'))
+    && !roomSyncReport({ sync: { ...runB, ok: false, error: 'boom' } }).ok
+    && subscriptionIssue({ state: 'renewed' }) === null,
+  'Failed backfills, issues, clashes, a failed sync and missing live updates are all reported', bad.problems.join(' | ')
+);
+assert(
+  lastSeatHoldsRoom({ source: 'orbit', outlook_event_id: 'e1' }, [{ id: 'b1' }])
+    && !lastSeatHoldsRoom({ source: 'orbit', outlook_event_id: 'e1' }, [{ id: 'b1' }, { id: 'b2' }])
+    && !lastSeatHoldsRoom({ source: 'orbit', outlook_event_id: null }, [{ id: 'b1' }])
+    && !lastSeatHoldsRoom({ source: 'outlook', outlook_event_id: 'e1' }, [{ id: 'b1' }]),
+  'Only the last seat of an Orbit session that books the room in Outlook offers to delete it'
+);
+const orgInvites = [
+  { session_id: 's-ext', name: null, email: 'guest@ex.com', created_at: '2026-11-05T10:00:01Z' },
+  { session_id: 's-ext', name: 'Boss', email: 'boss@ext.com', created_at: '2026-11-05T10:00:00Z' },
+];
+const orgProfiles = [{ id: 'p-maria', first_name: 'Maria', last_name: 'K', work_email: 'maria@x.gr' }];
+assert(
+  outlookOrganizerName({ id: 's1', created_by: 'p-maria' }, orgProfiles, orgInvites) === 'Maria K'
+    && outlookOrganizerName({ id: 's-ext', created_by: null }, orgProfiles, orgInvites) === 'Boss'
+    && outlookOrganizerName({ id: 's-none', created_by: null }, orgProfiles, orgInvites) === null,
+  'An Outlook session names its Orbit organiser, else its first invite, else nobody'
+);
+
+// ---- Outlook-born sessions are read-only; session meetings book the room ----
+const outlookSession = { created_by: 'p1', source: 'outlook' };
+assert(
+  canEditSession(outlookSession, 'p1', true) === false
+    && canDeleteSession(outlookSession, 'p1', true) === false
+    && canInviteToSession(outlookSession, 'p1', true) === false
+    && canEditSession({ created_by: 'p1', source: 'orbit' }, 'p1', false) === true,
+  'Outlook-born sessions are read-only for everyone, admins included'
+);
+const roomPayload = buildSessionInvitePayload({ ...inviteDetails, roomMailbox: 'athena@stellarblue.eu' });
+const resource = roomPayload.attendees.find(a => a.type === 'resource');
+assert(
+  resource?.emailAddress.address === 'athena@stellarblue.eu'
+    && roomPayload.location.locationEmailAddress === 'athena@stellarblue.eu'
+    && !buildSessionInvitePayload(inviteDetails).attendees.some(a => a.type === 'resource')
+    && buildSessionInvitePayload(inviteDetails).location.locationEmailAddress === undefined,
+  'A session meeting books the room mailbox as a resource attendee only when one is set'
 );
 
 console.log('\n================================================================');

@@ -579,6 +579,15 @@ export interface SpaceType {
   spaces?: Space[];
 }
 
+/** An Outlook meeting that could not be mirrored into the room's sessions. */
+export interface RoomClash {
+  date: string;
+  startsAt: string;
+  endsAt: string;
+  subject: string | null;
+  organizer: string | null;
+}
+
 /** A declarable, bookable room. `capacity` is how many seats it holds. */
 export interface Space {
   id: string;
@@ -606,6 +615,15 @@ export interface Space {
   notch_width?: number;
   notch_depth?: number;
   notch_corner?: RoomCornerName;
+  /** Outlook room mailbox whose meetings sync with this room's sessions. */
+  outlook_email?: string | null;
+  outlook_subscription_id?: string | null;
+  outlook_subscription_expires_at?: string | null;
+  outlook_synced_at?: string | null;
+  outlook_sync_error?: string | null;
+  outlook_clashes?: RoomClash[];
+  outlook_sync_started_at?: string | null;
+  outlook_sync_pending?: boolean;
   space_type?: SpaceType;
   sessions?: SpaceSession[];
   seats?: SpaceSeat[];
@@ -675,6 +693,11 @@ export interface SpaceSession {
   title?: string | null;
   /** Free-text agenda shown with the session and carried into the invitations. */
   description?: string | null;
+  /** `outlook` sessions are imported from the room mailbox and managed in Outlook. */
+  source?: 'orbit' | 'outlook';
+  outlook_ical_uid?: string | null;
+  outlook_series_id?: string | null;
+  outlook_event_id?: string | null;
   created_by?: string | null;
   created_at?: string;
   space?: Space;

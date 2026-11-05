@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Clock, Link2, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { CalendarDays, Clock, Link2, Mail, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/primitives';
 import { notifySuccess } from '@/lib/validation-modal';
 import {
@@ -28,6 +28,8 @@ export interface SessionSlotsProps {
   onEdit?: (session: SpaceSession) => void;
   /** The session a shared link pointed at, outlined so it stands out among the day's others. */
   highlightId?: string | null;
+  /** Who organised an Outlook-born session, shown after "Managed in Outlook". */
+  organizerOf?: (session: SpaceSession) => string | null;
 }
 
 /** Copies the session's link; a browser that refuses the clipboard shows it to copy by hand. */
@@ -51,6 +53,7 @@ const inviteLabel = (invite: SpaceSessionInvite): string => {
  */
 export function SessionSlots({
   space, state, disabled, onJoin, onLeave, onOpen, canDelete, onDelete, invites, canEdit, onEdit, highlightId,
+  organizerOf,
 }: SessionSlotsProps) {
   if (state.sessions.length === 0) {
     return (
@@ -72,6 +75,7 @@ export function SessionSlots({
           const mine = Boolean(entry.myBooking);
           const holders = seatHolders(entry.bookings);
           const invited = (invites || []).filter(invite => invite.session_id === entry.session.id);
+          const organizer = entry.session.source === 'outlook' ? organizerOf?.(entry.session) : null;
           return (
             <li
               key={entry.session.id}
@@ -123,6 +127,12 @@ export function SessionSlots({
                   )}
                 </span>
               </div>
+              {entry.session.source === 'outlook' && (
+                <p className="mt-0.5 ui-meta">
+                  <CalendarDays className="w-3 h-3 inline mr-1 -mt-0.5" />
+                  Managed in Outlook{organizer ? ` · ${organizer}` : ''}
+                </p>
+              )}
               {entry.session.description && (
                 <p className="mt-0.5 min-w-0 truncate ui-meta" title={entry.session.description}>
                   {entry.session.description}

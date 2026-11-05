@@ -1,0 +1,209 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  graphCalendarView, graphCreateSubscription, graphDeleteSubscription, graphRenewSubscription,
+} from '@/lib/integrations/outlook';
+import { athensToday } from '@/lib/integrations/server';
+import {
+  describeGraphFailure, meetingLabel, sessionsMissingFromRoom, type RoomSubscription, type RoomSyncResult,
+} from '@/lib/room-sync';
+import { roomSyncWindow, syncRoom } from '@/lib/room-sync-server';
+import { normalizeInviteEmail } from '@/lib/spaces';
+import { calendarStateOf, loadSessionContext, syncSessionCalendar } from '@/lib/spaces-server';
+
+/**
+ * A conference room's link to its Outlook room mailbox: saving the address, booking the room on the
+ * upcoming Orbit meetings, and the Graph subscription that tells Orbit when the room's calendar changes.
+ */
+
+const DAY_MS = 86_400_000;
+const SUBSCRIPTION_DAYS = 6;
+const RENEW_WITHIN_MS = 48 * 3_600_000;
+
+export type RoomMailboxResult = {
+  ok: boolean;
+  error?: string;
+  status?: number;
+  /** Upcoming Orbit sessions whose Outlook meeting now books the room. */
+  backfilled: number;
+  /** One readable reason per Orbit session whose meeting could not book the room; re-saving retries. */
+  backfillFailures: string[];
+  subscription?: RoomSubscription;
+  sync?: RoomSyncResult;
+};
+
+const refuse = (status: number, error: string): RoomMailboxResult =>
+  ({ ok: false, status, error, backfilled: 0, backfillFailures: [] });
+
+/**
+ * Keeps a Graph subscription on the room mailbox's events. Subscriptions lapse after a few days, so
+ * the daily job renews one that is close to expiry and re-creates one Graph no longer knows.
+ */
+export async function ensureRoomSubscription(
+  admin: SupabaseClient,
+  spaceId: string
+): Promise<RoomSubscription> {
+  const { data: room } = await admin
+    .from('spaces')
+    .select('outlook_email, outlook_subscription_id, outlook_subscription_expires_at')
+    .eq('id', spaceId)
+    .maybeSingle();
+  const secret = process.env.OUTLOOK_ROOMS_WEBHOOK_SECRET;
+  const notificationUrl = `${(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '')}/api/integrations/outlook/rooms/notify`;
+  if (!room?.outlook_email) return { state: 'skipped', reason: 'The room has no Outlook mailbox.' };
+  if (!secret) return { state: 'skipped', reason: 'OUTLOOK_ROOMS_WEBHOOK_SECRET is not set.' };
+  if (!notificationUrl.startsWith('https://')) {
+    return { state: 'skipped', reason: 'Outlook can only notify a public https:// address; use Sync now.' };
+  }
+
+  const expirationDateTime = new Date(Date.now() + SUBSCRIPTION_DAYS * DAY_MS).toISOString();
+  // Graph may shorten the expiry it was asked for, so the one it answers with is stored.
+  const save = async (subscription: Record<string, unknown> | undefined, fallbackId: string) => {
+    await admin.from('spaces').update({
+      outlook_subscription_id: String(subscription?.id || fallbackId),
+      outlook_subscription_expires_at: String(subscription?.expirationDateTime || expirationDateTime),
+    }).eq('id', spaceId);
+  };
+
+  const currentId: string | null = room.outlook_subscription_id;
+  if (currentId) {
+    const expiresAt = Date.parse(room.outlook_subscription_expires_at || '') || 0;
+    if (expiresAt - Date.now() > RENEW_WITHIN_MS) return { state: 'active' };
+    const renewed = await graphRenewSubscription(currentId, expirationDateTime);
+    if (renewed.ok) {
+      await save(renewed.event, currentId);
+      return { state: 'renewed' };
+    }
+    if (renewed.status !== 404) return { state: 'skipped', reason: describeGraphFailure(renewed) };
+  }
+
+  const created = await graphCreateSubscription({
+    resource: `/users/${room.outlook_email}/events`,
+    notificationUrl,
+    clientState: secret,
+    expirationDateTime,
+  });
+  if (!created.ok) return { state: 'skipped', reason: describeGraphFailure(created) };
+  await save(created.event, '');
+  return { state: 'created' };
+}
+
+/**
+ * Saves (or clears) a room's mailbox. Admin authorisation is the route's job. Setting a mailbox
+ * subscribes, books the room on the upcoming Orbit meetings and syncs once; re-saving the same one is
+ * how a failed backfill is retried. A mailbox that is replaced or cleared loses its
+ * subscription and its upcoming Outlook-born sessions; Orbit-born sessions stay.
+ */
+export async function linkRoomMailbox(
+  admin: SupabaseClient,
+  spaceId: string,
+  email: string | null
+): Promise<RoomMailboxResult> {
+  const typed = (email || '').trim();
+  const next = typed ? normalizeInviteEmail(typed) : null;
+  if (typed && !next) return refuse(400, 'Enter the room mailbox as an email address.');
+
+  const { data: room } = await admin
+    .from('spaces')
+    .select('outlook_email, outlook_subscription_id, space_types(booking_mode)')
+    .eq('id', spaceId)
+    .maybeSingle();
+  if (!room) return refuse(404, 'That room no longer exists.');
+  const bookingMode = (room.space_types as { booking_mode?: string } | null)?.booking_mode;
+  if (next && bookingMode !== 'time_range') return refuse(400, 'Only rooms booked by the hour can have an Outlook room mailbox.');
+
+  if (next) {
+    // A person's mailbox would make the sync import their whole calendar as room meetings.
+    const { data: people, error: peopleError } = await admin.from('profiles').select('first_name, last_name, work_email, status');
+    if (peopleError) return refuse(500, `Could not check the address against the people directory: ${peopleError.message}`);
+    const owner = (people || []).find(person => (
+      person.status !== 'departed' && String(person.work_email || '').trim().toLowerCase() === next
+    ));
+    if (owner) {
+      const name = [owner.first_name, owner.last_name].filter(Boolean).join(' ').trim() || next;
+      return refuse(400, `That address belongs to ${name} — use the room's own mailbox.`);
+    }
+  }
+
+  const previous: string | null = room.outlook_email ? String(room.outlook_email).trim().toLowerCase() : null;
+  if (previous !== next) {
+    const { error } = await admin.from('spaces').update({
+      outlook_email: next,
+      outlook_subscription_id: null,
+      outlook_subscription_expires_at: null,
+      outlook_synced_at: null,
+      outlook_sync_error: null,
+      outlook_clashes: [],
+    }).eq('id', spaceId);
+    if (error) return error.code === '23505' ? refuse(409, `${next} is already linked to another room.`) : refuse(500, error.message);
+    if (room.outlook_subscription_id) await graphDeleteSubscription(room.outlook_subscription_id);
+    if (previous) {
+      await admin.from('space_sessions').delete()
+        .eq('space_id', spaceId).eq('source', 'outlook').gte('session_date', athensToday());
+    }
+  }
+  // A sync still running on the old mailbox may import sessions after the delete above; this run (or
+  // the extra one it leaves pending) removes them.
+  if (!next) return { ok: true, backfilled: 0, backfillFailures: [], sync: await syncRoom(admin, spaceId) };
+
+  // Subscribed first, so the room accepting the meetings booked below already notifies Orbit. A new
+  // mailbox goes on every meeting (one burst of mails, agreed); re-saving the same one only books
+  // the meetings the room's calendar is missing, since every PATCH mails the attendees.
+  const subscription = await ensureRoomSubscription(admin, spaceId);
+  const backfill = await bookRoomForOrbitSessions(admin, spaceId, previous === next ? next : null);
+  const sync = await syncRoom(admin, spaceId, { subscription });
+  return { ok: true, backfilled: backfill.booked, backfillFailures: backfill.failures, subscription, sync };
+}
+
+/**
+ * Puts the room on the Outlook meeting of upcoming Orbit sessions, so the room shows busy in Outlook
+ * and the sync recognises those meetings instead of importing them. With `onlyMissingFrom` (the room
+ * mailbox) only the sessions its calendar does not show yet are booked; when that calendar cannot be
+ * read nothing is booked, rather than re-patching every meeting. Every session not booked is reported.
+ */
+async function bookRoomForOrbitSessions(
+  admin: SupabaseClient,
+  spaceId: string,
+  onlyMissingFrom: string | null
+): Promise<{ booked: number; failures: string[] }> {
+  const today = athensToday();
+  const { data, error } = await admin
+    .from('space_sessions')
+    .select('id, created_by, title, session_date, starts_at, outlook_ical_uid')
+    .eq('space_id', spaceId)
+    .eq('source', 'orbit')
+    .gte('session_date', today)
+    .order('session_date')
+    .order('starts_at');
+  if (error) return { booked: 0, failures: [`Could not read the room's upcoming sessions: ${error.message}`] };
+
+  type Row = {
+    id: string; created_by: string | null; title: string | null; session_date: string; starts_at: string;
+    outlook_ical_uid: string | null;
+  };
+  let rows = (data || []) as Row[];
+  if (onlyMissingFrom) {
+    const window = roomSyncWindow(today);
+    const view = await graphCalendarView(onlyMissingFrom, window.start, window.end);
+    if (!view.ok) {
+      return { booked: 0, failures: [`Could not read the room calendar, so no meeting was booked: ${describeGraphFailure(view)}`] };
+    }
+    const missing = new Set(sessionsMissingFromRoom(rows, new Set(view.events.map(event => event.iCalUId)), window.horizonEnd));
+    rows = rows.filter(row => missing.has(row.id));
+  }
+
+  const result = { booked: 0, failures: [] as string[] };
+  for (const row of rows) {
+    const label = meetingLabel(row.title, row.session_date, row.starts_at);
+    if (!row.created_by) {
+      result.failures.push(`${label}: the session has no organiser, so no Outlook meeting can book the room`);
+      continue;
+    }
+    const context = await loadSessionContext(admin, row.id, row.created_by);
+    if (!context) continue; // deleted since the list was read: nothing left to book
+    const calendar = await calendarStateOf(admin, row.id);
+    const synced = await syncSessionCalendar({ admin, context, attendees: calendar.attendees, eventId: calendar.eventId });
+    if (synced.ok) result.booked += 1;
+    else result.failures.push(`${label}: ${synced.error || 'the Outlook meeting could not be updated'}`);
+  }
+  return result;
+}

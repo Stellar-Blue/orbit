@@ -310,10 +310,12 @@ export function seatHolders(bookings: SpaceBooking[]): string[] {
  * same with its delete policy, so the button and the rule cannot disagree.
  */
 export function canDeleteSession(
-  session: Pick<SpaceSession, 'created_by'>,
+  session: Pick<SpaceSession, 'created_by' | 'source'>,
   profileId: string | null | undefined,
   isAdmin: boolean
 ): boolean {
+  // Outlook is the source of truth for sessions born there, so nobody changes them in Orbit.
+  if (session.source === 'outlook') return false;
   if (isAdmin) return true;
   return Boolean(profileId) && session.created_by === profileId;
 }
@@ -323,7 +325,7 @@ export function canDeleteSession(
  * the same rule before it reaches Slack or Graph.
  */
 export function canInviteToSession(
-  session: Pick<SpaceSession, 'created_by'>,
+  session: Pick<SpaceSession, 'created_by' | 'source'>,
   profileId: string | null | undefined,
   isAdmin: boolean
 ): boolean {
@@ -335,11 +337,40 @@ export function canInviteToSession(
  * rule as taking it back, so the pencil and the trash can never disagree with the database.
  */
 export function canEditSession(
-  session: Pick<SpaceSession, 'created_by'>,
+  session: Pick<SpaceSession, 'created_by' | 'source'>,
   profileId: string | null | undefined,
   isAdmin: boolean
 ): boolean {
   return canDeleteSession(session, profileId, isAdmin);
+}
+
+/**
+ * Whether releasing this seat leaves an empty Orbit session that still books the room in Outlook: the
+ * database keeps a session that owns a meeting, so the page offers to delete it instead.
+ */
+export function lastSeatHoldsRoom(
+  session: Pick<SpaceSession, 'source' | 'outlook_event_id'>,
+  sessionBookings: Pick<SpaceBooking, 'id'>[]
+): boolean {
+  return session.source !== 'outlook' && Boolean(session.outlook_event_id) && sessionBookings.length === 1;
+}
+
+/**
+ * Who organised an Outlook-born session: its Orbit owner, else the earliest invite (the sync writes
+ * the organiser's first), else nobody.
+ */
+export function outlookOrganizerName(
+  session: Pick<SpaceSession, 'id' | 'created_by'>,
+  profiles: Pick<Profile, 'id' | 'first_name' | 'last_name' | 'work_email'>[],
+  invites: Pick<SpaceSessionInvite, 'session_id' | 'name' | 'email' | 'created_at'>[]
+): string | null {
+  const owner = session.created_by ? profiles.find(profile => profile.id === session.created_by) : undefined;
+  const ownerName = owner && ([owner.first_name, owner.last_name].filter(Boolean).join(' ').trim() || owner.work_email);
+  if (ownerName) return ownerName;
+  const first = invites
+    .filter(invite => invite.session_id === session.id)
+    .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))[0];
+  return first ? first.name || first.email : null;
 }
 
 /** A dialect of the HTML5 address rule that also accepts the `+tag` addresses the team uses. */

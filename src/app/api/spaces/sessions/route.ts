@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, hasSlackBotToken, slackSendDirectMessage } from '@/lib/integrations/server';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 import {
-  calendarStateOf, clock, loadSessionContext, sessionShareUrl, sessionWhen, syncSessionCalendar,
+  calendarStateOf, clock, loadSessionContext, OUTLOOK_MANAGED_ERROR, sessionShareUrl, sessionWhen, syncSessionCalendar,
 } from '@/lib/spaces-server';
 import { clockLabel, overlappingSession, sessionLabel, validateSessionWindow } from '@/lib/spaces';
 
@@ -36,6 +36,7 @@ export async function PATCH(request: NextRequest) {
   const admin = getAdminClient();
   const context = await loadSessionContext(admin, sessionId, caller.profileId);
   if (!context) return NextResponse.json({ error: 'That session no longer exists.' }, { status: 404 });
+  if (context.source === 'outlook') return NextResponse.json({ error: OUTLOOK_MANAGED_ERROR }, { status: 403 });
   if (!caller.isAdmin && context.createdBy !== caller.profileId) {
     return NextResponse.json(
       { error: 'Only the person who opened this session, or an administrator, can edit it.' },
@@ -91,7 +92,7 @@ export async function PATCH(request: NextRequest) {
   const calendar = await calendarStateOf(admin, sessionId);
   let calendarError: string | undefined;
   let outlookEventId = calendar.eventId;
-  if (calendar.eventId || calendar.attendees.length > 0) {
+  if (calendar.eventId || calendar.attendees.length > 0 || context.roomMailbox) {
     const synced = await syncSessionCalendar({
       admin, context: updated, attendees: calendar.attendees, eventId: calendar.eventId,
     });
@@ -138,5 +139,40 @@ export async function PATCH(request: NextRequest) {
     notified,
     outlook_event_id: outlookEventId,
     calendar_error: calendarError,
+  });
+}
+
+/**
+ * Makes sure a session owns its Outlook meeting. The client calls it right after creating a session,
+ * so a room with a mailbox is booked in Outlook even when nobody has been invited.
+ */
+export async function POST(request: NextRequest) {
+  const caller = await requireApiSession(request);
+  if (isNextResponse(caller)) return caller;
+
+  const body = await request.json().catch(() => null) as { session_id?: string } | null;
+  const sessionId = typeof body?.session_id === 'string' ? body.session_id : '';
+  if (!sessionId) return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
+
+  const admin = getAdminClient();
+  const context = await loadSessionContext(admin, sessionId, caller.profileId);
+  if (!context) return NextResponse.json({ error: 'That session no longer exists.' }, { status: 404 });
+  if (context.source === 'outlook') return NextResponse.json({ error: OUTLOOK_MANAGED_ERROR }, { status: 403 });
+  if (!caller.isAdmin && context.createdBy !== caller.profileId) {
+    return NextResponse.json(
+      { error: 'Only the person who opened this session, or an administrator, can do that.' },
+      { status: 403 }
+    );
+  }
+  if (!context.roomMailbox) return NextResponse.json({ ok: true, skipped: 'no_mailbox' });
+
+  const calendar = await calendarStateOf(admin, sessionId);
+  const synced = await syncSessionCalendar({
+    admin, context, attendees: calendar.attendees, eventId: calendar.eventId,
+  });
+  return NextResponse.json({
+    ok: synced.ok,
+    outlook_event_id: synced.eventId || calendar.eventId || undefined,
+    calendar_error: synced.ok ? undefined : synced.error,
   });
 }

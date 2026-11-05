@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from './types';
 import { getDelegatedToken } from './msal';
+import type { GraphCalendarEvent } from '@/lib/room-sync';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const ORBIT_REF_PROP = 'String {66f5a359-d465-4757-b8e7-ef2d44c7f74f} Name orbitRef';
@@ -84,7 +85,7 @@ export async function getGraphToken(): Promise<string | null> {
 
 interface GraphAttendee {
   emailAddress: { address: string; name?: string };
-  type: 'required' | 'optional';
+  type: 'required' | 'optional' | 'resource';
 }
 
 interface GraphEventPayload {
@@ -97,7 +98,7 @@ interface GraphEventPayload {
   /** Meeting invite fields — only the session invitations use them. */
   attendees?: GraphAttendee[];
   body?: { contentType: 'text' | 'html'; content: string };
-  location?: { displayName: string };
+  location?: { displayName: string; locationEmailAddress?: string };
   isReminderOn?: boolean;
   reminderMinutesBeforeStart?: number;
   allowNewTimeProposals?: boolean;
@@ -113,6 +114,7 @@ async function graphRequest(
   url: string,
   body?: unknown,
   token?: string,
+  extraHeaders?: Record<string, string>,
   retries = 2
 ): Promise<GraphResult> {
   const bearer = token || (await getGraphToken());
@@ -122,17 +124,18 @@ async function graphRequest(
     headers: {
       Authorization: `Bearer ${bearer}`,
       'Content-Type': 'application/json',
+      ...extraHeaders,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 429 && retries > 0) {
     const wait = Number(res.headers.get('retry-after') || 5) * 1000;
     await new Promise(r => setTimeout(r, Math.min(wait, 30_000)));
-    return graphRequest(method, url, body, token, retries - 1);
+    return graphRequest(method, url, body, token, extraHeaders, retries - 1);
   }
   if ((res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) && retries > 0) {
     await new Promise(r => setTimeout(r, 5_000));
-    return graphRequest(method, url, body, token, retries - 1);
+    return graphRequest(method, url, body, token, extraHeaders, retries - 1);
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -158,6 +161,49 @@ export async function graphGetEvent(mailboxEmail: string, eventId: string): Prom
 
 export async function graphDeleteEvent(mailboxEmail: string, eventId: string, token?: string): Promise<GraphResult> {
   return graphRequest('DELETE', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`, undefined, token);
+}
+
+// ---------- Room mailboxes: calendar reads and change notifications (application token) ----------
+
+const CALENDAR_VIEW_SELECT = 'id,iCalUId,seriesMasterId,type,subject,body,sensitivity,start,end,isAllDay,isCancelled,organizer,attendees';
+
+/**
+ * Every occurrence on a mailbox's calendar in [startIso, endIso), recurring series expanded, with
+ * times in Athens and bodies as plain text. All pages are read, so a failure is never a partial list.
+ */
+export async function graphCalendarView(
+  mailbox: string,
+  startIso: string,
+  endIso: string
+): Promise<{ ok: true; events: GraphCalendarEvent[] } | { ok: false; status: number; code?: string; message?: string }> {
+  const prefer = { Prefer: `outlook.timezone="${ATHENS_TIMEZONE}", outlook.body-content-type="text"` };
+  const query = `startDateTime=${encodeURIComponent(startIso)}&endDateTime=${encodeURIComponent(endIso)}&$top=100&$select=${CALENDAR_VIEW_SELECT}`;
+  let url: string | undefined = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/calendarView?${query}`;
+  const events: GraphCalendarEvent[] = [];
+  while (url) {
+    const page: GraphResult = await graphRequest('GET', url, undefined, undefined, prefer);
+    if (!page.ok) return { ok: false, status: page.status, code: page.code, message: page.message };
+    events.push(...((page.event?.value as GraphCalendarEvent[] | undefined) || []));
+    url = page.event?.['@odata.nextLink'] as string | undefined;
+  }
+  return { ok: true, events };
+}
+
+export async function graphCreateSubscription(input: {
+  resource: string;
+  notificationUrl: string;
+  clientState: string;
+  expirationDateTime: string;
+}): Promise<GraphResult> {
+  return graphRequest('POST', `${GRAPH_BASE}/subscriptions`, { changeType: 'created,updated,deleted', ...input });
+}
+
+export async function graphRenewSubscription(id: string, expirationDateTime: string): Promise<GraphResult> {
+  return graphRequest('PATCH', `${GRAPH_BASE}/subscriptions/${encodeURIComponent(id)}`, { expirationDateTime });
+}
+
+export async function graphDeleteSubscription(id: string): Promise<GraphResult> {
+  return graphRequest('DELETE', `${GRAPH_BASE}/subscriptions/${encodeURIComponent(id)}`);
 }
 
 // ---------- Work plan CRUD (delegated token) ----------
@@ -255,6 +301,8 @@ export interface SessionInviteDetails {
   note?: string | null;
   /** The session's Orbit link, so whoever gets (or is forwarded) the invite can open it. */
   link?: string | null;
+  /** The room's Outlook mailbox; when set the meeting books the room as a resource attendee. */
+  roomMailbox?: string | null;
   attendees: string[];
 }
 
@@ -292,8 +340,13 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
     },
     start: { dateTime: `${details.sessionDate}T${clock(details.startsAt)}:00`, timeZone: ATHENS_TIMEZONE },
     end: { dateTime: `${details.sessionDate}T${clock(details.endsAt)}:00`, timeZone: ATHENS_TIMEZONE },
-    location: { displayName: where },
-    attendees: details.attendees.map(address => ({ emailAddress: { address }, type: 'required' as const })),
+    location: { displayName: where, ...(details.roomMailbox ? { locationEmailAddress: details.roomMailbox } : {}) },
+    attendees: [
+      ...details.attendees.map(address => ({ emailAddress: { address }, type: 'required' as const })),
+      ...(details.roomMailbox
+        ? [{ emailAddress: { address: details.roomMailbox, name: details.roomName }, type: 'resource' as const }]
+        : []),
+    ],
     type: 'singleInstance',
     showAs: 'busy',
     isReminderOn: true,
@@ -318,29 +371,32 @@ export async function syncSessionCalendarInvite(args: {
   organizerEmail: string;
   details: SessionInviteDetails;
   existingEventId?: string | null;
-}): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+}): Promise<{ ok: boolean; eventId?: string; icalUid?: string; created?: boolean; error?: string }> {
   const token = await getDelegatedToken(args.admin, args.organizerProfileId);
+  const keep = args.details.attendees.length > 0 || Boolean(args.details.roomMailbox);
   const payload = buildSessionInvitePayload(args.details);
 
   if (args.existingEventId) {
-    if (args.details.attendees.length === 0) {
+    if (!keep) {
       const cancelled = await graphDeleteEvent(args.organizerEmail, args.existingEventId, token || undefined);
       return cancelled.ok
         ? { ok: true }
         : { ok: false, error: cancelled.message || cancelled.code || `http_${cancelled.status}` };
     }
     const patched = await graphPatchEvent(args.organizerEmail, args.existingEventId, payload, token || undefined);
-    if (patched.ok) return { ok: true, eventId: args.existingEventId };
+    if (patched.ok) {
+      return { ok: true, eventId: args.existingEventId, icalUid: (patched.event as { iCalUId?: string } | undefined)?.iCalUId };
+    }
     if (patched.status !== 404) {
       return { ok: false, error: patched.message || patched.code || `http_${patched.status}` };
     }
   }
 
-  if (args.details.attendees.length === 0) return { ok: true };
+  if (!keep) return { ok: true };
   const created = await graphCreateEvent(args.organizerEmail, payload, token || undefined);
   if (!created.ok) return { ok: false, error: created.message || created.code || `http_${created.status}` };
-  const eventId = (created.event as { id?: string } | undefined)?.id;
-  return { ok: true, eventId };
+  const event = created.event as { id?: string; iCalUId?: string } | undefined;
+  return { ok: true, eventId: event?.id, icalUid: event?.iCalUId, created: true };
 }
 
 /** Withdraws a meeting invite when the session it belongs to is deleted. */
@@ -1104,7 +1160,7 @@ function athensTodayStr(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: ATHENS_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 
-function addDays(dateStr: string, days: number): string {
+export function addDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);

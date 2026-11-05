@@ -17,6 +17,10 @@
       "schedule": "30 4 * * *"
     },
     {
+      "path": "/api/cron/room-sync",
+      "schedule": "45 4 * * *"
+    },
+    {
       "path": "/api/cron/remote-registration-reminder",
       "schedule": "0 7 * * *"
     }

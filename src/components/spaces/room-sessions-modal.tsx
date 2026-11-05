@@ -28,6 +28,8 @@ export interface RoomSessionsModalProps {
   onEdit?: (session: SpaceSession) => void;
   /** The session a shared link pointed at. */
   highlightId?: string | null;
+  /** Who organised an Outlook-born session. */
+  organizerOf?: (session: SpaceSession) => string | null;
 }
 
 /**
@@ -37,7 +39,7 @@ export interface RoomSessionsModalProps {
  */
 export function RoomSessionsModal({
   room, type, state, dayLabel, isPast, onClose, onJoin, onLeave, onNew, canDelete, onDelete,
-  invites, canEdit, onEdit, highlightId,
+  invites, canEdit, onEdit, highlightId, organizerOf,
 }: RoomSessionsModalProps) {
   if (!room || !state) return null;
   return (
@@ -79,6 +81,7 @@ export function RoomSessionsModal({
           canEdit={canEdit}
           onEdit={onEdit}
           highlightId={highlightId}
+          organizerOf={organizerOf}
         />
 
         {isPast && (
