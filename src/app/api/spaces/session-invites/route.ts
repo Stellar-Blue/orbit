@@ -4,7 +4,8 @@ import { cancelSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { isNextResponse, requireApiSession } from '@/lib/integrations/api-helpers';
 import { EMPLOYEE_INTEGRATION_COLUMNS, type EmployeeIntegration } from '@/lib/integrations/types';
 import {
-  absenceOf, calendarStateOf, loadSessionContext, sessionShareUrl, sessionWhen, syncSessionCalendar,
+  bookInviteeSeat, calendarStateOf, loadSessionContext, OUTLOOK_MANAGED_ERROR,
+  removeInvitee, sessionShareUrl, sessionWhen, syncSessionCalendar,
 } from '@/lib/spaces-server';
 import { normalizeInviteEmail } from '@/lib/spaces';
 import type { SessionInviteStatus } from '@/lib/types';
@@ -47,20 +48,6 @@ interface RecipientResult {
   outlook_error?: string;
 }
 
-/** The chairs of a room still free in a session, in a stable order (oldest drawn first). */
-async function freeChairsFor(
-  admin: ReturnType<typeof getAdminClient>,
-  spaceId: string,
-  sessionId: string
-): Promise<string[]> {
-  const [{ data: seats }, { data: taken }] = await Promise.all([
-    admin.from('space_seats').select('id').eq('space_id', spaceId).eq('active', true).order('created_at'),
-    admin.from('space_bookings').select('seat_id').eq('session_id', sessionId).not('seat_id', 'is', null),
-  ]);
-  const used = new Set((taken || []).map(row => row.seat_id as string));
-  return (seats || []).map(seat => seat.id as string).filter(id => !used.has(id));
-}
-
 const personName = (
   profile?: { first_name?: string | null; last_name?: string | null; work_email?: string | null } | null
 ): string =>
@@ -92,6 +79,7 @@ export async function POST(request: NextRequest) {
   const admin = getAdminClient();
   const context = await loadSessionContext(admin, sessionId, caller.profileId);
   if (!context) return NextResponse.json({ error: 'That session no longer exists.' }, { status: 404 });
+  if (context.source === 'outlook') return NextResponse.json({ error: OUTLOOK_MANAGED_ERROR }, { status: 403 });
 
   if (!caller.isAdmin && context.createdBy !== caller.profileId) {
     return NextResponse.json(
@@ -150,50 +138,12 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // The seat is only for a day at the office; the database refuses anything else (SQLSTATE
-    // SB001), and this check lets the report say why instead of a generic failure.
-    const away = await absenceOf(admin, profile.id, context.sessionDate);
-    let seat: RecipientResult['seat'] = 'away';
-    let seatError: string | undefined = away
-      ? `invited, but ${away.label} that day so no seat was reserved`
-      : undefined;
-    if (!away) {
-      // A seat needs a chair: the room draws people above the chair they took, so a booking with no
-      // seat would be invisible in the 3D plan. Free chairs are tried in turn, like the booking
-      // dialog does, and a room without drawn chairs still gets the booking.
-      const chairs = await freeChairsFor(admin, context.spaceId, context.id);
-      let bookingError: { code?: string; message: string } | null = null;
-      for (const chair of chairs.length > 0 ? chairs : [null]) {
-        const attempt = await admin.from('space_bookings').insert([{
-          space_id: context.spaceId,
-          session_id: context.id,
-          profile_id: profile.id,
-          booking_date: context.sessionDate,
-          seat_id: chair,
-          created_by: caller.profileId,
-        }]);
-        bookingError = attempt.error;
-        const chairTaken = Boolean(
-          bookingError
-          && chair
-          && (bookingError.code === '23505' || /seat has just been taken/i.test(bookingError.message))
-          && !/one_seat_session|one_seat_day/i.test(bookingError.message)
-        );
-        if (!chairTaken) break;
-      }
-      seat = !bookingError
-        ? 'booked'
-        : /one_seat_session|one_seat_day/i.test(bookingError.message)
-          ? 'already'
-          : bookingError.code === 'SB001'
-            ? 'away'
-            : /full|fully booked/i.test(bookingError.message)
-              ? 'full'
-              : 'failed';
-      if (bookingError && seat !== 'already') {
-        seatError = `invited, but the seat was not booked: ${bookingError.message}`;
-      }
-    }
+    const { seat, error: seatError } = await bookInviteeSeat(
+      admin,
+      { spaceId: context.spaceId, sessionId: context.id, sessionDate: context.sessionDate },
+      profile.id,
+      caller.profileId
+    );
 
     const seatLine = seat === 'booked'
       ? 'A seat is reserved for you.'
@@ -309,6 +259,7 @@ export async function DELETE(request: NextRequest) {
   const admin = getAdminClient();
   const context = await loadSessionContext(admin, sessionId, caller.profileId);
   if (!context) return NextResponse.json({ ok: true, removed: 0, cancelled: 0 });
+  if (context.source === 'outlook') return NextResponse.json({ error: OUTLOOK_MANAGED_ERROR }, { status: 403 });
   if (!caller.isAdmin && context.createdBy !== caller.profileId) {
     return NextResponse.json(
       { error: 'Only the person who opened this session, or an administrator, can change who is invited.' },
@@ -317,25 +268,8 @@ export async function DELETE(request: NextRequest) {
   }
 
   if (email) {
-    const { data: invite } = await admin
-      .from('space_session_invites')
-      .select('id, profile_id')
-      .eq('session_id', sessionId)
-      .eq('email', email)
-      .maybeSingle();
-    if (!invite) return NextResponse.json({ ok: true, removed: 0 });
-
-    // Removing someone from the session frees their seat too — the room card and the capacity
-    // trigger must agree with the invite list.
-    let seatReleased = false;
-    if (invite.profile_id) {
-      const { error: seatError } = await admin.from('space_bookings')
-        .delete()
-        .eq('session_id', sessionId)
-        .eq('profile_id', invite.profile_id);
-      seatReleased = !seatError;
-    }
-    await admin.from('space_session_invites').delete().eq('id', invite.id);
+    const { removed, seatReleased } = await removeInvitee(admin, sessionId, email);
+    if (!removed) return NextResponse.json({ ok: true, removed: 0 });
 
     // Recompute the meeting from what is left; an empty attendee list cancels it.
     const calendar = await calendarStateOf(admin, sessionId);
@@ -361,6 +295,10 @@ export async function DELETE(request: NextRequest) {
   (invites || []).forEach((row: { invited_by: string | null; outlook_event_id: string | null }) => {
     if (row.outlook_event_id && row.invited_by) events.set(row.outlook_event_id, row.invited_by);
   });
+
+  // The meeting the session itself owns (it may exist with no invitee, just to book the room) sits
+  // on the organiser's mailbox.
+  if (context.outlookEventId && context.createdBy) events.set(context.outlookEventId, context.createdBy);
 
   let cancelled = 0;
   for (const [eventId, inviterProfileId] of events) {
