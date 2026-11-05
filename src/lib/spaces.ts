@@ -310,10 +310,12 @@ export function seatHolders(bookings: SpaceBooking[]): string[] {
  * same with its delete policy, so the button and the rule cannot disagree.
  */
 export function canDeleteSession(
-  session: Pick<SpaceSession, 'created_by'>,
+  session: Pick<SpaceSession, 'created_by' | 'source'>,
   profileId: string | null | undefined,
   isAdmin: boolean
 ): boolean {
+  // Outlook is the source of truth for sessions born there, so nobody changes them in Orbit.
+  if (session.source === 'outlook') return false;
   if (isAdmin) return true;
   return Boolean(profileId) && session.created_by === profileId;
 }
@@ -323,7 +325,7 @@ export function canDeleteSession(
  * the same rule before it reaches Slack or Graph.
  */
 export function canInviteToSession(
-  session: Pick<SpaceSession, 'created_by'>,
+  session: Pick<SpaceSession, 'created_by' | 'source'>,
   profileId: string | null | undefined,
   isAdmin: boolean
 ): boolean {
@@ -335,7 +337,7 @@ export function canInviteToSession(
  * rule as taking it back, so the pencil and the trash can never disagree with the database.
  */
 export function canEditSession(
-  session: Pick<SpaceSession, 'created_by'>,
+  session: Pick<SpaceSession, 'created_by' | 'source'>,
   profileId: string | null | undefined,
   isAdmin: boolean
 ): boolean {

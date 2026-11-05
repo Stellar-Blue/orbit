@@ -828,6 +828,25 @@ assert(
   'Graph failures turn into readable room errors'
 );
 
+// ---- Outlook-born sessions are read-only; session meetings book the room ----
+const outlookSession = { created_by: 'p1', source: 'outlook' };
+assert(
+  canEditSession(outlookSession, 'p1', true) === false
+    && canDeleteSession(outlookSession, 'p1', true) === false
+    && canInviteToSession(outlookSession, 'p1', true) === false
+    && canEditSession({ created_by: 'p1', source: 'orbit' }, 'p1', false) === true,
+  'Outlook-born sessions are read-only for everyone, admins included'
+);
+const roomPayload = buildSessionInvitePayload({ ...inviteDetails, roomMailbox: 'athena@stellarblue.eu' });
+const resource = roomPayload.attendees.find(a => a.type === 'resource');
+assert(
+  resource?.emailAddress.address === 'athena@stellarblue.eu'
+    && roomPayload.location.locationEmailAddress === 'athena@stellarblue.eu'
+    && !buildSessionInvitePayload(inviteDetails).attendees.some(a => a.type === 'resource')
+    && buildSessionInvitePayload(inviteDetails).location.locationEmailAddress === undefined,
+  'A session meeting books the room mailbox as a resource attendee only when one is set'
+);
+
 console.log('\n================================================================');
 console.log(`${passed} passed · ${failed} failed`);
 console.log('================================================================');

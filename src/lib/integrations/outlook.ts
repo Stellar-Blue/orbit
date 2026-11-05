@@ -84,7 +84,7 @@ export async function getGraphToken(): Promise<string | null> {
 
 interface GraphAttendee {
   emailAddress: { address: string; name?: string };
-  type: 'required' | 'optional';
+  type: 'required' | 'optional' | 'resource';
 }
 
 interface GraphEventPayload {
@@ -97,7 +97,7 @@ interface GraphEventPayload {
   /** Meeting invite fields — only the session invitations use them. */
   attendees?: GraphAttendee[];
   body?: { contentType: 'text' | 'html'; content: string };
-  location?: { displayName: string };
+  location?: { displayName: string; locationEmailAddress?: string };
   isReminderOn?: boolean;
   reminderMinutesBeforeStart?: number;
   allowNewTimeProposals?: boolean;
@@ -255,6 +255,8 @@ export interface SessionInviteDetails {
   note?: string | null;
   /** The session's Orbit link, so whoever gets (or is forwarded) the invite can open it. */
   link?: string | null;
+  /** The room's Outlook mailbox; when set the meeting books the room as a resource attendee. */
+  roomMailbox?: string | null;
   attendees: string[];
 }
 
@@ -292,8 +294,13 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
     },
     start: { dateTime: `${details.sessionDate}T${clock(details.startsAt)}:00`, timeZone: ATHENS_TIMEZONE },
     end: { dateTime: `${details.sessionDate}T${clock(details.endsAt)}:00`, timeZone: ATHENS_TIMEZONE },
-    location: { displayName: where },
-    attendees: details.attendees.map(address => ({ emailAddress: { address }, type: 'required' as const })),
+    location: { displayName: where, ...(details.roomMailbox ? { locationEmailAddress: details.roomMailbox } : {}) },
+    attendees: [
+      ...details.attendees.map(address => ({ emailAddress: { address }, type: 'required' as const })),
+      ...(details.roomMailbox
+        ? [{ emailAddress: { address: details.roomMailbox, name: details.roomName }, type: 'resource' as const }]
+        : []),
+    ],
     type: 'singleInstance',
     showAs: 'busy',
     isReminderOn: true,
@@ -318,29 +325,32 @@ export async function syncSessionCalendarInvite(args: {
   organizerEmail: string;
   details: SessionInviteDetails;
   existingEventId?: string | null;
-}): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+}): Promise<{ ok: boolean; eventId?: string; icalUid?: string; error?: string }> {
   const token = await getDelegatedToken(args.admin, args.organizerProfileId);
+  const keep = args.details.attendees.length > 0 || Boolean(args.details.roomMailbox);
   const payload = buildSessionInvitePayload(args.details);
 
   if (args.existingEventId) {
-    if (args.details.attendees.length === 0) {
+    if (!keep) {
       const cancelled = await graphDeleteEvent(args.organizerEmail, args.existingEventId, token || undefined);
       return cancelled.ok
         ? { ok: true }
         : { ok: false, error: cancelled.message || cancelled.code || `http_${cancelled.status}` };
     }
     const patched = await graphPatchEvent(args.organizerEmail, args.existingEventId, payload, token || undefined);
-    if (patched.ok) return { ok: true, eventId: args.existingEventId };
+    if (patched.ok) {
+      return { ok: true, eventId: args.existingEventId, icalUid: (patched.event as { iCalUId?: string } | undefined)?.iCalUId };
+    }
     if (patched.status !== 404) {
       return { ok: false, error: patched.message || patched.code || `http_${patched.status}` };
     }
   }
 
-  if (args.details.attendees.length === 0) return { ok: true };
+  if (!keep) return { ok: true };
   const created = await graphCreateEvent(args.organizerEmail, payload, token || undefined);
   if (!created.ok) return { ok: false, error: created.message || created.code || `http_${created.status}` };
-  const eventId = (created.event as { id?: string } | undefined)?.id;
-  return { ok: true, eventId };
+  const event = created.event as { id?: string; iCalUId?: string } | undefined;
+  return { ok: true, eventId: event?.id, icalUid: event?.iCalUId };
 }
 
 /** Withdraws a meeting invite when the session it belongs to is deleted. */
