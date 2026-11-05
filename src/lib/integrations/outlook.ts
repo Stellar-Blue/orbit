@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from './types';
 import { getDelegatedToken } from './msal';
+import type { GraphCalendarEvent } from '@/lib/room-sync';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const ORBIT_REF_PROP = 'String {66f5a359-d465-4757-b8e7-ef2d44c7f74f} Name orbitRef';
@@ -113,6 +114,7 @@ async function graphRequest(
   url: string,
   body?: unknown,
   token?: string,
+  extraHeaders?: Record<string, string>,
   retries = 2
 ): Promise<GraphResult> {
   const bearer = token || (await getGraphToken());
@@ -122,17 +124,18 @@ async function graphRequest(
     headers: {
       Authorization: `Bearer ${bearer}`,
       'Content-Type': 'application/json',
+      ...extraHeaders,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 429 && retries > 0) {
     const wait = Number(res.headers.get('retry-after') || 5) * 1000;
     await new Promise(r => setTimeout(r, Math.min(wait, 30_000)));
-    return graphRequest(method, url, body, token, retries - 1);
+    return graphRequest(method, url, body, token, extraHeaders, retries - 1);
   }
   if ((res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) && retries > 0) {
     await new Promise(r => setTimeout(r, 5_000));
-    return graphRequest(method, url, body, token, retries - 1);
+    return graphRequest(method, url, body, token, extraHeaders, retries - 1);
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -158,6 +161,49 @@ export async function graphGetEvent(mailboxEmail: string, eventId: string): Prom
 
 export async function graphDeleteEvent(mailboxEmail: string, eventId: string, token?: string): Promise<GraphResult> {
   return graphRequest('DELETE', `${GRAPH_BASE}/users/${encodeURIComponent(mailboxEmail)}/calendar/events/${eventId}`, undefined, token);
+}
+
+// ---------- Room mailboxes: calendar reads and change notifications (application token) ----------
+
+const CALENDAR_VIEW_SELECT = 'id,iCalUId,seriesMasterId,type,subject,body,start,end,isAllDay,isCancelled,organizer,attendees';
+
+/**
+ * Every occurrence on a mailbox's calendar in [startIso, endIso), recurring series expanded, with
+ * times in Athens and bodies as plain text. All pages are read, so a failure is never a partial list.
+ */
+export async function graphCalendarView(
+  mailbox: string,
+  startIso: string,
+  endIso: string
+): Promise<{ ok: true; events: GraphCalendarEvent[] } | { ok: false; status: number; code?: string; message?: string }> {
+  const prefer = { Prefer: `outlook.timezone="${ATHENS_TIMEZONE}", outlook.body-content-type="text"` };
+  const query = `startDateTime=${encodeURIComponent(startIso)}&endDateTime=${encodeURIComponent(endIso)}&$top=100&$select=${CALENDAR_VIEW_SELECT}`;
+  let url: string | undefined = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/calendarView?${query}`;
+  const events: GraphCalendarEvent[] = [];
+  while (url) {
+    const page: GraphResult = await graphRequest('GET', url, undefined, undefined, prefer);
+    if (!page.ok) return { ok: false, status: page.status, code: page.code, message: page.message };
+    events.push(...((page.event?.value as GraphCalendarEvent[] | undefined) || []));
+    url = page.event?.['@odata.nextLink'] as string | undefined;
+  }
+  return { ok: true, events };
+}
+
+export async function graphCreateSubscription(input: {
+  resource: string;
+  notificationUrl: string;
+  clientState: string;
+  expirationDateTime: string;
+}): Promise<GraphResult> {
+  return graphRequest('POST', `${GRAPH_BASE}/subscriptions`, { changeType: 'created,updated,deleted', ...input });
+}
+
+export async function graphRenewSubscription(id: string, expirationDateTime: string): Promise<GraphResult> {
+  return graphRequest('PATCH', `${GRAPH_BASE}/subscriptions/${encodeURIComponent(id)}`, { expirationDateTime });
+}
+
+export async function graphDeleteSubscription(id: string): Promise<GraphResult> {
+  return graphRequest('DELETE', `${GRAPH_BASE}/subscriptions/${encodeURIComponent(id)}`);
 }
 
 // ---------- Work plan CRUD (delegated token) ----------

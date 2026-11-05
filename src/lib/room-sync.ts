@@ -134,6 +134,17 @@ export function occurrenceFromGraph(
   };
 }
 
+/** An occurrence that could not become a session, as admins see it on the room. */
+export function clashOf(occurrence: RoomOccurrence): RoomClash {
+  return {
+    date: occurrence.date,
+    startsAt: occurrence.startsAt,
+    endsAt: occurrence.endsAt,
+    subject: occurrence.subject,
+    organizer: occurrence.organizerName || occurrence.organizerEmail,
+  };
+}
+
 /**
  * What to create, update, delete or report so the room's sessions mirror its Outlook calendar.
  * Past dates are ignored on both sides. Outlook-born sessions follow Outlook completely; Orbit-born
@@ -221,13 +232,7 @@ export function planRoomSync(args: {
         .map(entry => ({ id: entry.icalUid, starts_at: entry.startsAt, ends_at: entry.endsAt })),
     ];
     if (overlappingSession(obstacles, { startsAt: occurrence.startsAt, endsAt: occurrence.endsAt })) {
-      plan.clashes.push({
-        date: occurrence.date,
-        startsAt: occurrence.startsAt,
-        endsAt: occurrence.endsAt,
-        subject: occurrence.subject,
-        organizer: occurrence.organizerName || occurrence.organizerEmail,
-      });
+      plan.clashes.push(clashOf(occurrence));
     } else {
       plan.creates.push(occurrence);
     }

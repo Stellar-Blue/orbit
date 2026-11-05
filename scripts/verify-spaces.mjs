@@ -36,6 +36,7 @@ import {
 } from '@/lib/spaces';
 import { buildSessionInvitePayload } from '@/lib/integrations/outlook';
 import {
+  clashOf,
   describeGraphFailure,
   notifiedSubscriptionIds,
   occurrenceFromGraph,
@@ -740,6 +741,11 @@ assert(
   syncClash.clashes.length === 1 && syncClash.clashes[0].date === '2026-11-10' && syncClash.clashes[0].startsAt === '10:30'
     && syncClash.clashes[0].endsAt === '11:30' && syncClash.creates.length === 0,
   'An Outlook meeting overlapping an Orbit session is a clash, not a create', JSON.stringify(syncClash)
+);
+const insertClash = clashOf(syncOcc('u3', '2026-11-10', '10:30', '11:30', { organizerEmail: 'ext@y.com' }));
+assert(
+  insertClash.organizer === 'ext@y.com' && insertClash.subject === 'Standup' && insertClash.startsAt === '10:30',
+  'A clash names the organiser by email when Outlook gives no name', JSON.stringify(insertClash)
 );
 assert(
   !syncPlan([], [syncSes('s4', 'outlook', 'u4', '2026-11-04', '09:00:00', '10:00:00')]).deletes.includes('s4'),
