@@ -413,8 +413,10 @@ export function buildSessionInvitePayload(details: SessionInviteDetails): GraphE
  * `Calendars.ReadWrite` on any tenant mailbox.
  *
  * `existingEventId` is the single meeting a session owns: an edit patches it (Graph notifies the
- * attendees itself) and an empty attendee list cancels it. A meeting deleted by hand in Outlook is
- * recreated rather than silently lost.
+ * attendees itself) and a meeting deleted by hand in Outlook is recreated rather than silently
+ * lost. A session always keeps its meeting, even with no attendees and no room mailbox: the
+ * organiser is in the session, so the meeting belongs on their calendar. Cancelling is explicit —
+ * deleting the session withdraws it.
  */
 export async function syncSessionCalendarInvite(args: {
   admin: SupabaseClient;
@@ -424,16 +426,9 @@ export async function syncSessionCalendarInvite(args: {
   existingEventId?: string | null;
 }): Promise<{ ok: boolean; eventId?: string; icalUid?: string; created?: boolean; error?: string }> {
   const token = await getDelegatedToken(args.admin, args.organizerProfileId);
-  const keep = args.details.attendees.length > 0 || Boolean(args.details.roomMailbox);
   const payload = buildSessionInvitePayload(args.details);
 
   if (args.existingEventId) {
-    if (!keep) {
-      const cancelled = await graphDeleteEvent(args.organizerEmail, args.existingEventId, token || undefined);
-      return cancelled.ok
-        ? { ok: true }
-        : { ok: false, error: cancelled.message || cancelled.code || `http_${cancelled.status}` };
-    }
     const patched = await graphPatchEvent(args.organizerEmail, args.existingEventId, payload, token || undefined);
     if (patched.ok) {
       return { ok: true, eventId: args.existingEventId, icalUid: (patched.event as { iCalUId?: string } | undefined)?.iCalUId };
@@ -443,7 +438,6 @@ export async function syncSessionCalendarInvite(args: {
     }
   }
 
-  if (!keep) return { ok: true };
   const created = await graphCreateEvent(args.organizerEmail, payload, token || undefined);
   if (!created.ok) return { ok: false, error: created.message || created.code || `http_${created.status}` };
   const event = created.event as { id?: string; iCalUId?: string } | undefined;

@@ -45,6 +45,22 @@ In **Spaces → Manage**, **Sync to Outlook** walks every active time-range room
 The result toast lists how many rooms were created/updated and every room that failed, with the
 reason (usually a missing permission or Exchange role).
 
+## Sessions on people's calendars
+
+Every Orbit session owns one Outlook meeting, created on its organiser's calendar when the session is
+opened — even when the room has no mailbox yet. The room appears in the meeting's location, and is
+added as a resource attendee (so Outlook shows it busy) when it has one.
+
+- **Joining a session puts it on your calendar.** Taking a seat adds your work email to the meeting;
+  Outlook sends the invite and the event appears in that person's calendar. Releasing the seat takes
+  you off it again.
+- **Invited colleagues** are on the meeting too: holding a seat is participating, so the invitation
+  carries the meeting to their calendar. The *Include an Outlook meeting invite* box additionally
+  invites colleagues who could not take a seat (away that day, or a full room).
+- **Deleting a session** cancels its meeting, so it disappears from everyone's calendar. A session
+  whose last seat is released keeps its meeting (the organiser still has it) and the last person out
+  is offered to delete the session.
+
 ## Linking an existing room mailbox
 
 In **Spaces → Manage**, edit a time-range room and type its room mailbox (e.g. `athena@stellarblue.eu`)

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ATHENS_TIMEZONE } from '@/lib/integrations/types';
 import { cancelSessionCalendarInvite, graphGetEvent, syncSessionCalendarInvite } from '@/lib/integrations/outlook';
 import { absenceOnDate, sessionSharePath, type DayAbsence } from '@/lib/spaces';
+import { eventAttendeeEmails, sessionCalendarAttendees } from '@/lib/room-sync';
 
 /**
  * Server-side session context shared by the invite and edit routes.
@@ -96,14 +97,16 @@ export async function loadSessionContext(
 }
 
 /**
- * The one Outlook meeting a session owns, and the addresses currently on it. The newest code path
- * patches that same event, so a session never accumulates a meeting per invite batch.
+ * The one Outlook meeting a session owns, and who belongs on it: everyone invited on the meeting,
+ * plus every seat holder — holding a seat is participating, so the meeting is on their calendar too.
+ * The newest code path patches that same event, so a session never accumulates a meeting per invite
+ * batch.
  */
 export async function calendarStateOf(
   admin: SupabaseClient,
   sessionId: string
 ): Promise<{ eventId: string | null; attendees: string[] }> {
-  const [{ data }, { data: session }] = await Promise.all([
+  const [{ data: inviteRows }, { data: session }, { data: bookingRows }] = await Promise.all([
     admin
       .from('space_session_invites')
       .select('email, outlook_event_id')
@@ -112,13 +115,25 @@ export async function calendarStateOf(
       .not('outlook_event_id', 'is', null)
       .order('created_at'),
     admin.from('space_sessions').select('outlook_event_id').eq('id', sessionId).maybeSingle(),
+    admin
+      .from('space_bookings')
+      .select('profiles(work_email)')
+      .eq('session_id', sessionId),
   ]);
-  const rows = (data || []) as { email: string; outlook_event_id: string }[];
-  const rowsEventId = rows[0]?.outlook_event_id || null;
-  const attendees = Array.from(new Set(
-    rows.filter(row => row.outlook_event_id === rowsEventId).map(row => row.email)
-  ));
-  return { eventId: session?.outlook_event_id || rowsEventId, attendees };
+
+  type InviteRow = { email: string; outlook_event_id: string };
+  const rows = (inviteRows || []) as InviteRow[];
+  const rowsEventId = rows.find(row => row.outlook_event_id)?.outlook_event_id || null;
+  const invited = rows
+    .filter(row => row.outlook_event_id === rowsEventId)
+    .map(row => row.email);
+  const seats = ((bookingRows || []) as { profiles?: { work_email?: string | null } | null }[])
+    .map(row => row.profiles?.work_email || null);
+
+  return {
+    eventId: session?.outlook_event_id || rowsEventId,
+    attendees: sessionCalendarAttendees({ invited, seats }),
+  };
 }
 
 /**
@@ -158,9 +173,10 @@ export async function absenceOf(
 }
 
 /**
- * Creates, patches or cancels the session's meeting so it always mirrors Orbit. The meeting also
- * books the room's mailbox, so a session in a room with a mailbox owns a meeting even with no guests.
- * Outlook-born sessions already live in Outlook and are never pushed back.
+ * Creates or patches the session's meeting so it always mirrors Orbit. The meeting also books the
+ * room's mailbox, so a session in a room with a mailbox keeps it busy even with no guests; the
+ * organiser's calendar carries the meeting either way. Deleting the session cancels it. Outlook-born
+ * sessions already live in Outlook and are never pushed back.
  */
 export async function syncSessionCalendar(args: {
   admin: SupabaseClient;
@@ -169,6 +185,7 @@ export async function syncSessionCalendar(args: {
   eventId?: string | null;
 }): Promise<{ ok: boolean; eventId?: string; error?: string }> {
   if (args.context.source === 'outlook') return { ok: true };
+  const organizerEmail = (args.context.organizer?.email || '').trim().toLowerCase();
   const details = {
     organizerName: args.context.organizer?.name || 'An Orbit colleague',
     roomName: args.context.roomName,
@@ -180,7 +197,11 @@ export async function syncSessionCalendar(args: {
     title: args.context.title,
     description: args.context.description,
     link: sessionShareUrl(args.context.id),
-    attendees: Array.from(new Set(args.attendees)),
+    // The organiser owns the event; listing them as a guest would send them an invite to their own
+    // meeting.
+    attendees: Array.from(new Set(
+      args.attendees.map(address => address.trim().toLowerCase()).filter(address => address && address !== organizerEmail)
+    )),
   };
   if (!args.context.organizer?.email) {
     if (details.attendees.length === 0 && !details.roomMailbox) return { ok: true };
@@ -214,10 +235,7 @@ export async function syncSessionCalendar(args: {
     // The winner's guests come from Outlook itself: its invite rows may not be written yet.
     const current = await graphGetEvent(organizer.organizerEmail, winner);
     const onWinner = current.ok
-      ? ((current.event?.attendees ?? []) as { type?: string; emailAddress?: { address?: string } }[])
-        .filter(attendee => attendee.type !== 'resource')
-        .map(attendee => attendee.emailAddress?.address?.trim().toLowerCase() || '')
-        .filter(Boolean)
+      ? eventAttendeeEmails(current.event)
       : (await calendarStateOf(args.admin, args.context.id)).attendees;
     const missing = details.attendees.filter(address => !onWinner.includes(address.toLowerCase()));
     // No patch when the winner already has everyone: every PATCH mails the attendees.

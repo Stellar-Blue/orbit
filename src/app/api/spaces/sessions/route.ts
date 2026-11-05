@@ -144,7 +144,8 @@ export async function PATCH(request: NextRequest) {
 
 /**
  * Makes sure a session owns its Outlook meeting. The client calls it right after creating a session,
- * so a room with a mailbox is booked in Outlook even when nobody has been invited.
+ * so the organiser's calendar carries the meeting and a room with a mailbox is booked even when
+ * nobody has been invited.
  */
 export async function POST(request: NextRequest) {
   const caller = await requireApiSession(request);
@@ -164,7 +165,6 @@ export async function POST(request: NextRequest) {
       { status: 403 }
     );
   }
-  if (!context.roomMailbox) return NextResponse.json({ ok: true, skipped: 'no_mailbox' });
 
   const calendar = await calendarStateOf(admin, sessionId);
   const synced = await syncSessionCalendar({

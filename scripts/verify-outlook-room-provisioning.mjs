@@ -8,7 +8,8 @@
  */
 
 import {
-  describePlaceFailure, roomPlaceFields, roomPlacePatch, roomProvisionReport,
+  describePlaceFailure, eventAttendeeEmails, roomPlaceFields, roomPlacePatch, roomProvisionReport,
+  sessionCalendarAttendees,
 } from '@/lib/room-sync';
 import { outlookRoomUrl } from '@/lib/spaces';
 
@@ -85,6 +86,65 @@ equal(
   { building: 'HQ', floorLabel: 'Ground' },
   'a missing Outlook building/floor is filled in'
 );
+
+// ---------------------------------------------------------------------------
+// Who is on the session's Outlook meeting
+// ---------------------------------------------------------------------------
+
+equal(
+  sessionCalendarAttendees({
+    invited: ['ana@stellarblue.eu'],
+    seats: ['kostas@stellarblue.eu'],
+    organizerEmail: 'organiser@stellarblue.eu',
+  }),
+  ['ana@stellarblue.eu', 'kostas@stellarblue.eu'],
+  'invited people and seat holders are both on the meeting'
+);
+
+equal(
+  sessionCalendarAttendees({
+    invited: [],
+    seats: ['ana@stellarblue.eu', 'kostas@stellarblue.eu'],
+    organizerEmail: 'organiser@stellarblue.eu',
+  }),
+  ['ana@stellarblue.eu', 'kostas@stellarblue.eu'],
+  'a colleague who joined by taking a seat is on the meeting'
+);
+
+equal(
+  sessionCalendarAttendees({
+    invited: [],
+    seats: ['Organiser@StellarBlue.eu'],
+    organizerEmail: 'organiser@stellarblue.eu',
+  }),
+  [],
+  'the organiser is never a guest of their own meeting'
+);
+
+equal(
+  sessionCalendarAttendees({
+    invited: ['Ana@StellarBlue.eu'],
+    seats: ['ana@stellarblue.eu', null, ''],
+    organizerEmail: null,
+  }),
+  ['ana@stellarblue.eu'],
+  'addresses are lowercased and deduped; empty work emails are dropped'
+);
+
+equal(
+  eventAttendeeEmails({
+    attendees: [
+      { type: 'required', emailAddress: { address: 'Ana@StellarBlue.eu' } },
+      { type: 'resource', emailAddress: { address: 'athena@stellarblue.eu' } },
+      { type: 'required', emailAddress: { address: 'ana@stellarblue.eu' } },
+      { type: 'optional', emailAddress: {} },
+    ],
+  }),
+  ['ana@stellarblue.eu'],
+  'the meeting’s attendees are read without the room resource'
+);
+
+assert(eventAttendeeEmails(null).length === 0, 'a meeting with no attendees reads as an empty list');
 
 // ---------------------------------------------------------------------------
 // Reports

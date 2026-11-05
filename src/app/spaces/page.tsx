@@ -63,8 +63,9 @@ interface BookingDraft {
 export default function SpacesPage() {
   const {
     currentUser, profiles, spaceTypes, spaces, spaceSessions, spaceBookings, spaceSessionInvites,
-    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, ensureSessionMeeting, cancelSpaceBooking, deleteSpaceSession,
-    inviteToSpaceSession, removeSpaceSessionInvite, updateSpaceSession, isLoading,
+    officeFloors, spaceSeats, spaceDesks, bookSpaceSeat, ensureSessionMeeting, refreshSessionCalendar,
+    cancelSpaceBooking, deleteSpaceSession, inviteToSpaceSession, removeSpaceSessionInvite,
+    updateSpaceSession, isLoading,
   } = useAuth();
 
   const isAdmin = currentUser.role === 'admin';
@@ -480,9 +481,12 @@ export default function SpacesPage() {
         includeOutlook: draft.includeOutlook,
       })
       : null;
-    // A new session books the room in Outlook through its meeting. The invite above already created
-    // that meeting; asking for it again at the same time would create a second one.
-    if (result.createdSession && result.sessionId && !invited?.ok) void ensureSessionMeeting(result.sessionId);
+    // A session's meeting is what puts it on Outlook calendars: the invite above already created it,
+    // otherwise this makes sure it exists (a new session) or adds the person who just joined it.
+    if (timed && result.sessionId && !invited?.ok) {
+      if (result.createdSession) void ensureSessionMeeting(result.sessionId);
+      else void refreshSessionCalendar(result.sessionId);
+    }
     const inviteSummary = invited?.ok ? summarizeInviteDelivery(invited.invites || []) : null;
     const inviteChannels = inviteSummary
       ? [
@@ -546,7 +550,7 @@ export default function SpacesPage() {
       session
       && canDeleteThisSession(session)
       && lastSeatHoldsRoom(session, spaceBookings.filter(entry => entry.session_id === session.id))
-      && confirm('You were the last one in this session. Delete it and free the room in Outlook too?')
+      && confirm('You were the last one in this session. Delete it and cancel its Outlook meeting too?')
     ) {
       const deleted = await deleteSpaceSession(session.id);
       if (deleted) notifySuccess(`The session in ${label} has been deleted and the room freed.`, 'Session deleted');
@@ -554,7 +558,10 @@ export default function SpacesPage() {
     }
     if (!confirm(`Release this seat in ${label}?`)) return;
     const ok = await cancelSpaceBooking(bookingId);
-    if (ok) notifySuccess(`The seat in ${label} has been released.`, 'Seat released');
+    if (ok) {
+      if (booking?.session_id) void refreshSessionCalendar(booking.session_id);
+      notifySuccess(`The seat in ${label} has been released.`, 'Seat released');
+    }
   };
 
   /** The organiser an Outlook-born session row names next to "Managed in Outlook". */

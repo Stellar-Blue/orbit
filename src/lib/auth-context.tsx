@@ -246,10 +246,16 @@ interface AppState {
     session?: { id?: string | null; startsAt: string; endsAt: string; title?: string; description?: string } | null;
   }) => Promise<{ ok: boolean; error?: string; seatId?: string | null; sessionId?: string | null; createdSession?: boolean }>;
   /**
-   * Gives a newly opened session its Outlook meeting, which books the room's mailbox. Only for a
-   * session nobody is being invited to: the invite creates that same meeting itself.
+   * Gives a newly opened session its Outlook meeting, so it reaches the organiser's calendar (and
+   * books the room's mailbox when there is one). Only for a session nobody is being invited to: the
+   * invite creates that same meeting itself.
    */
   ensureSessionMeeting: (sessionId: string) => Promise<void>;
+  /**
+   * Puts the person who just joined a session on its Outlook meeting — or takes them off it when
+   * they release the seat. Nothing happens when Outlook already matches who holds a seat.
+   */
+  refreshSessionCalendar: (sessionId: string) => Promise<void>;
   cancelSpaceBooking: (id: string) => Promise<boolean>;
   /** Deletes a whole session; its bookings cascade with it, so the seats are released. */
   deleteSpaceSession: (id: string) => Promise<boolean>;
@@ -6144,6 +6150,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
+   * Reconciles a session's Outlook meeting with its seats. Joining puts the caller on the meeting,
+   * which is how the session reaches their calendar; leaving takes them off it. The seat itself is
+   * already saved, so a calendar failure is logged, not raised.
+   */
+  const refreshSessionCalendar = async (sessionId: string): Promise<void> => {
+    if (isDemoMode()) return;
+    try {
+      const response = await fetch('/api/spaces/session-calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string; calendar_error?: string } | null;
+      if (!response.ok || payload?.calendar_error) {
+        console.warn('refreshSessionCalendar:', payload?.error || payload?.calendar_error || response.statusText);
+      }
+    } catch (e) {
+      console.warn('refreshSessionCalendar exception:', e);
+    }
+    void refreshSpaces();
+  };
+
+  /**
    * Releases a seat. The last seat leaving closes the session (database trigger), unless the session
    * owns an Outlook meeting or came from Outlook: the room is still booked there, so the session
    * stays. The Spaces page offers to delete such a session when its last seat is released.
@@ -7520,6 +7549,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteSpace,
       bookSpaceSeat,
       ensureSessionMeeting,
+      refreshSessionCalendar,
       cancelSpaceBooking,
       deleteSpaceSession,
       inviteToSpaceSession,

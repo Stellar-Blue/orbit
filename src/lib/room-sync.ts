@@ -142,6 +142,41 @@ export function roomPlacePatch(
   return patch;
 }
 
+/**
+ * The people on one Graph event, lowercased and deduped, without the room resource: the room is an
+ * attendee of the meeting, not a participant of the session.
+ */
+export function eventAttendeeEmails(event: {
+  attendees?: { type?: string; emailAddress?: { address?: string } }[] | null;
+} | null | undefined): string[] {
+  return Array.from(new Set(
+    (event?.attendees || [])
+      .filter(attendee => attendee.type !== 'resource')
+      .map(attendee => attendee.emailAddress?.address?.trim().toLowerCase() || '')
+      .filter(Boolean)
+  ));
+}
+
+/**
+ * Who belongs on a session's Outlook meeting: the people put on it by an Outlook invite, plus every
+ * seat holder. Holding a seat is participating in the session, so the meeting belongs on that
+ * person's calendar. The organiser owns the event, so they are never listed as one of its attendees.
+ */
+export function sessionCalendarAttendees(args: {
+  /** Addresses already on the meeting through an Outlook invite. */
+  invited: string[];
+  /** Work addresses of everyone holding a seat in the session. */
+  seats: (string | null | undefined)[];
+  organizerEmail?: string | null;
+}): string[] {
+  const organizer = (args.organizerEmail || '').trim().toLowerCase();
+  return Array.from(new Set(
+    [...args.invited, ...args.seats]
+      .map(email => (email || '').trim().toLowerCase())
+      .filter(email => email && email !== organizer)
+  ));
+}
+
 const RESPONSES: Record<string, OccurrenceAttendee['response']> = {
   accepted: 'accepted',
   tentativelyAccepted: 'tentative',

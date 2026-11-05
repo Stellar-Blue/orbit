@@ -163,8 +163,8 @@ export function SessionInviteFields({
         <span className="min-w-0">
           <span className="block text-[11.5px] font-semibold text-[var(--ink)]">Include an Outlook meeting invite</span>
           <span className="ui-meta block">
-            Puts the meeting on everyone&apos;s Outlook calendar. External addresses always get one —
-            it is the only way to reach them.
+            Colleagues with a seat are on the meeting automatically. Tick to also invite people who
+            could not take a seat; external addresses always get one.
           </span>
         </span>
       </label>
