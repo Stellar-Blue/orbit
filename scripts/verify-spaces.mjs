@@ -761,6 +761,19 @@ assert(
   outlookMoved.deletes.includes('x2') && outlookMoved.creates.length === 1 && outlookMoved.creates[0].date === '2026-11-13',
   'An Outlook-born meeting moved to another day is deleted and re-created', JSON.stringify(outlookMoved)
 );
+const movedIntoClash = syncPlan(
+  [syncOcc('u1', '2026-11-13', '10:30', '11:30')],
+  [
+    syncSes('x5', 'outlook', 'u1', '2026-11-12', '09:00:00', '10:00:00'),
+    syncSes('x6', 'orbit', null, '2026-11-13', '10:00:00', '11:00:00'),
+  ]
+);
+assert(
+  movedIntoClash.deletes.includes('x5') && movedIntoClash.creates.length === 0 && movedIntoClash.clashes.length === 1
+    && movedIntoClash.clashes[0].date === '2026-11-13' && movedIntoClash.clashes[0].startsAt === '10:30'
+    && movedIntoClash.clashes[0].endsAt === '11:30',
+  'A moved Outlook meeting landing on an Orbit session is a clash, not a double booking', JSON.stringify(movedIntoClash)
+);
 const orbitMoved = syncPlan(
   [syncOcc('u-orbit', '2026-11-13', '09:00', '10:00')],
   [syncSes('x3', 'orbit', 'u-orbit', '2026-11-12', '09:00:00', '10:00:00')]

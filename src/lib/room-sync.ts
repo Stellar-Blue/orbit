@@ -175,7 +175,7 @@ export function planRoomSync(args: {
       if (entry.source === 'outlook') {
         // Bookings carry a date, so a moved occurrence is a new session.
         plan.deletes.push(entry.id);
-        plan.creates.push(occurrence);
+        unmatched.push(occurrence);
       } else {
         plan.issues.push(`"${entry.title || occurrence.subject || 'Meeting'}" was moved to ${occurrence.date} in Outlook; move the Orbit session by hand.`);
         finalWindow.set(entry.id, entry);
