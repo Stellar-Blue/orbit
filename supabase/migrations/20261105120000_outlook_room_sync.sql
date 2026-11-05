@@ -34,8 +34,10 @@ ALTER TABLE public.space_sessions DROP CONSTRAINT IF EXISTS space_sessions_sourc
 ALTER TABLE public.space_sessions
   ADD CONSTRAINT space_sessions_source_check CHECK (source IN ('orbit', 'outlook'));
 
-CREATE UNIQUE INDEX IF NOT EXISTS space_sessions_outlook_ical_uid_key
-  ON public.space_sessions (outlook_ical_uid) WHERE outlook_ical_uid IS NOT NULL;
+-- One session per occurrence per room: a meeting that books two Orbit rooms is imported into each.
+DROP INDEX IF EXISTS public.space_sessions_outlook_ical_uid_key;
+CREATE UNIQUE INDEX IF NOT EXISTS space_sessions_space_outlook_ical_uid_key
+  ON public.space_sessions (space_id, outlook_ical_uid) WHERE outlook_ical_uid IS NOT NULL;
 
 -- Sessions that already sent an Outlook invite own that meeting: keep the oldest sent event id.
 UPDATE public.space_sessions s
@@ -47,6 +49,18 @@ FROM (
   ORDER BY session_id, created_at ASC
 ) i
 WHERE s.id = i.session_id AND s.outlook_event_id IS NULL;
+
+-- Only the sync (service role) creates Outlook-born sessions or links a session to a meeting: anyone
+-- may still open an Orbit session, but never one that claims to come from Outlook.
+DROP POLICY IF EXISTS space_sessions_insert ON public.space_sessions;
+CREATE POLICY space_sessions_insert ON public.space_sessions FOR INSERT TO authenticated
+  WITH CHECK (
+    (created_by IS NULL OR created_by = public.current_profile_id())
+    AND source = 'orbit'
+    AND outlook_ical_uid IS NULL
+    AND outlook_series_id IS NULL
+    AND outlook_event_id IS NULL
+  );
 
 -- Outlook-born sessions are managed in Outlook: no edit or delete for anyone, admins included.
 DROP POLICY IF EXISTS space_sessions_update_own ON public.space_sessions;
