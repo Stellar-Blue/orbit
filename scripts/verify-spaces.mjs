@@ -35,6 +35,13 @@ import {
   validateSessionWindow,
 } from '@/lib/spaces';
 import { buildSessionInvitePayload } from '@/lib/integrations/outlook';
+import {
+  describeGraphFailure,
+  notifiedSubscriptionIds,
+  occurrenceFromGraph,
+  planAttendees,
+  planRoomSync,
+} from '@/lib/room-sync';
 
 let passed = 0;
 let failed = 0;
@@ -653,6 +660,159 @@ assert(
     && !buildSessionInvitePayload(inviteDetails).body.content.includes('Open in Orbit'),
   'The Outlook invite carries the session link only when one is configured',
   linked.body.content.split('\n').pop()
+);
+
+// ---------------------------------------------------------------------------
+// Outlook room sync planner (pure)
+// ---------------------------------------------------------------------------
+const SYNC_ROOM = 'athena@stellarblue.eu';
+const syncGev = (extra = {}) => ({
+  id: 'e1', iCalUId: 'u1', type: 'singleInstance', subject: 'Ana Papadopoulou',
+  start: { dateTime: '2026-11-10T09:30:00.0000000' }, end: { dateTime: '2026-11-10T10:00:00.0000000' },
+  ...extra,
+});
+assert(
+  occurrenceFromGraph(syncGev({ isAllDay: true }), null, SYNC_ROOM) === null
+    && occurrenceFromGraph(syncGev({ isCancelled: true }), null, SYNC_ROOM) === null
+    && occurrenceFromGraph(syncGev({ type: 'seriesMaster' }), null, SYNC_ROOM) === null
+    && occurrenceFromGraph(syncGev({ start: { dateTime: '2026-11-10T23:00:00' }, end: { dateTime: '2026-11-11T00:30:00' } }), null, SYNC_ROOM) === null,
+  'All-day, cancelled, series-master and overnight Outlook events are skipped'
+);
+const occA = occurrenceFromGraph(syncGev(), null, SYNC_ROOM);
+assert(
+  occA?.date === '2026-11-10' && occA.startsAt === '09:30' && occA.endsAt === '10:00',
+  'An Outlook event keeps its Athens date and HH:MM times', JSON.stringify(occA)
+);
+const occB = occurrenceFromGraph(
+  syncGev({ seriesMasterId: 's1' }),
+  syncGev({
+    subject: 'Weekly sync', body: { content: '  Agenda  ' },
+    organizer: { emailAddress: { name: 'Maria', address: 'Maria@x.gr' } },
+    attendees: [
+      { type: 'resource', status: { response: 'accepted' }, emailAddress: { address: SYNC_ROOM } },
+      { type: 'required', status: { response: 'accepted' }, emailAddress: { address: 'ATHENA@stellarblue.eu' } },
+      { type: 'required', status: { response: 'none' }, emailAddress: { name: 'Kostas', address: 'KOSTAS@x.gr' } },
+      { type: 'optional', status: { response: 'tentativelyAccepted' }, emailAddress: { address: 'ana@x.gr' } },
+      { type: 'optional', status: { response: 'declined' }, emailAddress: { address: 'ana@x.gr' } },
+    ],
+  }),
+  SYNC_ROOM
+);
+assert(occB?.subject === 'Weekly sync', 'The organiser copy subject wins over the room copy', occB?.subject);
+assert(
+  occB?.attendees.map(a => a.email).join() === 'kostas@x.gr,ana@x.gr'
+    && occB.attendees[1].response === 'tentative' && occB.body === 'Agenda' && occB.seriesId === 's1',
+  'Attendees drop the resource and the room, lowercase, dedupe and map responses', JSON.stringify(occB?.attendees)
+);
+
+const syncOcc = (uid, date, startsAt, endsAt, extra = {}) => ({
+  icalUid: uid, seriesId: null, date, startsAt, endsAt, subject: 'Standup', body: null,
+  organizerEmail: null, organizerName: null, attendees: [], ...extra,
+});
+const syncSes = (id, source, uid, date, startsAt, endsAt, extra = {}) => ({
+  id, source, outlook_ical_uid: uid, outlook_series_id: null, session_date: date,
+  starts_at: startsAt, ends_at: endsAt, title: 'Standup', description: null, ...extra,
+});
+const SYNC_TODAY = '2026-11-05';
+const syncPlan = (occurrences, sessions) => planRoomSync({ occurrences, sessions, today: SYNC_TODAY });
+
+assert(syncPlan([syncOcc('u1', '2026-11-10', '09:00', '10:00')], []).creates.length === 1, 'A new Outlook meeting in an empty room is created');
+const syncMoved = syncPlan([syncOcc('u1', '2026-11-10', '09:30', '10:30')], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(
+  syncMoved.matches.length === 1 && syncMoved.matches[0].changed && !syncMoved.creates.length && !syncMoved.deletes.length,
+  'A moved Outlook meeting updates its session in place', JSON.stringify(moved)
+);
+const syncSame = syncPlan([syncOcc('u1', '2026-11-10', '09:00', '10:00')], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(syncSame.matches.length === 1 && !syncSame.matches[0].changed, 'An unchanged Outlook meeting is a no-op match');
+assert(
+  syncPlan([], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]).deletes.includes('s1'),
+  'An Outlook-born session whose meeting is gone is deleted'
+);
+const orbitSame = syncPlan([syncOcc('u-orbit', '2026-11-10', '09:00', '10:00')], [syncSes('s2', 'orbit', 'u-orbit', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(orbitSame.matches.length === 1 && orbitSame.creates.length === 0, 'An Orbit-born session is matched, never duplicated');
+const orbitGone = syncPlan([], [syncSes('s2', 'orbit', 'u-orbit', '2026-11-10', '09:00:00', '10:00:00')]);
+assert(orbitGone.missingOrbit.includes('s2') && !orbitGone.deletes.includes('s2'), 'An Orbit-born session whose meeting is gone is reported, not deleted');
+const syncClash = syncPlan(
+  [syncOcc('u3', '2026-11-10', '10:30', '11:30')],
+  [syncSes('s3', 'orbit', null, '2026-11-10', '10:00:00', '11:00:00')]
+);
+assert(
+  syncClash.clashes.length === 1 && syncClash.clashes[0].date === '2026-11-10' && syncClash.clashes[0].startsAt === '10:30'
+    && syncClash.clashes[0].endsAt === '11:30' && syncClash.creates.length === 0,
+  'An Outlook meeting overlapping an Orbit session is a clash, not a create', JSON.stringify(clash)
+);
+assert(
+  !syncPlan([], [syncSes('s4', 'outlook', 'u4', '2026-11-04', '09:00:00', '10:00:00')]).deletes.includes('s4'),
+  'Sessions dated before today are never touched'
+);
+const relink = syncPlan(
+  [syncOcc('u9', '2026-11-12', '09:00', '10:00', { seriesId: 's1' })],
+  [syncSes('x1', 'outlook', 'u1', '2026-11-12', '09:00:00', '10:00:00', { outlook_series_id: 's1' })]
+);
+assert(
+  relink.matches.length === 1 && relink.matches[0].relink === true && !relink.deletes.length && !relink.creates.length,
+  'A re-issued occurrence of the same series relinks the session', JSON.stringify(relink)
+);
+const outlookMoved = syncPlan(
+  [syncOcc('u1', '2026-11-13', '09:00', '10:00')],
+  [syncSes('x2', 'outlook', 'u1', '2026-11-12', '09:00:00', '10:00:00')]
+);
+assert(
+  outlookMoved.deletes.includes('x2') && outlookMoved.creates.length === 1 && outlookMoved.creates[0].date === '2026-11-13',
+  'An Outlook-born meeting moved to another day is deleted and re-created', JSON.stringify(outlookMoved)
+);
+const orbitMoved = syncPlan(
+  [syncOcc('u-orbit', '2026-11-13', '09:00', '10:00')],
+  [syncSes('x3', 'orbit', 'u-orbit', '2026-11-12', '09:00:00', '10:00:00')]
+);
+assert(
+  orbitMoved.issues.length === 1 && orbitMoved.matches.length === 0,
+  'An Orbit-born meeting moved to another day is reported as an issue', JSON.stringify(orbitMoved)
+);
+
+const syncDirectory = new Map([
+  ['kostas@x.gr', { id: 'p-kostas', name: 'Kostas' }],
+  ['maria@x.gr', { id: 'p-maria', name: 'Maria' }],
+]);
+const syncAtt = (email, response) => ({ email, name: null, response });
+const attPlan = planAttendees({
+  occurrence: syncOcc('u1', '2026-11-10', '09:00', '10:00', {
+    organizerEmail: 'maria@x.gr', organizerName: 'Maria',
+    attendees: [syncAtt('ana@x.gr', 'declined'), syncAtt('kostas@x.gr', 'accepted'), syncAtt('guest@ex.com', 'accepted')],
+  }),
+  directory: syncDirectory,
+  existingInvites: [{ email: 'ana@x.gr', profile_id: 'p-ana' }],
+});
+assert(
+  attPlan.remove.length === 1 && attPlan.remove[0].email === 'ana@x.gr'
+    && attPlan.add.find(a => a.email === 'kostas@x.gr')?.profileId === 'p-kostas'
+    && attPlan.add.find(a => a.email === 'guest@ex.com')?.profileId === null
+    && attPlan.add.some(a => a.email === 'maria@x.gr'),
+  'Attendee plan adds new people, drops those who declined, and leaves guests unseated', JSON.stringify(attPlan)
+);
+const extOrg = planAttendees({
+  occurrence: syncOcc('u1', '2026-11-10', '09:00', '10:00', { organizerEmail: 'boss@ext.com', organizerName: 'Boss' }),
+  directory: syncDirectory, existingInvites: [],
+});
+assert(
+  extOrg.add.length === 1 && extOrg.add[0].email === 'boss@ext.com' && extOrg.add[0].profileId === null,
+  'An organiser outside Orbit is listed as a guest with no profile', JSON.stringify(extOrg)
+);
+
+const syncHook = { value: [
+  { subscriptionId: 'a', clientState: 's' }, { subscriptionId: 'a', clientState: 's' }, { subscriptionId: 'b', clientState: 'x' },
+] };
+assert(
+  JSON.stringify(notifiedSubscriptionIds(syncHook, 's')) === '["a"]'
+    && notifiedSubscriptionIds(null, 's').length === 0 && notifiedSubscriptionIds(syncHook, '').length === 0,
+  'Webhook notifications are filtered by the shared secret and deduplicated'
+);
+assert(
+  describeGraphFailure({ status: 403 }).startsWith('Orbit cannot read this room mailbox (access denied).')
+    && describeGraphFailure({ status: 404, code: 'ErrorInvalidUser' }) === 'No mailbox found at this address — check the room mailbox email.'
+    && describeGraphFailure({ status: 0, code: 'no_token' }) === 'Microsoft Graph is not configured (no application token).'
+    && describeGraphFailure({ status: 500, code: 'X', message: 'boom' }) === 'Outlook returned 500 (X): boom',
+  'Graph failures turn into readable room errors'
 );
 
 console.log('\n================================================================');
