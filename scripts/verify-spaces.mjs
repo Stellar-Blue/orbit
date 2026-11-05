@@ -720,7 +720,7 @@ assert(syncPlan([syncOcc('u1', '2026-11-10', '09:00', '10:00')], []).creates.len
 const syncMoved = syncPlan([syncOcc('u1', '2026-11-10', '09:30', '10:30')], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]);
 assert(
   syncMoved.matches.length === 1 && syncMoved.matches[0].changed && !syncMoved.creates.length && !syncMoved.deletes.length,
-  'A moved Outlook meeting updates its session in place', JSON.stringify(moved)
+  'A moved Outlook meeting updates its session in place', JSON.stringify(syncMoved)
 );
 const syncSame = syncPlan([syncOcc('u1', '2026-11-10', '09:00', '10:00')], [syncSes('s1', 'outlook', 'u1', '2026-11-10', '09:00:00', '10:00:00')]);
 assert(syncSame.matches.length === 1 && !syncSame.matches[0].changed, 'An unchanged Outlook meeting is a no-op match');
@@ -739,7 +739,7 @@ const syncClash = syncPlan(
 assert(
   syncClash.clashes.length === 1 && syncClash.clashes[0].date === '2026-11-10' && syncClash.clashes[0].startsAt === '10:30'
     && syncClash.clashes[0].endsAt === '11:30' && syncClash.creates.length === 0,
-  'An Outlook meeting overlapping an Orbit session is a clash, not a create', JSON.stringify(clash)
+  'An Outlook meeting overlapping an Orbit session is a clash, not a create', JSON.stringify(syncClash)
 );
 assert(
   !syncPlan([], [syncSes('s4', 'outlook', 'u4', '2026-11-04', '09:00:00', '10:00:00')]).deletes.includes('s4'),
