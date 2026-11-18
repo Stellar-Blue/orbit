@@ -131,6 +131,30 @@ export interface EmployeeContract {
   created_at?: string;
 }
 
+export type EmployeeDocumentType = 'degree' | 'certification' | 'language' | 'other';
+export type EmployeeDocumentStatus = 'pending' | 'verified' | 'rejected';
+
+/** A qualification document an employee uploaded: degree, certification or language certificate. */
+export interface EmployeeDocument {
+  id: string;
+  profile_id: string;
+  doc_type: EmployeeDocumentType;
+  title: string;
+  issuer: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  file_name: string;
+  /** Object path inside the private `employee-documents` bucket: `<auth uid>/<uuid>_<name>`. */
+  storage_path: string;
+  file_size: number | null;
+  mime_type: string | null;
+  status: EmployeeDocumentStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+}
+
 export interface PaymentDocumentType {
   id: string;
   code: string;

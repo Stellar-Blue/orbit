@@ -7,8 +7,9 @@ import { roleLabel } from '@/lib/profile-role';
 import { Card, Button, Badge } from '@/components/ui/primitives';
 import { BlurredReveal } from '@/components/ui/blurred-reveal';
 import { formatDate, formatDateTime } from '@/lib/date';
-import { Camera, Check, Edit3, Loader2, MessageSquare, Palette, RefreshCw, Trash2, UserRound, Calendar, Mail, Phone, Briefcase, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
+import { Camera, Check, Edit3, Loader2, MessageSquare, Palette, RefreshCw, Trash2, UserRound, Calendar, Mail, Phone, Briefcase, CalendarDays, AlertTriangle, FileText, GraduationCap } from 'lucide-react';
 import { AvatarMaker } from '@/components/profile/avatar-maker';
+import { EmployeeDocuments } from '@/components/people/employee-documents';
 import { avatarDataUrl, isAvatarDataUrl, type AvatarConfig } from '@/lib/avatar';
 import { notifySuccess } from '@/lib/validation-modal';
 
@@ -281,6 +282,17 @@ function MyProfileInner() {
                 </div>
               </div>
             )}
+          </Card>
+
+          {/* Qualifications: degrees, certifications and language certificates */}
+          <Card className="p-6">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 mb-1">
+              <GraduationCap className="w-4 h-4 text-emerald-600" /> Qualifications &amp; Certifications
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Upload your degrees, professional certifications and language certificates. Files are private to you and the admins, and each upload is reviewed before it counts as verified.
+            </p>
+            <EmployeeDocuments profileId={currentUser.id} canUpload canReview={false} />
           </Card>
 
           {/* Slack connection. Always rendered: hiding it on a stale/blocked integration

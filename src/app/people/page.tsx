@@ -11,6 +11,7 @@ import { Button, Badge, Modal } from '@/components/ui/primitives';
 import { EmployeeRoleAssigner } from '@/components/people/employee-role-assigner';
 import { EmployeeLeaveEntitlement } from '@/components/people/employee-leave-entitlement';
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
+import { EmployeeDocuments } from '@/components/people/employee-documents';
 import {
   Users, Search, Download, Plus, Edit2, Check, Trash2, MessageSquare
 } from 'lucide-react';
@@ -29,7 +30,7 @@ export default function PeopleDirectoryPage() {
   const urlId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'edit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'documents' | 'edit'>('overview');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   
   // Sync initial selection from URL ID
@@ -434,6 +435,14 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
               </button>
               {isAdmin && (
                 <button 
+                  onClick={() => setActiveTab('documents')} 
+                  className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'documents' ? 'border-b-2 border-[var(--accent)] text-[var(--accent)]' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Documents
+                </button>
+              )}
+              {isAdmin && (
+                <button 
                   onClick={() => {
                     setActiveTab('edit');
                     setEditData(JSON.parse(JSON.stringify(selectedProfile)));
@@ -665,6 +674,11 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
                   )}
                 </div>
               </div>
+            )}
+
+            {/* TAB: DOCUMENTS (ADMIN ONLY) */}
+            {activeTab === 'documents' && isAdmin && (
+              <EmployeeDocuments profileId={selectedProfile.id} canUpload={false} canReview />
             )}
 
             {/* TAB 5: EDIT PROFILE (ADMIN ONLY) */}
