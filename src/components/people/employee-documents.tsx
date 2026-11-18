@@ -2,29 +2,23 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
-import type { EmployeeDocument, EmployeeDocumentStatus, EmployeeDocumentType } from '@/lib/types';
-import { Badge, Button, Modal } from '@/components/ui/primitives';
+import type { EmployeeDocument, EmployeeDocumentType } from '@/lib/types';
+import {
+  EMPLOYEE_DOCUMENTS_BUCKET,
+  EMPLOYEE_DOCUMENT_STATUS,
+  EMPLOYEE_DOCUMENT_TYPES,
+  employeeDocumentTypeLabel,
+  setDocumentReviewStatus,
+} from '@/lib/employee-documents';
+import { EmployeeDocumentPreview } from '@/components/people/employee-document-preview';
+import { Badge, Button } from '@/components/ui/primitives';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/date';
-import { Check, Download, Eye, ExternalLink, FileText, Loader2, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { Check, Eye, FileText, Loader2, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
 
-const BUCKET = 'employee-documents';
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-
-const DOC_TYPES: Array<{ value: EmployeeDocumentType; label: string }> = [
-  { value: 'degree', label: 'Degree' },
-  { value: 'certification', label: 'Certification' },
-  { value: 'language', label: 'Language certificate' },
-  { value: 'other', label: 'Other' },
-];
-
-const STATUS_BADGES: Record<EmployeeDocumentStatus, { variant: 'success' | 'warning' | 'error'; label: string }> = {
-  pending: { variant: 'warning', label: 'Pending review' },
-  verified: { variant: 'success', label: 'Verified' },
-  rejected: { variant: 'error', label: 'Rejected' },
-};
 
 const EMPTY_FORM = {
   doc_type: 'degree' as EmployeeDocumentType,
@@ -33,12 +27,6 @@ const EMPTY_FORM = {
   issued_on: '',
   expires_on: '',
 };
-
-/** Chrome, Safari and Edge render PDFs natively; only Word files need a download fallback. */
-const isPdfDocument = (doc: EmployeeDocument) =>
-  doc.mime_type === 'application/pdf' || /\.pdf$/i.test(doc.file_name);
-
-const isImageDocument = (doc: EmployeeDocument) => (doc.mime_type || '').startsWith('image/');
 
 interface EmployeeDocumentsProps {
   profileId: string;
@@ -64,8 +52,6 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<EmployeeDocument | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data, error } = await getSupabaseBrowserClient()
@@ -114,7 +100,7 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
 
     const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const storagePath = `${authUserId}/${crypto.randomUUID()}_${safeName}`;
-    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false });
+    const { error: uploadError } = await supabase.storage.from(EMPLOYEE_DOCUMENTS_BUCKET).upload(storagePath, file, { upsert: false });
     if (uploadError) {
       setUploading(false);
       notifyValidation({ type: 'error', title: 'Upload failed', message: uploadError.message });
@@ -136,7 +122,7 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
     });
     if (insertError) {
       // The file is already in the bucket; drop it so a failed save leaves nothing behind.
-      await supabase.storage.from(BUCKET).remove([storagePath]);
+      await supabase.storage.from(EMPLOYEE_DOCUMENTS_BUCKET).remove([storagePath]);
       setUploading(false);
       notifyValidation({ type: 'error', title: 'Could not save the document', message: insertError.message });
       return;
@@ -150,46 +136,11 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
     notifySuccess(`${file.name} uploaded and waiting for review.`);
   };
 
-  const previewDocument = async (doc: EmployeeDocument) => {
-    setPreviewDoc(doc);
-    setPreviewUrl(null);
-    setPreviewError(null);
-    const { data, error } = await getSupabaseBrowserClient()
-      .storage.from(BUCKET)
-      .createSignedUrl(doc.storage_path, SIGNED_URL_TTL_SECONDS);
-    if (error || !data?.signedUrl) {
-      setPreviewError(error?.message || 'The file is no longer in storage.');
-      return;
-    }
-    setPreviewUrl(data.signedUrl);
-  };
-
-  const closePreview = () => {
-    setPreviewDoc(null);
-    setPreviewUrl(null);
-    setPreviewError(null);
-  };
-
-  const downloadDocument = async (doc: EmployeeDocument) => {
-    const { data, error } = await getSupabaseBrowserClient()
-      .storage.from(BUCKET)
-      .createSignedUrl(doc.storage_path, SIGNED_URL_TTL_SECONDS, { download: doc.file_name });
-    if (error || !data?.signedUrl) {
-      notifyValidation({ type: 'error', title: 'Could not download the document', message: error?.message || 'The file is no longer in storage.' });
-      return;
-    }
-    const link = document.createElement('a');
-    link.href = data.signedUrl;
-    link.download = doc.file_name;
-    link.rel = 'noopener';
-    link.click();
-  };
-
   const removeDocument = async (doc: EmployeeDocument) => {
     if (!confirm(`Delete "${doc.title}"? The file is removed from storage as well.`)) return;
     setBusyId(doc.id);
     const supabase = getSupabaseBrowserClient();
-    const { error: storageError } = await supabase.storage.from(BUCKET).remove([doc.storage_path]);
+    const { error: storageError } = await supabase.storage.from(EMPLOYEE_DOCUMENTS_BUCKET).remove([doc.storage_path]);
     if (storageError) {
       setBusyId(null);
       notifyValidation({ type: 'error', title: 'Could not delete the file', message: storageError.message });
@@ -213,18 +164,10 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
       reviewNote = reviewNote.trim() || null;
     }
     setBusyId(doc.id);
-    const { error } = await getSupabaseBrowserClient()
-      .from('employee_documents')
-      .update({
-        status,
-        reviewed_by: currentUser.id,
-        reviewed_at: new Date().toISOString(),
-        review_note: reviewNote,
-      })
-      .eq('id', doc.id);
+    const reviewError = await setDocumentReviewStatus(doc.id, status, currentUser.id, reviewNote);
     setBusyId(null);
-    if (error) {
-      notifyValidation({ type: 'error', title: 'Could not save the review', message: error.message });
+    if (reviewError) {
+      notifyValidation({ type: 'error', title: 'Could not save the review', message: reviewError });
       return;
     }
     notifySuccess(status === 'verified' ? 'Document verified.' : 'Document rejected.');
@@ -249,7 +192,7 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
       ) : (
         <ul className="space-y-2">
           {documents.map(doc => {
-            const badge = STATUS_BADGES[doc.status];
+            const badge = EMPLOYEE_DOCUMENT_STATUS[doc.status];
             const reviewer = doc.reviewed_by ? profiles.find(p => p.id === doc.reviewed_by) : null;
             const busy = busyId === doc.id;
             return (
@@ -262,7 +205,7 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
                       <Badge variant={badge.variant} className="text-[9px] px-1.5 py-0">{badge.label.toUpperCase()}</Badge>
                     </div>
                     <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="font-semibold text-slate-600">{DOC_TYPES.find(t => t.value === doc.doc_type)?.label || 'Document'}</span>
+                      <span className="font-semibold text-slate-600">{employeeDocumentTypeLabel(doc.doc_type)}</span>
                       {doc.issuer && <><span>·</span><span>{doc.issuer}</span></>}
                       {doc.issued_on && <><span>·</span><span>Issued {formatDate(doc.issued_on)}</span></>}
                       {doc.expires_on && <><span>·</span><span>Expires {formatDate(doc.expires_on)}</span></>}
@@ -281,7 +224,7 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => previewDocument(doc)} className="cursor-pointer">
+                    <Button size="sm" variant="outline" onClick={() => setPreviewDoc(doc)} className="cursor-pointer">
                       <Eye className="w-3 h-3 mr-1" /> Preview
                     </Button>
                     {canReview && doc.status !== 'verified' && (
@@ -332,7 +275,7 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
                 onChange={e => setForm(prev => ({ ...prev, doc_type: e.target.value as EmployeeDocumentType }))}
                 className={fieldClass}
               >
-                {DOC_TYPES.map(type => (
+                {EMPLOYEE_DOCUMENT_TYPES.map(type => (
                   <option key={type.value} value={type.value}>{type.label}</option>
                 ))}
               </select>
@@ -382,52 +325,11 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
       )}
 
       {previewDoc && (
-        <Modal
-          isOpen
-          onClose={closePreview}
-          title={previewDoc.title}
-          eyebrow={DOC_TYPES.find(type => type.value === previewDoc.doc_type)?.label || 'Qualification document'}
-          size="6xl"
-        >
-          {previewError ? (
-            <p className="text-xs text-rose-700">{previewError}</p>
-          ) : !previewUrl ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
-              <Loader2 className="w-4 h-4 animate-spin" /> Preparing preview…
-            </div>
-          ) : isPdfDocument(previewDoc) ? (
-            <iframe
-              src={previewUrl}
-              title={previewDoc.title}
-              className="w-full h-[72vh] rounded-lg border border-slate-200 bg-white"
-            />
-          ) : isImageDocument(previewDoc) ? (
-            // eslint-disable-next-line @next/next/no-img-element -- short-lived signed storage URL
-            <img src={previewUrl} alt={previewDoc.title} className="max-h-[72vh] mx-auto rounded-lg border border-slate-200" />
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-xs text-slate-500">
-              Word documents cannot be previewed in the browser. Download the file to read it.
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
-            <span className="text-[11px] font-mono text-slate-500 truncate">{previewDoc.file_name}</span>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener')}
-                disabled={!previewUrl}
-                className="cursor-pointer"
-              >
-                <ExternalLink className="w-3 h-3 mr-1" /> Open in new tab
-              </Button>
-              <Button size="sm" variant="primary" onClick={() => downloadDocument(previewDoc)} className="cursor-pointer">
-                <Download className="w-3 h-3 mr-1" /> Download
-              </Button>
-            </div>
-          </div>
-        </Modal>
+        <EmployeeDocumentPreview
+          key={previewDoc.id}
+          document={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );
