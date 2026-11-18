@@ -15,6 +15,7 @@ import {
   JobRole, SeniorityLevel, ProfileRoleHistory, RateCard, RateCardEntry, Project, WorkItem, ProjectAssignment, ProjectRoleForecast, TimeEntry, TimesheetPeriod,
   Role, CounterpartyRole, CompanyProfile, LeavePolicy,
   CoverageGroup, CoverageGroupMember, CoverageLoadRow, LeaveExceptionRequest,
+  CompanyCalendarSpan,
   Space, SpaceType, SpaceSession, SpaceBooking, SpaceBookingMode, OfficeFloor, SpaceSeat, SpaceDesk, SpaceSessionInvite, SessionInviteOutcome
 } from './types';
 import { coverageGroupsForProfile, toCoverageLoadRows, expandDateRange, type CoverageKind } from './coverage-rules';
@@ -155,6 +156,10 @@ interface AppState {
   leaveRequests: LeaveRequest[];
   publicHolidays: PublicHoliday[];
   remoteDays: RemoteDay[];
+  /** Company-wide leave and remote spans for the calendar grid. */
+  companyCalendar: CompanyCalendarSpan[];
+  /** Reload the calendar spans for a date window; the grid calls it for each month it shows. */
+  ensureCompanyCalendar: (from: string, to: string) => Promise<void>;
   remotePatterns: RemotePattern[];
   remotePolicies: RemotePolicy[];
   remoteAmendmentRequests: RemoteAmendmentRequest[];
@@ -650,6 +655,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [remoteDays, setRemoteDays] = useState<RemoteDay[]>([]);
+  const [companyCalendar, setCompanyCalendar] = useState<CompanyCalendarSpan[]>([]);
   const [timesheets, setTimesheets] = useState<ContractTimesheet[]>([]);
   const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
   const [seniorityLevels, setSeniorityLevels] = useState<SeniorityLevel[]>([]);
@@ -910,10 +916,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setEntitlements(MOCK_ENTITLEMENTS);
     setMandatoryLeaves(MOCK_MANDATORY_LEAVES);
     setPublicHolidays(MOCK_PUBLIC_HOLIDAYS);
-    setRemoteDays([
+    const demoRemoteDays: RemoteDay[] = [
       { id: 'demo-rd-1', profile_id: 'prof-dimitris', date: dayFromToday(0), mode: 'remote_gr', note: 'Working from home', ergani_status: 'submitted' },
       { id: 'demo-rd-2', profile_id: 'prof-yannis', date: dayFromToday(0), mode: 'remote_abroad', location: 'London, UK', note: 'Energy summit', ergani_status: 'pending' },
       { id: 'demo-rd-3', profile_id: 'prof-alexandra', date: dayFromToday(1), mode: 'remote_gr', ergani_status: 'not_required' },
+    ];
+    setRemoteDays(demoRemoteDays);
+    // The demo has no RLS, so the same seed feeds the company-wide calendar projection.
+    setCompanyCalendar([
+      ...demoRequests
+        .filter(r => r.status === 'approved' || r.status === 'in_progress' || r.status === 'taken')
+        .map(r => ({
+          kind: 'leave' as const,
+          profile_id: r.profile_id,
+          leave_request_id: r.id,
+          start_date: r.start_date,
+          end_date: r.end_date,
+          mode: null,
+          location: null,
+        })),
+      ...demoRemoteDays
+        .filter(d => d.mode !== 'office')
+        .map(d => ({
+          kind: 'remote' as const,
+          profile_id: d.profile_id,
+          leave_request_id: null,
+          start_date: d.date,
+          end_date: d.date,
+          mode: d.mode,
+          location: d.location ?? null,
+        })),
     ]);
     setRemotePatterns(MOCK_REMOTE_PATTERNS);
 
@@ -1103,6 +1135,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   async function loadRemoteDaysSlice() {
     setRemoteDays((await fetchRows('remote_days', 'own')) as RemoteDay[]);
   }
+
+  /**
+   * Company-wide away spans for one calendar window. RLS hides colleagues' leave and remote rows
+   * from employees, so the grid reads the company_calendar projection instead of those tables.
+   */
+  const ensureCompanyCalendar = useCallback(async (from: string, to: string): Promise<void> => {
+    if (isDemoMode()) return;
+    const { data, error } = await getSupabaseBrowserClient()
+      .rpc('company_calendar', { p_from: from, p_to: to });
+    if (error) {
+      console.error('company_calendar failed:', error);
+      return;
+    }
+    setCompanyCalendar((data || []) as CompanyCalendarSpan[]);
+  }, []);
 
   async function loadRemoteSlice() {
     setRemotePatterns((await fetchRows('remote_patterns', 'own')) as RemotePattern[]);
@@ -7355,6 +7402,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       leaveRequests,
       publicHolidays,
       remoteDays,
+      companyCalendar,
+      ensureCompanyCalendar,
       timesheets,
       jobRoles,
       seniorityLevels,

@@ -281,6 +281,20 @@ export interface RemotePattern {
   valid_to?: string;
 }
 
+/** One away-span on the company calendar, as returned by the `company_calendar` RPC. */
+export interface CompanyCalendarSpan {
+  kind: 'leave' | 'remote';
+  profile_id: string;
+  /** Set for leave spans; the request row itself stays readable to admins and its owner only. */
+  leave_request_id: string | null;
+  start_date: string;
+  end_date: string;
+  /** Remote mode for remote spans, null for leave. */
+  mode: RemoteMode | null;
+  /** Declared city for `remote_abroad`, null otherwise. */
+  location: string | null;
+}
+
 export interface RemotePolicy {
   id: string;
   scope_type: 'company' | 'team' | 'employee';

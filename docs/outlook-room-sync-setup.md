@@ -70,10 +70,22 @@ reason (usually a missing permission or Exchange role).
 ### Alternative: create the room mailbox by hand
 
 If the Exchange application roles cannot be assigned right away, create the resource mailbox in the
-**Microsoft 365 admin center → Resources → Rooms & equipment → Add room** (name, address such as
-`conference-room@stellarblue.eu`, capacity, location). Then edit the Orbit room and put that address
-in **Room mailbox**. Orbit links and syncs it with the permissions it already has — no Places call is
-made.
+**Microsoft 365 admin center → Resources → Rooms & equipment → Add resource → Room** (name, address
+such as `conference-room@stellarblue.eu`, capacity, location). Then edit the Orbit room and put that
+address in **Room mailbox**. Orbit links and syncs it with the permissions it already has — no Places
+call is made.
+
+To verify the automatic path took effect, run in Exchange Online PowerShell:
+
+```powershell
+Get-ServicePrincipal -Identity <appId>
+Get-ManagementRoleAssignment -Role TenantPlacesManagement | Where-Object { $_.RoleAssignee -like '*Orbit*' }
+Get-ManagementRoleAssignment -Role MailRecipient | Where-Object { $_.RoleAssignee -like '*Orbit*' }
+Test-ServicePrincipalAuthorization -Identity <appId>
+```
+
+`New-ManagementRoleAssignment` must target the **enterprise application** (its object ID), not the app
+registration. The Microsoft Places module needs PowerShell 7.4 or later.
 
 ## Finding the room in Outlook
 

@@ -541,7 +541,8 @@ export function describePlaceFailure(
   const { status, code, message } = failure;
   if (code === 'no_token' || status === 0) return 'Microsoft Graph is not configured (no application token).';
   if (status === 403 || code === 'ErrorAccessDenied' || code === 'Authorization_RequestDenied') {
-    return `Outlook refused to ${action} the room: ${message || 'access denied'}. Grant the app Place.ReadWrite.All (admin consent) and assign it the Exchange application roles TenantPlacesManagement and MailRecipient — scripts/provision-outlook-rooms.ps1 does that.`;
+    const detail = (message || 'access denied').replace(/\.\s*$/, '');
+    return `Outlook refused to ${action} the room: ${detail}. Grant the app Place.ReadWrite.All (admin consent) and assign it the Exchange application roles TenantPlacesManagement and MailRecipient — scripts/provision-outlook-rooms.ps1 does that.`;
   }
   if (status === 404) return 'Outlook does not list this room.';
   return `Outlook returned ${status}${code ? ` (${code})` : ''}: ${message || 'unknown error'}`;

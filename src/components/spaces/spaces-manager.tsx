@@ -512,6 +512,18 @@ export const SpacesManager: React.FC = () => {
                   Pick this room in Outlook&apos;s room list and its meetings appear here. Leave it empty
                   and use <strong>Sync to Outlook</strong> to let Orbit create the room mailbox.
                 </p>
+                <p className="ui-meta mt-1">
+                  No room in Outlook yet? Create it in the{' '}
+                  <a
+                    href="https://admin.microsoft.com/Adminportal/Home#/ResourceMailbox"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-[var(--accent-ink)] hover:underline"
+                  >
+                    Microsoft 365 admin center
+                  </a>{' '}
+                  (Resources → Rooms &amp; equipment → Add resource), then paste its address here.
+                </p>
               </div>
             )}
             <div>
