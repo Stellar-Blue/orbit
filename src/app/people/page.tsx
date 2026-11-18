@@ -13,7 +13,7 @@ import { EmployeeLeaveEntitlement } from '@/components/people/employee-leave-ent
 import { EmployeeRemoteQuota } from '@/components/people/employee-remote-quota';
 import { EmployeeDocuments } from '@/components/people/employee-documents';
 import {
-  Users, Search, Download, Plus, Edit2, Check, Trash2, MessageSquare
+  Users, Search, Download, Plus, Edit2, Check, Trash2, MessageSquare, ArrowLeft
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -43,13 +43,14 @@ export default function PeopleDirectoryPage() {
     }
   }, [urlId, profiles]);
 
-  // Sync address bar when profile is selected or closed
+  // Sync address bar when profile is selected or closed. Skipped on an unrelated route and when
+  // the address already matches, so a Back/Forward hop never stacks a duplicate entry.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (selectedProfile) {
-      window.history.pushState(null, '', `/people/${selectedProfile.id}`);
-    } else if (window.location.pathname.startsWith('/people/')) {
-      window.history.pushState(null, '', '/people');
+    if (!window.location.pathname.startsWith('/people')) return;
+    const targetPath = selectedProfile ? `/people/${selectedProfile.id}` : '/people';
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
     }
   }, [selectedProfile]);
 
@@ -57,6 +58,25 @@ export default function PeopleDirectoryPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isCreatingPerson, setIsCreatingPerson] = useState(false);
   const [editData, setEditData] = useState<any>(null);
+
+  // Browser Back / Forward move between the directory and a dossier.
+  useEffect(() => {
+    const onPopState = () => {
+      const id = decodeURIComponent(window.location.pathname.match(/^\/people\/([^/]+)$/)?.[1] ?? '');
+      // Back/Forward bypasses the list's selection handler, so reset the dossier to its first tab —
+      // otherwise the edit form could stay open holding the previous person's data.
+      setActiveTab('overview');
+      setEditData(null);
+      if (!id) {
+        setSelectedProfile(null);
+        return;
+      }
+      const target = profiles.find(p => p.id === id || p.work_email?.toLowerCase() === id.toLowerCase());
+      setSelectedProfile(target || null);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [profiles]);
 
   // Employment contract editor state. Pay (rates, extras, bonuses) is NOT part of the dossier
   // any more — it all lives in the Effective-Dated Salary Ledger on Compensation & Payroll.
@@ -280,6 +300,7 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      {!selectedProfile && (<>
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
@@ -411,16 +432,26 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
         </div>
       )}
 
-      {/* PROFILE DETAIL & ADMIN EDIT MODAL */}
-      <Modal 
-        isOpen={!!selectedProfile} 
-        onClose={() => setSelectedProfile(null)} 
-        title={selectedProfile ? `${selectedProfile.first_name} ${selectedProfile.last_name} — Profile Dossier` : 'Profile'}
-      >
-        {selectedProfile && (
+      </>)}
+
+      {/* PROFILE DOSSIER — a screen of its own, addressed at /people/{id} */}
+      {selectedProfile && (
+        <section className="space-y-5 animate-in fade-in duration-150" aria-label="Profile dossier">
+          <div className="border-b border-slate-200/80 pb-4">
+            <button
+              type="button"
+              onClick={() => setSelectedProfile(null)}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-500 hover:text-[var(--accent)] cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> All people
+            </button>
+            <p className="ui-eyebrow mt-3">People directory · Profile dossier</p>
+            <h1 className="ui-title mt-1">{selectedProfile.first_name} {selectedProfile.last_name}</h1>
+          </div>
+
           <div className="space-y-6">
-            {/* Modal Tabs */}
-            <div className="flex border-b border-slate-200 -mx-6 px-6 space-x-6 text-sm">
+            {/* Dossier tabs */}
+            <div className="flex border-b border-slate-200 space-x-6 text-sm">
               <button 
                 onClick={() => setActiveTab('overview')} 
                 className={`pb-3 font-semibold transition-colors cursor-pointer ${activeTab === 'overview' ? 'border-b-2 border-[var(--accent)] text-[var(--accent)]' : 'text-slate-500 hover:text-slate-800'}`}
@@ -808,8 +839,8 @@ setNewAfm(''); setNewAmka(''); setNewIban(''); setNewAddress(''); setNewBankName
               </form>
             )}
           </div>
-        )}
-      </Modal>
+        </section>
+      )}
 
       {/* ADD PERSON MODAL (ADMIN ONLY) */}
       <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Onboard New Person (Admin)">

@@ -5,10 +5,10 @@ import { useAuth } from '@/lib/auth-context';
 import { getSupabaseBrowserClient, SIGNED_URL_TTL_SECONDS } from '@/lib/supabase/client';
 import { notifySuccess, notifyValidation } from '@/lib/validation-modal';
 import type { EmployeeDocument, EmployeeDocumentStatus, EmployeeDocumentType } from '@/lib/types';
-import { Badge, Button } from '@/components/ui/primitives';
+import { Badge, Button, Modal } from '@/components/ui/primitives';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/date';
-import { Check, ExternalLink, FileText, Loader2, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { Check, Download, Eye, ExternalLink, FileText, Loader2, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
 
 const BUCKET = 'employee-documents';
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -34,6 +34,12 @@ const EMPTY_FORM = {
   expires_on: '',
 };
 
+/** Chrome, Safari and Edge render PDFs natively; only Word files need a download fallback. */
+const isPdfDocument = (doc: EmployeeDocument) =>
+  doc.mime_type === 'application/pdf' || /\.pdf$/i.test(doc.file_name);
+
+const isImageDocument = (doc: EmployeeDocument) => (doc.mime_type || '').startsWith('image/');
+
 interface EmployeeDocumentsProps {
   profileId: string;
   /** Owner controls: upload and delete. */
@@ -57,6 +63,9 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<EmployeeDocument | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data, error } = await getSupabaseBrowserClient()
@@ -141,15 +150,39 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
     notifySuccess(`${file.name} uploaded and waiting for review.`);
   };
 
-  const openDocument = async (doc: EmployeeDocument) => {
+  const previewDocument = async (doc: EmployeeDocument) => {
+    setPreviewDoc(doc);
+    setPreviewUrl(null);
+    setPreviewError(null);
     const { data, error } = await getSupabaseBrowserClient()
       .storage.from(BUCKET)
       .createSignedUrl(doc.storage_path, SIGNED_URL_TTL_SECONDS);
     if (error || !data?.signedUrl) {
-      notifyValidation({ type: 'error', title: 'Could not open the document', message: error?.message || 'The file is no longer in storage.' });
+      setPreviewError(error?.message || 'The file is no longer in storage.');
       return;
     }
-    window.open(data.signedUrl, '_blank', 'noopener');
+    setPreviewUrl(data.signedUrl);
+  };
+
+  const closePreview = () => {
+    setPreviewDoc(null);
+    setPreviewUrl(null);
+    setPreviewError(null);
+  };
+
+  const downloadDocument = async (doc: EmployeeDocument) => {
+    const { data, error } = await getSupabaseBrowserClient()
+      .storage.from(BUCKET)
+      .createSignedUrl(doc.storage_path, SIGNED_URL_TTL_SECONDS, { download: doc.file_name });
+    if (error || !data?.signedUrl) {
+      notifyValidation({ type: 'error', title: 'Could not download the document', message: error?.message || 'The file is no longer in storage.' });
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = data.signedUrl;
+    link.download = doc.file_name;
+    link.rel = 'noopener';
+    link.click();
   };
 
   const removeDocument = async (doc: EmployeeDocument) => {
@@ -248,8 +281,8 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => openDocument(doc)} className="cursor-pointer">
-                      <ExternalLink className="w-3 h-3 mr-1" /> Open
+                    <Button size="sm" variant="outline" onClick={() => previewDocument(doc)} className="cursor-pointer">
+                      <Eye className="w-3 h-3 mr-1" /> Preview
                     </Button>
                     {canReview && doc.status !== 'verified' && (
                       <Button size="sm" variant="secondary" onClick={() => review(doc, 'verified')} disabled={busy} className="cursor-pointer">
@@ -346,6 +379,55 @@ export function EmployeeDocuments({ profileId, canUpload, canReview }: EmployeeD
             </Button>
           </div>
         </div>
+      )}
+
+      {previewDoc && (
+        <Modal
+          isOpen
+          onClose={closePreview}
+          title={previewDoc.title}
+          eyebrow={DOC_TYPES.find(type => type.value === previewDoc.doc_type)?.label || 'Qualification document'}
+          size="6xl"
+        >
+          {previewError ? (
+            <p className="text-xs text-rose-700">{previewError}</p>
+          ) : !previewUrl ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" /> Preparing preview…
+            </div>
+          ) : isPdfDocument(previewDoc) ? (
+            <iframe
+              src={previewUrl}
+              title={previewDoc.title}
+              className="w-full h-[72vh] rounded-lg border border-slate-200 bg-white"
+            />
+          ) : isImageDocument(previewDoc) ? (
+            // eslint-disable-next-line @next/next/no-img-element -- short-lived signed storage URL
+            <img src={previewUrl} alt={previewDoc.title} className="max-h-[72vh] mx-auto rounded-lg border border-slate-200" />
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-xs text-slate-500">
+              Word documents cannot be previewed in the browser. Download the file to read it.
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
+            <span className="text-[11px] font-mono text-slate-500 truncate">{previewDoc.file_name}</span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener')}
+                disabled={!previewUrl}
+                className="cursor-pointer"
+              >
+                <ExternalLink className="w-3 h-3 mr-1" /> Open in new tab
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => downloadDocument(previewDoc)} className="cursor-pointer">
+                <Download className="w-3 h-3 mr-1" /> Download
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
